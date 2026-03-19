@@ -12,7 +12,8 @@ def test_bot_initializes():
          patch("main.SumArbStrategy") as MockSumArb, \
          patch("main.MakerPreorderStrategy") as MockMaker, \
          patch("main.TradeLogger") as MockLogger, \
-         patch("main.TelegramNotifier") as MockNotifier:
+         patch("main.TelegramNotifier") as MockNotifier, \
+         patch("main.create_app") as MockCreateApp:
 
         cfg = MockConfig.return_value
         cfg.is_paper_mode = True

@@ -13,6 +13,7 @@ from strategies.sum_arb import SumArbStrategy
 from strategies.maker_preorder import MakerPreorderStrategy
 from monitoring.logger import setup_logger, TradeLogger
 from monitoring.notifier import TelegramNotifier
+from monitoring.dashboard.api import create_app
 
 logger = logging.getLogger("bot")
 
@@ -53,6 +54,7 @@ class Bot:
             asyncio.create_task(self._price_feed_task()),
             asyncio.create_task(self.scanner.poll_loop()),
             asyncio.create_task(self._strategy_loop()),
+            asyncio.create_task(self._dashboard_task()),
         ]
 
         try:
@@ -65,6 +67,15 @@ class Bot:
         for symbol, url in self.config.BINANCE_WS_URLS.items():
             tasks.append(asyncio.create_task(self.price_feed.subscribe(symbol, url)))
         await asyncio.gather(*tasks)
+
+    async def _dashboard_task(self):
+        """Run the FastAPI dashboard server."""
+        import uvicorn
+        app = create_app(self.db, bankroll=self.order_manager.bankroll)
+        config = uvicorn.Config(app, host="0.0.0.0", port=8080, log_level="warning")
+        server = uvicorn.Server(config)
+        logger.info("Dashboard running at http://localhost:8080")
+        await server.serve()
 
     async def _strategy_loop(self):
         while self._running:
