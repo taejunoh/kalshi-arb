@@ -5,6 +5,7 @@ from core.database import Database
 from core.order_manager import OrderManager
 from core.market_scanner import MarketScanner
 from strategies.sum_arb import SumArbStrategy
+from strategies.maker_preorder import MakerPreorderStrategy
 
 
 class FakePolymarketClient:
@@ -59,7 +60,9 @@ async def setup(tmp_path):
     order_mgr = OrderManager(config, client, db)
     sum_arb = SumArbStrategy(config, order_mgr, scanner, client)
 
-    return {"config": config, "db": db, "client": client, "scanner": scanner, "order_mgr": order_mgr, "sum_arb": sum_arb}
+    maker = MakerPreorderStrategy(config, order_mgr, scanner, client)
+
+    return {"config": config, "db": db, "client": client, "scanner": scanner, "order_mgr": order_mgr, "sum_arb": sum_arb, "maker": maker}
 
 
 @pytest.mark.asyncio
@@ -80,3 +83,36 @@ async def test_no_trade_when_no_opportunity(setup):
     trades = await s["db"].get_trades()
     assert len(trades) == 0
     assert s["order_mgr"].bankroll == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_maker_preorder_places_orders_on_5min_market(setup):
+    """Maker Pre-Order should place limit orders on 5-min markets."""
+    s = setup
+    # Add a 5-minute market
+    s["client"].markets.append({
+        "conditionId": "test_5min_1",
+        "question": "Will BTC go up in the next 5 minutes?",
+        "tokens": [
+            {"outcome": "Yes", "token_id": "yes_5m"},
+            {"outcome": "No", "token_id": "no_5m"},
+        ],
+    })
+    s["scanner"].update_markets(s["client"].get_active_markets())
+
+    await s["maker"].scan_and_execute()
+
+    # Should have active orders tracked
+    assert "test_5min_1" in s["maker"]._active_orders
+    # Market should be locked
+    assert s["scanner"].is_locked("test_5min_1")
+
+
+@pytest.mark.asyncio
+async def test_maker_preorder_ignores_15min_market(setup):
+    """Maker Pre-Order should NOT place orders on 15-min markets."""
+    s = setup
+    # Only 15-min market exists in default setup
+    await s["maker"].scan_and_execute()
+
+    assert len(s["maker"]._active_orders) == 0
