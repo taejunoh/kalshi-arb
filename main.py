@@ -10,7 +10,9 @@ from core.polymarket_client import PolymarketClient
 from core.market_scanner import MarketScanner
 from core.order_manager import OrderManager
 from strategies.sum_arb import SumArbStrategy
+from strategies.maker_preorder import MakerPreorderStrategy
 from monitoring.logger import setup_logger, TradeLogger
+from monitoring.notifier import TelegramNotifier
 
 logger = logging.getLogger("bot")
 
@@ -26,7 +28,13 @@ class Bot:
         self.sum_arb = SumArbStrategy(
             self.config, self.order_manager, self.scanner, self.polymarket_client
         )
+        self.maker_preorder = MakerPreorderStrategy(
+            self.config, self.order_manager, self.scanner, self.polymarket_client
+        )
         self.trade_logger = TradeLogger()
+        self.notifier = TelegramNotifier(
+            self.config.TELEGRAM_BOT_TOKEN, self.config.TELEGRAM_CHAT_ID
+        )
         self._running = True
 
     async def start(self):
@@ -35,6 +43,7 @@ class Bot:
 
         mode = "PAPER" if self.config.is_paper_mode else "LIVE"
         logger.info(f"Bot starting in {mode} mode | Bankroll: ${self.order_manager.bankroll:.2f}")
+        await self.notifier.notify_bot_status("Started", self.order_manager.bankroll)
 
         loop = asyncio.get_event_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
@@ -62,7 +71,13 @@ class Bot:
             try:
                 await self.sum_arb.scan_and_execute()
             except Exception as e:
-                logger.error(f"Strategy loop error: {e}")
+                logger.error(f"Sum arb loop error: {e}")
+                await self.notifier.notify_error(f"Sum arb: {e}")
+            try:
+                await self.maker_preorder.scan_and_execute()
+            except Exception as e:
+                logger.error(f"Maker pre-order loop error: {e}")
+                await self.notifier.notify_error(f"Maker pre-order: {e}")
             await asyncio.sleep(0.2)
 
     async def shutdown(self):
@@ -74,6 +89,7 @@ class Bot:
             logger.info(f"Cancelled order: {order['order_id']}")
         daily_pnl = await self.db.get_daily_pnl()
         logger.info(f"Final bankroll: ${self.order_manager.bankroll:.2f} | Daily PnL: ${daily_pnl:.2f}")
+        await self.notifier.notify_bot_status("Stopped", self.order_manager.bankroll)
         logger.info("Shutdown complete")
         sys.exit(0)
 
