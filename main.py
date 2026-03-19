@@ -46,6 +46,14 @@ class Bot:
         logger.info(f"Bot starting in {mode} mode | Bankroll: ${self.order_manager.bankroll:.2f}")
         await self.notifier.notify_bot_status("Started", self.order_manager.bankroll)
 
+        if not self.config.is_paper_mode:
+            logger.info("Running live mode pre-flight checks...")
+            if not self.polymarket_client.preflight_check():
+                logger.error("Pre-flight checks failed. Aborting.")
+                await self.notifier.notify_error("Pre-flight checks failed. Bot not started.")
+                sys.exit(1)
+            logger.info("Pre-flight checks passed. Starting live trading.")
+
         loop = asyncio.get_event_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, lambda: asyncio.create_task(self.shutdown()))
@@ -55,6 +63,7 @@ class Bot:
             asyncio.create_task(self.scanner.poll_loop()),
             asyncio.create_task(self._strategy_loop()),
             asyncio.create_task(self._dashboard_task()),
+            asyncio.create_task(self._daily_reset_task()),
         ]
 
         try:
@@ -90,6 +99,37 @@ class Bot:
                 logger.error(f"Maker pre-order loop error: {e}")
                 await self.notifier.notify_error(f"Maker pre-order: {e}")
             await asyncio.sleep(0.2)
+
+    async def _daily_reset_task(self):
+        """Reset daily counters and send summary at UTC midnight."""
+        while self._running:
+            import datetime
+            utc_now = datetime.datetime.now(datetime.timezone.utc)
+            tomorrow = utc_now.replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+            seconds_until_midnight = (tomorrow - utc_now).total_seconds()
+
+            await asyncio.sleep(seconds_until_midnight)
+
+            if not self._running:
+                break
+
+            # Send daily summary
+            daily_pnl = await self.db.get_daily_pnl()
+            trades = await self.db.get_trades()
+            today_trades = [t for t in trades if t["timestamp"].startswith(utc_now.strftime("%Y-%m-%d"))]
+            wins = sum(1 for t in today_trades if t.get("pnl", 0) > 0)
+            losses = sum(1 for t in today_trades if t.get("pnl", 0) < 0)
+
+            await self.notifier.notify_daily_summary(
+                total_trades=len(today_trades),
+                wins=wins, losses=losses,
+                daily_pnl=daily_pnl,
+                bankroll=self.order_manager.bankroll,
+            )
+
+            # Reset daily counters
+            self.order_manager.reset_daily()
+            logger.info(f"Daily reset complete. Yesterday PnL: ${daily_pnl:.2f}")
 
     async def shutdown(self):
         logger.info("Shutting down...")

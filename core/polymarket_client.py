@@ -163,3 +163,35 @@ class PolymarketClient:
         except Exception as e:
             logger.error(f"Failed to get positions: {e}")
             return []
+
+    def preflight_check(self) -> bool:
+        """Verify API connectivity and credentials before live trading."""
+        self._init_clob()
+        if self._clob is None:
+            logger.error("Preflight FAILED: CLOB client not initialized")
+            return False
+        try:
+            self._rate_limit()
+            markets = self._clob.get_markets(active=True, closed=False)
+            logger.info(f"Preflight: API connected, {len(markets)} markets available")
+            return True
+        except Exception as e:
+            logger.error(f"Preflight FAILED: {e}")
+            return False
+
+    def get_usdc_balance(self) -> Optional[float]:
+        """Get USDC balance from Polymarket. Returns None on error."""
+        self._init_clob()
+        if self._clob is None:
+            return None
+        self._rate_limit()
+        try:
+            # Try to get balance via positions or account endpoint
+            positions = self._clob.get_positions()
+            # In practice, balance comes from the proxy wallet
+            # For now, return None to indicate we need manual verification
+            logger.info("Balance check: use Polymarket UI to verify USDC balance")
+            return None
+        except Exception as e:
+            logger.error(f"Balance check failed: {e}")
+            return None
