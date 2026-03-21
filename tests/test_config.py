@@ -38,12 +38,26 @@ def test_config_env_override():
     os.environ.pop("INITIAL_BANKROLL", None)
 
 
-def test_dynamic_fee_calculation():
+def test_kalshi_fee_calculation():
     from core.config import Config
     cfg = Config()
-    fee_50 = cfg.estimate_taker_fee(0.50)
-    assert abs(fee_50 - 0.0315) < 0.001
-    fee_0 = cfg.estimate_taker_fee(0.0)
-    assert fee_0 < 0.001
-    fee_100 = cfg.estimate_taker_fee(1.0)
-    assert fee_100 < 0.001
+    fee = cfg.estimate_fee(10, 50)
+    assert fee == pytest.approx(0.70, abs=0.01)
+
+def test_kalshi_fee_capped():
+    from core.config import Config
+    cfg = Config()
+    fee = cfg.estimate_fee(1, 5)
+    assert fee == pytest.approx(0.05, abs=0.01)
+
+def test_kalshi_fee_per_contract():
+    from core.config import Config
+    cfg = Config()
+    fee = cfg.estimate_fee_per_contract(50)
+    assert fee == pytest.approx(0.07, abs=0.01)
+
+def test_kalshi_fee_per_contract_capped():
+    from core.config import Config
+    cfg = Config()
+    fee = cfg.estimate_fee_per_contract(3)
+    assert fee == pytest.approx(0.03, abs=0.01)
