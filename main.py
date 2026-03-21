@@ -6,7 +6,7 @@ import sys
 from core.config import Config
 from core.database import Database
 from core.price_feed import PriceFeed
-from core.polymarket_client import PolymarketClient
+from core.kalshi_client import KalshiClient
 from core.market_scanner import MarketScanner
 from core.order_manager import OrderManager
 from strategies.sum_arb import SumArbStrategy
@@ -23,14 +23,14 @@ class Bot:
         self.config = Config()
         self.db = Database()
         self.price_feed = PriceFeed()
-        self.polymarket_client = PolymarketClient(self.config)
-        self.scanner = MarketScanner(self.polymarket_client)
-        self.order_manager = OrderManager(self.config, self.polymarket_client, self.db)
+        self.kalshi_client = KalshiClient(self.config)
+        self.scanner = MarketScanner(self.kalshi_client)
+        self.order_manager = OrderManager(self.config, self.kalshi_client, self.db)
         self.sum_arb = SumArbStrategy(
-            self.config, self.order_manager, self.scanner, self.polymarket_client
+            self.config, self.order_manager, self.scanner, self.kalshi_client
         )
         self.maker_preorder = MakerPreorderStrategy(
-            self.config, self.order_manager, self.scanner, self.polymarket_client
+            self.config, self.order_manager, self.scanner, self.kalshi_client
         )
         self.trade_logger = TradeLogger()
         self.notifier = TelegramNotifier(
@@ -48,7 +48,7 @@ class Bot:
 
         if not self.config.is_paper_mode:
             logger.info("Running live mode pre-flight checks...")
-            if not self.polymarket_client.preflight_check():
+            if not self.kalshi_client.preflight_check():
                 logger.error("Pre-flight checks failed. Aborting.")
                 await self.notifier.notify_error("Pre-flight checks failed. Bot not started.")
                 sys.exit(1)

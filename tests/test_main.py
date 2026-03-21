@@ -6,7 +6,7 @@ def test_bot_initializes():
     with patch("main.Config") as MockConfig, \
          patch("main.Database") as MockDB, \
          patch("main.PriceFeed") as MockFeed, \
-         patch("main.PolymarketClient") as MockClient, \
+         patch("main.KalshiClient") as MockClient, \
          patch("main.MarketScanner") as MockScanner, \
          patch("main.OrderManager") as MockOM, \
          patch("main.SumArbStrategy") as MockSumArb, \
