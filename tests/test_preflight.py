@@ -16,7 +16,7 @@ def test_preflight_passes_with_valid_connection():
         raise_for_status=lambda: None,
     )
     client._http = mock_http
-    client._private_key = MagicMock()
+    client._private_key = None
     assert client.preflight_check() is True
 
 
@@ -40,5 +40,5 @@ def test_preflight_fails_on_api_error():
     mock_http = MagicMock()
     mock_http.get.side_effect = Exception("API error")
     client._http = mock_http
-    client._private_key = MagicMock()
+    client._private_key = None
     assert client.preflight_check() is False

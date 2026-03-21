@@ -46,14 +46,17 @@ class KalshiClient:
     def _sign_request(self, timestamp_ms: int, method: str, path: str) -> str:
         from cryptography.hazmat.primitives.asymmetric import padding
         from cryptography.hazmat.primitives import hashes
-        message = f"{timestamp_ms}{method}{path}"
+        # Strip query params before signing per Kalshi docs
+        path_without_query = path.split("?")[0]
+        message = f"{timestamp_ms}{method}{path_without_query}"
         signature = self._private_key.sign(
             message.encode(),
-            padding.PKCS1v15(),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.DIGEST_LENGTH,
+            ),
             hashes.SHA256(),
         )
-        if not isinstance(signature, bytes):
-            signature = bytes(str(signature), "utf-8")
         return base64.b64encode(signature).decode()
 
     def _auth_headers(self, method: str, path: str) -> dict:

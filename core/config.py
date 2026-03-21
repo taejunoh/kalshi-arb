@@ -9,7 +9,7 @@ class Config:
         # Kalshi API
         self.KALSHI_API_KEY_ID = os.getenv("KALSHI_API_KEY_ID", "")
         self.KALSHI_RSA_PRIVATE_KEY_PATH = os.getenv("KALSHI_RSA_PRIVATE_KEY_PATH", "")
-        self.KALSHI_API_BASE_URL = os.getenv("KALSHI_API_BASE_URL", "https://trading-api.kalshi.com")
+        self.KALSHI_API_BASE_URL = os.getenv("KALSHI_API_BASE_URL", "https://api.elections.kalshi.com")
         self.KALSHI_FEE_PER_CONTRACT = float(os.getenv("KALSHI_FEE_PER_CONTRACT", "0.07"))
 
         # Trading mode

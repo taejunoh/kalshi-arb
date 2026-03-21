@@ -11,7 +11,7 @@ def _make_client():
     config.KALSHI_API_BASE_URL = "https://trading-api.kalshi.com"
     client = KalshiClient(config)
     client._http = MagicMock()
-    client._private_key = MagicMock()
+    client._private_key = None  # skip auth in tests
     return client
 
 
