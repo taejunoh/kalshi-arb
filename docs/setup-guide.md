@@ -1,23 +1,23 @@
-# Polymarket Arb Bot — Setup Guide
+# Kalshi Arb Bot — Setup Guide
 
 ## Prerequisites
 - Python 3.11+
-- A Polymarket account with API access
-- USDC on Polygon network (for live trading)
+- A Kalshi account with API access
+- Funds deposited via bank transfer (for live trading)
 
-## 1. Polymarket Account Setup
+## 1. Kalshi Account Setup
 
-1. Go to https://polymarket.com and create an account
-2. Navigate to Settings → API Keys
-3. Generate an API key — save the key, secret, and passphrase
-4. Your private key is your wallet's private key (the one used to sign transactions)
+1. Go to https://kalshi.com and create an account
+2. Navigate to Account → API Keys
+3. Generate an API key — save the API Key ID
+4. Download the RSA private key PEM file and store it securely
 
-## 2. Proxy Wallet
+## 2. Fund Your Account
 
-Polymarket uses proxy wallets on Polygon. After creating your account:
-1. Deposit USDC via the Polymarket bridge
-2. Your proxy wallet address is visible in your account settings
-3. This is the wallet that will execute trades
+Kalshi accepts deposits via bank transfer (ACH). No cryptocurrency or wallet setup is needed.
+1. Go to Account → Deposits
+2. Link your bank account
+3. Transfer funds — they will be available for trading once settled
 
 ## 3. Installation
 
@@ -32,7 +32,9 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# Edit .env with your API credentials
+# Edit .env with your Kalshi API credentials:
+#   KALSHI_API_KEY_ID=your_key_id
+#   KALSHI_RSA_PRIVATE_KEY_PATH=/path/to/your/private_key.pem
 ```
 
 ## 5. Running (Paper Mode)
@@ -43,7 +45,7 @@ python main.py
 
 The bot starts in paper mode by default. It will:
 - Connect to Binance price feeds
-- Scan Polymarket for crypto markets
+- Scan Kalshi for event markets
 - Detect sum arb opportunities
 - Log simulated trades (no real orders)
 
@@ -51,7 +53,7 @@ The bot starts in paper mode by default. It will:
 
 After validating in paper mode (48+ hours recommended):
 1. Edit `.env`: change `TRADING_MODE=paper` to `TRADING_MODE=live`
-2. Ensure USDC is funded in your Polymarket proxy wallet
+2. Ensure funds are deposited in your Kalshi account
 3. Restart the bot
 
 ## 7. Monitoring
