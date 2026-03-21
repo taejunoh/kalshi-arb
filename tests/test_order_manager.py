@@ -18,7 +18,7 @@ def paper_manager(db):
     config = Config()
     config.TRADING_MODE = "paper"
     config.INITIAL_BANKROLL = 1000.0
-    return OrderManager(config, polymarket_client=None, database=db)
+    return OrderManager(config, kalshi_client=None, database=db)
 
 
 def test_initial_bankroll(paper_manager):
@@ -28,8 +28,8 @@ def test_initial_bankroll(paper_manager):
 @pytest.mark.asyncio
 async def test_paper_market_order(paper_manager):
     result = await paper_manager.market_order(
-        token_id="test_token", side="BUY", size_usdc=100.0,
-        price=0.50, strategy="sum_arb", market_id="m1",
+        ticker="KXBTC-25MAR20-T70000", side="BUY", size_usdc=100.0,
+        price=0.50, strategy="sum_arb", market_id="KXBTC-25MAR20-T70000",
     )
     assert result["status"] == "paper_filled"
     assert result["size_usdc"] == 100.0
@@ -39,8 +39,8 @@ async def test_paper_market_order(paper_manager):
 @pytest.mark.asyncio
 async def test_paper_limit_order(paper_manager):
     result = await paper_manager.limit_order(
-        token_id="test_token", side="BUY", price=0.48,
-        size_usdc=50.0, strategy="maker_preorder", market_id="m1",
+        ticker="KXBTC-25MAR20-T70000", side="BUY", price=0.48,
+        size_usdc=50.0, strategy="maker_preorder", market_id="KXBTC-25MAR20-T70000",
     )
     assert result["status"] == "paper_open"
     assert result["price"] == 0.48
@@ -49,7 +49,7 @@ async def test_paper_limit_order(paper_manager):
 @pytest.mark.asyncio
 async def test_position_sizing(paper_manager):
     size = paper_manager.calculate_position_size(net_edge=0.05)
-    assert size == 12.5  # min(1000*0.25*0.05, 1000*0.10)
+    assert size == 12.5
 
 
 @pytest.mark.asyncio

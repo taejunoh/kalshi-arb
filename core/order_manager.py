@@ -6,9 +6,9 @@ logger = logging.getLogger("order_manager")
 
 
 class OrderManager:
-    def __init__(self, config, polymarket_client, database):
+    def __init__(self, config, kalshi_client, database):
         self.config = config
-        self._client = polymarket_client
+        self._client = kalshi_client
         self._db = database
         self.bankroll = config.INITIAL_BANKROLL
         self._daily_loss = 0.0
@@ -42,15 +42,15 @@ class OrderManager:
     def reset_daily(self):
         self._daily_loss = 0.0
 
-    async def market_order(self, token_id, side, size_usdc, price, strategy, market_id):
+    async def market_order(self, ticker, side, size_usdc, price, strategy, market_id):
         if self.config.is_paper_mode:
-            return await self._paper_market_order(token_id, side, size_usdc, price, strategy, market_id)
-        return await self._live_market_order(token_id, side, size_usdc, price, strategy, market_id)
+            return await self._paper_market_order(ticker, side, size_usdc, price, strategy, market_id)
+        return await self._live_market_order(ticker, side, size_usdc, price, strategy, market_id)
 
-    async def limit_order(self, token_id, side, price, size_usdc, strategy, market_id):
+    async def limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
         if self.config.is_paper_mode:
-            return await self._paper_limit_order(token_id, side, price, size_usdc, strategy, market_id)
-        return await self._live_limit_order(token_id, side, price, size_usdc, strategy, market_id)
+            return await self._paper_limit_order(ticker, side, price, size_usdc, strategy, market_id)
+        return await self._live_limit_order(ticker, side, price, size_usdc, strategy, market_id)
 
     async def cancel_order(self, order_id):
         if self.config.is_paper_mode:
@@ -58,19 +58,19 @@ class OrderManager:
             return True
         return self._client.cancel_order(order_id)
 
-    async def _paper_market_order(self, token_id, side, size_usdc, price, strategy, market_id):
+    async def _paper_market_order(self, ticker, side, size_usdc, price, strategy, market_id):
         order_id = f"paper_{uuid.uuid4().hex[:8]}"
+        count = max(1, int(size_usdc / price))
+        fee = self.config.estimate_fee(count, int(price * 100))
         self.bankroll -= size_usdc
         await self._db.record_trade(
             strategy=strategy, market_id=market_id, direction=side,
-            price=price, size=size_usdc,
-            fee=self.config.estimate_taker_fee(price) * size_usdc,
-            status="paper_filled",
+            price=price, size=size_usdc, fee=fee, status="paper_filled",
         )
         logger.info(f"[PAPER] Market {side} | {strategy} | ${size_usdc:.2f} @ {price:.3f} | bankroll: ${self.bankroll:.2f}")
         return {"order_id": order_id, "status": "paper_filled", "size_usdc": size_usdc, "price": price}
 
-    async def _paper_limit_order(self, token_id, side, price, size_usdc, strategy, market_id):
+    async def _paper_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
         order_id = f"paper_{uuid.uuid4().hex[:8]}"
         await self._db.record_order(
             order_id=order_id, market_id=market_id, strategy=strategy,
@@ -79,27 +79,26 @@ class OrderManager:
         logger.info(f"[PAPER] Limit {side} | {strategy} | ${size_usdc:.2f} @ {price:.3f}")
         return {"order_id": order_id, "status": "paper_open", "price": price, "size_usdc": size_usdc}
 
-    async def _live_market_order(self, token_id, side, size_usdc, price, strategy, market_id):
-        size_tokens = size_usdc / price
-        resp = self._client.place_market_order(token_id, size_tokens, side)
+    async def _live_market_order(self, ticker, side, size_usdc, price, strategy, market_id):
+        count = max(1, int(size_usdc / price))
+        resp = self._client.place_market_order(ticker, side, count)
         if resp is None:
             return {"status": "failed"}
-        order_id = resp.get("orderID", "unknown")
+        order_id = resp.get("id", "unknown")
+        fee = self.config.estimate_fee(count, int(price * 100))
         await self._db.record_trade(
             strategy=strategy, market_id=market_id, direction=side,
-            price=price, size=size_usdc,
-            fee=self.config.estimate_taker_fee(price) * size_usdc,
-            status="filled",
+            price=price, size=size_usdc, fee=fee, status="filled",
         )
         self.bankroll -= size_usdc
         return {"order_id": order_id, "status": "filled", "size_usdc": size_usdc, "price": price}
 
-    async def _live_limit_order(self, token_id, side, price, size_usdc, strategy, market_id):
-        size_tokens = size_usdc / price
-        resp = self._client.place_limit_order(token_id, price, size_tokens, side)
+    async def _live_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
+        count = max(1, int(size_usdc / price))
+        resp = self._client.place_limit_order(ticker, side, int(price * 100), count)
         if resp is None:
             return {"status": "failed"}
-        order_id = resp.get("orderID", "unknown")
+        order_id = resp.get("id", "unknown")
         await self._db.record_order(
             order_id=order_id, market_id=market_id, strategy=strategy,
             side=side, price=price, size=size_usdc, order_type="limit", status="open",
