@@ -6,7 +6,7 @@ import os
 
 
 def create_app(database, bankroll: float = 0.0) -> FastAPI:
-    app = FastAPI(title="Polymarket Arb Bot Dashboard")
+    app = FastAPI(title="Kalshi Arb Bot Dashboard")
 
     app.add_middleware(
         CORSMiddleware,
