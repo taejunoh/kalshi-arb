@@ -7,25 +7,28 @@ from logging.handlers import TimedRotatingFileHandler
 
 def setup_logger(name: str, log_dir: str = "logs") -> logging.Logger:
     os.makedirs(log_dir, exist_ok=True)
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
 
-    if logger.handlers:
-        return logger
+    # Configure root logger so all module loggers (market_scanner, sum_arb, etc.) are captured
+    root = logging.getLogger()
+    if not root.handlers:
+        root.setLevel(logging.DEBUG)
+        # Quiet noisy third-party loggers
+        for noisy in ("aiosqlite", "httpcore", "httpx", "hpack"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
 
-    console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
-    console.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S"))
-    logger.addHandler(console)
+        console = logging.StreamHandler()
+        console.setLevel(logging.INFO)
+        console.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S"))
+        root.addHandler(console)
 
-    file_handler = TimedRotatingFileHandler(
-        os.path.join(log_dir, "bot.log"), when="midnight", interval=1, backupCount=30, utc=True,
-    )
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
-    logger.addHandler(file_handler)
+        file_handler = TimedRotatingFileHandler(
+            os.path.join(log_dir, "bot.log"), when="midnight", interval=1, backupCount=30, utc=True,
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+        root.addHandler(file_handler)
 
-    return logger
+    return logging.getLogger(name)
 
 
 class TradeLogger:

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from typing import Optional
 
 logger = logging.getLogger("market_scanner")
@@ -11,6 +12,7 @@ class MarketScanner:
         self._markets: dict[str, dict] = {}
         self._locked_markets: set[str] = set()
         self._poll_interval = 5.0
+        self._last_summary_time = 0.0
 
     def update_markets(self, markets: list[dict]):
         self._markets = {m["ticker"]: m for m in markets}
@@ -40,7 +42,14 @@ class MarketScanner:
             try:
                 markets = self._client.get_active_markets()
                 self.update_markets(markets)
-                logger.debug(f"Scanned {len(markets)} active crypto markets")
+                now = time.time()
+                if now - self._last_summary_time >= 60:
+                    locked = len(self._locked_markets)
+                    logger.info(
+                        f"Scanned {len(markets)} active crypto markets "
+                        f"({locked} locked, {len(markets) - locked} available)"
+                    )
+                    self._last_summary_time = now
             except Exception as e:
                 logger.error(f"Market scan failed: {e}")
             await asyncio.sleep(self._poll_interval)

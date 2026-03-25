@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Optional
 
 logger = logging.getLogger("sum_arb")
@@ -12,6 +13,7 @@ class SumArbStrategy:
         self._order_manager = order_manager
         self._scanner = market_scanner
         self._client = kalshi_client
+        self._last_summary_time = 0.0
 
     def evaluate(self, yes_price, no_price, yes_depth, no_depth) -> Optional[dict]:
         token_sum = yes_price + no_price
@@ -35,21 +37,38 @@ class SumArbStrategy:
         if self._order_manager.is_circuit_breaker_active():
             return
         markets = self._scanner.get_unlocked_markets()
+        best_gap = None
+        best_ticker = None
+        checked = 0
         for market in markets:
             try:
-                await self._check_market(market)
+                gap = await self._check_market(market)
+                if gap is not None:
+                    checked += 1
+                    if best_gap is None or gap > best_gap:
+                        best_gap = gap
+                        best_ticker = market.get("ticker")
             except Exception as e:
                 logger.error(f"Sum arb error on {market.get('ticker')}: {e}")
+        now = time.time()
+        if now - self._last_summary_time >= 60 and checked > 0:
+            logger.info(
+                f"[SUM ARB] Checked {checked}/{len(markets)} markets, "
+                f"best gap: {best_gap:+.4f} ({best_ticker})"
+            )
+            self._last_summary_time = now
 
     async def _check_market(self, market):
+        """Check a market for sum arb opportunity. Returns the gap value or None."""
         ticker = market["ticker"]
         yes_price, no_price = self._client.get_market_prices(ticker)
         if yes_price is None or no_price is None:
-            return
+            return None
+        gap = 1.0 - (yes_price + no_price)
         yes_depth, no_depth = self._client.get_order_book_depth(ticker)
         signal = self.evaluate(yes_price, no_price, yes_depth, no_depth)
         if signal is None:
-            return
+            return gap
         size_usdc = self._order_manager.calculate_position_size(signal["net_edge"])
         if size_usdc < 1.0:
             return

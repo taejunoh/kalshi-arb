@@ -107,24 +107,18 @@ class KalshiClient:
         return resp.json()
 
     def get_active_markets(self) -> list[dict]:
-        try:
-            data = self._get("/trade-api/v2/markets?status=open")
-            if data is None:
-                return []
-            markets = data.get("markets", [])
-            return self._filter_crypto_markets(markets)
-        except Exception as e:
-            logger.error(f"Failed to fetch markets: {e}")
-            return []
-
-    def _filter_crypto_markets(self, markets: list[dict]) -> list[dict]:
-        result = []
-        for m in markets:
-            ticker = m.get("ticker", "")
-            prefix = ticker.split("-")[0] if "-" in ticker else ticker
-            if prefix in CRYPTO_SERIES_PREFIXES:
-                result.append(m)
-        return result
+        """Fetch open crypto markets by querying each series_ticker directly."""
+        all_markets = []
+        for prefix in CRYPTO_SERIES_PREFIXES:
+            try:
+                data = self._get(
+                    f"/trade-api/v2/markets?status=open&series_ticker={prefix}&limit=100"
+                )
+                if data:
+                    all_markets.extend(data.get("markets", []))
+            except Exception as e:
+                logger.error(f"Failed to fetch {prefix} markets: {e}")
+        return all_markets
 
     def get_market(self, ticker: str) -> Optional[dict]:
         try:
@@ -141,11 +135,11 @@ class KalshiClient:
             if data is None:
                 return None, None
             market = data.get("market", {})
-            yes_cents = market.get("yes_ask")
-            no_cents = market.get("no_ask")
-            if yes_cents is None or no_cents is None:
+            yes_str = market.get("yes_ask_dollars")
+            no_str = market.get("no_ask_dollars")
+            if yes_str is None or no_str is None:
                 return None, None
-            return yes_cents / 100, no_cents / 100
+            return float(yes_str), float(no_str)
         except Exception as e:
             logger.error(f"Failed to get prices for {ticker}: {e}")
             return None, None
@@ -156,11 +150,11 @@ class KalshiClient:
             data = self._get(f"/trade-api/v2/markets/{ticker}/orderbook")
             if data is None:
                 return 0.0, 0.0
-            book = data.get("orderbook", {})
-            yes_levels = book.get("yes", [])
-            no_levels = book.get("no", [])
-            yes_depth = sum(qty * (price_cents / 100) for price_cents, qty in yes_levels)
-            no_depth = sum(qty * (price_cents / 100) for price_cents, qty in no_levels)
+            book = data.get("orderbook_fp", {})
+            yes_levels = book.get("yes_dollars", [])
+            no_levels = book.get("no_dollars", [])
+            yes_depth = sum(float(price) * float(qty) for price, qty in yes_levels)
+            no_depth = sum(float(price) * float(qty) for price, qty in no_levels)
             return yes_depth, no_depth
         except Exception as e:
             logger.error(f"Failed to get order book for {ticker}: {e}")

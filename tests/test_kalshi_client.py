@@ -15,24 +15,27 @@ def _make_client():
     return client
 
 
-def test_filter_crypto_markets():
+def test_get_active_markets_queries_per_prefix():
     client = _make_client()
-    markets = [
-        {"ticker": "KXBTC-25MAR20-T70000", "status": "open"},
-        {"ticker": "TRUMP-APPROVAL", "status": "open"},
-        {"ticker": "KXETH-25MAR20-T4000", "status": "open"},
-    ]
-    filtered = client._filter_crypto_markets(markets)
-    assert len(filtered) == 2
-    assert filtered[0]["ticker"] == "KXBTC-25MAR20-T70000"
-    assert filtered[1]["ticker"] == "KXETH-25MAR20-T4000"
+    client._http.get.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {"markets": [
+            {"ticker": "KXBTC-25MAR20-T70000", "status": "open"},
+        ]},
+        raise_for_status=lambda: None,
+    )
+    markets = client.get_active_markets()
+    # Should have called _get once per crypto prefix (KXBTC, KXETH, KXSOL, KXXRP)
+    assert client._http.get.call_count == 4
+    # Each call returns 1 market, so total = 4
+    assert len(markets) == 4
 
 
 def test_get_market_prices():
     client = _make_client()
     client._http.get.return_value = MagicMock(
         status_code=200,
-        json=lambda: {"market": {"yes_ask": 45, "no_ask": 48}},
+        json=lambda: {"market": {"yes_ask_dollars": "0.4500", "no_ask_dollars": "0.4800"}},
         raise_for_status=lambda: None,
     )
     yes_price, no_price = client.get_market_prices("KXBTC-25MAR20-T70000")
@@ -44,13 +47,15 @@ def test_get_order_book_depth():
     client = _make_client()
     client._http.get.return_value = MagicMock(
         status_code=200,
-        json=lambda: {"orderbook": {
-            "yes": [[45, 100], [44, 200]],
-            "no": [[48, 150], [47, 50]],
+        json=lambda: {"orderbook_fp": {
+            "yes_dollars": [["0.45", "100"], ["0.44", "200"]],
+            "no_dollars": [["0.48", "150"], ["0.47", "50"]],
         }},
         raise_for_status=lambda: None,
     )
     yes_depth, no_depth = client.get_order_book_depth("KXBTC-25MAR20-T70000")
+    # yes: 0.45*100 + 0.44*200 = 45 + 88 = 133
+    # no: 0.48*150 + 0.47*50 = 72 + 23.5 = 95.5
     assert yes_depth == pytest.approx(133.0, abs=1.0)
     assert no_depth == pytest.approx(95.5, abs=1.0)
 

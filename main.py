@@ -78,13 +78,31 @@ class Bot:
         await asyncio.gather(*tasks)
 
     async def _dashboard_task(self):
-        """Run the FastAPI dashboard server."""
+        """Run the FastAPI dashboard server in a separate thread."""
         import uvicorn
+        import threading
+        for name in ("uvicorn.error", "uvicorn", "uvicorn.access"):
+            logging.getLogger(name).setLevel(logging.WARNING)
         app = create_app(self.db, bankroll=self.order_manager.bankroll)
-        config = uvicorn.Config(app, host="0.0.0.0", port=8080, log_level="warning")
-        server = uvicorn.Server(config)
-        logger.info("Dashboard running at http://localhost:8080")
-        await server.serve()
+        for port in (8080, 8081, 8082):
+            config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
+            self._dashboard_server = uvicorn.Server(config)
+            try:
+                thread = threading.Thread(target=self._dashboard_server.run, daemon=True)
+                thread.start()
+                # Wait briefly for the server to bind
+                await asyncio.sleep(2)
+                if self._dashboard_server.started:
+                    logger.info(f"Dashboard running at http://localhost:{port}")
+                    # Keep this task alive so it doesn't get collected
+                    while self._running:
+                        await asyncio.sleep(5)
+                    return
+                else:
+                    logger.warning(f"Port {port} failed to bind, trying next...")
+            except Exception as e:
+                logger.error(f"Dashboard error on port {port}: {e}")
+        logger.error("Dashboard could not bind to any port, continuing without dashboard")
 
     async def _strategy_loop(self):
         while self._running:
@@ -142,7 +160,12 @@ class Bot:
         logger.info(f"Final bankroll: ${self.order_manager.bankroll:.2f} | Daily PnL: ${daily_pnl:.2f}")
         await self.notifier.notify_bot_status("Stopped", self.order_manager.bankroll)
         logger.info("Shutdown complete")
-        sys.exit(0)
+        # Gracefully stop dashboard server, then cancel remaining tasks
+        if hasattr(self, "_dashboard_server"):
+            self._dashboard_server.should_exit = True
+        for task in asyncio.all_tasks():
+            if task is not asyncio.current_task():
+                task.cancel()
 
 
 if __name__ == "__main__":
