@@ -95,31 +95,39 @@ class Bot:
         await asyncio.gather(*tasks)
 
     async def _dashboard_task(self):
-        """Run the FastAPI dashboard server in a separate thread."""
+        """Run the FastAPI dashboard server with auto-restart watchdog."""
         import uvicorn
         import threading
         for name in ("uvicorn.error", "uvicorn", "uvicorn.access"):
             logging.getLogger(name).setLevel(logging.WARNING)
-        app = create_app(self.db, bankroll=self.order_manager.bankroll)
-        for port in (8080, 8081, 8082):
-            config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
-            self._dashboard_server = uvicorn.Server(config)
-            try:
-                thread = threading.Thread(target=self._dashboard_server.run, daemon=True)
-                thread.start()
-                # Wait briefly for the server to bind
-                await asyncio.sleep(2)
-                if self._dashboard_server.started:
-                    logger.info(f"Dashboard running at http://localhost:{port}")
-                    # Keep this task alive so it doesn't get collected
-                    while self._running:
-                        await asyncio.sleep(5)
-                    return
-                else:
-                    logger.warning(f"Port {port} failed to bind, trying next...")
-            except Exception as e:
-                logger.error(f"Dashboard error on port {port}: {e}")
-        logger.error("Dashboard could not bind to any port, continuing without dashboard")
+
+        while self._running:
+            app = create_app(self.db, bankroll=self.order_manager.bankroll)
+            started = False
+            for port in (8080, 8081, 8082):
+                config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
+                self._dashboard_server = uvicorn.Server(config)
+                try:
+                    thread = threading.Thread(target=self._dashboard_server.run, daemon=True)
+                    thread.start()
+                    await asyncio.sleep(2)
+                    if self._dashboard_server.started:
+                        logger.info(f"Dashboard running at http://localhost:{port}")
+                        started = True
+                        # Monitor thread — restart if it dies
+                        while self._running and thread.is_alive():
+                            await asyncio.sleep(5)
+                        if self._running:
+                            logger.warning("Dashboard thread died, restarting in 5s...")
+                            await asyncio.sleep(5)
+                        break
+                    else:
+                        logger.warning(f"Port {port} failed to bind, trying next...")
+                except Exception as e:
+                    logger.error(f"Dashboard error on port {port}: {e}")
+            if not started:
+                logger.error("Dashboard could not bind to any port, retrying in 30s...")
+                await asyncio.sleep(30)
 
     async def _strategy_loop(self):
         strategies = [
