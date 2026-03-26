@@ -25,15 +25,41 @@ class Config:
         self.MAX_DAILY_LOSS = float(os.getenv("MAX_DAILY_LOSS", "200"))
         self.MAX_CONSECUTIVE_LOSSES = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "5"))
 
+        # Market Maker strategy
+        self.MM_ENABLED = os.getenv("MM_ENABLED", "false").lower() == "true"
+        self.MM_MIN_VOLUME = int(os.getenv("MM_MIN_VOLUME", "1000"))
+        self.MM_SPREAD_CENTS = int(os.getenv("MM_SPREAD_CENTS", "4"))
+        self.MM_REQUOTE_INTERVAL = int(os.getenv("MM_REQUOTE_INTERVAL", "30"))
+        self.MM_MAX_POSITION = float(os.getenv("MM_MAX_POSITION", "200"))
+        self.MM_MAX_MARKETS = int(os.getenv("MM_MAX_MARKETS", "3"))
+
+        # Shutdown Fade strategy
+        self.SHUTDOWN_FADE_ENABLED = os.getenv("SHUTDOWN_FADE_ENABLED", "false").lower() == "true"
+        self.SHUTDOWN_FADE_THRESHOLD = float(os.getenv("SHUTDOWN_FADE_THRESHOLD", "0.25"))
+        self.SHUTDOWN_FADE_SCALE_LEVELS = int(os.getenv("SHUTDOWN_FADE_SCALE_LEVELS", "3"))
+        self.SHUTDOWN_FADE_MAX_POSITION = float(os.getenv("SHUTDOWN_FADE_MAX_POSITION", "500"))
+
+        # Value Spread Scanner strategy
+        self.SPREAD_SCANNER_ENABLED = os.getenv("SPREAD_SCANNER_ENABLED", "false").lower() == "true"
+        self.SPREAD_SCANNER_MIN_WIDTH = float(os.getenv("SPREAD_SCANNER_MIN_WIDTH", "0.08"))
+        self.SPREAD_SCANNER_MIN_VOLUME = int(os.getenv("SPREAD_SCANNER_MIN_VOLUME", "500"))
+        self.SPREAD_SCANNER_INTERVAL = int(os.getenv("SPREAD_SCANNER_INTERVAL", "300"))
+
+        # Mentions Market Trader strategy
+        self.MENTIONS_ENABLED = os.getenv("MENTIONS_ENABLED", "false").lower() == "true"
+        self.MENTIONS_MIN_EDGE = float(os.getenv("MENTIONS_MIN_EDGE", "0.15"))
+        self.MENTIONS_FREQUENCY_API_URL = os.getenv("MENTIONS_FREQUENCY_API_URL", "")
+
         # Monitoring
         self.TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
         self.TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
-        # Binance WebSocket URLs
+        # Binance WebSocket URLs (US fallback for regions where global is blocked)
+        binance_base = os.getenv("BINANCE_WS_BASE", "wss://stream.binance.us:9443")
         self.BINANCE_WS_URLS = {
-            "BTC": "wss://stream.binance.com:9443/ws/btcusdt@aggTrade",
-            "ETH": "wss://stream.binance.com:9443/ws/ethusdt@aggTrade",
-            "SOL": "wss://stream.binance.com:9443/ws/solusdt@aggTrade",
+            "BTC": f"{binance_base}/ws/btcusdt@aggTrade",
+            "ETH": f"{binance_base}/ws/ethusdt@aggTrade",
+            "SOL": f"{binance_base}/ws/solusdt@aggTrade",
         }
 
     @property

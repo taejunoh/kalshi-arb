@@ -5,9 +5,14 @@ from monitoring.logger import setup_logger, TradeLogger
 
 
 def test_setup_logger_returns_logger(tmp_path):
+    import logging
+    # Clear root handlers from previous tests
+    logging.getLogger().handlers.clear()
     logger = setup_logger("test_bot", log_dir=str(tmp_path))
     assert logger.name == "test_bot"
-    assert len(logger.handlers) >= 2
+    # Handlers are on the root logger now (all module loggers inherit)
+    root = logging.getLogger()
+    assert len(root.handlers) >= 2
 
 
 def test_trade_logger_writes_csv(tmp_path):

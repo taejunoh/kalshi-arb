@@ -217,6 +217,58 @@ class KalshiClient:
             logger.error(f"Balance check failed: {e}")
             return None
 
+    # ── Broad market methods (all markets, not just crypto) ──────────
+
+    def get_all_active_markets(self, limit: int = 200) -> list[dict]:
+        """Fetch ALL open markets with cursor-based pagination."""
+        all_markets = []
+        cursor = None
+        try:
+            while True:
+                url = f"/trade-api/v2/markets?status=open&limit={limit}"
+                if cursor:
+                    url += f"&cursor={cursor}"
+                data = self._get(url)
+                if data is None:
+                    break
+                markets = data.get("markets", [])
+                if not markets:
+                    break
+                all_markets.extend(markets)
+                cursor = data.get("cursor")
+                if not cursor:
+                    break
+        except Exception as e:
+            logger.error(f"Failed to fetch all markets: {e}")
+        return all_markets
+
+    def get_orderbook_levels(self, ticker: str) -> dict:
+        """Return raw orderbook levels: {"yes": [(price, qty), ...], "no": [...]}."""
+        try:
+            data = self._get(f"/trade-api/v2/markets/{ticker}/orderbook")
+            if data is None:
+                return {"yes": [], "no": []}
+            book = data.get("orderbook_fp", {})
+            yes_levels = [(float(p), float(q)) for p, q in book.get("yes_dollars", [])]
+            no_levels = [(float(p), float(q)) for p, q in book.get("no_dollars", [])]
+            return {"yes": yes_levels, "no": no_levels}
+        except Exception as e:
+            logger.error(f"Failed to get orderbook levels for {ticker}: {e}")
+            return {"yes": [], "no": []}
+
+    def batch_cancel_orders(self, order_ids: list[str]) -> dict:
+        """Cancel multiple orders. Returns {"succeeded": [...], "failed": [...]}."""
+        succeeded = []
+        failed = []
+        for oid in order_ids:
+            if self.cancel_order(oid):
+                succeeded.append(oid)
+            else:
+                failed.append(oid)
+        return {"succeeded": succeeded, "failed": failed}
+
+    # ── Preflight ──────────────────────────────────────────────────
+
     def preflight_check(self) -> bool:
         """Verify API connectivity before live trading."""
         try:

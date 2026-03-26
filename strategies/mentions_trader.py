@@ -1,0 +1,109 @@
+import logging
+import re
+import time
+from typing import Optional
+
+from core.external_data import FrequencyDataProvider
+
+logger = logging.getLogger("mentions_trader")
+
+# Patterns to match mentions markets
+MENTION_PATTERNS = [
+    re.compile(r"Will (.+?) (mention|say|reference|bring up) (.+?)[\?\.]", re.IGNORECASE),
+    re.compile(r"Will (.+?) (mention|say) ['\"](.+?)['\"]", re.IGNORECASE),
+]
+
+
+class MentionsTraderStrategy:
+    """Trade mentions markets using historical speech frequency data."""
+
+    def __init__(self, config, order_manager, market_scanner, kalshi_client):
+        self.config = config
+        self._order_manager = order_manager
+        self._scanner = market_scanner
+        self._client = kalshi_client
+        self._data_provider = FrequencyDataProvider(config.MENTIONS_FREQUENCY_API_URL)
+        self._evaluated: dict[str, float] = {}  # ticker -> last eval time
+        self._last_summary_time = 0.0
+
+    def parse_market_title(self, title: str) -> Optional[tuple[str, str]]:
+        """Extract (person, keyword) from market title. Returns None if no match."""
+        for pattern in MENTION_PATTERNS:
+            match = pattern.search(title)
+            if match:
+                person = match.group(1).strip()
+                keyword = match.group(3).strip().strip("'\"")
+                return person, keyword
+        return None
+
+    def evaluate(self, yes_price: float, historical_freq: float) -> Optional[dict]:
+        """Compare market price to historical frequency. Return trade signal if edge exists."""
+        min_edge = self.config.MENTIONS_MIN_EDGE
+        edge = historical_freq - yes_price
+        if edge > min_edge:
+            # Market underprices YES
+            return {"side": "yes", "price": yes_price, "edge": edge}
+        elif edge < -min_edge:
+            # Market overprices YES → buy NO
+            no_price = 1.0 - yes_price
+            return {"side": "no", "price": no_price, "edge": abs(edge)}
+        return None
+
+    async def scan_and_execute(self):
+        if not self.config.MENTIONS_ENABLED:
+            return
+        if self._order_manager.is_circuit_breaker_active():
+            return
+
+        markets = self._scanner.filter_markets(r"(?i)will .+ (mention|say)")
+        now = time.time()
+        trades_attempted = 0
+
+        for market in markets:
+            ticker = market["ticker"]
+            # Rate-limit per-market evaluation to every 5 minutes
+            if now - self._evaluated.get(ticker, 0) < 300:
+                continue
+            self._evaluated[ticker] = now
+
+            try:
+                title = market.get("title", "")
+                parsed = self.parse_market_title(title)
+                if parsed is None:
+                    continue
+                person, keyword = parsed
+
+                freq = await self._data_provider.get_mention_frequency(person, keyword)
+                if freq is None:
+                    continue
+
+                yes_price, no_price = self._client.get_market_prices(ticker)
+                if yes_price is None:
+                    continue
+
+                signal = self.evaluate(yes_price, freq)
+                if signal is None:
+                    continue
+
+                size = self._order_manager.calculate_position_size(signal["edge"])
+                if size < 1.0:
+                    continue
+
+                logger.info(
+                    f"[MENTIONS] {ticker}: '{person}' + '{keyword}' "
+                    f"freq={freq:.2f} vs price={yes_price:.2f} → {signal['side']} ${size:.2f}"
+                )
+                await self._order_manager.market_order(
+                    ticker=ticker, side=signal["side"], size_usdc=size,
+                    price=signal["price"], strategy="mentions_trader", market_id=ticker,
+                )
+                trades_attempted += 1
+            except Exception as e:
+                logger.error(f"Mentions trader error on {ticker}: {e}")
+
+        if now - self._last_summary_time >= 60:
+            logger.info(
+                f"[MENTIONS] Found {len(markets)} mention markets, "
+                f"{trades_attempted} trades attempted"
+            )
+            self._last_summary_time = now

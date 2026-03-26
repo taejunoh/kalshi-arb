@@ -14,6 +14,7 @@ class OrderManager:
         self._daily_loss = 0.0
         self._consecutive_losses = 0
         self._pause_until = 0.0
+        self._positions: dict[tuple[str, str], dict] = {}  # (strategy, ticker) -> position
 
     def calculate_position_size(self, net_edge: float) -> float:
         kelly_size = self.bankroll * self.config.KELLY_FRACTION * net_edge
@@ -41,6 +42,42 @@ class OrderManager:
 
     def reset_daily(self):
         self._daily_loss = 0.0
+
+    # ── Position tracking ────────────────────────────────────────────
+
+    def get_position(self, strategy: str, ticker: str) -> dict:
+        return self._positions.get((strategy, ticker), {"side": None, "qty": 0, "avg_price": 0.0, "size_usdc": 0.0})
+
+    def update_position(self, strategy: str, ticker: str, side: str, qty: int, price: float, size_usdc: float):
+        key = (strategy, ticker)
+        pos = self._positions.get(key, {"side": None, "qty": 0, "avg_price": 0.0, "size_usdc": 0.0})
+        if pos["side"] == side or pos["qty"] == 0:
+            total_cost = pos["avg_price"] * pos["qty"] + price * qty
+            pos["qty"] += qty
+            pos["avg_price"] = total_cost / pos["qty"] if pos["qty"] > 0 else 0.0
+            pos["side"] = side
+            pos["size_usdc"] += size_usdc
+        else:
+            # Opposite side reduces position
+            pos["qty"] -= qty
+            pos["size_usdc"] -= size_usdc
+            if pos["qty"] <= 0:
+                pos = {"side": None, "qty": 0, "avg_price": 0.0, "size_usdc": 0.0}
+        self._positions[key] = pos
+
+    def get_strategy_exposure(self, strategy: str) -> float:
+        return sum(p["size_usdc"] for (s, _), p in self._positions.items() if s == strategy)
+
+    async def requote(self, old_order_id: str, ticker: str, side: str, new_price: float,
+                      size_usdc: float, strategy: str):
+        """Cancel existing order and place a new one. Returns new order result."""
+        cancelled = await self.cancel_order(old_order_id)
+        if not cancelled:
+            logger.warning(f"Requote: failed to cancel {old_order_id}, skipping replacement")
+            return None
+        return await self.limit_order(ticker, side, new_price, size_usdc, strategy, ticker)
+
+    # ── Order execution ────────────────────────────────────────────
 
     async def market_order(self, ticker, side, size_usdc, price, strategy, market_id):
         if self.config.is_paper_mode:

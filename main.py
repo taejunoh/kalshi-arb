@@ -11,6 +11,10 @@ from core.market_scanner import MarketScanner
 from core.order_manager import OrderManager
 from strategies.sum_arb import SumArbStrategy
 from strategies.maker_preorder import MakerPreorderStrategy
+from strategies.shutdown_fade import ShutdownFadeStrategy
+from strategies.spread_scanner import SpreadScannerStrategy
+from strategies.market_maker import MarketMakerStrategy
+from strategies.mentions_trader import MentionsTraderStrategy
 from monitoring.logger import setup_logger, TradeLogger
 from monitoring.notifier import TelegramNotifier
 from monitoring.dashboard.api import create_app
@@ -30,6 +34,18 @@ class Bot:
             self.config, self.order_manager, self.scanner, self.kalshi_client
         )
         self.maker_preorder = MakerPreorderStrategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client
+        )
+        self.shutdown_fade = ShutdownFadeStrategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client
+        )
+        self.spread_scanner = SpreadScannerStrategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client
+        )
+        self.market_maker = MarketMakerStrategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client
+        )
+        self.mentions_trader = MentionsTraderStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client
         )
         self.trade_logger = TradeLogger()
@@ -61,6 +77,7 @@ class Bot:
         tasks = [
             asyncio.create_task(self._price_feed_task()),
             asyncio.create_task(self.scanner.poll_loop()),
+            asyncio.create_task(self.scanner.all_markets_poll_loop()),
             asyncio.create_task(self._strategy_loop()),
             asyncio.create_task(self._dashboard_task()),
             asyncio.create_task(self._daily_reset_task()),
@@ -105,17 +122,21 @@ class Bot:
         logger.error("Dashboard could not bind to any port, continuing without dashboard")
 
     async def _strategy_loop(self):
+        strategies = [
+            ("sum_arb", self.sum_arb),
+            ("maker_preorder", self.maker_preorder),
+            ("shutdown_fade", self.shutdown_fade),
+            ("spread_scanner", self.spread_scanner),
+            ("market_maker", self.market_maker),
+            ("mentions_trader", self.mentions_trader),
+        ]
         while self._running:
-            try:
-                await self.sum_arb.scan_and_execute()
-            except Exception as e:
-                logger.error(f"Sum arb loop error: {e}")
-                await self.notifier.notify_error(f"Sum arb: {e}")
-            try:
-                await self.maker_preorder.scan_and_execute()
-            except Exception as e:
-                logger.error(f"Maker pre-order loop error: {e}")
-                await self.notifier.notify_error(f"Maker pre-order: {e}")
+            for name, strategy in strategies:
+                try:
+                    await strategy.scan_and_execute()
+                except Exception as e:
+                    logger.error(f"{name} loop error: {e}")
+                    await self.notifier.notify_error(f"{name}: {e}")
             await asyncio.sleep(0.2)
 
     async def _daily_reset_task(self):
