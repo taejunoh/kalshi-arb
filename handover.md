@@ -2,12 +2,12 @@
 
 ## Project Overview
 
-Kalshi의 YES/NO 컨트랙트 가격 비효율성을 이용한 자동 차익거래 봇. 두 가지 전략을 통해 무위험 또는 저위험 수익을 추구한다.
+Kalshi 예측 시장의 가격 비효율성을 이용한 자동 트레이딩 봇. 6개 전략을 통해 차익거래, 마켓 메이킹, 방향성 베팅을 수행한다.
 
 - **위치**: `/Users/taejunoh/Desktop/LFG/kalshi-arb/`
 - **언어**: Python 3.11
-- **상태**: Paper Trading 실행 중 ($1,000 bankroll)
-- **테스트**: 63개 전체 통과
+- **상태**: Paper Trading 실행 중 ($1,000 bankroll, 6개 전략 활성)
+- **테스트**: 88개 전체 통과
 
 ---
 
@@ -17,22 +17,27 @@ Kalshi의 YES/NO 컨트랙트 가격 비효율성을 이용한 자동 차익거�
 kalshi-arb/
 ├── main.py                          # 봇 오케스트레이터 (진입점)
 ├── core/
-│   ├── config.py                    # .env 기반 설정, 수수료 계산
+│   ├── config.py                    # .env 기반 설정, 수수료 계산, 전략별 파라미터
 │   ├── database.py                  # SQLite (aiosqlite) — 거래/주문 저장
 │   ├── price_feed.py                # Binance WebSocket — BTC/ETH/SOL 실시간 가격
-│   ├── kalshi_client.py             # REST API v2 래퍼, 마켓 필터링, 잔고 확인
-│   ├── market_scanner.py            # 활성 마켓 폴링 (5초), 60초 주기 INFO 로깅
-│   └── order_manager.py             # Paper/Live 주문 실행, 서킷 브레이커
+│   ├── kalshi_client.py             # REST API v2 래퍼 (크립토 + 전체 마켓 + 오더북 레벨)
+│   ├── market_scanner.py            # 이중 폴링: 크립토(5초) + 전략 마켓(30초, 타겟 시리즈)
+│   ├── order_manager.py             # Paper/Live 주문, 포지션 추적, 리쿼팅, 서킷 브레이커
+│   └── external_data.py             # 멘션 빈도 데이터 (API + 정적 JSON 폴백)
 ├── strategies/
-│   ├── sum_arb.py                   # Yes/No Sum Arbitrage 전략 (60초 주기 스캔 요약)
-│   └── maker_preorder.py            # Maker Pre-Order 전략 (5분 마켓)
+│   ├── sum_arb.py                   # Yes/No Sum Arbitrage (크립토)
+│   ├── maker_preorder.py            # Maker Pre-Order (5분 마켓)
+│   ├── market_maker.py              # 양방향 마켓 메이킹 (리쿼팅 30초)
+│   ├── shutdown_fade.py             # 정부 셧다운 페이드 (3단계 스케일인)
+│   ├── spread_scanner.py            # 스프레드 스캐너 (VWAP 기반)
+│   └── mentions_trader.py           # 멘션 마켓 트레이더 (연설 빈도 분석)
 ├── monitoring/
-│   ├── logger.py                    # 루트 로거 설정, 일별 로테이션 + CSV 트레이드 로그
+│   ├── logger.py                    # 루트 로거, 일별 로테이션, 서드파티 노이즈 억제
 │   ├── notifier.py                  # Telegram 알림 (속도 제한 포함)
 │   └── dashboard/
 │       ├── api.py                   # FastAPI — /status, /trades, /orders, /performance
 │       └── static/index.html        # 다크 테마 대시보드 UI
-├── tests/                           # 14개 테스트 파일, 63개 테스트
+├── tests/                           # 18개 테스트 파일, 88개 테스트
 ├── docs/setup-guide.md              # Kalshi 계정 설정 가이드
 ├── requirements.txt                 # 의존성
 └── .env.example                     # 환경변수 템플릿
@@ -40,154 +45,146 @@ kalshi-arb/
 
 ---
 
-## Strategies
+## Strategies (6개)
 
 ### 1. Yes/No Sum Arbitrage (`strategies/sum_arb.py`)
-
-**원리**: YES 가격 + NO 가격 < $1.00 (수수료 포함)이면 양쪽 모두 매수. 결과에 관계없이 차익 발생.
-
-- 마켓 스캐너가 5초 간격으로 활성 마켓 폴링
-- `best_ask_yes + best_ask_no < 1.0 - total_fees` 조건 충족 시 시그널 발생
-- Kelly fraction 기반 포지션 사이징
-- 최소 수익률 임계값: 0.5% (설정 가능)
-- 60초 주기로 스캔 요약 로깅 (체크한 마켓 수, 최선 갭, 티커)
+**원리**: YES + NO < $1.00 (수수료 포함) → 양쪽 매수, 무위험 차익.
+- 크립토 마켓 300개 스캔 (5초 간격)
+- 최소 갭: 3센트 (설정 가능)
+- **현황**: 효율적 시장으로 기회 없음 (최선 갭: -0.01)
 
 ### 2. Maker Pre-Order (`strategies/maker_preorder.py`)
+**원리**: 5분 마켓에 양쪽 리밋 오더 배치, 합산 < $1.00 → 차익.
+- 4,341개 주문 배치 (paper mode)
 
-**원리**: 5분 마켓 오픈 전에 양쪽 리밋 오더 배치. 합산 < $1.00이면 차익 확보.
+### 3. Market Maker (`strategies/market_maker.py`) ⭐ NEW
+**원리**: 양방향 호가 제시, 스프레드에서 수익. @debl00b ($160M vol) 영감.
+- 유동성 높은 크립토 마켓 최대 3개 동시 호가
+- 오더북 레벨 기반 mid price 계산 (VWAP)
+- 30초 리쿼팅 (cancel + replace)
+- 인벤토리 스큐: 포지션 편중 시 호가 조정
+- **현황**: 178개 주문 활성 리쿼팅 중
 
-- Binance 가격 피드로 예상 결과 방향 파악
-- 오픈 전 YES/NO 양쪽에 maker 주문 배치
-- 마켓 종료 시 미체결 주문 자동 취소
-- 주문 모니터링 루프 (2초 간격)
+### 4. Shutdown Fade (`strategies/shutdown_fade.py`) ⭐ NEW
+**원리**: 정부 셧다운 마켓에서 YES > 25c일 때 NO 매수. @GaetenD ($530K) 영감.
+- 키워드 검색: "shutdown", "appropriations", "funding deadline"
+- 3단계 스케일인 (25c, 40c, 55c)
+- 최대 포지션: $500/마켓
+- **현황**: 15 trades 실행, $2,500 총 규모 (KXFEDMENTION, KXNUMSHUTDOWNS)
+
+### 5. Value Spread Scanner (`strategies/spread_scanner.py`) ⭐ NEW
+**원리**: 넓은 스프레드 마켓에서 VWAP 대비 저평가 측 매수. @Foster/$Domahhhh 영감.
+- 295개 전략 마켓 스캔 (60초 간격)
+- 스코어링: `spread_width × volume / days_to_close`
+- 오더북 VWAP 근사로 fair value 추정
+- 최소 스프레드: 5센트, 최소 거래량: 100
+- **현황**: 31 trades 실행, $329 총 규모 (주로 KXFED 금리 마켓)
+
+### 6. Mentions Trader (`strategies/mentions_trader.py`) ⭐ NEW
+**원리**: "Will X say Y?" 마켓에서 연설 빈도 데이터 기반 트레이딩. @Foster/$theduckguesses 영감.
+- 제목 패턴 매칭: `"Will .* (mention|say)"`
+- 외부 API 또는 정적 JSON에서 빈도 데이터 조회
+- 최소 엣지: 15%
+- **현황**: 48개 멘션 마켓 발견, 빈도 데이터 미설정으로 트레이딩 대기 중
 
 ---
 
 ## Key Components
 
-### Config (`core/config.py`)
-- `.env` 파일에서 모든 설정 로드
-- Kalshi 수수료 계산 (컨트랙트당 $0.07 고정)
-- `TRADING_MODE=paper|live` 로 모드 전환
-
 ### Kalshi Client (`core/kalshi_client.py`)
-- **API 필드**: `yes_ask_dollars` / `no_ask_dollars` (문자열 소수, e.g., `"0.4500"`)
-- **오더북**: `orderbook_fp` → `yes_dollars` / `no_dollars` (가격/수량 문자열 배열)
-- **마켓 조회**: `series_ticker` 파라미터로 KXBTC, KXETH, KXSOL, KXXRP 직접 쿼리
-- **RSA-PSS 서명**: `cryptography` 라이브러리 `padding.PSS` + `SHA256`
-
-### Order Manager (`core/order_manager.py`)
-- **Paper Mode**: 시뮬레이션 주문 실행, DB에 기록
-- **Live Mode**: `cryptography + httpx`를 통한 실제 주문
-- **Circuit Breaker**: 일일 $200 손실 한도, 연속 5회 손실 한도
-- **Kelly Fraction**: 최적 베팅 비율 계산
+- **크립토 마켓**: `get_active_markets()` — KXBTC/KXETH/KXSOL/KXXRP 시리즈
+- **전체 마켓**: `get_all_active_markets()` — 커서 기반 페이지네이션 (836K+ 마켓)
+- **오더북 레벨**: `get_orderbook_levels(ticker)` → `{"yes": [(price, qty), ...], "no": [...]}`
+- **배치 취소**: `batch_cancel_orders(order_ids)` — 순차 취소 + 에러 처리
+- **API 필드**: `yes_ask_dollars` / `no_ask_dollars` (문자열 소수)
+- **RSA-PSS 서명**: `cryptography` 라이브러리
 
 ### Market Scanner (`core/market_scanner.py`)
-- 5초 간격 활성 마켓 폴링
-- Capital Lock: 중복 진입 방지
-- 60초 주기 INFO 로깅 (마켓 수, locked/available 현황)
+- **크립토 풀**: 5초 간격 폴링 (300개 마켓)
+- **전략 풀**: 30초 간격 타겟 시리즈 쿼리 (295개 마켓, ~2초 소요)
+  - 타겟 시리즈: KXFEDMENTION, KXNUMSHUTDOWNS, KXGOVSHUT, KXINX, KXCPI, KXGDP, KXFED 등 16개
+  - 최초 전체 스캔(836K, 10분) → 타겟 스캔(295, 2초)으로 330배 개선
+- `search_markets(keyword)` — 제목 키워드 검색
+- `filter_markets(regex)` — 정규식 매칭
+- `run_in_executor`로 동기 HTTP를 비동기 이벤트 루프에서 비차단 실행
 
-### Price Feed (`core/price_feed.py`)
-- Binance WebSocket으로 BTC/ETH/SOL 실시간 가격
-- 자동 재연결 (최대 5회, 지수 백오프)
-- 15분 캔들 추적
+### Order Manager (`core/order_manager.py`)
+- **Paper/Live 이중 모드**: 시뮬레이션 또는 실제 주문
+- **포지션 추적**: `_positions[(strategy, ticker)]` → `{side, qty, avg_price, size_usdc}`
+- **리쿼팅**: `requote(old_order_id, ...)` — 취소 + 신규 배치 (마켓 메이커용)
+- **Circuit Breaker**: 일일 $200 손실 한도, 연속 5회 손실 → 15분 일시정지
+- **Kelly Fraction**: 최적 포지션 사이징
 
-### Database (`core/database.py`)
-- aiosqlite 기반 비동기 SQLite
-- trades 테이블: 체결 기록
-- orders 테이블: 주문 상태 추적
+### External Data (`core/external_data.py`)
+- `FrequencyDataProvider`: 멘션 빈도 데이터 제공
+- API 우선 조회 → 정적 JSON 폴백
+- httpx 비동기 클라이언트 (5초 타임아웃)
 
-### Dashboard (`main.py` → `monitoring/dashboard/`)
-- 데몬 스레드에서 uvicorn 실행 (asyncio 이벤트 루프 충돌 방지)
-- 포트 8080 → 8081 → 8082 순차 시도
-- 봇 종료 시 `should_exit` 플래그로 graceful shutdown
-
-### Pre-flight Checks (`main.py`)
-Live 모드 전환 시 자동 검증:
-1. API 키 존재 확인
-2. Kalshi 계정 연결 확인
-3. 잔고 확인 (최소 $10)
-4. REST API v2 연결 테스트
-
----
-
-## Monitoring Stack
-
-### Logs (`monitoring/logger.py`)
-- 루트 로거 설정 → 모든 모듈 로거 (market_scanner, sum_arb 등) 자동 캡처
-- `logs/bot.log` — 일별 로테이션, DEBUG 레벨
-- `logs/trades.csv` — 모든 거래 CSV 기록
-- 서드파티 노이즈 억제: aiosqlite, httpcore, httpx → WARNING 레벨
-
-### Telegram (`monitoring/notifier.py`)
-- 거래 체결 알림
-- 에러 알림 (ERROR 레벨 이상)
-- 일일 성과 요약 (매일 자정)
-- 속도 제한: 분당 20건
-
-### Web Dashboard (`monitoring/dashboard/`)
-- FastAPI 서버 (포트 8080, 데몬 스레드)
-- 실시간 봇 상태, 최근 거래, 주문 목록
-- 성과 차트 (승률, PnL 추이)
+### Dashboard (`monitoring/dashboard/`)
+- 데몬 스레드에서 uvicorn 실행
+- FastAPI: `/api/status`, `/api/trades?strategy=X`, `/api/orders`, `/api/performance`
 - 다크 테마 UI, 10초 자동 새로고침
-
----
-
-## How to Run
-
-### 1. 환경 설정
-```bash
-cd /Users/taejunoh/Desktop/LFG/kalshi-arb
-cp .env.example .env
-# .env 파일에 KALSHI_API_KEY_ID, KALSHI_RSA_PRIVATE_KEY_PATH 등 입력
-```
-
-### 2. 의존성 설치
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 3. Paper Trading 실행
-```bash
-# .env에서 TRADING_MODE=paper 확인
-source venv/bin/activate
-python main.py
-```
-
-### 4. 대시보드 확인
-브라우저에서 `http://localhost:8080` 접속
-
-### 5. Live Trading 전환
-```bash
-# .env 수정
-TRADING_MODE=live
-KALSHI_API_KEY_ID=your_key_id
-KALSHI_RSA_PRIVATE_KEY_PATH=/path/to/your/private_key.pem
-```
 
 ---
 
 ## Configuration Reference (`.env`)
 
+### Core
 | 변수 | 설명 | 기본값 |
 |------|------|--------|
 | `TRADING_MODE` | paper / live | paper |
 | `INITIAL_BANKROLL` | 초기 자본 (USD) | 100 |
 | `KALSHI_API_KEY_ID` | Kalshi API 키 ID | — |
-| `KALSHI_RSA_PRIVATE_KEY_PATH` | RSA 프라이빗 키 PEM 파일 경로 | — |
-| `KALSHI_API_BASE_URL` | Kalshi API 베이스 URL | https://api.elections.kalshi.com |
+| `KALSHI_RSA_PRIVATE_KEY_PATH` | RSA 프라이빗 키 PEM 경로 | — |
+| `KALSHI_API_BASE_URL` | API 베이스 URL | https://api.elections.kalshi.com |
 | `KALSHI_FEE_PER_CONTRACT` | 컨트랙트당 수수료 | 0.07 |
-| `SUM_ARB_MIN_GAP` | Sum Arb 최소 갭 | 0.03 |
-| `MAKER_TARGET_SUM` | Maker 타겟 합산 | 0.96 |
+
+### Risk & Sizing
+| 변수 | 설명 | 기본값 |
+|------|------|--------|
 | `KELLY_FRACTION` | Kelly 비율 | 0.25 |
 | `MAX_SINGLE_TRADE_PCT` | 최대 단일 거래 비율 | 0.10 |
-| `MAX_DIRECTIONAL_LOSS` | 최대 방향성 손실 | 50 |
 | `MAX_DAILY_LOSS` | 일일 손실 한도 | 200 |
 | `MAX_CONSECUTIVE_LOSSES` | 연속 손실 한도 | 5 |
-| `TELEGRAM_BOT_TOKEN` | 텔레그램 봇 토큰 | — |
-| `TELEGRAM_CHAT_ID` | 텔레그램 채팅 ID | — |
+
+### Strategy: Sum Arb / Maker Pre-Order
+| 변수 | 설명 | 기본값 |
+|------|------|--------|
+| `SUM_ARB_MIN_GAP` | 최소 갭 | 0.03 |
+| `MAKER_TARGET_SUM` | 타겟 합산 | 0.96 |
+
+### Strategy: Market Maker ⭐
+| 변수 | 설명 | 기본값 |
+|------|------|--------|
+| `MM_ENABLED` | 활성화 | false |
+| `MM_MIN_VOLUME` | 최소 거래량 | 1000 |
+| `MM_SPREAD_CENTS` | 스프레드 (센트) | 4 |
+| `MM_REQUOTE_INTERVAL` | 리쿼팅 간격 (초) | 30 |
+| `MM_MAX_POSITION` | 마켓당 최대 포지션 ($) | 200 |
+| `MM_MAX_MARKETS` | 최대 동시 호가 마켓 수 | 3 |
+
+### Strategy: Shutdown Fade ⭐
+| 변수 | 설명 | 기본값 |
+|------|------|--------|
+| `SHUTDOWN_FADE_ENABLED` | 활성화 | false |
+| `SHUTDOWN_FADE_THRESHOLD` | YES 진입 임계값 | 0.25 |
+| `SHUTDOWN_FADE_SCALE_LEVELS` | 스케일인 단계 수 | 3 |
+| `SHUTDOWN_FADE_MAX_POSITION` | 마켓당 최대 포지션 ($) | 500 |
+
+### Strategy: Spread Scanner ⭐
+| 변수 | 설명 | 기본값 |
+|------|------|--------|
+| `SPREAD_SCANNER_ENABLED` | 활성화 | false |
+| `SPREAD_SCANNER_MIN_WIDTH` | 최소 스프레드 | 0.05 |
+| `SPREAD_SCANNER_MIN_VOLUME` | 최소 거래량 | 100 |
+| `SPREAD_SCANNER_INTERVAL` | 스캔 간격 (초) | 60 |
+
+### Strategy: Mentions Trader ⭐
+| 변수 | 설명 | 기본값 |
+|------|------|--------|
+| `MENTIONS_ENABLED` | 활성화 | false |
+| `MENTIONS_MIN_EDGE` | 최소 엣지 (%) | 0.15 |
+| `MENTIONS_FREQUENCY_API_URL` | 빈도 데이터 API URL | — |
 
 ---
 
@@ -198,7 +195,7 @@ source venv/bin/activate
 python -m pytest tests/ -v
 ```
 
-14개 테스트 파일, 63개 테스트 전체 통과:
+18개 테스트 파일, 88개 테스트 전체 통과:
 - `test_config.py` — 설정 로드, 수수료 계산
 - `test_database.py` — DB CRUD 연산
 - `test_price_feed.py` — WebSocket 연결, 캔들 추적
@@ -207,6 +204,10 @@ python -m pytest tests/ -v
 - `test_market_scanner.py` — 마켓 폴링, 캐싱
 - `test_sum_arb.py` — Sum Arb 시그널 감지
 - `test_maker_preorder.py` — Pre-Order 로직
+- `test_market_maker.py` — mid 계산, 호가, 리쿼팅, 인벤토리 스큐, 서킷 브레이커
+- `test_shutdown_fade.py` — 키워드 매칭, 스케일인, 최대 포지션
+- `test_spread_scanner.py` — 스프레드 계산, 스코어링, VWAP, 저평가 탐지
+- `test_mentions_trader.py` — 제목 파싱, 시그널 생성, 엣지 계산
 - `test_logger.py` — 로그 로테이션
 - `test_notifier.py` — Telegram 알림
 - `test_dashboard_api.py` — API 엔드포인트
@@ -218,81 +219,88 @@ python -m pytest tests/ -v
 
 ## Recent Work
 
+### 2026-03-25: 4개 신규 전략 + 인프라 확장
+
+**4개 전략 추가** (`0817d08`):
+- Market Maker: 양방향 호가 + 30초 리쿼팅 + 인벤토리 스큐
+- Shutdown Fade: 키워드 검색 + 3단계 스케일인
+- Spread Scanner: 오더북 VWAP + 스프레드 스코어링
+- Mentions Trader: 제목 정규식 파싱 + 외부 빈도 데이터
+
+**인프라 확장** (`0817d08`):
+- `kalshi_client.py`: `get_all_active_markets()` (페이지네이션), `get_orderbook_levels()`, `batch_cancel_orders()`
+- `market_scanner.py`: 이중 풀 (크립토 5초 + 전략 30초), `search_markets()`, `filter_markets()`
+- `order_manager.py`: 포지션 추적 `_positions`, `requote()` 메서드
+- `config.py`: 15개 신규 환경변수 (전략별 on/off + 파라미터)
+- `external_data.py`: `FrequencyDataProvider` (API + 정적 JSON)
+
+**성능 최적화** (`be47e66`):
+- 전체 마켓 스캔 (836K, 10분) → 타겟 시리즈 쿼리 (295, 2초) — **330배 개선**
+- `run_in_executor`로 동기 HTTP를 비동기 이벤트 루프에서 비차단 실행
+
+**스프레드 스캐너 튜닝**:
+- `SPREAD_SCANNER_INTERVAL`: 300 → 60초
+- `SPREAD_SCANNER_MIN_WIDTH`: 0.08 → 0.05
+- `SPREAD_SCANNER_MIN_VOLUME`: 500 → 100
+
 ### 2026-03-25: API 필드 수정 및 관측성 추가
 
-**치명적 버그 수정** — Kalshi API v2 응답 필드명 불일치 (`56e6d25`):
-- `get_market_prices()`: `yes_ask` → `yes_ask_dollars` (문자열 소수, 정수 센트 아님)
-- `get_order_book_depth()`: `orderbook` → `orderbook_fp`, `yes`/`no` → `yes_dollars`/`no_dollars`
-- 가격 파싱: `cents / 100` → `float(dollar_string)` 으로 변경
-- **영향**: 이 수정 전에는 모든 마켓에서 가격이 `None`으로 반환되어 전략이 하나도 실행되지 않음
+**치명적 버그 수정** (`56e6d25`):
+- `yes_ask` → `yes_ask_dollars`, `orderbook` → `orderbook_fp`
+- 가격 파싱: `cents / 100` → `float(dollar_string)`
 
-**대시보드 포트 바인딩 수정** (`56e6d25`):
-- uvicorn을 asyncio 태스크에서 실행 시 소켓 바인딩 실패 문제
-- 데몬 스레드(`threading.Thread`)로 변경하여 해결
-- 포트 폴백: 8080 → 8081 → 8082
-- Graceful shutdown: `should_exit` 플래그 + 태스크 캔슬
+**대시보드 수정** (`56e6d25`):
+- uvicorn 데몬 스레드 + 포트 폴백 (8080→8081→8082)
 
-**관측성 (Observability) 추가** (`56e6d25`):
-- `market_scanner`: 60초 주기 INFO 로깅 — `"Scanned 300 active crypto markets (0 locked, 300 available)"`
-- `sum_arb`: 60초 주기 스캔 요약 — `"[SUM ARB] Checked 300/300 markets, best gap: -0.0100 (KXETH-...)"`
-- `logger.py`: 루트 로거로 변경 → 모든 모듈 로거 자동 캡처, 서드파티 노이즈 억제
-
-**Paper Trading 시작**:
-- Bankroll: $1,000 (INITIAL_BANKROLL=1000)
-- 300개 활성 크립토 마켓 스캔 중
-- 현재 최선 갭: -0.01 (효율적 시장, 아직 아비트라지 기회 없음)
-
-### 2026-03-21: API 연결 디버깅 및 수정
-- **RSA-PSS 서명**: Kalshi API가 PKCS1v15가 아닌 RSA-PSS 서명을 요구. `cryptography` 라이브러리의 `padding.PSS` + `SHA256` 조합으로 수정 (`d2a9400`)
-- **API URL 변경**: `trading-api.kalshi.com` → `api.elections.kalshi.com` 으로 변경 확인
-- **`.env` 설정 완료**: `KALSHI_API_KEY_ID` 및 `KALSHI_RSA_PRIVATE_KEY_PATH` 설정 완료
-- **PEM 키 검증**: `openssl rsa -in kalshi_private_key.pem -check -noout` → RSA key OK 확인
-- **Preflight 통과**: API 인증 및 마켓 조회 성공 확인
+### 2026-03-21: API 연결 디버깅
+- RSA-PSS 서명 수정 (`d2a9400`)
+- API URL: `api.elections.kalshi.com`
 
 ---
 
-## Git History (23 commits)
+## Paper Trading 결과 (2026-03-25, 첫 1시간)
+
+| 전략 | 거래 수 | 총 규모 | 주문 수 |
+|------|--------|---------|---------|
+| Shutdown Fade | 15 | $2,500 | — |
+| Spread Scanner | 31 | $329 | — |
+| Market Maker | — | — | 178 (리쿼팅) |
+| Maker Pre-Order | — | — | 4,341 |
+| Sum Arb | 0 | $0 | — |
+| Mentions Trader | 0 | $0 | — |
+
+---
+
+## Git History (25 commits)
 
 | Commit | Description |
 |--------|-------------|
-| `56e6d25` | API 필드명 수정 (yes_ask_dollars), 대시보드 스레드화, 스캔 관측성 |
+| `be47e66` | 전체 마켓 스캔 → 타겟 시리즈 쿼리 (330배 성능 개선) |
+| `0817d08` | 4개 신규 전략 + 인프라 확장 (88 tests) |
+| `7a63658` | 핸드오버 문서 업데이트 |
+| `56e6d25` | API 필드명 수정, 대시보드 스레드화, 스캔 관측성 |
 | `d2a9400` | RSA-PSS 서명 및 Kalshi API URL 업데이트 |
-| `6304099` | Kalshi migration 핸드오버/설정 가이드 업데이트 |
+| `6304099` | Kalshi migration 핸드오버/설정 가이드 |
 | `34dc129` | 대시보드, env, 의존성 Kalshi 업데이트 |
-| `086bef9` | Preflight 테스트 Kalshi 업데이트 |
-| `be274d9` | 통합 테스트 Kalshi 업데이트 |
-| `1a2cc95` | Main 오케스트레이터 KalshiClient 사용 |
-| `e374dec` | Maker Pre-Order 시간 기반 필터링 |
-| `fa5eb40` | Sum Arb Kalshi 마켓 구조 적용 |
-| `b740c43` | Order Manager Kalshi 클라이언트 API 적용 |
-| `b93f0e0` | Market Scanner ticker 기반으로 변경 |
-| `326ab66` | KalshiClient 추가 (PolymarketClient 대체) |
-| `f0bfe49` | Kalshi env 변수 및 수수료 공식 |
-| `8a76fcb` | Kalshi migration 구현 계획 |
-| `89215e8` | Kalshi migration 설계 스펙 |
-| `5084f76` | Pre-flight checks |
-| `7df76a8` | Dashboard 메인 봇 통합 |
-| `381de8b` | Dashboard 프론트엔드 |
-| `7134823` | Dashboard 백엔드 |
-| `146dd17` | Phase 2 통합 테스트 |
-| `2dee24e` | Maker Pre-Order + Notifier 통합 |
-| `997a8a1` | Maker Pre-Order 전략 |
-| `6e0c497` | Telegram 알림 |
+| `086bef9` ~ `6e0c497` | Kalshi migration (17 commits) |
 
 ---
 
 ## Known Issues
 
-1. **Kalshi 계정 잔고 $0.06** — Paper 모드에서는 문제없으나 Live 전환 전 입금 필요
-2. **API 속도 제한** — 마켓당 2 API 콜 (가격 + 오더북), 0.1초 간격 → 300 마켓 스캔에 ~60초 소요
-3. **효율적 시장** — 현재 Kalshi 크립토 마켓의 YES+NO 합이 $1.00 이상으로 유지됨 (스프레드 = 마켓 메이커 수익)
+1. **Kalshi 계정 잔고 $0.06** — Live 전환 전 입금 필요
+2. **대시보드 간헐적 종료** — uvicorn 데몬 스레드가 가끔 죽음, 봇 재시작으로 복구
+3. **멘션 트레이더 데이터 미설정** — `MENTIONS_FREQUENCY_API_URL` 또는 `data/mention_frequencies.json` 필요
+4. **Paper 모드 리밋 오더 체결 미시뮬레이션** — 마켓 메이커 주문이 `paper_open` 상태로 유지, 실제 체결 시뮬레이션 없음
 
 ---
 
 ## Future Work
 
-1. **Paper Trading 모니터링** — 장기 실행하며 전략 파라미터 튜닝, 기회 빈도 분석
-2. **Live Trading 전환** — Paper 결과 확인 후 소액 ($100~)으로 시작
-3. **API 최적화** — 벌크 가격 조회, WebSocket 스트림으로 폴링 대체
-4. **Rust 포팅** — 레이턴시 최적화 (핫 패스 우선)
-5. **추가 전략** — 크로스 마켓 아비트라지, 이벤트 기반 전략
+1. **Paper Trading 분석** — 1주일 실행 후 전략별 PnL 분석, 파라미터 튜닝
+2. **멘션 데이터 구축** — C-SPAN 트랜스크립트 또는 공개 연설 API 연동
+3. **리밋 오더 체결 시뮬레이션** — Paper 모드에서 시장가가 리밋 가격 도달 시 자동 체결
+4. **대시보드 안정화** — uvicorn 스레드 모니터링 + 자동 재시작
+5. **Live Trading 전환** — 소액 ($100~)으로 시작, 전략별 순차 활성화
+6. **WebSocket 스트림** — REST 폴링 → Kalshi WebSocket으로 레이턴시 개선
+7. **Rust 포팅** — 핫 패스 레이턴시 최적화
