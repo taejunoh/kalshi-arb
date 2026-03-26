@@ -22,7 +22,7 @@ Kalshi accepts deposits via bank transfer (ACH). No cryptocurrency or wallet set
 ## 3. Installation
 
 ```bash
-cd polymarket-arb
+cd kalshi-arb
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt

@@ -1,7 +1,10 @@
 .env
+*.pem
+*.db
 venv/
 __pycache__/
 *.pyc
 data/
 logs/
 .pytest_cache/
+.claude/

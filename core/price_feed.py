@@ -49,18 +49,28 @@ class PriceFeed:
 
     async def subscribe(self, symbol: str, ws_url: str):
         backoff = 1
+        logged_max_backoff = False
         while True:
             try:
-                async with websockets.connect(ws_url) as ws:
+                async with websockets.connect(ws_url, open_timeout=10) as ws:
                     logger.info(f"Connected to {symbol} price feed")
                     backoff = 1
+                    logged_max_backoff = False
                     async for msg in ws:
                         self._process_message(symbol, msg)
+            except asyncio.CancelledError:
+                logger.info(f"{symbol} feed shutting down")
+                return
             except (websockets.ConnectionClosed, ConnectionRefusedError, OSError) as e:
-                logger.warning(f"{symbol} feed disconnected: {e}. Reconnecting in {backoff}s...")
+                if backoff < 30:
+                    logger.warning(f"{symbol} feed disconnected: {e}. Reconnecting in {backoff}s...")
+                elif not logged_max_backoff:
+                    logger.warning(f"{symbol} feed unreachable, retrying silently every {backoff}s")
+                    logged_max_backoff = True
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30)
             except Exception as e:
-                logger.error(f"{symbol} feed unexpected error: {e}")
+                if not logged_max_backoff:
+                    logger.error(f"{symbol} feed unexpected error: {e}")
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30)
