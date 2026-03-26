@@ -7,6 +7,18 @@ from typing import Optional
 logger = logging.getLogger("market_scanner")
 
 
+# Series tickers targeted by non-crypto strategies
+STRATEGY_SERIES = [
+    # Shutdown fade
+    "KXFEDMENTION", "KXNUMSHUTDOWNS", "KXGOVSHUT", "KXGOVSHUTLENG",
+    # Mentions (Fed press conferences, presidential speeches, etc.)
+    "KXPOTUS", "KXPOTUSSPEECH", "KXSOTUWORD",
+    # Popular event markets (spread scanner)
+    "KXINX", "KXCPI", "KXGDP", "KXFED", "KXUNEMPLOY",
+    "KXBTCRANGE", "KXETHRANGE", "KXNASDAQ", "KXSP500",
+]
+
+
 class MarketScanner:
     def __init__(self, kalshi_client):
         self._client = kalshi_client
@@ -56,23 +68,39 @@ class MarketScanner:
         return [m for m in self._all_markets.values()
                 if regex.search(m.get("title", ""))]
 
+    def _fetch_strategy_markets(self) -> list[dict]:
+        """Fetch markets for non-crypto strategies using targeted series queries."""
+        all_markets = []
+        for prefix in STRATEGY_SERIES:
+            try:
+                data = self._client._get(
+                    f"/trade-api/v2/markets?status=open&series_ticker={prefix}&limit=200"
+                )
+                if data:
+                    all_markets.extend(data.get("markets", []))
+            except Exception:
+                pass  # Skip unavailable series silently
+        return all_markets
+
     async def all_markets_poll_loop(self):
+        loop = asyncio.get_event_loop()
         while True:
             try:
-                markets = self._client.get_all_active_markets()
+                markets = await loop.run_in_executor(None, self._fetch_strategy_markets)
                 self._all_markets = {m["ticker"]: m for m in markets}
                 now = time.time()
                 if now - self._last_all_summary_time >= 60:
-                    logger.info(f"Broad scan: {len(markets)} total active markets")
+                    logger.info(f"Targeted scan: {len(markets)} strategy markets from {len(STRATEGY_SERIES)} series")
                     self._last_all_summary_time = now
             except Exception as e:
-                logger.error(f"Broad market scan failed: {e}")
+                logger.error(f"Strategy market scan failed: {e}")
             await asyncio.sleep(self._all_markets_poll_interval)
 
     async def poll_loop(self):
+        loop = asyncio.get_event_loop()
         while True:
             try:
-                markets = self._client.get_active_markets()
+                markets = await loop.run_in_executor(None, self._client.get_active_markets)
                 self.update_markets(markets)
                 now = time.time()
                 if now - self._last_summary_time >= 60:
