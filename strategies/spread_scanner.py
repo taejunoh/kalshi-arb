@@ -16,7 +16,8 @@ class SpreadScannerStrategy:
         self._client = kalshi_client
         self._last_scan_time = 0.0
         self._last_summary_time = 0.0
-        self._market_cache: dict[str, float] = {}  # ticker -> last_eval_time
+        self._traded_tickers: set[str] = set()  # tickers already traded this session
+        self._eval_cache: dict[str, float] = {}  # ticker -> last_eval_time (short cooldown)
 
     def calculate_spread(self, yes_ask: float, no_ask: float) -> float:
         """Spread = how much you overpay buying both sides. Lower = tighter."""
@@ -86,8 +87,10 @@ class SpreadScannerStrategy:
         scored = []
         for market in markets:
             ticker = market["ticker"]
-            # Rate-limit per-market evaluation
-            if now - self._market_cache.get(ticker, 0) < 60:
+            # Skip already traded tickers and recently evaluated ones
+            if ticker in self._traded_tickers:
+                continue
+            if now - self._eval_cache.get(ticker, 0) < 60:
                 continue
             yes_ask_str = market.get("yes_ask_dollars")
             no_ask_str = market.get("no_ask_dollars")
@@ -111,16 +114,19 @@ class SpreadScannerStrategy:
         trades_attempted = 0
         for score, ticker, market, yes_ask, no_ask in scored[:5]:
             try:
-                self._market_cache[ticker] = now
+                self._eval_cache[ticker] = now
                 levels = self._client.get_orderbook_levels(ticker)
                 vwap_mid = self.calculate_vwap_mid(levels)
                 if vwap_mid is None:
+                    logger.debug(f"[SPREAD] {ticker}: skipped — one-sided orderbook")
                     continue
                 signal = self.evaluate(yes_ask, no_ask, vwap_mid)
                 if signal is None:
+                    logger.debug(f"[SPREAD] {ticker}: skipped — deviation too small")
                     continue
                 size = self._order_manager.calculate_position_size(signal["edge"])
                 if size < 1.0:
+                    logger.debug(f"[SPREAD] {ticker}: skipped — size ${size:.2f} too small")
                     continue
                 logger.info(
                     f"[SPREAD] {ticker}: spread={self.calculate_spread(yes_ask, no_ask):.3f} "
@@ -130,6 +136,7 @@ class SpreadScannerStrategy:
                     ticker=ticker, side=signal["side"], size_usdc=size,
                     price=signal["price"], strategy="spread_scanner", market_id=ticker,
                 )
+                self._traded_tickers.add(ticker)
                 trades_attempted += 1
             except Exception as e:
                 logger.error(f"Spread scanner error on {ticker}: {e}")
