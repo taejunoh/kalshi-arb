@@ -84,6 +84,22 @@ class Database:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
+    async def get_unsettled_trades(self):
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute(
+                "SELECT * FROM trades WHERE pnl = 0 AND status = 'paper_filled'"
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    async def settle_trade(self, trade_id: int, pnl: float, status: str = "paper_settled"):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                "UPDATE trades SET pnl = ?, status = ? WHERE id = ?", (pnl, status, trade_id)
+            )
+            await conn.commit()
+
     async def get_daily_pnl(self):
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         async with aiosqlite.connect(self.db_path) as conn:

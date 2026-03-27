@@ -15,6 +15,7 @@ from strategies.shutdown_fade import ShutdownFadeStrategy
 from strategies.spread_scanner import SpreadScannerStrategy
 from strategies.market_maker import MarketMakerStrategy
 from strategies.mentions_trader import MentionsTraderStrategy
+from core.settlement import SettlementChecker
 from monitoring.logger import setup_logger, TradeLogger
 from monitoring.notifier import TelegramNotifier
 from monitoring.dashboard.api import create_app
@@ -48,6 +49,7 @@ class Bot:
         self.mentions_trader = MentionsTraderStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client
         )
+        self.settlement = SettlementChecker(self.kalshi_client, self.db, self.order_manager)
         self.trade_logger = TradeLogger()
         self.notifier = TelegramNotifier(
             self.config.TELEGRAM_BOT_TOKEN, self.config.TELEGRAM_CHAT_ID
@@ -80,6 +82,7 @@ class Bot:
             asyncio.create_task(self.scanner.all_markets_poll_loop()),
             asyncio.create_task(self._strategy_loop()),
             asyncio.create_task(self._dashboard_task()),
+            asyncio.create_task(self._settlement_check_task()),
             asyncio.create_task(self._daily_reset_task()),
         ]
 
@@ -146,6 +149,15 @@ class Bot:
                     logger.error(f"{name} loop error: {e}")
                     await self.notifier.notify_error(f"{name}: {e}")
             await asyncio.sleep(0.2)
+
+    async def _settlement_check_task(self):
+        """Periodically check if paper trades have settled and calculate PnL."""
+        while self._running:
+            try:
+                await self.settlement.check_and_settle()
+            except Exception as e:
+                logger.error(f"Settlement check error: {e}")
+            await asyncio.sleep(60)
 
     async def _daily_reset_task(self):
         """Reset daily counters and send summary at UTC midnight."""

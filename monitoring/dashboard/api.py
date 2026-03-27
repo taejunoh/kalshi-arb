@@ -48,6 +48,30 @@ def create_app(database, bankroll: float = 0.0) -> FastAPI:
             strategies[strat]["total_size"] += trade.get("size", 0)
         return strategies
 
+    @app.get("/api/settlement")
+    async def get_settlement():
+        all_trades = await database.get_trades()
+        settled = [t for t in all_trades if t.get("status") == "paper_settled"]
+        unsettled = [t for t in all_trades if t.get("status") == "paper_filled"]
+        total_pnl = sum(t.get("pnl", 0) for t in settled)
+        by_strategy = {}
+        for t in settled:
+            strat = t["strategy"]
+            if strat not in by_strategy:
+                by_strategy[strat] = {"settled": 0, "pnl": 0.0, "wins": 0, "losses": 0}
+            by_strategy[strat]["settled"] += 1
+            by_strategy[strat]["pnl"] += t.get("pnl", 0)
+            if t.get("pnl", 0) > 0:
+                by_strategy[strat]["wins"] += 1
+            elif t.get("pnl", 0) < 0:
+                by_strategy[strat]["losses"] += 1
+        return {
+            "settled_count": len(settled),
+            "unsettled_count": len(unsettled),
+            "total_realized_pnl": round(total_pnl, 2),
+            "by_strategy": by_strategy,
+        }
+
     # Serve static frontend files if they exist
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     if os.path.isdir(static_dir):
