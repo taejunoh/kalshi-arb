@@ -306,8 +306,12 @@
         <span class="stat-value neutral" id="s-bankroll">—</span>
       </div>
       <div class="stat">
-        <span class="stat-label">Daily PnL</span>
-        <span class="stat-value neutral" id="s-pnl">—</span>
+        <span class="stat-label">Realized PnL</span>
+        <span class="stat-value neutral" id="s-realized-pnl">—</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Settled / Pending</span>
+        <span class="stat-value neutral" id="s-settlement">—</span>
       </div>
       <div class="stat">
         <span class="stat-label">Total Trades</span>
@@ -463,12 +467,14 @@ function sideBadge(side) {
 function statusBadge(status) {
   if (!status) return '<span class="badge badge-gray">—</span>';
   const s = status.toString().toUpperCase();
-  if (['FILLED', 'CLOSED', 'WIN', 'SUCCESS'].includes(s))
-    return `<span class="badge badge-green">${s}</span>`;
+  if (['FILLED', 'CLOSED', 'WIN', 'SUCCESS', 'PAPER_SETTLED'].includes(s))
+    return `<span class="badge badge-green">${s === 'PAPER_SETTLED' ? 'SETTLED' : s}</span>`;
   if (['CANCELLED', 'CANCELED', 'FAILED', 'LOSS'].includes(s))
     return `<span class="badge badge-red">${s}</span>`;
-  if (['OPEN', 'PENDING', 'LIVE'].includes(s))
-    return `<span class="badge badge-yellow">${s}</span>`;
+  if (['OPEN', 'PENDING', 'LIVE', 'PAPER_OPEN'].includes(s))
+    return `<span class="badge badge-yellow">${s === 'PAPER_OPEN' ? 'OPEN' : s}</span>`;
+  if (['PAPER_FILLED'].includes(s))
+    return `<span class="badge badge-blue">PENDING</span>`;
   return `<span class="badge badge-blue">${s}</span>`;
 }
 
@@ -498,20 +504,27 @@ async function apiFetch(path) {
 // ─────────────────────────────────────────────
 async function refreshStatus() {
   try {
-    const d = await apiFetch('/api/status');
-    const bankrollEl = document.getElementById('s-bankroll');
-    const pnlEl      = document.getElementById('s-pnl');
-    const tradesEl   = document.getElementById('s-trades');
+    const [d, s] = await Promise.all([
+      apiFetch('/api/status'),
+      apiFetch('/api/settlement'),
+    ]);
+    const bankrollEl   = document.getElementById('s-bankroll');
+    const realPnlEl    = document.getElementById('s-realized-pnl');
+    const settlementEl = document.getElementById('s-settlement');
+    const tradesEl     = document.getElementById('s-trades');
 
     bankrollEl.textContent = fmtMoney(d.bankroll);
     bankrollEl.className   = 'stat-value neutral';
 
-    const pnl = parseFloat(d.daily_pnl);
-    pnlEl.textContent = fmtMoney(d.daily_pnl);
-    if (!isNaN(pnl) && pnl !== 0)
-      pnlEl.className = 'stat-value ' + (pnl > 0 ? 'positive' : 'negative');
+    const realPnl = parseFloat(s.total_realized_pnl);
+    realPnlEl.textContent = fmtMoney(s.total_realized_pnl);
+    if (!isNaN(realPnl) && realPnl !== 0)
+      realPnlEl.className = 'stat-value ' + (realPnl > 0 ? 'positive' : 'negative');
     else
-      pnlEl.className = 'stat-value neutral';
+      realPnlEl.className = 'stat-value neutral';
+
+    settlementEl.textContent = `${s.settled_count} / ${s.unsettled_count}`;
+    settlementEl.className   = 'stat-value neutral';
 
     tradesEl.textContent = d.trade_count ?? '—';
     tradesEl.className   = 'stat-value neutral';
@@ -528,9 +541,12 @@ async function refreshStatus() {
 // ─────────────────────────────────────────────
 async function refreshPerf() {
   try {
-    const data = await apiFetch('/api/performance');
+    const [perfData, settlData] = await Promise.all([
+      apiFetch('/api/performance'),
+      apiFetch('/api/settlement'),
+    ]);
     const grid = document.getElementById('perf-grid');
-    const strategies = Object.keys(data);
+    const strategies = Object.keys(perfData);
 
     if (strategies.length === 0) {
       grid.innerHTML = '<div class="perf-card" style="color:var(--text-dim);font-size:12px;">No strategy data yet.</div>';
@@ -538,10 +554,18 @@ async function refreshPerf() {
     }
 
     grid.innerHTML = strategies.map(strat => {
-      const d = data[strat];
+      const d = perfData[strat];
+      const s = (settlData.by_strategy || {})[strat] || {};
       const pnl = parseFloat(d.total_pnl);
       const pnlStr = fmtMoney(d.total_pnl);
       const pnlCls = !isNaN(pnl) && pnl !== 0 ? (pnl > 0 ? 'positive' : 'negative') : '';
+      const wins = s.wins || 0;
+      const losses = s.losses || 0;
+      const settled = s.settled || 0;
+      const winRate = settled > 0 ? ((wins / settled) * 100).toFixed(0) + '%' : '—';
+      const realPnl = s.pnl || 0;
+      const realPnlStr = fmtMoney(realPnl);
+      const realPnlCls = realPnl > 0 ? 'positive' : realPnl < 0 ? 'negative' : '';
       return `
         <div class="perf-card">
           <div class="strategy-name">${strat}</div>
@@ -550,12 +574,20 @@ async function refreshPerf() {
             <span class="perf-val">${d.trade_count ?? 0}</span>
           </div>
           <div class="perf-row">
-            <span class="perf-key">Total PnL</span>
-            <span class="perf-val ${pnlCls}">${pnlStr}</span>
+            <span class="perf-key">Realized PnL</span>
+            <span class="perf-val ${realPnlCls}">${realPnlStr}</span>
           </div>
           <div class="perf-row">
-            <span class="perf-key">Total Size</span>
-            <span class="perf-val">${fmtSize(d.total_size)}</span>
+            <span class="perf-key">Win / Loss</span>
+            <span class="perf-val"><span class="positive">${wins}W</span> / <span class="negative">${losses}L</span></span>
+          </div>
+          <div class="perf-row">
+            <span class="perf-key">Win Rate</span>
+            <span class="perf-val">${winRate}</span>
+          </div>
+          <div class="perf-row">
+            <span class="perf-key">Volume</span>
+            <span class="perf-val">${fmtMoney(d.total_size)}</span>
           </div>
         </div>`;
     }).join('');
