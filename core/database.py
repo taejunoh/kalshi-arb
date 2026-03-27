@@ -80,7 +80,7 @@ class Database:
     async def get_open_orders(self):
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
-            cursor = await conn.execute("SELECT * FROM orders WHERE status = 'open'")
+            cursor = await conn.execute("SELECT * FROM orders WHERE status IN ('open', 'paper_open')")
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
