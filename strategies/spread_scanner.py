@@ -27,7 +27,8 @@ class SpreadScannerStrategy:
         """Volume-weighted mid price from orderbook levels."""
         yes_levels = levels.get("yes", [])
         no_levels = levels.get("no", [])
-        if not yes_levels or not no_levels:
+        # Require at least 2 levels on each side for meaningful VWAP
+        if len(yes_levels) < 2 or len(no_levels) < 2:
             return None
         # VWAP of yes side (weighted by qty)
         yes_value = sum(p * q for p, q in yes_levels)
@@ -39,6 +40,9 @@ class SpreadScannerStrategy:
             return None
         yes_vwap = yes_value / yes_vol
         no_vwap = no_value / no_vol
+        # Both VWAPs should be in reasonable range
+        if yes_vwap < 0.10 or no_vwap < 0.10:
+            return None
         # Mid is where yes_vwap and (1 - no_vwap) meet
         return (yes_vwap + (1.0 - no_vwap)) / 2
 
@@ -52,8 +56,8 @@ class SpreadScannerStrategy:
         """If mid price deviates from VWAP, take the underpriced side."""
         current_mid = (yes_ask + (1.0 - no_ask)) / 2
         deviation = vwap_mid - current_mid
-        min_width = self.config.SPREAD_SCANNER_MIN_WIDTH
-        if abs(deviation) < min_width / 2:
+        # Require meaningful deviation — at least 10% edge
+        if abs(deviation) < 0.10:
             return None
         if deviation > 0:
             # VWAP says price should be higher → YES is underpriced
@@ -101,6 +105,12 @@ class SpreadScannerStrategy:
             no_ask = float(no_ask_str)
             volume = float(volume_str)
             if volume < self.config.SPREAD_SCANNER_MIN_VOLUME:
+                continue
+            # Skip extreme prices — low prices aren't "undervalued", they're low probability
+            if yes_ask < 0.15 or no_ask < 0.15:
+                continue
+            # Skip if both sides aren't reasonably priced (avoid one-sided markets)
+            if yes_ask > 0.90 or no_ask > 0.90:
                 continue
             spread = self.calculate_spread(yes_ask, no_ask)
             if spread < self.config.SPREAD_SCANNER_MIN_WIDTH:
