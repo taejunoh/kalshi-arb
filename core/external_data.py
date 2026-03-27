@@ -17,10 +17,12 @@ def _load_static_data():
     if _STATIC_FREQUENCIES:
         return
     try:
-        if os.path.exists(_STATIC_DATA_PATH):
-            with open(_STATIC_DATA_PATH) as f:
+        resolved = os.path.abspath(_STATIC_DATA_PATH)
+        if os.path.exists(resolved):
+            with open(resolved) as f:
                 _STATIC_FREQUENCIES = json.load(f)
-            logger.info(f"Loaded {len(_STATIC_FREQUENCIES)} static frequency entries")
+            total_keys = sum(len(v) for v in _STATIC_FREQUENCIES.values())
+            logger.info(f"Loaded mention frequencies: {len(_STATIC_FREQUENCIES)} persons, {total_keys} keywords from {resolved}")
     except Exception as e:
         logger.warning(f"Could not load static frequency data: {e}")
 

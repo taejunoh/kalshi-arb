@@ -13,6 +13,22 @@ MENTION_PATTERNS = [
     re.compile(r"Will (.+?) (mention|say) ['\"](.+?)['\"]", re.IGNORECASE),
 ]
 
+# Ticker suffix → frequency data key mapping for KXFEDMENTION series
+TICKER_KEYWORD_MAP = {
+    "YIEL": "yield curve", "VOLA": "volatility", "UNCH": "unchanged", "UNCE": "uncertainty",
+    "TRUM": "trump", "TRAD": "trade war", "TAX": "tax", "TARI": "tariff",
+    "STAG": "stagflation", "SOFTL": "soft landing", "SOFT": "softening", "SLOW": "slowdown",
+    "SHUT": "shutdown", "SHOC": "shock", "REST": "restrictive", "REPL": "replace",
+    "RENO": "renovation", "RECE": "recession", "QT": "qt", "QE": "qe",
+    "PROJ": "projection", "PROD": "productivity", "PROB": "probability", "PRES": "president",
+    "PARD": "pardon", "PAND": "pandemic", "OIL": "oil", "NATI": "national debt",
+    "MEDI": "median", "LAYO": "layoff", "KALS": "kalshi", "IRAN": "iran",
+    "GOODA": "good afternoon", "GOOD": "goods inflation", "GOLD": "gold", "GAS": "gas",
+    "EXPE": "expectation", "EGG": "egg", "DOT": "dot plot", "DOLL": "dollar",
+    "DISS": "dissent", "CRED": "credit", "CONS": "consumer confidence", "CENT": "central bank",
+    "BITC": "bitcoin", "BALA": "balance sheet", "ANCH": "anchor", "AI": "ai",
+}
+
 
 class MentionsTraderStrategy:
     """Trade mentions markets using historical speech frequency data."""
@@ -36,6 +52,15 @@ class MentionsTraderStrategy:
                 return person, keyword
         return None
 
+    def parse_ticker(self, ticker: str) -> Optional[tuple[str, str]]:
+        """Extract (person, keyword) from ticker suffix. More reliable than title parsing."""
+        if "KXFEDMENTION" in ticker:
+            suffix = ticker.split("-")[-1]
+            keyword = TICKER_KEYWORD_MAP.get(suffix)
+            if keyword:
+                return "powell", keyword
+        return None
+
     def evaluate(self, yes_price: float, historical_freq: float) -> Optional[dict]:
         """Compare market price to historical frequency. Return trade signal if edge exists."""
         min_edge = self.config.MENTIONS_MIN_EDGE
@@ -55,20 +80,32 @@ class MentionsTraderStrategy:
         if self._order_manager.is_circuit_breaker_active():
             return
 
-        markets = self._scanner.filter_markets(r"(?i)will .+ (mention|say)")
+        # Get all markets from the broad pool and filter by ticker prefix + title regex
+        all_mkts = self._scanner.get_all_markets()
+        markets = [m for m in all_mkts if m.get("ticker", "").startswith("KXFEDMENTION")]
+        # Also add title-matched markets from other series
+        title_markets = self._scanner.filter_markets(r"(?i)will .+ (mention|say)")
+        seen = {m["ticker"] for m in markets}
+        for m in title_markets:
+            if m["ticker"] not in seen:
+                markets.append(m)
+                seen.add(m["ticker"])
+
         now = time.time()
         trades_attempted = 0
 
         for market in markets:
             ticker = market["ticker"]
-            # Rate-limit per-market evaluation to every 5 minutes
             if now - self._evaluated.get(ticker, 0) < 300:
                 continue
             self._evaluated[ticker] = now
 
             try:
-                title = market.get("title", "")
-                parsed = self.parse_market_title(title)
+                # Try ticker-based parsing first (more reliable), fall back to title
+                parsed = self.parse_ticker(ticker)
+                if parsed is None:
+                    title = market.get("title", "")
+                    parsed = self.parse_market_title(title)
                 if parsed is None:
                     continue
                 person, keyword = parsed
@@ -93,9 +130,12 @@ class MentionsTraderStrategy:
                     f"[MENTIONS] {ticker}: '{person}' + '{keyword}' "
                     f"freq={freq:.2f} vs price={yes_price:.2f} → {signal['side']} ${size:.2f}"
                 )
-                await self._order_manager.market_order(
-                    ticker=ticker, side=signal["side"], size_usdc=size,
-                    price=signal["price"], strategy="mentions_trader", market_id=ticker,
+                # Use limit order (Maker) for better pricing — place at fair value
+                limit_price = round(freq if signal["side"] == "yes" else (1.0 - freq), 2)
+                limit_price = max(0.01, min(0.99, limit_price))
+                await self._order_manager.limit_order(
+                    ticker=ticker, side=signal["side"], price=limit_price,
+                    size_usdc=size, strategy="mentions_trader", market_id=ticker,
                 )
                 trades_attempted += 1
             except Exception as e:

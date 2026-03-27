@@ -138,13 +138,16 @@ class SpreadScannerStrategy:
                 if size < 1.0:
                     logger.debug(f"[SPREAD] {ticker}: skipped — size ${size:.2f} too small")
                     continue
+                # Use limit order (Maker) at VWAP fair value for better entry
+                limit_price = round(vwap_mid if signal["side"] == "yes" else (1.0 - vwap_mid), 2)
+                limit_price = max(0.01, min(0.99, limit_price))
                 logger.info(
                     f"[SPREAD] {ticker}: spread={self.calculate_spread(yes_ask, no_ask):.3f} "
-                    f"edge={signal['edge']:.3f} → {signal['side']} ${size:.2f}"
+                    f"edge={signal['edge']:.3f} → {signal['side']} ${size:.2f} LIMIT@{limit_price:.2f}"
                 )
-                await self._order_manager.market_order(
-                    ticker=ticker, side=signal["side"], size_usdc=size,
-                    price=signal["price"], strategy="spread_scanner", market_id=ticker,
+                await self._order_manager.limit_order(
+                    ticker=ticker, side=signal["side"], price=limit_price,
+                    size_usdc=size, strategy="spread_scanner", market_id=ticker,
                 )
                 self._traded_tickers[ticker] = now
                 trades_attempted += 1
