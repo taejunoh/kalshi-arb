@@ -16,7 +16,7 @@ class SpreadScannerStrategy:
         self._client = kalshi_client
         self._last_scan_time = 0.0
         self._last_summary_time = 0.0
-        self._traded_tickers: set[str] = set()  # tickers already traded this session
+        self._traded_tickers: dict[str, float] = {}  # ticker -> trade_time (cooldown 1 hour)
         self._eval_cache: dict[str, float] = {}  # ticker -> last_eval_time (short cooldown)
 
     def calculate_spread(self, yes_ask: float, no_ask: float) -> float:
@@ -87,8 +87,8 @@ class SpreadScannerStrategy:
         scored = []
         for market in markets:
             ticker = market["ticker"]
-            # Skip already traded tickers and recently evaluated ones
-            if ticker in self._traded_tickers:
+            # Skip recently traded tickers (1 hour cooldown)
+            if now - self._traded_tickers.get(ticker, 0) < 3600:
                 continue
             if now - self._eval_cache.get(ticker, 0) < 60:
                 continue
@@ -136,7 +136,7 @@ class SpreadScannerStrategy:
                     ticker=ticker, side=signal["side"], size_usdc=size,
                     price=signal["price"], strategy="spread_scanner", market_id=ticker,
                 )
-                self._traded_tickers.add(ticker)
+                self._traded_tickers[ticker] = now
                 trades_attempted += 1
             except Exception as e:
                 logger.error(f"Spread scanner error on {ticker}: {e}")
