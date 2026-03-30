@@ -7,7 +7,7 @@ from typing import Optional
 logger = logging.getLogger("maker_preorder")
 
 MIN_CLOSE_MINUTES = 2
-MAX_CLOSE_MINUTES = 10
+MAX_CLOSE_MINUTES = 30
 
 
 class MakerPreorderStrategy:

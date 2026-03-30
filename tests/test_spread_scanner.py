@@ -8,62 +8,64 @@ def _make_strategy():
     config.SPREAD_SCANNER_ENABLED = True
     config.SPREAD_SCANNER_MIN_WIDTH = 0.08
     config.SPREAD_SCANNER_MIN_VOLUME = 500
-    config.SPREAD_SCANNER_INTERVAL = 0  # No delay in tests
+    config.SPREAD_SCANNER_INTERVAL = 0
+    config.SPREAD_SCANNER_MAX_HOURS = 12
     order_mgr = MagicMock()
     order_mgr.is_circuit_breaker_active.return_value = False
     order_mgr.calculate_position_size.return_value = 50.0
-    order_mgr.market_order = AsyncMock(return_value={"status": "paper_filled"})
+    order_mgr.limit_order = AsyncMock(return_value={"status": "paper_open"})
     scanner = MagicMock()
     client = MagicMock()
-    return SpreadScannerStrategy(config, order_mgr, scanner, client)
+    price_feed = MagicMock()
+    price_feed.get_price.return_value = 82000.0  # BTC at $82k
+    return SpreadScannerStrategy(config, order_mgr, scanner, client, price_feed)
 
 
-def test_spread_calculation():
+def test_parse_threshold_above():
     strat = _make_strategy()
-    # YES=0.55, NO=0.55 → spread = 0.10
-    assert strat.calculate_spread(0.55, 0.55) == pytest.approx(0.10)
-    # YES=0.50, NO=0.50 → spread = 0.0 (perfectly efficient)
-    assert strat.calculate_spread(0.50, 0.50) == pytest.approx(0.0)
+    result = strat._parse_threshold("KXBTC-26MAR3017-B75000")
+    assert result == ("above", 75000.0)
 
 
-def test_scoring_formula():
+def test_parse_threshold_range():
     strat = _make_strategy()
-    # Higher spread, volume, shorter time = higher score
-    score1 = strat.score_market(0.10, 1000, 1.0)  # 100
-    score2 = strat.score_market(0.10, 1000, 10.0)  # 10
-    assert score1 > score2
-    assert strat.score_market(0.10, 1000, 0) == 0.0
+    result = strat._parse_threshold("KXBTC-26MAR3017-T76249.99")
+    assert result == ("range", 76249.99)
 
 
-def test_vwap_approximation():
+def test_estimate_probability_above():
     strat = _make_strategy()
-    levels = {
-        "yes": [(0.45, 100), (0.44, 200)],
-        "no": [(0.48, 150), (0.47, 50)],
-    }
-    mid = strat.calculate_vwap_mid(levels)
-    assert mid is not None
-    # yes_vwap = (0.45*100 + 0.44*200) / 300 = 133/300 ≈ 0.4433
-    # no_vwap = (0.48*150 + 0.47*50) / 200 = 95.5/200 = 0.4775
-    # mid = (0.4433 + (1 - 0.4775)) / 2 = (0.4433 + 0.5225) / 2 = 0.4829
-    assert mid == pytest.approx(0.4829, abs=0.001)
+    # BTC at $82k, threshold $75k → price well above → high YES probability
+    prob = strat.estimate_probability("KXBTC-26MAR3017-B75000", 82000)
+    assert prob > 0.90
+
+    # BTC at $82k, threshold $85k → price below → low YES probability
+    prob = strat.estimate_probability("KXBTC-26MAR3017-B85000", 82000)
+    assert prob < 0.15
 
 
-def test_takes_underpriced_side():
+def test_evaluate_crypto_yes_underpriced():
     strat = _make_strategy()
-    # VWAP mid is higher than current mid → YES underpriced
-    signal = strat.evaluate(yes_ask=0.40, no_ask=0.70, vwap_mid=0.55)
-    # current_mid = (0.40 + (1 - 0.70)) / 2 = (0.40 + 0.30) / 2 = 0.35
-    # deviation = 0.55 - 0.35 = 0.20 > 0 → buy yes
+    # Fair prob = 0.80, YES ask = 0.50 → YES underpriced, edge = 0.30
+    signal = strat.evaluate_crypto(yes_ask=0.50, no_ask=0.60, fair_prob=0.80)
     assert signal is not None
     assert signal["side"] == "yes"
+    assert signal["edge"] == pytest.approx(0.30)
 
 
-def test_respects_min_volume():
+def test_evaluate_crypto_no_underpriced():
     strat = _make_strategy()
-    # With min_width=0.08, spread of 0.05 should not trigger
-    signal = strat.evaluate(yes_ask=0.50, no_ask=0.50, vwap_mid=0.51)
-    # deviation = 0.01, min_width/2 = 0.04 → too small
+    # Fair prob = 0.20, NO ask = 0.50 → NO underpriced (1-0.20=0.80 vs 0.50)
+    signal = strat.evaluate_crypto(yes_ask=0.60, no_ask=0.50, fair_prob=0.20)
+    assert signal is not None
+    assert signal["side"] == "no"
+    assert signal["edge"] == pytest.approx(0.30)
+
+
+def test_no_signal_within_edge():
+    strat = _make_strategy()
+    # Fair prob = 0.50, YES = 0.48 → edge = 0.02 < 0.10
+    signal = strat.evaluate_crypto(yes_ask=0.48, no_ask=0.55, fair_prob=0.50)
     assert signal is None
 
 
@@ -72,4 +74,4 @@ def test_skips_when_disabled():
     strat.config.SPREAD_SCANNER_ENABLED = False
     import asyncio
     asyncio.get_event_loop().run_until_complete(strat.scan_and_execute())
-    strat._scanner.get_all_markets.assert_not_called()
+    strat._scanner.get_active_markets.assert_not_called()

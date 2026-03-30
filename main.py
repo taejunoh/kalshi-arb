@@ -41,7 +41,8 @@ class Bot:
             self.config, self.order_manager, self.scanner, self.kalshi_client
         )
         self.spread_scanner = SpreadScannerStrategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client
+            self.config, self.order_manager, self.scanner, self.kalshi_client,
+            price_feed=self.price_feed,
         )
         self.market_maker = MarketMakerStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client

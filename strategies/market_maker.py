@@ -36,9 +36,18 @@ class MarketMakerStrategy:
         no_vwap = vwap(no_levels)
         return (yes_vwap + (1.0 - no_vwap)) / 2
 
-    def calculate_quote_prices(self, mid: float) -> tuple[float, float]:
-        """Return (yes_bid, no_bid) prices for two-sided quoting."""
-        half_spread = self.config.MM_SPREAD_CENTS / 100 / 2
+    def calculate_quote_prices(self, mid: float, minutes_to_close: float = 60) -> tuple[float, float]:
+        """Return (yes_bid, no_bid) prices. Tighter spread as market closes."""
+        base_spread = self.config.MM_SPREAD_CENTS
+        if minutes_to_close < 2:
+            spread_cents = max(1, base_spread - 3)
+        elif minutes_to_close < 5:
+            spread_cents = max(2, base_spread - 2)
+        elif minutes_to_close < 10:
+            spread_cents = max(2, base_spread - 1)
+        else:
+            spread_cents = base_spread
+        half_spread = spread_cents / 100 / 2
         yes_bid = max(0.01, round(mid - half_spread, 2))
         no_bid = max(0.01, round((1.0 - mid) - half_spread, 2))
         return yes_bid, no_bid

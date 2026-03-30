@@ -1,81 +1,100 @@
 import logging
+import math
+import re
 import time
 from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger("spread_scanner")
 
+# Map ticker prefix to Binance symbol
+CRYPTO_SYMBOL_MAP = {"KXBTC": "BTC", "KXETH": "ETH", "KXSOL": "SOL", "KXXRP": "XRP"}
+
 
 class SpreadScannerStrategy:
-    """Scan all markets for wide bid-ask spreads and trade toward fair value."""
+    """Scan crypto markets for mispricings using Binance spot price as fair value."""
 
-    def __init__(self, config, order_manager, market_scanner, kalshi_client):
+    def __init__(self, config, order_manager, market_scanner, kalshi_client, price_feed=None):
         self.config = config
         self._order_manager = order_manager
         self._scanner = market_scanner
         self._client = kalshi_client
+        self._price_feed = price_feed
         self._last_scan_time = 0.0
         self._last_summary_time = 0.0
-        self._traded_tickers: dict[str, float] = {}  # ticker -> trade_time (cooldown 1 hour)
-        self._eval_cache: dict[str, float] = {}  # ticker -> last_eval_time (short cooldown)
+        self._traded_tickers: dict[str, float] = {}  # ticker -> trade_time (cooldown)
 
-    def calculate_spread(self, yes_ask: float, no_ask: float) -> float:
-        """Spread = how much you overpay buying both sides. Lower = tighter."""
-        return (yes_ask + no_ask) - 1.0
+    def _get_symbol(self, ticker: str) -> Optional[str]:
+        """Extract crypto symbol from ticker (e.g., KXBTC-... → BTC)."""
+        prefix = ticker.split("-")[0] if "-" in ticker else ""
+        return CRYPTO_SYMBOL_MAP.get(prefix)
 
-    def calculate_vwap_mid(self, levels: dict) -> Optional[float]:
-        """Volume-weighted mid price from orderbook levels."""
-        yes_levels = levels.get("yes", [])
-        no_levels = levels.get("no", [])
-        # Require at least 2 levels on each side for meaningful VWAP
-        if len(yes_levels) < 2 or len(no_levels) < 2:
+    def _parse_threshold(self, ticker: str) -> Optional[tuple[str, float]]:
+        """Parse threshold from ticker suffix. Returns (type, value).
+        B75000 → ("above", 75000.0)
+        T76249.99 → ("range", 76249.99)
+        """
+        parts = ticker.split("-")
+        if len(parts) < 3:
             return None
-        # VWAP of yes side (weighted by qty)
-        yes_value = sum(p * q for p, q in yes_levels)
-        yes_vol = sum(q for _, q in yes_levels)
-        # VWAP of no side
-        no_value = sum(p * q for p, q in no_levels)
-        no_vol = sum(q for _, q in no_levels)
-        if yes_vol == 0 or no_vol == 0:
-            return None
-        yes_vwap = yes_value / yes_vol
-        no_vwap = no_value / no_vol
-        # Both VWAPs should be in reasonable range
-        if yes_vwap < 0.10 or no_vwap < 0.10:
-            return None
-        # Mid is where yes_vwap and (1 - no_vwap) meet
-        return (yes_vwap + (1.0 - no_vwap)) / 2
+        suffix = parts[-1]
+        if suffix.startswith("B"):
+            try:
+                return ("above", float(suffix[1:]))
+            except ValueError:
+                return None
+        elif suffix.startswith("T"):
+            try:
+                return ("range", float(suffix[1:]))
+            except ValueError:
+                return None
+        return None
 
-    def score_market(self, spread: float, volume: float, days_to_close: float) -> float:
-        """Higher score = more attractive opportunity."""
-        if days_to_close <= 0:
-            return 0.0
-        return spread * volume / days_to_close
-
-    def evaluate(self, yes_ask: float, no_ask: float, vwap_mid: float) -> Optional[dict]:
-        """If mid price deviates from VWAP, take the underpriced side."""
-        current_mid = (yes_ask + (1.0 - no_ask)) / 2
-        deviation = vwap_mid - current_mid
-        # Require meaningful deviation — at least 10% edge
-        if abs(deviation) < 0.10:
+    def estimate_probability(self, ticker: str, current_price: float) -> Optional[float]:
+        """Estimate YES probability from Binance spot price vs market threshold."""
+        parsed = self._parse_threshold(ticker)
+        if parsed is None:
             return None
-        if deviation > 0:
-            # VWAP says price should be higher → YES is underpriced
-            return {"side": "yes", "price": yes_ask, "edge": deviation}
-        else:
-            # VWAP says price should be lower → NO is underpriced
-            return {"side": "no", "price": no_ask, "edge": abs(deviation)}
+        market_type, threshold = parsed
 
-    def _days_to_close(self, market: dict) -> float:
+        if market_type == "above":
+            # "BTC above $X" — probability depends on distance from threshold
+            distance_pct = (current_price - threshold) / current_price
+            # Sigmoid-like: sharp transition around threshold
+            prob = 1.0 / (1.0 + math.exp(-distance_pct * 200))
+            return max(0.03, min(0.97, prob))
+        elif market_type == "range":
+            # Range markets are harder — low probability for exact ranges
+            distance_pct = abs(current_price - threshold) / current_price
+            # Closer to threshold = higher probability
+            prob = max(0.02, 0.5 * math.exp(-distance_pct * 100))
+            return max(0.02, min(0.50, prob))
+        return None
+
+    def evaluate_crypto(self, yes_ask: float, no_ask: float, fair_prob: float) -> Optional[dict]:
+        """Compare market price to Binance-estimated fair value."""
+        min_edge = 0.10  # 10% minimum edge
+        # YES side: if fair_prob > yes_ask → YES underpriced
+        yes_edge = fair_prob - yes_ask
+        # NO side: if (1 - fair_prob) > no_ask → NO underpriced
+        no_edge = (1.0 - fair_prob) - no_ask
+
+        if yes_edge > min_edge and yes_edge > no_edge:
+            return {"side": "yes", "price": yes_ask, "edge": yes_edge, "fair": fair_prob}
+        elif no_edge > min_edge:
+            return {"side": "no", "price": no_ask, "edge": no_edge, "fair": fair_prob}
+        return None
+
+    def _hours_to_close(self, market: dict) -> float:
         close_str = market.get("close_time")
         if not close_str:
-            return 30.0  # Default if unknown
+            return 999.0
         try:
             close = datetime.fromisoformat(close_str.replace("Z", "+00:00"))
             now = datetime.now(timezone.utc)
-            return max((close - now).total_seconds() / 86400, 0.01)
+            return max((close - now).total_seconds() / 3600, 0.01)
         except (ValueError, TypeError):
-            return 30.0
+            return 999.0
 
     async def scan_and_execute(self):
         if not self.config.SPREAD_SCANNER_ENABLED:
@@ -87,63 +106,66 @@ class SpreadScannerStrategy:
             return
         self._last_scan_time = now
 
-        markets = self._scanner.get_all_markets()
-        scored = []
+        # Use crypto market pool (short-duration) instead of monthly events
+        markets = self._scanner.get_active_markets()
+        candidates = []
+        max_hours = getattr(self.config, "SPREAD_SCANNER_MAX_HOURS", 12)
+
         for market in markets:
             ticker = market["ticker"]
-            # Skip recently traded tickers (1 hour cooldown)
+            # Skip recently traded (1 hour cooldown)
             if now - self._traded_tickers.get(ticker, 0) < 3600:
                 continue
-            if now - self._eval_cache.get(ticker, 0) < 60:
+
+            hours = self._hours_to_close(market)
+            if hours > max_hours or hours < 0.05:  # Skip >12h and <3min
                 continue
+
+            symbol = self._get_symbol(ticker)
+            if not symbol or not self._price_feed:
+                continue
+
+            spot_price = self._price_feed.get_price(symbol)
+            if spot_price is None:
+                continue
+
+            fair_prob = self.estimate_probability(ticker, spot_price)
+            if fair_prob is None:
+                continue
+
             yes_ask_str = market.get("yes_ask_dollars")
             no_ask_str = market.get("no_ask_dollars")
-            volume_str = market.get("volume_fp", market.get("volume_24h_fp", "0"))
             if not yes_ask_str or not no_ask_str:
                 continue
+
             yes_ask = float(yes_ask_str)
             no_ask = float(no_ask_str)
-            volume = float(volume_str)
-            if volume < self.config.SPREAD_SCANNER_MIN_VOLUME:
-                continue
-            # Skip extreme prices — low prices aren't "undervalued", they're low probability
-            if yes_ask < 0.15 or no_ask < 0.15:
-                continue
-            # Skip if both sides aren't reasonably priced (avoid one-sided markets)
-            if yes_ask > 0.90 or no_ask > 0.90:
-                continue
-            spread = self.calculate_spread(yes_ask, no_ask)
-            if spread < self.config.SPREAD_SCANNER_MIN_WIDTH:
-                continue
-            days = self._days_to_close(market)
-            score = self.score_market(spread, volume, days)
-            scored.append((score, ticker, market, yes_ask, no_ask))
 
-        # Sort by score descending, take top 5
-        scored.sort(key=lambda x: x[0], reverse=True)
+            # Skip extreme prices
+            if yes_ask < 0.05 or no_ask < 0.05:
+                continue
+
+            signal = self.evaluate_crypto(yes_ask, no_ask, fair_prob)
+            if signal is None:
+                continue
+
+            candidates.append((signal["edge"], ticker, market, yes_ask, no_ask, signal, fair_prob, hours))
+
+        # Sort by edge descending, take top 5
+        candidates.sort(key=lambda x: x[0], reverse=True)
         trades_attempted = 0
-        for score, ticker, market, yes_ask, no_ask in scored[:5]:
+
+        for edge, ticker, market, yes_ask, no_ask, signal, fair_prob, hours in candidates[:5]:
             try:
-                self._eval_cache[ticker] = now
-                levels = self._client.get_orderbook_levels(ticker)
-                vwap_mid = self.calculate_vwap_mid(levels)
-                if vwap_mid is None:
-                    logger.debug(f"[SPREAD] {ticker}: skipped — one-sided orderbook")
-                    continue
-                signal = self.evaluate(yes_ask, no_ask, vwap_mid)
-                if signal is None:
-                    logger.debug(f"[SPREAD] {ticker}: skipped — deviation too small")
-                    continue
                 size = self._order_manager.calculate_position_size(signal["edge"])
                 if size < 1.0:
-                    logger.debug(f"[SPREAD] {ticker}: skipped — size ${size:.2f} too small")
                     continue
-                # Use limit order (Maker) at VWAP fair value for better entry
-                limit_price = round(vwap_mid if signal["side"] == "yes" else (1.0 - vwap_mid), 2)
+                # Limit order at fair value
+                limit_price = round(fair_prob if signal["side"] == "yes" else (1.0 - fair_prob), 2)
                 limit_price = max(0.01, min(0.99, limit_price))
                 logger.info(
-                    f"[SPREAD] {ticker}: spread={self.calculate_spread(yes_ask, no_ask):.3f} "
-                    f"edge={signal['edge']:.3f} → {signal['side']} ${size:.2f} LIMIT@{limit_price:.2f}"
+                    f"[SPREAD] {ticker}: fair={fair_prob:.2f} ask={yes_ask:.2f}/{no_ask:.2f} "
+                    f"edge={signal['edge']:.2f} → {signal['side']} ${size:.2f} LIMIT@{limit_price:.2f} ({hours:.1f}h)"
                 )
                 await self._order_manager.limit_order(
                     ticker=ticker, side=signal["side"], price=limit_price,
@@ -156,7 +178,7 @@ class SpreadScannerStrategy:
 
         if now - self._last_summary_time >= 60:
             logger.info(
-                f"[SPREAD] Scanned {len(markets)} markets, "
-                f"{len(scored)} wide spreads, {trades_attempted} trades"
+                f"[SPREAD] Scanned {len(markets)} crypto markets, "
+                f"{len(candidates)} opportunities, {trades_attempted} trades"
             )
             self._last_summary_time = now

@@ -29,7 +29,7 @@ def test_is_short_duration_market():
     close_time = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
     assert strategy._is_short_duration_market({"close_time": close_time}) is True
 
-    close_time_far = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
+    close_time_far = (datetime.now(timezone.utc) + timedelta(minutes=60)).isoformat()
     assert strategy._is_short_duration_market({"close_time": close_time_far}) is False
 
     close_time_past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
