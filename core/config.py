@@ -50,6 +50,11 @@ class Config:
         self.SPREAD_SCANNER_INTERVAL = int(os.getenv("SPREAD_SCANNER_INTERVAL", "300"))
         self.SPREAD_SCANNER_MAX_HOURS = float(os.getenv("SPREAD_SCANNER_MAX_HOURS", "12"))
 
+        # Sports Trader strategy
+        self.SPORTS_ENABLED = os.getenv("SPORTS_ENABLED", "false").lower() == "true"
+        self.SPORTS_SCAN_INTERVAL = int(os.getenv("SPORTS_SCAN_INTERVAL", "300"))
+        self.ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
+
         # Mentions Market Trader strategy
         self.MENTIONS_ENABLED = os.getenv("MENTIONS_ENABLED", "false").lower() == "true"
         self.MENTIONS_MIN_EDGE = float(os.getenv("MENTIONS_MIN_EDGE", "0.15"))

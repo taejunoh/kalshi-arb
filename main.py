@@ -15,6 +15,7 @@ from strategies.shutdown_fade import ShutdownFadeStrategy
 from strategies.spread_scanner import SpreadScannerStrategy
 from strategies.market_maker import MarketMakerStrategy
 from strategies.mentions_trader import MentionsTraderStrategy
+from strategies.sports_trader import SportsTraderStrategy
 from core.settlement import SettlementChecker
 from monitoring.logger import setup_logger, TradeLogger
 from monitoring.notifier import TelegramNotifier
@@ -49,6 +50,9 @@ class Bot:
         )
         self.mentions_trader = MentionsTraderStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client
+        )
+        self.sports_trader = SportsTraderStrategy(
+            self.config, self.order_manager, self.kalshi_client
         )
         self.settlement = SettlementChecker(self.kalshi_client, self.db, self.order_manager)
         self.trade_logger = TradeLogger()
@@ -141,6 +145,7 @@ class Bot:
             ("spread_scanner", self.spread_scanner),
             ("market_maker", self.market_maker),
             ("mentions_trader", self.mentions_trader),
+            ("sports_trader", self.sports_trader),
         ]
         while self._running:
             for name, strategy in strategies:
