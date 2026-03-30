@@ -79,18 +79,26 @@ class OrderManager:
 
     # ── Order execution ────────────────────────────────────────────
 
+    def _is_live(self, strategy: str) -> bool:
+        """Check if a strategy should trade live (real money)."""
+        if not self.config.is_paper_mode:
+            return True  # Global live mode
+        return strategy in self.config.LIVE_STRATEGIES
+
     async def market_order(self, ticker, side, size_usdc, price, strategy, market_id):
         if self.bankroll < size_usdc:
             logger.warning(f"Insufficient bankroll: ${self.bankroll:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
             return {"status": "skipped", "reason": "insufficient_bankroll"}
-        if self.config.is_paper_mode:
-            return await self._paper_market_order(ticker, side, size_usdc, price, strategy, market_id)
-        return await self._live_market_order(ticker, side, size_usdc, price, strategy, market_id)
+        if self._is_live(strategy):
+            logger.info(f"[LIVE] {strategy} {side} {ticker} ${size_usdc:.2f} @ {price:.3f}")
+            return await self._live_market_order(ticker, side, size_usdc, price, strategy, market_id)
+        return await self._paper_market_order(ticker, side, size_usdc, price, strategy, market_id)
 
     async def limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
-        if self.config.is_paper_mode:
-            return await self._paper_limit_order(ticker, side, price, size_usdc, strategy, market_id)
-        return await self._live_limit_order(ticker, side, price, size_usdc, strategy, market_id)
+        if self._is_live(strategy):
+            logger.info(f"[LIVE] {strategy} LIMIT {side} {ticker} ${size_usdc:.2f} @ {price:.3f}")
+            return await self._live_limit_order(ticker, side, price, size_usdc, strategy, market_id)
+        return await self._paper_limit_order(ticker, side, price, size_usdc, strategy, market_id)
 
     async def cancel_order(self, order_id):
         if self.config.is_paper_mode:

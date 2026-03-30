@@ -15,6 +15,10 @@ class Config:
         # Trading mode
         self.TRADING_MODE = os.getenv("TRADING_MODE", "paper")
         self.INITIAL_BANKROLL = float(os.getenv("INITIAL_BANKROLL", "100"))
+        # Per-strategy live override (comma-separated strategy names that trade live)
+        self.LIVE_STRATEGIES = set(
+            s.strip() for s in os.getenv("LIVE_STRATEGIES", "").split(",") if s.strip()
+        )
 
         # Strategy parameters (unchanged)
         self.SUM_ARB_MIN_GAP = float(os.getenv("SUM_ARB_MIN_GAP", "0.03"))
