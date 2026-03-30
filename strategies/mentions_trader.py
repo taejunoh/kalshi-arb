@@ -62,17 +62,29 @@ class MentionsTraderStrategy:
         return None
 
     def evaluate(self, yes_price: float, historical_freq: float) -> Optional[dict]:
-        """Compare market price to historical frequency. Return trade signal if edge exists."""
+        """Compare market price to historical frequency. Return trade signal if edge exists.
+
+        Aggressive sizing: 30%+ edge → 10% bankroll, 50%+ edge → 15% bankroll.
+        """
         min_edge = self.config.MENTIONS_MIN_EDGE
         edge = historical_freq - yes_price
-        if edge > min_edge:
-            # Market underprices YES
-            return {"side": "yes", "price": yes_price, "edge": edge}
-        elif edge < -min_edge:
-            # Market overprices YES → buy NO
+        abs_edge = abs(edge)
+        if abs_edge < min_edge:
+            return None
+
+        # Aggressive position sizing based on edge magnitude
+        if abs_edge >= 0.50:
+            size_pct = 0.15  # 15% bankroll for huge edge
+        elif abs_edge >= 0.30:
+            size_pct = 0.10  # 10% bankroll for strong edge
+        else:
+            size_pct = 0.05  # 5% bankroll for moderate edge
+
+        if edge > 0:
+            return {"side": "yes", "price": yes_price, "edge": edge, "size_pct": size_pct}
+        else:
             no_price = 1.0 - yes_price
-            return {"side": "no", "price": no_price, "edge": abs(edge)}
-        return None
+            return {"side": "no", "price": no_price, "edge": abs_edge, "size_pct": size_pct}
 
     async def scan_and_execute(self):
         if not self.config.MENTIONS_ENABLED:
@@ -122,13 +134,15 @@ class MentionsTraderStrategy:
                 if signal is None:
                     continue
 
-                size = self._order_manager.calculate_position_size(signal["edge"])
+                # Aggressive sizing: use edge-based percentage instead of Kelly
+                size_pct = signal.get("size_pct", 0.05)
+                size = self._order_manager.bankroll * size_pct
                 if size < 1.0:
                     continue
 
                 logger.info(
                     f"[MENTIONS] {ticker}: '{person}' + '{keyword}' "
-                    f"freq={freq:.2f} vs price={yes_price:.2f} → {signal['side']} ${size:.2f}"
+                    f"freq={freq:.2f} vs price={yes_price:.2f} → {signal['side']} ${size:.2f} ({size_pct:.0%} bankroll)"
                 )
                 # Use limit order (Maker) for better pricing — place at fair value
                 limit_price = round(freq if signal["side"] == "yes" else (1.0 - freq), 2)
