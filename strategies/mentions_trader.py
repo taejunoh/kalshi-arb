@@ -40,6 +40,7 @@ class MentionsTraderStrategy:
         self._client = kalshi_client
         self._data_provider = FrequencyDataProvider(config.MENTIONS_FREQUENCY_API_URL)
         self._evaluated: dict[str, float] = {}  # ticker -> last eval time
+        self._traded_tickers: set[str] = set()  # tickers already traded (permanent until restart)
         self._last_summary_time = 0.0
 
     def parse_market_title(self, title: str) -> Optional[tuple[str, str]]:
@@ -110,9 +111,8 @@ class MentionsTraderStrategy:
             ticker = market["ticker"]
             if now - self._evaluated.get(ticker, 0) < 300:
                 continue
-            # Skip if we already have a position on this market
-            pos = self._order_manager.get_position("mentions_trader", ticker)
-            if pos["qty"] > 0:
+            # Skip if we already traded this market this session
+            if ticker in self._traded_tickers:
                 continue
             self._evaluated[ticker] = now
 
@@ -151,10 +151,12 @@ class MentionsTraderStrategy:
                 # Use limit order (Maker) for better pricing — place at fair value
                 limit_price = round(freq if signal["side"] == "yes" else (1.0 - freq), 2)
                 limit_price = max(0.01, min(0.99, limit_price))
-                await self._order_manager.limit_order(
+                result = await self._order_manager.limit_order(
                     ticker=ticker, side=signal["side"], price=limit_price,
                     size_usdc=size, strategy="mentions_trader", market_id=ticker,
                 )
+                if result.get("status") != "skipped":
+                    self._traded_tickers.add(ticker)
                 trades_attempted += 1
             except Exception as e:
                 logger.error(f"Mentions trader error on {ticker}: {e}")
