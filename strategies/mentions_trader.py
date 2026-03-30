@@ -110,6 +110,10 @@ class MentionsTraderStrategy:
             ticker = market["ticker"]
             if now - self._evaluated.get(ticker, 0) < 300:
                 continue
+            # Skip if we already have a position on this market
+            pos = self._order_manager.get_position("mentions_trader", ticker)
+            if pos["qty"] > 0:
+                continue
             self._evaluated[ticker] = now
 
             try:

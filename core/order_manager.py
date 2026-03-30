@@ -96,6 +96,11 @@ class OrderManager:
 
     async def limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
         if self._is_live(strategy):
+            # Check real Kalshi balance before placing live order
+            real_balance = self._client.get_balance()
+            if real_balance is not None and real_balance < size_usdc:
+                logger.debug(f"Insufficient Kalshi balance: ${real_balance:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
+                return {"status": "skipped", "reason": "insufficient_balance"}
             logger.info(f"[LIVE] {strategy} LIMIT {side} {ticker} ${size_usdc:.2f} @ {price:.3f}")
             return await self._live_limit_order(ticker, side, price, size_usdc, strategy, market_id)
         return await self._paper_limit_order(ticker, side, price, size_usdc, strategy, market_id)
