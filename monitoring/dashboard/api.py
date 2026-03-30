@@ -5,7 +5,7 @@ from typing import Optional
 import os
 
 
-def create_app(database, bankroll: float = 0.0) -> FastAPI:
+def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None) -> FastAPI:
     app = FastAPI(title="Kalshi Arb Bot Dashboard")
 
     app.add_middleware(
@@ -70,6 +70,31 @@ def create_app(database, bankroll: float = 0.0) -> FastAPI:
             "unsettled_count": len(unsettled),
             "total_realized_pnl": round(total_pnl, 2),
             "by_strategy": by_strategy,
+        }
+
+    @app.get("/api/live")
+    async def get_live():
+        if not kalshi_client:
+            return {"balance": None, "positions": []}
+        import asyncio
+        loop = asyncio.get_event_loop()
+        balance = await loop.run_in_executor(None, kalshi_client.get_balance)
+        positions = await loop.run_in_executor(None, kalshi_client.get_positions)
+        return {
+            "balance": balance,
+            "positions": positions,
+        }
+
+    @app.get("/api/strategy-status")
+    async def get_strategy_status():
+        live_strategies = list(config.LIVE_STRATEGIES) if config else []
+        all_strategies = [
+            "sum_arb", "maker_preorder", "market_maker",
+            "shutdown_fade", "spread_scanner", "mentions_trader", "sports_trader",
+        ]
+        return {
+            s: {"mode": "LIVE" if s in live_strategies else "PAPER"}
+            for s in all_strategies
         }
 
     # Serve static frontend files if they exist
