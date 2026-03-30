@@ -77,10 +77,13 @@ class Database:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
-    async def get_open_orders(self):
+    async def get_open_orders(self, limit: int = 100):
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
-            cursor = await conn.execute("SELECT * FROM orders WHERE status IN ('open', 'paper_open')")
+            cursor = await conn.execute(
+                "SELECT * FROM orders WHERE status IN ('open', 'paper_open') ORDER BY id DESC LIMIT ?",
+                (limit,)
+            )
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
