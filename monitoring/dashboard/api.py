@@ -38,7 +38,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None)
     @app.get("/api/performance")
     async def get_performance():
         all_trades = await database.get_trades()
-        strategies = {}
+        # Always show all strategies, even with 0 trades
+        all_strategy_names = [
+            "sum_arb", "maker_preorder", "market_maker",
+            "shutdown_fade", "spread_scanner", "mentions_trader", "sports_trader",
+        ]
+        strategies = {s: {"trade_count": 0, "total_pnl": 0.0, "total_size": 0.0} for s in all_strategy_names}
         for trade in all_trades:
             strat = trade["strategy"]
             if strat not in strategies:
