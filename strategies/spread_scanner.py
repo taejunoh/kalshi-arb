@@ -59,8 +59,8 @@ class SpreadScannerStrategy:
 
         if market_type == "above":
             # "BTC above $X" — probability depends on distance from threshold
-            distance_pct = (current_price - threshold) / current_price
-            # Sigmoid-like: sharp transition around threshold
+            distance_pct = (current_price - threshold) / threshold
+            # Sigmoid: sharp transition around threshold
             prob = 1.0 / (1.0 + math.exp(-distance_pct * 200))
             return max(0.03, min(0.97, prob))
         elif market_type == "range":
@@ -127,6 +127,8 @@ class SpreadScannerStrategy:
 
             spot_price = self._price_feed.get_price(symbol)
             if spot_price is None:
+                continue
+            if self._price_feed.is_stale(symbol):
                 continue
 
             fair_prob = self.estimate_probability(ticker, spot_price)

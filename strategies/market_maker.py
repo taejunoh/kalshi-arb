@@ -68,6 +68,21 @@ class MarketMakerStrategy:
             yes_bid = min(0.99, yes_bid + skew)
         return yes_bid, no_bid
 
+    def _minutes_to_close(self, ticker: str) -> float:
+        """Get minutes until market closes."""
+        from datetime import datetime, timezone
+        market = self._scanner.get_market(ticker)
+        if not market:
+            return 60.0
+        close_str = market.get("close_time")
+        if not close_str:
+            return 60.0
+        try:
+            close = datetime.fromisoformat(close_str.replace("Z", "+00:00"))
+            return max((close - datetime.now(timezone.utc)).total_seconds() / 60, 0.1)
+        except (ValueError, TypeError):
+            return 60.0
+
     def _select_markets(self) -> list[dict]:
         """Select liquid crypto markets for market making."""
         markets = self._scanner.get_unlocked_markets()
@@ -120,7 +135,8 @@ class MarketMakerStrategy:
         mid = self.calculate_mid_price(levels)
         if mid is None:
             return
-        yes_bid, no_bid = self.calculate_quote_prices(mid)
+        mtc = self._minutes_to_close(ticker)
+        yes_bid, no_bid = self.calculate_quote_prices(mid, mtc)
         yes_bid, no_bid = self.apply_inventory_skew(yes_bid, no_bid, ticker)
         size = min(
             self._order_manager.calculate_position_size(self.config.MM_SPREAD_CENTS / 100),
@@ -159,7 +175,8 @@ class MarketMakerStrategy:
         if mid is None:
             await self._cancel_quote(ticker)
             return
-        yes_bid, no_bid = self.calculate_quote_prices(mid)
+        mtc = self._minutes_to_close(ticker)
+        yes_bid, no_bid = self.calculate_quote_prices(mid, mtc)
         yes_bid, no_bid = self.apply_inventory_skew(yes_bid, no_bid, ticker)
         # Requote both sides
         yes_result = await self._order_manager.requote(

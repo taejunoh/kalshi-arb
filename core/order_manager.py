@@ -80,6 +80,9 @@ class OrderManager:
     # ── Order execution ────────────────────────────────────────────
 
     async def market_order(self, ticker, side, size_usdc, price, strategy, market_id):
+        if self.bankroll < size_usdc:
+            logger.warning(f"Insufficient bankroll: ${self.bankroll:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
+            return {"status": "skipped", "reason": "insufficient_bankroll"}
         if self.config.is_paper_mode:
             return await self._paper_market_order(ticker, side, size_usdc, price, strategy, market_id)
         return await self._live_market_order(ticker, side, size_usdc, price, strategy, market_id)

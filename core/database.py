@@ -37,6 +37,8 @@ class Database:
                     status TEXT NOT NULL
                 )
             """)
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_status_pnl ON trades(status, pnl)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
             await conn.commit()
 
     async def close(self):
@@ -91,7 +93,7 @@ class Database:
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
-                "SELECT * FROM trades WHERE pnl = 0 AND status = 'paper_filled'"
+                "SELECT * FROM trades WHERE pnl = 0 AND status IN ('paper_filled', 'paper_open')"
             )
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
