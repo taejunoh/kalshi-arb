@@ -109,7 +109,7 @@ class Bot:
             app = create_app(self.db, bankroll=self.order_manager.bankroll)
             started = False
             for port in (8080, 8081, 8082):
-                config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
+                config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
                 self._dashboard_server = uvicorn.Server(config)
                 try:
                     thread = threading.Thread(target=self._dashboard_server.run, daemon=True)
