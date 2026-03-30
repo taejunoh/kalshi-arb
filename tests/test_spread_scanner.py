@@ -44,15 +44,6 @@ def test_estimate_probability_above():
     assert prob < 0.15
 
 
-def test_evaluate_crypto_yes_underpriced():
-    strat = _make_strategy()
-    # Fair prob = 0.80, YES ask = 0.50 → YES underpriced, edge = 0.30
-    signal = strat.evaluate_crypto(yes_ask=0.50, no_ask=0.60, fair_prob=0.80)
-    assert signal is not None
-    assert signal["side"] == "yes"
-    assert signal["edge"] == pytest.approx(0.30)
-
-
 def test_evaluate_crypto_no_underpriced():
     strat = _make_strategy()
     # Fair prob = 0.20, NO ask = 0.50 → NO underpriced (1-0.20=0.80 vs 0.50)
@@ -62,10 +53,18 @@ def test_evaluate_crypto_no_underpriced():
     assert signal["edge"] == pytest.approx(0.30)
 
 
+def test_no_yes_trades_in_no_only_mode():
+    strat = _make_strategy()
+    # Fair prob = 0.80, YES would be underpriced, but NO-only mode skips it
+    signal = strat.evaluate_crypto(yes_ask=0.50, no_ask=0.60, fair_prob=0.80)
+    # NO edge = (1-0.80) - 0.60 = -0.40 → no signal
+    assert signal is None
+
+
 def test_no_signal_within_edge():
     strat = _make_strategy()
-    # Fair prob = 0.50, YES = 0.48 → edge = 0.02 < 0.10
-    signal = strat.evaluate_crypto(yes_ask=0.48, no_ask=0.55, fair_prob=0.50)
+    # Fair prob = 0.50, NO edge = 0.50 - 0.48 = 0.02 < 0.05
+    signal = strat.evaluate_crypto(yes_ask=0.55, no_ask=0.48, fair_prob=0.50)
     assert signal is None
 
 

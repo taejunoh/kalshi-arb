@@ -72,16 +72,11 @@ class SpreadScannerStrategy:
         return None
 
     def evaluate_crypto(self, yes_ask: float, no_ask: float, fair_prob: float) -> Optional[dict]:
-        """Compare market price to Binance-estimated fair value."""
-        min_edge = 0.10  # 10% minimum edge
-        # YES side: if fair_prob > yes_ask → YES underpriced
-        yes_edge = fair_prob - yes_ask
-        # NO side: if (1 - fair_prob) > no_ask → NO underpriced
+        """Compare market price to Binance-estimated fair value. NO-only mode."""
+        min_edge = 0.05  # 5% minimum edge (backtest-optimized)
+        # NO side only — backtest shows NO is more profitable and predictable
         no_edge = (1.0 - fair_prob) - no_ask
-
-        if yes_edge > min_edge and yes_edge > no_edge:
-            return {"side": "yes", "price": yes_ask, "edge": yes_edge, "fair": fair_prob}
-        elif no_edge > min_edge:
+        if no_edge > min_edge:
             return {"side": "no", "price": no_ask, "edge": no_edge, "fair": fair_prob}
         return None
 

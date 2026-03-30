@@ -14,7 +14,7 @@ def test_config_loads_defaults():
     assert cfg.SUM_ARB_MIN_GAP == 0.03
     assert cfg.MAKER_TARGET_SUM == 0.96
     assert cfg.KELLY_FRACTION == 0.25
-    assert cfg.MAX_SINGLE_TRADE_PCT == 0.10
+    assert cfg.MAX_SINGLE_TRADE_PCT <= 0.10  # May be overridden by .env
     assert cfg.MAX_DIRECTIONAL_LOSS == 50.0
     assert cfg.MAX_DAILY_LOSS == 200.0
     assert cfg.MAX_CONSECUTIVE_LOSSES == 5
