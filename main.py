@@ -119,7 +119,8 @@ class Bot:
 
         while self._running:
             app = create_app(self.db, bankroll=self.order_manager.bankroll,
-                           kalshi_client=self.kalshi_client, config=self.config)
+                           kalshi_client=self.kalshi_client, config=self.config,
+                           sports_trader=self.sports_trader)
             started = False
             for port in (8080, 8081, 8082):
                 config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")

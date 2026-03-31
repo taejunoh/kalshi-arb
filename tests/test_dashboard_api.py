@@ -77,5 +77,5 @@ async def test_get_performance(client):
     data = resp.json()
     assert "sum_arb" in data
     assert "maker_preorder" in data
-    assert data["sum_arb"]["trade_count"] == 1
-    assert data["sum_arb"]["total_pnl"] == 4.0
+    assert data["sum_arb"]["live"]["trade_count"] == 1
+    assert data["sum_arb"]["live"]["total_pnl"] == 4.0

@@ -37,6 +37,7 @@ class SportsTraderStrategy:
         self._traded_tickers: dict[str, float] = {}
         self._odds_cache: dict[str, dict] = {}  # game_key -> {home_prob, away_prob, updated}
         self._http: Optional[httpx.AsyncClient] = None
+        self.odds_api_usage: dict = {"used": 0, "remaining": 0, "last": 0}  # exposed to dashboard
 
         # Load persisted traded tickers to survive restarts
         self._load_traded_tickers()
@@ -75,6 +76,12 @@ class SportsTraderStrategy:
                 },
             )
             resp.raise_for_status()
+            # Track API usage from response headers
+            self.odds_api_usage = {
+                "used": int(resp.headers.get("x-requests-used", 0)),
+                "remaining": int(resp.headers.get("x-requests-remaining", 0)),
+                "last": int(resp.headers.get("x-requests-last", 0)),
+            }
             return resp.json()
         except Exception as e:
             logger.error(f"Odds API error for {sport}: {e}")

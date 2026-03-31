@@ -347,6 +347,10 @@
         <span class="stat-label">Total Trades</span>
         <span class="stat-value neutral" id="s-trades">—</span>
       </div>
+      <div class="stat">
+        <span class="stat-label">Odds API</span>
+        <span class="stat-value neutral" id="s-odds-usage">—</span>
+      </div>
     </div>
     <div class="refresh-info">
       <span id="refresh-dot"></span>
@@ -570,10 +574,11 @@ async function apiFetch(path) {
 // ─────────────────────────────────────────────
 async function refreshStatus() {
   try {
-    const [d, s, live] = await Promise.all([
+    const [d, s, live, odds] = await Promise.all([
       apiFetch('/api/status'),
       apiFetch('/api/settlement'),
       apiFetch('/api/live').catch(() => ({ balance: null, positions: [] })),
+      apiFetch('/api/odds-usage').catch(() => ({ used: 0, remaining: 0 })),
     ]);
     const liveBalEl    = document.getElementById('s-live-balance');
     const livePosEl    = document.getElementById('s-live-positions');
@@ -614,6 +619,15 @@ async function refreshStatus() {
 
     tradesEl.textContent = d.trade_count ?? '—';
     tradesEl.className   = 'stat-value neutral';
+
+    // Odds API usage
+    const oddsEl = document.getElementById('s-odds-usage');
+    if (odds.used || odds.remaining) {
+      const total = odds.used + odds.remaining;
+      const pct = total > 0 ? ((odds.used / total) * 100).toFixed(0) : 0;
+      oddsEl.textContent = `${odds.used.toLocaleString()} / ${total.toLocaleString()} (${pct}%)`;
+      oddsEl.className = 'stat-value ' + (pct > 80 ? 'negative' : pct > 50 ? 'neutral' : 'positive');
+    }
 
     document.getElementById('refresh-ts').textContent =
       'Updated ' + new Date().toLocaleTimeString('en-US', { hour12: false });

@@ -5,7 +5,7 @@ from typing import Optional
 import os
 
 
-def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None) -> FastAPI:
+def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None, sports_trader=None) -> FastAPI:
     app = FastAPI(title="Kalshi Arb Bot Dashboard")
 
     app.add_middleware(
@@ -145,6 +145,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None)
             s: {"mode": "LIVE" if s in live_strategies else "PAPER"}
             for s in all_strategies
         }
+
+    @app.get("/api/odds-usage")
+    async def get_odds_usage():
+        if sports_trader and hasattr(sports_trader, "odds_api_usage"):
+            return sports_trader.odds_api_usage
+        return {"used": 0, "remaining": 0, "last": 0}
 
     # Serve static frontend files if they exist
     static_dir = os.path.join(os.path.dirname(__file__), "static")
