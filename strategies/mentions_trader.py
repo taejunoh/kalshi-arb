@@ -40,7 +40,8 @@ class MentionsTraderStrategy:
         self._client = kalshi_client
         self._data_provider = FrequencyDataProvider(config.MENTIONS_FREQUENCY_API_URL)
         self._evaluated: dict[str, float] = {}  # ticker -> last eval time
-        self._traded_tickers: set[str] = set()  # tickers already traded (permanent until restart)
+        self._traded_tickers: set[str] = set()  # tickers already traded
+        self._live_positions_loaded = False
         self._last_summary_time = 0.0
 
     def parse_market_title(self, title: str) -> Optional[tuple[str, str]]:
@@ -107,11 +108,23 @@ class MentionsTraderStrategy:
         now = time.time()
         trades_attempted = 0
 
+        # On first run, load existing Kalshi positions to avoid duplicates
+        if not self._live_positions_loaded:
+            try:
+                positions = self._client.get_positions()
+                for p in positions:
+                    if float(p.get("position_fp", 0)) != 0:
+                        self._traded_tickers.add(p["ticker"])
+                if self._traded_tickers:
+                    logger.info(f"[MENTIONS] Loaded {len(self._traded_tickers)} existing live positions")
+            except Exception:
+                pass
+            self._live_positions_loaded = True
+
         for market in markets:
             ticker = market["ticker"]
             if now - self._evaluated.get(ticker, 0) < 300:
                 continue
-            # Skip if we already traded this market this session
             if ticker in self._traded_tickers:
                 continue
             self._evaluated[ticker] = now
