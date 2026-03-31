@@ -33,7 +33,8 @@ async def test_paper_market_order(paper_manager):
     )
     assert result["status"] == "paper_filled"
     assert result["size_usdc"] == 100.0
-    assert paper_manager.bankroll == 900.0
+    # bankroll = 1000 - 100 (size) - 14 (fee: 200 contracts * $0.07) = 886
+    assert paper_manager.bankroll == 886.0
 
 
 @pytest.mark.asyncio

@@ -22,10 +22,16 @@ class SumArbStrategy:
             return None
         if yes_depth < MIN_DEPTH_USDC or no_depth < MIN_DEPTH_USDC:
             return None
-        fee_yes = self.config.estimate_fee_per_contract(int(yes_price * 100))
-        fee_no = self.config.estimate_fee_per_contract(int(no_price * 100))
+        # Calculate fees for a realistic trade size (both sides combined)
+        # Each side gets half the bankroll allocation
+        est_size = self._order_manager.bankroll * self.config.MAX_SINGLE_TRADE_PCT
+        yes_count = max(1, int(est_size / 2 / yes_price))
+        no_count = max(1, int(est_size / 2 / no_price))
+        fee_yes = self.config.estimate_fee(yes_count, int(yes_price * 100))
+        fee_no = self.config.estimate_fee(no_count, int(no_price * 100))
         total_fee = fee_yes + fee_no
-        net_edge = gap - total_fee
+        # net_edge as percentage of total trade size
+        net_edge = gap - (total_fee / est_size) if est_size > 0 else 0
         if net_edge <= 0:
             return None
         return {
