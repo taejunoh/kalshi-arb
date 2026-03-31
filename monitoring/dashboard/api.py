@@ -56,11 +56,32 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None)
     @app.get("/api/settlement")
     async def get_settlement():
         all_trades = await database.get_trades()
-        settled = [t for t in all_trades if t.get("status") == "paper_settled"]
-        unsettled = [t for t in all_trades if t.get("status") == "paper_filled"]
-        total_pnl = sum(t.get("pnl", 0) for t in settled)
+        all_orders = await database.get_open_orders()
+
+        # Separate live vs paper
+        live_strategies = set(config.LIVE_STRATEGIES) if config else set()
+
+        paper_settled = [t for t in all_trades if t.get("status") == "paper_settled"]
+        paper_unsettled = [t for t in all_trades if t.get("status") in ("paper_filled", "paper_open")]
+        paper_pnl = sum(t.get("pnl", 0) for t in paper_settled)
+
+        # Live: calculate from Kalshi positions
+        live_fees = 0.0
+        live_positions = 0
+        live_exposure = 0.0
+        if kalshi_client:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            positions = await loop.run_in_executor(None, kalshi_client.get_positions)
+            for p in positions:
+                pos = float(p.get("position_fp", 0))
+                if pos != 0:
+                    live_positions += 1
+                    live_exposure += float(p.get("market_exposure_dollars", 0))
+                    live_fees += float(p.get("fees_paid_dollars", 0))
+
         by_strategy = {}
-        for t in settled:
+        for t in paper_settled:
             strat = t["strategy"]
             if strat not in by_strategy:
                 by_strategy[strat] = {"settled": 0, "pnl": 0.0, "wins": 0, "losses": 0}
@@ -70,10 +91,23 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None)
                 by_strategy[strat]["wins"] += 1
             elif t.get("pnl", 0) < 0:
                 by_strategy[strat]["losses"] += 1
+
         return {
-            "settled_count": len(settled),
-            "unsettled_count": len(unsettled),
-            "total_realized_pnl": round(total_pnl, 2),
+            "paper": {
+                "settled_count": len(paper_settled),
+                "unsettled_count": len(paper_unsettled),
+                "realized_pnl": round(paper_pnl, 2),
+                "by_strategy": by_strategy,
+            },
+            "live": {
+                "positions": live_positions,
+                "exposure": round(live_exposure, 2),
+                "fees_paid": round(live_fees, 2),
+            },
+            # Keep backward compat
+            "settled_count": len(paper_settled),
+            "unsettled_count": len(paper_unsettled),
+            "total_realized_pnl": round(paper_pnl, 2),
             "by_strategy": by_strategy,
         }
 

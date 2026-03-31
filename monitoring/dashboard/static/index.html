@@ -310,12 +310,16 @@
         <span class="stat-value neutral" id="s-live-positions">—</span>
       </div>
       <div class="stat">
-        <span class="stat-label">Realized PnL</span>
-        <span class="stat-value neutral" id="s-realized-pnl">—</span>
+        <span class="stat-label">Live Fees Paid</span>
+        <span class="stat-value negative" id="s-live-fees">—</span>
       </div>
       <div class="stat">
-        <span class="stat-label">Settled / Pending</span>
-        <span class="stat-value neutral" id="s-settlement">—</span>
+        <span class="stat-label">Live Exposure</span>
+        <span class="stat-value neutral" id="s-live-exposure">—</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Paper PnL</span>
+        <span class="stat-value neutral" id="s-paper-pnl">—</span>
       </div>
       <div class="stat">
         <span class="stat-label">Total Trades</span>
@@ -555,15 +559,23 @@ async function refreshStatus() {
     livePosEl.textContent = posCount;
     livePosEl.className = 'stat-value neutral';
 
-    const realPnl = parseFloat(s.total_realized_pnl);
-    realPnlEl.textContent = fmtMoney(s.total_realized_pnl);
-    if (!isNaN(realPnl) && realPnl !== 0)
-      realPnlEl.className = 'stat-value ' + (realPnl > 0 ? 'positive' : 'negative');
-    else
-      realPnlEl.className = 'stat-value neutral';
+    // Live fees & exposure
+    const liveFeesEl = document.getElementById('s-live-fees');
+    const liveExpEl = document.getElementById('s-live-exposure');
+    const paperPnlEl = document.getElementById('s-paper-pnl');
 
-    settlementEl.textContent = `${s.settled_count} / ${s.unsettled_count}`;
-    settlementEl.className   = 'stat-value neutral';
+    if (s.live) {
+      liveFeesEl.textContent = '-' + fmtMoney(s.live.fees_paid);
+      liveFeesEl.className = 'stat-value negative';
+      liveExpEl.textContent = fmtMoney(s.live.exposure);
+      liveExpEl.className = 'stat-value neutral';
+    }
+
+    if (s.paper) {
+      const pp = parseFloat(s.paper.realized_pnl);
+      paperPnlEl.textContent = fmtMoney(s.paper.realized_pnl) + ` (${s.paper.settled_count} settled)`;
+      paperPnlEl.className = 'stat-value ' + (!isNaN(pp) && pp !== 0 ? (pp > 0 ? 'positive' : 'negative') : 'neutral');
+    }
 
     tradesEl.textContent = d.trade_count ?? '—';
     tradesEl.className   = 'stat-value neutral';
