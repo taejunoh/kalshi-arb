@@ -234,17 +234,22 @@ class SportsTraderStrategy:
                 if not consensus:
                     continue
 
-                # Determine which team YES refers to (first team in "X at Y" is away)
+                # Determine which team YES refers to using yes_sub_title (most reliable)
+                # e.g., ticker -MIN has yes_sub_title="Minnesota", -DET has "Detroit"
+                yes_team = market.get("yes_sub_title", "").lower()
                 home = consensus["home_team"].lower()
-                title_lower = title.lower()
-                home_short = home.split()[-1]
-                if "at" in title_lower:
-                    # "Away at Home" format — YES is typically the first team (away)
-                    first_team_part = title_lower.split("at")[0]
-                    is_home_first = home_short in first_team_part
+                away = consensus["away_team"].lower()
+                # Match yes_team to home or away by checking if city name appears
+                home_city = " ".join(home.split()[:-1]) if len(home.split()) > 1 else home
+                away_city = " ".join(away.split()[:-1]) if len(away.split()) > 1 else away
+                if home_city in yes_team or yes_team in home_city:
+                    fair_prob = consensus["home_prob"]
+                elif away_city in yes_team or yes_team in away_city:
+                    fair_prob = consensus["away_prob"]
                 else:
-                    is_home_first = home_short in title_lower
-                fair_prob = consensus["home_prob"] if is_home_first else consensus["away_prob"]
+                    # Fallback: skip if can't determine
+                    logger.debug(f"[SPORTS] Can't match YES team '{yes_team}' to {home}/{away}")
+                    continue
 
                 signal = self.evaluate(ya, na, fair_prob)
                 if not signal:
