@@ -152,8 +152,11 @@ class OrderManager:
         if resp is None:
             return {"status": "failed"}
         order_id = resp.get("id", "unknown")
-        await self._db.record_order(
-            order_id=order_id, market_id=market_id, strategy=strategy,
-            side=side, price=price, size=size_usdc, order_type="limit", status="open",
-        )
+        try:
+            await self._db.record_order(
+                order_id=order_id, market_id=market_id, strategy=strategy,
+                side=side, price=price, size=size_usdc, order_type="limit", status="open",
+            )
+        except Exception as e:
+            logger.warning(f"DB record_order failed (order already placed on Kalshi): {e}")
         return {"order_id": order_id, "status": "open", "price": price, "size_usdc": size_usdc}

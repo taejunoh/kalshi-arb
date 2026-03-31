@@ -164,11 +164,12 @@ class SpreadScannerStrategy:
                     f"[SPREAD] {ticker}: fair={fair_prob:.2f} ask={yes_ask:.2f}/{no_ask:.2f} "
                     f"edge={signal['edge']:.2f} → {signal['side']} ${size:.2f} LIMIT@{limit_price:.2f} ({hours:.1f}h)"
                 )
+                # Mark BEFORE order to prevent duplicates even if order/DB fails
+                self._traded_tickers[ticker] = now
                 await self._order_manager.limit_order(
                     ticker=ticker, side=signal["side"], price=limit_price,
                     size_usdc=size, strategy="spread_scanner", market_id=ticker,
                 )
-                self._traded_tickers[ticker] = now
                 trades_attempted += 1
             except Exception as e:
                 logger.error(f"Spread scanner error on {ticker}: {e}")

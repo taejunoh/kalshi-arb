@@ -43,13 +43,16 @@ class MentionsTraderStrategy:
         self._traded_tickers: set[str] = set()
         self._last_summary_time = 0.0
 
-        # Load existing Kalshi portfolio immediately to prevent duplicate orders
+        # Load existing Kalshi portfolio + resting orders to prevent duplicate orders
         try:
             positions = kalshi_client.get_positions()
             for p in positions:
                 self._traded_tickers.add(p["ticker"])
+            resting = kalshi_client.get_resting_orders()
+            for o in resting:
+                self._traded_tickers.add(o["ticker"])
             if self._traded_tickers:
-                logger.info(f"[MENTIONS] Init: loaded {len(self._traded_tickers)} Kalshi portfolio tickers")
+                logger.info(f"[MENTIONS] Init: loaded {len(self._traded_tickers)} Kalshi portfolio/order tickers")
         except Exception:
             pass
 
@@ -160,12 +163,12 @@ class MentionsTraderStrategy:
                 # Use limit order (Maker) for better pricing — place at fair value
                 limit_price = round(freq if signal["side"] == "yes" else (1.0 - freq), 2)
                 limit_price = max(0.01, min(0.99, limit_price))
+                # Mark BEFORE order to prevent duplicates even if order/DB fails
+                self._traded_tickers.add(ticker)
                 result = await self._order_manager.limit_order(
                     ticker=ticker, side=signal["side"], price=limit_price,
                     size_usdc=size, strategy="mentions_trader", market_id=ticker,
                 )
-                if result.get("status") != "skipped":
-                    self._traded_tickers.add(ticker)
                 trades_attempted += 1
             except Exception as e:
                 logger.error(f"Mentions trader error on {ticker}: {e}")

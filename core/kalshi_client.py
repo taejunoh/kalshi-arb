@@ -207,6 +207,17 @@ class KalshiClient:
             logger.error(f"Failed to get positions: {e}")
             return []
 
+    def get_resting_orders(self) -> list[dict]:
+        """Fetch all resting (unfilled) limit orders from Kalshi portfolio."""
+        try:
+            data = self._get("/trade-api/v2/portfolio/orders?status=resting")
+            if data is None:
+                return []
+            return data.get("orders", [])
+        except Exception as e:
+            logger.error(f"Failed to get resting orders: {e}")
+            return []
+
     def get_balance(self) -> Optional[float]:
         try:
             data = self._get("/trade-api/v2/portfolio/balance")

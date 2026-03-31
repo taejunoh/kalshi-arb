@@ -215,11 +215,12 @@ class SportsTraderStrategy:
                     f"ask={ya:.2f}/{na:.2f} edge={signal['edge']:.2f} "
                     f"→ {signal['side']} ${size:.2f} LIMIT@{limit_price:.2f}"
                 )
+                # Mark BEFORE order to prevent duplicates even if order/DB fails
+                self._traded_tickers[ticker] = now
                 await self._order_manager.limit_order(
                     ticker=ticker, side=signal["side"], price=limit_price,
                     size_usdc=size, strategy="sports_trader", market_id=ticker,
                 )
-                self._traded_tickers[ticker] = now
                 trades_attempted += 1
 
         if now - self._last_summary_time >= 60:
