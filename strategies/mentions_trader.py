@@ -1,4 +1,6 @@
+import json
 import logging
+import os
 import re
 import time
 from typing import Optional
@@ -33,6 +35,8 @@ TICKER_KEYWORD_MAP = {
 class MentionsTraderStrategy:
     """Trade mentions markets using historical speech frequency data."""
 
+    TRADED_TICKERS_FILE = "data/mentions_traded_tickers.json"
+
     def __init__(self, config, order_manager, market_scanner, kalshi_client):
         self.config = config
         self._order_manager = order_manager
@@ -43,18 +47,45 @@ class MentionsTraderStrategy:
         self._traded_tickers: set[str] = set()
         self._last_summary_time = 0.0
 
-        # Load existing Kalshi portfolio + resting orders to prevent duplicate orders
+        # Layer 1: Load from persistent file (survives API failures)
+        self._load_traded_tickers_file()
+
+        # Layer 2: Load from Kalshi API (positions + resting orders)
         try:
             positions = kalshi_client.get_positions()
             for p in positions:
                 self._traded_tickers.add(p["ticker"])
+        except Exception as e:
+            logger.error(f"[MENTIONS] CRITICAL: Failed to load positions — duplicates possible: {e}")
+        try:
             resting = kalshi_client.get_resting_orders()
             for o in resting:
                 self._traded_tickers.add(o["ticker"])
-            if self._traded_tickers:
-                logger.info(f"[MENTIONS] Init: loaded {len(self._traded_tickers)} Kalshi portfolio/order tickers")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"[MENTIONS] CRITICAL: Failed to load resting orders — duplicates possible: {e}")
+
+        # Save merged set back to file
+        self._save_traded_tickers_file()
+        logger.info(f"[MENTIONS] Init: loaded {len(self._traded_tickers)} tickers (file + API)")
+
+    def _load_traded_tickers_file(self):
+        """Load traded tickers from persistent file."""
+        try:
+            if os.path.exists(self.TRADED_TICKERS_FILE):
+                with open(self.TRADED_TICKERS_FILE) as f:
+                    tickers = json.load(f)
+                self._traded_tickers.update(tickers)
+                logger.info(f"[MENTIONS] Loaded {len(tickers)} tickers from file")
+        except Exception as e:
+            logger.warning(f"[MENTIONS] Could not load traded tickers file: {e}")
+
+    def _save_traded_tickers_file(self):
+        """Persist traded tickers to file."""
+        try:
+            with open(self.TRADED_TICKERS_FILE, "w") as f:
+                json.dump(sorted(self._traded_tickers), f)
+        except Exception as e:
+            logger.warning(f"[MENTIONS] Could not save traded tickers file: {e}")
 
     def parse_market_title(self, title: str) -> Optional[tuple[str, str]]:
         """Extract (person, keyword) from market title. Returns None if no match."""
@@ -165,6 +196,7 @@ class MentionsTraderStrategy:
                 limit_price = max(0.01, min(0.99, limit_price))
                 # Mark BEFORE order to prevent duplicates even if order/DB fails
                 self._traded_tickers.add(ticker)
+                self._save_traded_tickers_file()
                 result = await self._order_manager.limit_order(
                     ticker=ticker, side=signal["side"], price=limit_price,
                     size_usdc=size, strategy="mentions_trader", market_id=ticker,
