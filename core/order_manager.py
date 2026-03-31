@@ -148,7 +148,11 @@ class OrderManager:
 
     async def _live_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
         count = max(1, int(size_usdc / price))
-        resp = self._client.place_limit_order(ticker, side, int(price * 100), count)
+        # Kalshi API: yes_price is ALWAYS the YES contract price in cents.
+        # When buying NO at price X, yes_price = 100 - X (since NO cost = 100 - yes_price).
+        price_cents = int(price * 100)
+        yes_price_cents = price_cents if side == "yes" else (100 - price_cents)
+        resp = self._client.place_limit_order(ticker, side, yes_price_cents, count)
         if resp is None:
             return {"status": "failed"}
         order_id = resp.get("id", "unknown")

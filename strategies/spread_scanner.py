@@ -1,5 +1,7 @@
+import json
 import logging
 import math
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -14,6 +16,8 @@ CRYPTO_SYMBOL_MAP = {"KXBTC": "BTC", "KXETH": "ETH", "KXSOL": "SOL", "KXXRP": "X
 class SpreadScannerStrategy:
     """Scan crypto markets for mispricings using Binance spot price as fair value."""
 
+    TRADED_TICKERS_FILE = "data/spread_traded_tickers.json"
+
     def __init__(self, config, order_manager, market_scanner, kalshi_client, price_feed=None):
         self.config = config
         self._order_manager = order_manager
@@ -23,6 +27,26 @@ class SpreadScannerStrategy:
         self._last_scan_time = 0.0
         self._last_summary_time = 0.0
         self._traded_tickers: dict[str, float] = {}  # ticker -> trade_time (cooldown)
+
+        # Load persisted traded tickers to survive restarts
+        self._load_traded_tickers()
+
+    def _load_traded_tickers(self):
+        try:
+            if os.path.exists(self.TRADED_TICKERS_FILE):
+                with open(self.TRADED_TICKERS_FILE) as f:
+                    data = json.load(f)
+                self._traded_tickers.update(data)
+                logger.info(f"[SPREAD] Loaded {len(data)} traded tickers from file")
+        except Exception as e:
+            logger.warning(f"[SPREAD] Could not load traded tickers: {e}")
+
+    def _save_traded_tickers(self):
+        try:
+            with open(self.TRADED_TICKERS_FILE, "w") as f:
+                json.dump(self._traded_tickers, f)
+        except Exception as e:
+            logger.warning(f"[SPREAD] Could not save traded tickers: {e}")
 
     def _get_symbol(self, ticker: str) -> Optional[str]:
         """Extract crypto symbol from ticker (e.g., KXBTC-... → BTC)."""
@@ -166,6 +190,7 @@ class SpreadScannerStrategy:
                 )
                 # Mark BEFORE order to prevent duplicates even if order/DB fails
                 self._traded_tickers[ticker] = now
+                self._save_traded_tickers()
                 await self._order_manager.limit_order(
                     ticker=ticker, side=signal["side"], price=limit_price,
                     size_usdc=size, strategy="spread_scanner", market_id=ticker,

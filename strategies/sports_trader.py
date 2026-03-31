@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -23,6 +25,8 @@ TEAM_ALIASES = {
 class SportsTraderStrategy:
     """Trade sports game markets by comparing Kalshi prices to sportsbook odds."""
 
+    TRADED_TICKERS_FILE = "data/sports_traded_tickers.json"
+
     def __init__(self, config, order_manager, kalshi_client):
         self.config = config
         self._order_manager = order_manager
@@ -33,6 +37,26 @@ class SportsTraderStrategy:
         self._traded_tickers: dict[str, float] = {}
         self._odds_cache: dict[str, dict] = {}  # game_key -> {home_prob, away_prob, updated}
         self._http: Optional[httpx.AsyncClient] = None
+
+        # Load persisted traded tickers to survive restarts
+        self._load_traded_tickers()
+
+    def _load_traded_tickers(self):
+        try:
+            if os.path.exists(self.TRADED_TICKERS_FILE):
+                with open(self.TRADED_TICKERS_FILE) as f:
+                    data = json.load(f)
+                self._traded_tickers.update(data)
+                logger.info(f"[SPORTS] Loaded {len(data)} traded tickers from file")
+        except Exception as e:
+            logger.warning(f"[SPORTS] Could not load traded tickers: {e}")
+
+    def _save_traded_tickers(self):
+        try:
+            with open(self.TRADED_TICKERS_FILE, "w") as f:
+                json.dump(self._traded_tickers, f)
+        except Exception as e:
+            logger.warning(f"[SPORTS] Could not save traded tickers: {e}")
 
     async def _fetch_odds(self, sport: str) -> list[dict]:
         """Fetch odds from The Odds API."""
@@ -190,13 +214,17 @@ class SportsTraderStrategy:
                 if not consensus:
                     continue
 
-                # Determine which team YES refers to
+                # Determine which team YES refers to (first team in "X at Y" is away)
                 home = consensus["home_team"].lower()
                 title_lower = title.lower()
-                if home.split()[-1] in title_lower.split("at")[0] if "at" in title_lower else title_lower:
-                    fair_prob = consensus["home_prob"]
+                home_short = home.split()[-1]
+                if "at" in title_lower:
+                    # "Away at Home" format — YES is typically the first team (away)
+                    first_team_part = title_lower.split("at")[0]
+                    is_home_first = home_short in first_team_part
                 else:
-                    fair_prob = consensus["away_prob"]
+                    is_home_first = home_short in title_lower
+                fair_prob = consensus["home_prob"] if is_home_first else consensus["away_prob"]
 
                 signal = self.evaluate(ya, na, fair_prob)
                 if not signal:
@@ -217,6 +245,7 @@ class SportsTraderStrategy:
                 )
                 # Mark BEFORE order to prevent duplicates even if order/DB fails
                 self._traded_tickers[ticker] = now
+                self._save_traded_tickers()
                 await self._order_manager.limit_order(
                     ticker=ticker, side=signal["side"], price=limit_price,
                     size_usdc=size, strategy="sports_trader", market_id=ticker,
