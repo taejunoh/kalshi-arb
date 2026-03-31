@@ -10,6 +10,7 @@ def _make_strategy():
     config.SPREAD_SCANNER_MIN_VOLUME = 500
     config.SPREAD_SCANNER_INTERVAL = 0
     config.SPREAD_SCANNER_MAX_HOURS = 12
+    config.SPREAD_SCANNER_MIN_EDGE = 0.05
     order_mgr = MagicMock()
     order_mgr.is_circuit_breaker_active.return_value = False
     order_mgr.calculate_position_size.return_value = 50.0

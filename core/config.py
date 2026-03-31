@@ -49,6 +49,7 @@ class Config:
         self.SPREAD_SCANNER_MIN_VOLUME = int(os.getenv("SPREAD_SCANNER_MIN_VOLUME", "500"))
         self.SPREAD_SCANNER_INTERVAL = int(os.getenv("SPREAD_SCANNER_INTERVAL", "300"))
         self.SPREAD_SCANNER_MAX_HOURS = float(os.getenv("SPREAD_SCANNER_MAX_HOURS", "12"))
+        self.SPREAD_SCANNER_MIN_EDGE = float(os.getenv("SPREAD_SCANNER_MIN_EDGE", "0.05"))
 
         # Sports Trader strategy
         self.SPORTS_ENABLED = os.getenv("SPORTS_ENABLED", "false").lower() == "true"
