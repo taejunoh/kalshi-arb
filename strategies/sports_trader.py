@@ -212,6 +212,13 @@ class SportsTraderStrategy:
                 if now - self._traded_tickers.get(ticker, 0) < 3600:
                     continue
 
+                # Per-cycle limit: max 3 trades and max 30% bankroll per scan
+                if trades_attempted >= 3:
+                    break
+                cycle_spent = self._order_manager.get_strategy_exposure("sports_trader")
+                if cycle_spent > self._order_manager.bankroll * 0.30:
+                    break
+
                 title = market.get("title", "")
                 ya = float(market.get("yes_ask_dollars", "0"))
                 na = float(market.get("no_ask_dollars", "0"))
