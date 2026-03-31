@@ -174,7 +174,7 @@ curl localhost:8080/api/settlement
 
 1. **전략별 Live/Paper** — `LIVE_STRATEGIES` env var로 개별 전환
 2. **실제 잔고 체크** — Live 주문 전 Kalshi API로 잔고 확인
-3. **포지션 로딩** — 시작 시 기존 포지션 + resting orders 로딩 (중복 방지)
+3. **포지션 로딩 (`__init__`)** — 생성자에서 Kalshi 전체 포트폴리오 로딩 (중복 방지). `scan_and_execute` 전에 완료되어 race condition 없음
 4. **Bankroll 싱크** — 시작 시 Kalshi 잔고로 자동 동기화
 5. **Circuit Breaker** — 일일 $200 손실 한도, 연속 5패 시 15분 정지
 6. **리밋 오더 전체** — Maker: -10% vs Taker: -32%
@@ -188,9 +188,11 @@ curl localhost:8080/api/settlement
 1. **API 필드명 오류** → 모든 가격 None → 거래 0건 수 시간 방치
 2. **Sigmoid 수식 오류** → 확률 전부 ~0 → 잘못된 거래
 3. **v1 spread scanner** → 7c YES 매수 → 20/22 패배 (-$197)
-4. **재시작 시 포지션 미로딩** → 중복 투자 $73
+4. **재시작 시 포지션 미로딩** → 중복 투자 $73 (3번 수정 후 해결)
 5. **대시보드 39K orders** → 브라우저 메모리 폭주
 6. **Live/Paper PnL 미분리** → 혼란
+7. **UNIQUE constraint** → Kalshi 포트폴리오의 position=0 마켓도 스킵 필요
+8. **Race condition** → `scan_and_execute`에서 포지션 로딩 시 첫 사이클이 먼저 실행 → `__init__`으로 이동
 
 ### Top 트레이더 리서치
 - catboyautist ($1K→$300K): 멘션 트랜스크립트 + 공격적 사이징
@@ -204,6 +206,8 @@ curl localhost:8080/api/settlement
 
 | Commit | Description |
 |--------|-------------|
+| `63421ba` | 포트폴리오 로딩을 __init__으로 이동 (race condition 해결) |
+| `86a4396` | 전체 포트폴리오 스킵 (position=0 마켓 포함) |
 | `10e1f89` | resting orders 로딩 + bankroll 싱크 |
 | `f96a334` | 대시보드 Live/Paper PnL 분리 |
 | `8cd6572` | 대시보드: Live 잔고, 포지션, LIVE/PAPER 뱃지 |
