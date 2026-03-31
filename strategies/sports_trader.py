@@ -127,22 +127,28 @@ class SportsTraderStrategy:
         }
 
     def _match_kalshi_to_odds(self, kalshi_title: str, odds_games: list[dict]) -> Optional[dict]:
-        """Match a Kalshi market title to odds API game data."""
+        """Match a Kalshi market title to odds API game data.
+
+        Kalshi uses city names ("Phoenix at Charlotte"), while Odds API uses
+        full team names ("Phoenix Suns" vs "Charlotte Hornets"). Match by
+        checking if city/first word of BOTH teams appears in the title.
+        """
         title_lower = kalshi_title.lower()
         for game in odds_games:
             home = game.get("home_team", "").lower()
             away = game.get("away_team", "").lower()
-            # Check if both teams appear in the Kalshi title
-            home_short = home.split()[-1]  # Last word of team name
-            away_short = away.split()[-1]
-            if home_short in title_lower and away_short in title_lower:
-                return game
-            # Try first word
+            # City name is typically the first word(s) before the mascot
+            # "Phoenix Suns" → "phoenix", "Los Angeles Lakers" → "los angeles"
+            home_city = " ".join(home.split()[:-1]) if len(home.split()) > 1 else home
+            away_city = " ".join(away.split()[:-1]) if len(away.split()) > 1 else away
+            # Also try just the first word for short city names
             home_first = home.split()[0]
             away_first = away.split()[0]
-            if home_first in title_lower or away_first in title_lower:
-                if home_short in title_lower or away_short in title_lower:
-                    return game
+            # Both cities must appear in title
+            home_match = home_city in title_lower or home_first in title_lower
+            away_match = away_city in title_lower or away_first in title_lower
+            if home_match and away_match:
+                return game
         return None
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float) -> Optional[dict]:
