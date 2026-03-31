@@ -285,6 +285,28 @@
       padding: 28px 14px;
     }
 
+    /* ── Toggle buttons ── */
+    .toggle-btn {
+      background: transparent;
+      color: var(--text-dim);
+      border: none;
+      padding: 4px 14px;
+      border-radius: 4px;
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: all 0.15s;
+    }
+    .toggle-btn.active {
+      background: var(--accent);
+      color: #fff;
+    }
+    .toggle-btn:hover:not(.active) {
+      color: var(--text);
+    }
+
     /* ── Responsive ── */
     @media (max-width: 640px) {
       header { padding: 12px 16px; gap: 16px; }
@@ -336,7 +358,13 @@
 
     <!-- ── Performance Cards ── -->
     <section id="perf-section">
-      <div class="section-title">Strategy Performance</div>
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div class="section-title" style="margin-bottom:0">Strategy Performance</div>
+        <div id="perf-toggle" style="display:flex;gap:2px;background:var(--surface2);border-radius:var(--radius);padding:2px;">
+          <button class="toggle-btn active" data-mode="live">Live</button>
+          <button class="toggle-btn" data-mode="paper">Paper</button>
+        </div>
+      </div>
       <div class="perf-grid" id="perf-grid">
         <div class="perf-card" style="color:var(--text-dim);font-size:12px;">Loading…</div>
       </div>
@@ -595,71 +623,80 @@ async function refreshStatus() {
 }
 
 // ─────────────────────────────────────────────
-//  Performance Cards
+//  Performance Cards (Live / Paper toggle)
 // ─────────────────────────────────────────────
+let perfCache = {};
+let stratStatusCache = {};
+let perfMode = 'live';
+
+// Toggle handler
+document.getElementById('perf-toggle').addEventListener('click', e => {
+  if (!e.target.classList.contains('toggle-btn')) return;
+  document.querySelectorAll('#perf-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+  e.target.classList.add('active');
+  perfMode = e.target.dataset.mode;
+  renderPerfCards();
+});
+
+function renderPerfCards() {
+  const grid = document.getElementById('perf-grid');
+  const strategies = Object.keys(perfCache);
+  if (strategies.length === 0) {
+    grid.innerHTML = '<div class="perf-card" style="color:var(--text-dim);font-size:12px;">No strategy data yet.</div>';
+    return;
+  }
+
+  grid.innerHTML = strategies.map(strat => {
+    const d = (perfCache[strat] || {})[perfMode] || {trade_count:0, total_pnl:0, total_size:0, wins:0, losses:0};
+    const currentMode = (stratStatusCache[strat] || {}).mode || 'PAPER';
+    const modeBadge = currentMode === 'LIVE'
+      ? '<span class="badge badge-green" style="float:right">LIVE</span>'
+      : '<span class="badge badge-gray" style="float:right">PAPER</span>';
+
+    const pnl = parseFloat(d.total_pnl);
+    const pnlStr = fmtMoney(d.total_pnl);
+    const pnlCls = !isNaN(pnl) && pnl !== 0 ? (pnl > 0 ? 'positive' : 'negative') : '';
+    const wins = d.wins || 0;
+    const losses = d.losses || 0;
+    const total = wins + losses;
+    const winRate = total > 0 ? ((wins / total) * 100).toFixed(0) + '%' : '—';
+
+    return `
+      <div class="perf-card">
+        <div class="strategy-name">${strat} ${modeBadge}</div>
+        <div class="perf-row">
+          <span class="perf-key">Trades</span>
+          <span class="perf-val">${d.trade_count}</span>
+        </div>
+        <div class="perf-row">
+          <span class="perf-key">PnL</span>
+          <span class="perf-val ${pnlCls}">${pnlStr}</span>
+        </div>
+        <div class="perf-row">
+          <span class="perf-key">Win / Loss</span>
+          <span class="perf-val"><span class="positive">${wins}W</span> / <span class="negative">${losses}L</span></span>
+        </div>
+        <div class="perf-row">
+          <span class="perf-key">Win Rate</span>
+          <span class="perf-val">${winRate}</span>
+        </div>
+        <div class="perf-row">
+          <span class="perf-key">Volume</span>
+          <span class="perf-val">${fmtMoney(d.total_size)}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
 async function refreshPerf() {
   try {
-    const [perfData, settlData, stratStatus] = await Promise.all([
+    const [perfData, stratStatus] = await Promise.all([
       apiFetch('/api/performance'),
-      apiFetch('/api/settlement'),
       apiFetch('/api/strategy-status').catch(() => ({})),
     ]);
-    const grid = document.getElementById('perf-grid');
-    const strategies = Object.keys(perfData);
-
-    if (strategies.length === 0) {
-      grid.innerHTML = '<div class="perf-card" style="color:var(--text-dim);font-size:12px;">No strategy data yet.</div>';
-      return;
-    }
-
-    grid.innerHTML = strategies.map(strat => {
-      const d = perfData[strat];
-      const s = (settlData.by_strategy || {})[strat] || {};
-      const pnl = parseFloat(d.total_pnl);
-      const pnlStr = fmtMoney(d.total_pnl);
-      const pnlCls = !isNaN(pnl) && pnl !== 0 ? (pnl > 0 ? 'positive' : 'negative') : '';
-      const wins = s.wins || 0;
-      const losses = s.losses || 0;
-      const settled = s.settled || 0;
-      const winRate = settled > 0 ? ((wins / settled) * 100).toFixed(0) + '%' : '—';
-      const realPnl = s.pnl || 0;
-      const realPnlStr = fmtMoney(realPnl);
-      const realPnlCls = realPnl > 0 ? 'positive' : realPnl < 0 ? 'negative' : '';
-      const mode = (stratStatus[strat] || {}).mode || 'PAPER';
-      const modeBadge = mode === 'LIVE'
-        ? '<span class="badge badge-green" style="float:right">LIVE</span>'
-        : '<span class="badge badge-gray" style="float:right">PAPER</span>';
-      const liveTrades = d.live_trades || 0;
-      const paperTrades = d.paper_trades || 0;
-      return `
-        <div class="perf-card">
-          <div class="strategy-name">${strat} ${modeBadge}</div>
-          <div class="perf-row">
-            <span class="perf-key">Live Trades</span>
-            <span class="perf-val">${liveTrades}</span>
-          </div>
-          <div class="perf-row">
-            <span class="perf-key">Paper Trades</span>
-            <span class="perf-val" style="color:var(--text-dim)">${paperTrades}</span>
-          </div>
-          <div class="perf-row">
-            <span class="perf-key">Realized PnL</span>
-            <span class="perf-val ${realPnlCls}">${realPnlStr}</span>
-          </div>
-          <div class="perf-row">
-            <span class="perf-key">Win / Loss</span>
-            <span class="perf-val"><span class="positive">${wins}W</span> / <span class="negative">${losses}L</span></span>
-          </div>
-          <div class="perf-row">
-            <span class="perf-key">Win Rate</span>
-            <span class="perf-val">${winRate}</span>
-          </div>
-          <div class="perf-row">
-            <span class="perf-key">Volume</span>
-            <span class="perf-val">${fmtMoney(d.total_size)}</span>
-          </div>
-        </div>`;
-    }).join('');
+    perfCache = perfData;
+    stratStatusCache = stratStatus;
+    renderPerfCards();
   } catch (e) {
     document.getElementById('perf-grid').innerHTML =
       `<div class="perf-card" style="color:var(--red);font-size:12px;">Failed to load: ${e.message}</div>`;
