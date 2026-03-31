@@ -38,19 +38,31 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None)
     @app.get("/api/performance")
     async def get_performance():
         all_trades = await database.get_trades()
+        live_strategies = set(config.LIVE_STRATEGIES) if config else set()
         # Always show all strategies, even with 0 trades
         all_strategy_names = [
             "sum_arb", "maker_preorder", "market_maker",
             "shutdown_fade", "spread_scanner", "mentions_trader", "sports_trader",
         ]
-        strategies = {s: {"trade_count": 0, "total_pnl": 0.0, "total_size": 0.0} for s in all_strategy_names}
+        strategies = {s: {
+            "trade_count": 0, "total_pnl": 0.0, "total_size": 0.0,
+            "live_trades": 0, "paper_trades": 0,
+        } for s in all_strategy_names}
         for trade in all_trades:
             strat = trade["strategy"]
             if strat not in strategies:
-                strategies[strat] = {"trade_count": 0, "total_pnl": 0.0, "total_size": 0.0}
+                strategies[strat] = {
+                    "trade_count": 0, "total_pnl": 0.0, "total_size": 0.0,
+                    "live_trades": 0, "paper_trades": 0,
+                }
+            is_paper = trade.get("status", "").startswith("paper")
             strategies[strat]["trade_count"] += 1
             strategies[strat]["total_pnl"] += trade.get("pnl", 0)
             strategies[strat]["total_size"] += trade.get("size", 0)
+            if is_paper:
+                strategies[strat]["paper_trades"] += 1
+            else:
+                strategies[strat]["live_trades"] += 1
         return strategies
 
     @app.get("/api/settlement")

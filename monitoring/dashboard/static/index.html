@@ -629,12 +629,18 @@ async function refreshPerf() {
       const modeBadge = mode === 'LIVE'
         ? '<span class="badge badge-green" style="float:right">LIVE</span>'
         : '<span class="badge badge-gray" style="float:right">PAPER</span>';
+      const liveTrades = d.live_trades || 0;
+      const paperTrades = d.paper_trades || 0;
       return `
         <div class="perf-card">
           <div class="strategy-name">${strat} ${modeBadge}</div>
           <div class="perf-row">
-            <span class="perf-key">Trades</span>
-            <span class="perf-val">${d.trade_count ?? 0}</span>
+            <span class="perf-key">Live Trades</span>
+            <span class="perf-val">${liveTrades}</span>
+          </div>
+          <div class="perf-row">
+            <span class="perf-key">Paper Trades</span>
+            <span class="perf-val" style="color:var(--text-dim)">${paperTrades}</span>
           </div>
           <div class="perf-row">
             <span class="perf-key">Realized PnL</span>
