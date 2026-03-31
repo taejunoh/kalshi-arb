@@ -65,8 +65,16 @@ class Bot:
         setup_logger("bot")
         await self.db.initialize()
 
+        # Sync bankroll with actual Kalshi balance if any strategy is live
+        if self.config.LIVE_STRATEGIES:
+            real_balance = self.kalshi_client.get_balance()
+            if real_balance is not None:
+                self.order_manager.bankroll = real_balance
+                logger.info(f"Synced bankroll to Kalshi balance: ${real_balance:.2f}")
+
         mode = "PAPER" if self.config.is_paper_mode else "LIVE"
-        logger.info(f"Bot starting in {mode} mode | Bankroll: ${self.order_manager.bankroll:.2f}")
+        live_strats = ", ".join(self.config.LIVE_STRATEGIES) if self.config.LIVE_STRATEGIES else "none"
+        logger.info(f"Bot starting in {mode} mode | Bankroll: ${self.order_manager.bankroll:.2f} | Live: {live_strats}")
         await self.notifier.notify_bot_status("Started", self.order_manager.bankroll)
 
         if not self.config.is_paper_mode:

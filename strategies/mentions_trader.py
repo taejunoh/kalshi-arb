@@ -108,15 +108,17 @@ class MentionsTraderStrategy:
         now = time.time()
         trades_attempted = 0
 
-        # On first run, load existing Kalshi positions to avoid duplicates
+        # On first run, load existing Kalshi positions AND resting orders to avoid duplicates
         if not self._live_positions_loaded:
             try:
                 positions = self._client.get_positions()
                 for p in positions:
-                    if float(p.get("position_fp", 0)) != 0:
+                    has_position = float(p.get("position_fp", 0)) != 0
+                    has_resting = int(p.get("resting_orders_count", 0)) > 0
+                    if has_position or has_resting:
                         self._traded_tickers.add(p["ticker"])
                 if self._traded_tickers:
-                    logger.info(f"[MENTIONS] Loaded {len(self._traded_tickers)} existing live positions")
+                    logger.info(f"[MENTIONS] Loaded {len(self._traded_tickers)} existing live positions/orders")
             except Exception:
                 pass
             self._live_positions_loaded = True
