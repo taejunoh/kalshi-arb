@@ -370,6 +370,12 @@
       <div class="section-title">Trade History</div>
       <div class="table-wrap">
         <div class="table-toolbar">
+          <label for="mode-filter">Mode</label>
+          <select id="mode-filter">
+            <option value="">All</option>
+            <option value="live">Live</option>
+            <option value="paper">Paper</option>
+          </select>
           <label for="strategy-filter">Strategy</label>
           <select id="strategy-filter">
             <option value="">All</option>
@@ -380,6 +386,7 @@
             <thead>
               <tr>
                 <th>Timestamp</th>
+                <th>Mode</th>
                 <th>Strategy</th>
                 <th>Market</th>
                 <th>Direction</th>
@@ -391,7 +398,7 @@
               </tr>
             </thead>
             <tbody id="trades-body">
-              <tr class="empty-row"><td colspan="9">Loading trades…</td></tr>
+              <tr class="empty-row"><td colspan="10">Loading trades…</td></tr>
             </tbody>
           </table>
         </div>
@@ -675,7 +682,7 @@ async function refreshTrades() {
     renderTrades();
   } catch (e) {
     document.getElementById('trades-body').innerHTML =
-      `<tr class="empty-row"><td colspan="9">Error: ${e.message}</td></tr>`;
+      `<tr class="empty-row"><td colspan="10">Error: ${e.message}</td></tr>`;
   }
 }
 
@@ -695,13 +702,28 @@ function updateStrategyFilter() {
   if (current) sel.value = current;
 }
 
+function getTradeMode(status) {
+  if (!status) return 'paper';
+  return status.startsWith('paper') ? 'paper' : 'live';
+}
+
+function modeBadge(status) {
+  const mode = getTradeMode(status);
+  return mode === 'live'
+    ? '<span class="badge badge-green">LIVE</span>'
+    : '<span class="badge badge-gray">PAPER</span>';
+}
+
 function renderTrades() {
-  const filter = document.getElementById('strategy-filter').value;
-  const rows = filter ? allTrades.filter(t => t.strategy === filter) : allTrades;
+  const stratFilter = document.getElementById('strategy-filter').value;
+  const modeFilter = document.getElementById('mode-filter').value;
+  let rows = allTrades;
+  if (stratFilter) rows = rows.filter(t => t.strategy === stratFilter);
+  if (modeFilter) rows = rows.filter(t => getTradeMode(t.status) === modeFilter);
   const tbody = document.getElementById('trades-body');
 
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No trades found.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="10">No trades found.</td></tr>';
     return;
   }
 
@@ -711,6 +733,7 @@ function renderTrades() {
     return `
       <tr>
         <td class="td-mono">${fmtTs(t.timestamp)}</td>
+        <td>${modeBadge(t.status)}</td>
         <td><span class="badge badge-blue">${t.strategy || '—'}</span></td>
         <td class="td-mono" title="${t.market_id || ''}">${shortMarket(t.market_id)}</td>
         <td>${directionBadge(t.direction)}</td>
@@ -797,6 +820,7 @@ async function refreshPositions() {
 //  Initialise & schedule
 // ─────────────────────────────────────────────
 document.getElementById('strategy-filter').addEventListener('change', renderTrades);
+document.getElementById('mode-filter').addEventListener('change', renderTrades);
 
 async function fullRefresh() {
   await Promise.allSettled([
