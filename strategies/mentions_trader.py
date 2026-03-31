@@ -40,9 +40,18 @@ class MentionsTraderStrategy:
         self._client = kalshi_client
         self._data_provider = FrequencyDataProvider(config.MENTIONS_FREQUENCY_API_URL)
         self._evaluated: dict[str, float] = {}  # ticker -> last eval time
-        self._traded_tickers: set[str] = set()  # tickers already traded
-        self._live_positions_loaded = False
+        self._traded_tickers: set[str] = set()
         self._last_summary_time = 0.0
+
+        # Load existing Kalshi portfolio immediately to prevent duplicate orders
+        try:
+            positions = kalshi_client.get_positions()
+            for p in positions:
+                self._traded_tickers.add(p["ticker"])
+            if self._traded_tickers:
+                logger.info(f"[MENTIONS] Init: loaded {len(self._traded_tickers)} Kalshi portfolio tickers")
+        except Exception:
+            pass
 
     def parse_market_title(self, title: str) -> Optional[tuple[str, str]]:
         """Extract (person, keyword) from market title. Returns None if no match."""
@@ -107,20 +116,6 @@ class MentionsTraderStrategy:
 
         now = time.time()
         trades_attempted = 0
-
-        # On first run, load ALL markets we've ever interacted with on Kalshi
-        if not self._live_positions_loaded:
-            try:
-                positions = self._client.get_positions()
-                for p in positions:
-                    # Skip any market that appears in our Kalshi portfolio at all
-                    # (position, resting, or previously traded)
-                    self._traded_tickers.add(p["ticker"])
-                if self._traded_tickers:
-                    logger.info(f"[MENTIONS] Loaded {len(self._traded_tickers)} Kalshi portfolio tickers (skip all)")
-            except Exception:
-                pass
-            self._live_positions_loaded = True
 
         for market in markets:
             ticker = market["ticker"]
