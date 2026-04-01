@@ -159,6 +159,8 @@ class OrderManager:
         if resp is None:
             return {"status": "failed"}
         order_id = resp.get("id", "unknown")
+        fee = self.config.estimate_fee(count, yes_price_cents)
+        self.bankroll -= (size_usdc + fee)
         try:
             await self._db.record_order(
                 order_id=order_id, market_id=market_id, strategy=strategy,

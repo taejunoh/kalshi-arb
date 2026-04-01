@@ -77,7 +77,6 @@ class SportsTraderStrategy:
         self._last_scan_time = 0.0
         self._last_summary_time = 0.0
         self._traded_tickers: dict[str, float] = {}
-        self._odds_cache: dict[str, dict] = {}  # game_key -> {home_prob, away_prob, updated}
         self._http: Optional[httpx.AsyncClient] = None
         self.odds_api_usage: dict = {"used": 0, "remaining": 0, "last": 0}  # exposed to dashboard
 
@@ -198,16 +197,10 @@ class SportsTraderStrategy:
         for game in odds_games:
             home = game.get("home_team", "").lower()
             away = game.get("away_team", "").lower()
+            # Full city name (all words except mascot)
             home_city = " ".join(home.split()[:-1]) if len(home.split()) > 1 else home
             away_city = " ".join(away.split()[:-1]) if len(away.split()) > 1 else away
-            # Only use first-word fallback for single-word cities
-            home_match = home_city in title_lower
-            away_match = away_city in title_lower
-            if not home_match and len(home_city.split()) == 1:
-                home_match = home_city in title_lower
-            if not away_match and len(away_city.split()) == 1:
-                away_match = away_city in title_lower
-            if home_match and away_match:
+            if home_city in title_lower and away_city in title_lower:
                 return game
         return None
 
@@ -293,8 +286,8 @@ class SportsTraderStrategy:
 
                 ticker = market["ticker"]
                 markets_scanned += 1
-                if now - self._traded_tickers.get(ticker, 0) < 3600:
-                    continue
+                if ticker in self._traded_tickers:
+                    continue  # permanent block — sports games are one-time events
 
                 # Skip if we already traded the other side of this game
                 # Game ID = ticker minus the team suffix (e.g., KXNBAGAME-26APR01DENUTA)
