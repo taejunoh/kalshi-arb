@@ -180,6 +180,12 @@ class SpreadScannerStrategy:
         candidates.sort(key=lambda x: x[0], reverse=True)
         trades_attempted = 0
 
+        # Total exposure limit: max 30% of bankroll in spread positions
+        current_exposure = self._order_manager.get_strategy_exposure("spread_scanner")
+        max_exposure = self._order_manager.bankroll * 0.30
+        if current_exposure > max_exposure:
+            return
+
         for edge, ticker, market, yes_ask, no_ask, signal, fair_prob, hours in candidates[:5]:
             try:
                 size = self._order_manager.calculate_position_size(signal["edge"])
