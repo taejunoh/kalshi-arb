@@ -207,7 +207,7 @@ class SportsTraderStrategy:
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float) -> Optional[dict]:
         """Compare Kalshi price to fair probability from sportsbook consensus.
         Edge is calculated NET of Kalshi maker fees."""
-        min_edge = 0.08  # 8% minimum edge AFTER fees
+        min_edge = 0.01  # 1% minimum edge AFTER fees
         fee_per_contract = self.config.KALSHI_FEE_PER_CONTRACT  # $0.07
 
         # YES side: buy at kalshi_yes, fee per contract capped at min(fee, price, 1-price)
