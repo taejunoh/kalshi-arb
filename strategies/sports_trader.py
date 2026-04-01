@@ -60,7 +60,8 @@ class SportsTraderStrategy:
             logger.warning(f"[SPORTS] Could not save traded tickers: {e}")
 
     def _get_live_sports_exposure(self) -> float:
-        """Get total exposure from Kalshi API for sports positions."""
+        """Get total exposure from Kalshi API for sports positions.
+        Returns large value on failure to prevent trading when unknown."""
         try:
             positions = self._client.get_positions()
             return sum(
@@ -69,8 +70,9 @@ class SportsTraderStrategy:
                 if any(s in p.get("ticker", "") for s in ["NBAGAME", "MLBGAME", "NHLGAME"])
                 and float(p.get("position_fp", 0)) != 0
             )
-        except Exception:
-            return 0.0
+        except Exception as e:
+            logger.error(f"[SPORTS] Failed to get exposure, blocking trades: {e}")
+            return float("inf")  # Block trading when exposure unknown
 
     async def _fetch_odds(self, sport: str) -> list[dict]:
         """Fetch odds from The Odds API."""
@@ -203,9 +205,23 @@ class SportsTraderStrategy:
 
         trades_attempted = 0
         markets_scanned = 0
+        max_trades_per_cycle = 3
+        hit_limit = False
+
+        # Check total exposure ONCE per cycle (not per market)
+        total_exposure = self._get_live_sports_exposure()
+        max_exposure = self._order_manager.bankroll * 0.30
+        if total_exposure > max_exposure:
+            logger.info(f"[SPORTS] Exposure ${total_exposure:.2f} > limit ${max_exposure:.2f}, skipping")
+            return
+
+        # Track game IDs already traded this cycle to avoid betting both sides
+        traded_games: set[str] = set()
 
         loop = asyncio.get_event_loop()
         for series in SPORTS_SERIES:
+            if hit_limit:
+                break
             try:
                 data = await loop.run_in_executor(
                     None,
@@ -220,19 +236,20 @@ class SportsTraderStrategy:
 
             odds_games = all_odds.get(series, [])
             for market in markets:
+                if trades_attempted >= max_trades_per_cycle:
+                    hit_limit = True
+                    break
+
                 ticker = market["ticker"]
                 markets_scanned += 1
                 if now - self._traded_tickers.get(ticker, 0) < 3600:
                     continue
 
-                # Per-cycle limit: max 3 trades per scan
-                if trades_attempted >= 3:
-                    break
-                # Total exposure limit: max 30% of bankroll across all sports positions
-                # Use Kalshi API for real exposure (survives restarts)
-                total_exposure = self._get_live_sports_exposure()
-                if total_exposure > self._order_manager.bankroll * 0.30:
-                    break
+                # Skip if we already traded the other side of this game
+                # Game ID = ticker minus the team suffix (e.g., KXNBAGAME-26APR01DENUTA)
+                game_id = "-".join(ticker.split("-")[:-1])
+                if game_id in traded_games:
+                    continue
 
                 title = market.get("title", "")
                 ya = float(market.get("yes_ask_dollars", "0"))
@@ -291,6 +308,7 @@ class SportsTraderStrategy:
                     size_usdc=size, strategy="sports_trader", market_id=ticker,
                 )
                 trades_attempted += 1
+                traded_games.add(game_id)
 
         if now - self._last_summary_time >= 60:
             logger.info(
