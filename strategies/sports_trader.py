@@ -13,25 +13,54 @@ logger = logging.getLogger("sports_trader")
 # Kalshi sports series
 SPORTS_SERIES = ["KXNBAGAME", "KXMLBGAME", "KXNHLGAME"]
 
-# Odds API full name → Kalshi short name for ambiguous cities
-# Used when multiple teams share a city (New York, Los Angeles, Chicago)
+# Odds API full name → Kalshi yes_sub_title for disambiguation
+# Covers: ambiguous cities (NY, LA, Chicago) + NHL abbreviated format
 ODDS_TO_KALSHI_SHORT = {
+    # MLB
     "los angeles dodgers": "los angeles d",
-    "los angeles lakers": "los angeles l",
-    "los angeles clippers": "los angeles c",
     "los angeles angels": "los angeles a",
-    "los angeles kings": "los angeles k",
-    "los angeles chargers": "los angeles ch",
     "new york yankees": "new york y",
     "new york mets": "new york m",
-    "new york knicks": "new york k",
-    "new york nets": "brooklyn",  # Nets use Brooklyn
-    "new york rangers": "new york r",
-    "new york islanders": "new york i",
     "chicago white sox": "chicago ws",
     "chicago cubs": "chicago c",
+    # NBA
+    "los angeles lakers": "los angeles l",
+    "los angeles clippers": "los angeles c",
+    "new york knicks": "new york k",
+    "brooklyn nets": "brooklyn",
     "chicago bulls": "chicago b",
-    "chicago blackhawks": "chicago b",
+    # NHL — Kalshi uses "ABR Mascot" format (e.g., "SJ Sharks", "EDM Oilers")
+    "san jose sharks": "sj sharks",
+    "anaheim ducks": "ana ducks",
+    "los angeles kings": "la kings",
+    "st louis blues": "stl blues",
+    "colorado avalanche": "col avalanche",
+    "vancouver canucks": "van canucks",
+    "edmonton oilers": "edm oilers",
+    "seattle kraken": "sea kraken",
+    "winnipeg jets": "wpg jets",
+    "chicago blackhawks": "chi blackhawks",
+    "new york rangers": "nyr rangers",
+    "new york islanders": "nyi islanders",
+    "carolina hurricanes": "car hurricanes",
+    "columbus blue jackets": "cbj blue jackets",
+    "calgary flames": "cgy flames",
+    "vegas golden knights": "vgk golden knights",
+    "nashville predators": "nsh predators",
+    "toronto maple leafs": "tor maple leafs",
+    "montreal canadiens": "mtl canadiens",
+    "detroit red wings": "det red wings",
+    "minnesota wild": "min wild",
+    "buffalo sabres": "buf sabres",
+    "ottawa senators": "ott senators",
+    "dallas stars": "dal stars",
+    "tampa bay lightning": "tb lightning",
+    "florida panthers": "fla panthers",
+    "pittsburgh penguins": "pit penguins",
+    "philadelphia flyers": "phi flyers",
+    "washington capitals": "wsh capitals",
+    "boston bruins": "bos bruins",
+    "new jersey devils": "nj devils",
 }
 
 
@@ -161,22 +190,23 @@ class SportsTraderStrategy:
 
         Kalshi uses city names ("Phoenix at Charlotte"), while Odds API uses
         full team names ("Phoenix Suns" vs "Charlotte Hornets"). Match by
-        checking if city/first word of BOTH teams appears in the title.
+        checking if FULL city name of BOTH teams appears in the title.
+        Single-word fallback only for single-word cities to avoid
+        "San" matching both "San Diego" and "San Francisco".
         """
         title_lower = kalshi_title.lower()
         for game in odds_games:
             home = game.get("home_team", "").lower()
             away = game.get("away_team", "").lower()
-            # City name is typically the first word(s) before the mascot
-            # "Phoenix Suns" → "phoenix", "Los Angeles Lakers" → "los angeles"
             home_city = " ".join(home.split()[:-1]) if len(home.split()) > 1 else home
             away_city = " ".join(away.split()[:-1]) if len(away.split()) > 1 else away
-            # Also try just the first word for short city names
-            home_first = home.split()[0]
-            away_first = away.split()[0]
-            # Both cities must appear in title
-            home_match = home_city in title_lower or home_first in title_lower
-            away_match = away_city in title_lower or away_first in title_lower
+            # Only use first-word fallback for single-word cities
+            home_match = home_city in title_lower
+            away_match = away_city in title_lower
+            if not home_match and len(home_city.split()) == 1:
+                home_match = home_city in title_lower
+            if not away_match and len(away_city.split()) == 1:
+                away_match = away_city in title_lower
             if home_match and away_match:
                 return game
         return None
