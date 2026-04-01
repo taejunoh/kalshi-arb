@@ -59,6 +59,19 @@ class SportsTraderStrategy:
         except Exception as e:
             logger.warning(f"[SPORTS] Could not save traded tickers: {e}")
 
+    def _get_live_sports_exposure(self) -> float:
+        """Get total exposure from Kalshi API for sports positions."""
+        try:
+            positions = self._client.get_positions()
+            return sum(
+                float(p.get("market_exposure_dollars", 0))
+                for p in positions
+                if any(s in p.get("ticker", "") for s in ["NBAGAME", "MLBGAME", "NHLGAME"])
+                and float(p.get("position_fp", 0)) != 0
+            )
+        except Exception:
+            return 0.0
+
     async def _fetch_odds(self, sport: str) -> list[dict]:
         """Fetch odds from The Odds API."""
         if not self._odds_api_key:
@@ -212,11 +225,13 @@ class SportsTraderStrategy:
                 if now - self._traded_tickers.get(ticker, 0) < 3600:
                     continue
 
-                # Per-cycle limit: max 3 trades and max 30% bankroll per scan
+                # Per-cycle limit: max 3 trades per scan
                 if trades_attempted >= 3:
                     break
-                cycle_spent = self._order_manager.get_strategy_exposure("sports_trader")
-                if cycle_spent > self._order_manager.bankroll * 0.30:
+                # Total exposure limit: max 30% of bankroll across all sports positions
+                # Use Kalshi API for real exposure (survives restarts)
+                total_exposure = self._get_live_sports_exposure()
+                if total_exposure > self._order_manager.bankroll * 0.30:
                     break
 
                 title = market.get("title", "")
