@@ -96,10 +96,14 @@ class SpreadScannerStrategy:
         return None
 
     def evaluate_crypto(self, yes_ask: float, no_ask: float, fair_prob: float) -> Optional[dict]:
-        """Compare market price to Binance-estimated fair value. NO-only mode."""
+        """Compare market price to Binance-estimated fair value. NO-only mode.
+        Edge is calculated NET of Kalshi maker fees."""
         min_edge = self.config.SPREAD_SCANNER_MIN_EDGE
+        fee = self.config.KALSHI_FEE_PER_CONTRACT
         # NO side only — backtest shows NO is more profitable and predictable
-        no_edge = (1.0 - fair_prob) - no_ask
+        # Fee as % of contract price: min(fee, price, 1-price) / price
+        no_fee_pct = min(fee, no_ask, 1 - no_ask) / no_ask if no_ask > 0 else 0
+        no_edge = (1.0 - fair_prob) - no_ask * (1 + no_fee_pct)
         if no_edge > min_edge:
             return {"side": "no", "price": no_ask, "edge": no_edge, "fair": fair_prob}
         return None

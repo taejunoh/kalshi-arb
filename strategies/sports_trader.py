@@ -13,12 +13,25 @@ logger = logging.getLogger("sports_trader")
 # Kalshi sports series
 SPORTS_SERIES = ["KXNBAGAME", "KXMLBGAME", "KXNHLGAME"]
 
-# Team name normalization (Kalshi name → odds API name)
-TEAM_ALIASES = {
-    "Los Angeles D": "Los Angeles Dodgers", "Los Angeles L": "Los Angeles Lakers",
-    "Los Angeles C": "Los Angeles Clippers", "New York Y": "New York Yankees",
-    "New York M": "New York Mets", "New York K": "New York Knicks",
-    "Chicago WS": "Chicago White Sox", "Chicago C": "Chicago Cubs",
+# Odds API full name → Kalshi short name for ambiguous cities
+# Used when multiple teams share a city (New York, Los Angeles, Chicago)
+ODDS_TO_KALSHI_SHORT = {
+    "los angeles dodgers": "los angeles d",
+    "los angeles lakers": "los angeles l",
+    "los angeles clippers": "los angeles c",
+    "los angeles angels": "los angeles a",
+    "los angeles kings": "los angeles k",
+    "los angeles chargers": "los angeles ch",
+    "new york yankees": "new york y",
+    "new york mets": "new york m",
+    "new york knicks": "new york k",
+    "new york nets": "brooklyn",  # Nets use Brooklyn
+    "new york rangers": "new york r",
+    "new york islanders": "new york i",
+    "chicago white sox": "chicago ws",
+    "chicago cubs": "chicago c",
+    "chicago bulls": "chicago b",
+    "chicago blackhawks": "chicago b",
 }
 
 
@@ -102,10 +115,10 @@ class SportsTraderStrategy:
             logger.error(f"Odds API error for {sport}: {e}")
             return []
 
-    def _decimal_to_prob(self, decimal_odds: float) -> float:
-        """Convert decimal odds to implied probability."""
-        if decimal_odds <= 1:
-            return 0.5
+    def _decimal_to_prob(self, decimal_odds: float) -> Optional[float]:
+        """Convert decimal odds to implied probability. Returns None for invalid odds."""
+        if decimal_odds <= 1.0:
+            return None
         return 1.0 / decimal_odds
 
     def _consensus_probability(self, game: dict) -> Optional[dict]:
@@ -124,6 +137,8 @@ class SportsTraderStrategy:
                 for outcome in market.get("outcomes", []):
                     odds = outcome.get("price", 0)
                     prob = self._decimal_to_prob(odds)
+                    if prob is None:
+                        continue
                     if outcome.get("name") == home_team:
                         home_probs.append(prob)
                     elif outcome.get("name") == away_team:
@@ -277,17 +292,25 @@ class SportsTraderStrategy:
                 yes_team = market.get("yes_sub_title", "").lower()
                 home = consensus["home_team"].lower()
                 away = consensus["away_team"].lower()
-                # Match yes_team to home or away by checking if city name appears
-                home_city = " ".join(home.split()[:-1]) if len(home.split()) > 1 else home
-                away_city = " ".join(away.split()[:-1]) if len(away.split()) > 1 else away
-                if home_city in yes_team or yes_team in home_city:
+
+                # First try exact short-name match for ambiguous cities (NY, LA, Chicago)
+                home_short = ODDS_TO_KALSHI_SHORT.get(home, "")
+                away_short = ODDS_TO_KALSHI_SHORT.get(away, "")
+                if home_short and home_short == yes_team:
                     fair_prob = consensus["home_prob"]
-                elif away_city in yes_team or yes_team in away_city:
+                elif away_short and away_short == yes_team:
                     fair_prob = consensus["away_prob"]
                 else:
-                    # Fallback: skip if can't determine
-                    logger.debug(f"[SPORTS] Can't match YES team '{yes_team}' to {home}/{away}")
-                    continue
+                    # Fallback: city name matching for non-ambiguous teams
+                    home_city = " ".join(home.split()[:-1]) if len(home.split()) > 1 else home
+                    away_city = " ".join(away.split()[:-1]) if len(away.split()) > 1 else away
+                    if home_city in yes_team or yes_team in home_city:
+                        fair_prob = consensus["home_prob"]
+                    elif away_city in yes_team or yes_team in away_city:
+                        fair_prob = consensus["away_prob"]
+                    else:
+                        logger.debug(f"[SPORTS] Can't match YES team '{yes_team}' to {home}/{away}")
+                        continue
 
                 signal = self.evaluate(ya, na, fair_prob)
                 if not signal:

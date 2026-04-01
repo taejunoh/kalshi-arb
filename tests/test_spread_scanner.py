@@ -11,6 +11,7 @@ def _make_strategy():
     config.SPREAD_SCANNER_INTERVAL = 0
     config.SPREAD_SCANNER_MAX_HOURS = 12
     config.SPREAD_SCANNER_MIN_EDGE = 0.05
+    config.KALSHI_FEE_PER_CONTRACT = 0.07
     order_mgr = MagicMock()
     order_mgr.is_circuit_breaker_active.return_value = False
     order_mgr.calculate_position_size.return_value = 50.0
@@ -51,7 +52,8 @@ def test_evaluate_crypto_no_underpriced():
     signal = strat.evaluate_crypto(yes_ask=0.60, no_ask=0.50, fair_prob=0.20)
     assert signal is not None
     assert signal["side"] == "no"
-    assert signal["edge"] == pytest.approx(0.30)
+    # Net edge = (1-0.20) - 0.50 * (1 + 0.07/0.50) = 0.80 - 0.57 = 0.23
+    assert signal["edge"] == pytest.approx(0.23)
 
 
 def test_no_yes_trades_in_no_only_mode():
