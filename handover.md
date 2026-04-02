@@ -2,16 +2,16 @@
 
 ## Project Overview
 
-Kalshi 예측 시장 자동 트레이딩 봇. 7개 전략 (3 Live + 4 Paper), 실시간 대시보드, 자동 Settlement.
+Kalshi 예측 시장 자동 트레이딩 봇. 6개 전략 (3 Live + 3 Paper), 실시간 대시보드, 자동 Settlement.
 
 - **Repo**: `github.com/taejunoh/kalshi-arb`
 - **언어**: Python 3.11
 - **서버**: AWS EC2 `18.223.21.52` (us-east-2, t3.micro)
 - **대시보드**: http://18.223.21.52:8080
-- **테스트**: 95개 전체 통과
+- **테스트**: 91개 전체 통과
 - **총 입금**: $425 ($100 + $100 + $25 + $200)
-- **Live 잔고**: $200.00
-- **Live 포지션**: 14개 멘션 마켓 (~$211 투자)
+- **Live 잔고**: ~$100 (변동)
+- **Live 포지션**: 멘션 15개 + 스포츠 5개 + 크립토 수시
 - **Odds API**: 20K plan ($30/월), 키: `1b51233d...`
 
 ---
@@ -20,107 +20,102 @@ Kalshi 예측 시장 자동 트레이딩 봇. 7개 전략 (3 Live + 4 Paper), �
 
 ```
 kalshi-arb/
-├── main.py                          # 봇 오케스트레이터 (7개 전략 + settlement)
+├── main.py                          # 봇 오케스트레이터 (6개 전략 + settlement)
 ├── core/
 │   ├── config.py                    # .env 설정, LIVE_STRATEGIES, SPREAD_SCANNER_MIN_EDGE
-│   ├── database.py                  # SQLite — 거래/주문/settlement
+│   ├── database.py                  # SQLite — 거래/주문/settlement + paper fill 조회
 │   ├── price_feed.py                # Binance WebSocket — BTC/ETH/SOL
-│   ├── kalshi_client.py             # REST API v2 (마켓 + 오더북 + 잔고 + 포지션 + resting orders)
+│   ├── kalshi_client.py             # REST API v2 (마켓 + 오더북 + 잔고 + 포지션 + resting orders + settlements)
 │   ├── market_scanner.py            # 이중 폴링: 크립토(5초) + 타겟 시리즈(30초)
-│   ├── order_manager.py             # 전략별 Live/Paper, yes_price 변환, 잔고 체크
-│   ├── settlement.py                # 마켓 settle 감지 → PnL 자동 계산
+│   ├── order_manager.py             # 전략별 Live/Paper, yes_price 변환, bankroll 차감, 잔고 체크
+│   ├── settlement.py                # Paper fill 시뮬레이션 + 마켓 settle PnL 계산
 │   └── external_data.py             # Fed 트랜스크립트 빈도 데이터
 ├── strategies/
 │   ├── mentions_trader.py           # ⭐ LIVE — Fed 멘션 (3중 중복 방지)
-│   ├── spread_scanner.py            # ⭐ LIVE — 크립토 단기 (파일 영구 저장)
-│   ├── sports_trader.py             # ⭐ LIVE — 스포츠 (파일 영구 저장, 30분 스캔)
+│   ├── spread_scanner.py            # ⭐ LIVE — 크립토 단기 (수수료 반영, 노출 한도)
+│   ├── sports_trader.py             # ⭐ LIVE — 스포츠 (수수료 반영, 노출 한도, 팀 매칭)
 │   ├── market_maker.py              # Paper — 양방향 호가
 │   ├── shutdown_fade.py             # Paper — 셧다운 페이드
-│   ├── sum_arb.py                   # Paper — YES+NO 아비트라지
+│   ├── sum_arb.py                   # 제거됨 (Kalshi YES+NO ≈ $1, 아비트라지 불가)
 │   └── maker_preorder.py            # Paper — 단기 프리오더
 ├── monitoring/
 │   ├── logger.py                    # 루트 로거, 일별 로테이션
 │   ├── notifier.py                  # Telegram 알림
 │   └── dashboard/
 │       ├── api.py                   # /status, /trades, /orders, /performance,
-│       │                            # /settlement, /live, /strategy-status
-│       └── static/index.html        # 대시보드 (Live/Paper 분리, 포지션 표시)
+│       │                            # /settlement, /live, /strategy-status,
+│       │                            # /settlement-history, /odds-usage
+│       └── static/index.html        # 대시보드 (Settlement History, Paper Performance 분리)
 ├── data/
 │   ├── mention_frequencies.json     # Powell 키워드 빈도 데이터
 │   ├── mentions_traded_tickers.json # 멘션 중복 방지 (영구 저장)
 │   ├── spread_traded_tickers.json   # 크립토 중복 방지 (영구 저장)
-│   ├── sports_traded_tickers.json   # 스포츠 중복 방지 (영구 저장)
+│   ├── sports_traded_tickers.json   # 스포츠 중복 방지 (영구 저장, 영구 차단)
 │   └── bot.db                       # SQLite 거래/주문 DB
 ├── scripts/
 │   ├── build_mention_data.py        # Fed 트랜스크립트 파싱
-│   └── backtest_spread_scanner.py   # 크립토 백테스트
+│   ├── backtest_spread_scanner.py   # 크립토 백테스트
+│   ├── verify_all.py                # 전체 전략 end-to-end 검증
+│   ├── verify_mlb_nhl.py            # MLB/NHL 매칭 + 팀 식별 검증
+│   └── check_edges.py              # 스포츠 엣지 분포 분석
 ├── deploy/                          # EC2 배포 (setup.sh, systemd)
 ├── docs/
 │   ├── strategy-guide.md            # 전략 상세 가이드
 │   └── backtest-results.md          # 백테스트 결과
-└── tests/                           # 95개 테스트
+└── tests/                           # 91개 테스트
 ```
 
 ---
 
-## Strategies (7개)
+## Strategies (6개)
 
 ### LIVE (3개 — 실제 돈)
 
 **1. Mentions Trader** ⭐ 최고 알파
 - Fed 기자회견 트랜스크립트 8개 분석 → 마켓 가격과 비교
 - **공격적 사이징**: 50%+ 엣지 → 15% bankroll, 30%+ → 10%, 15%+ → 5%
-- 14개 Live 포지션 보유 (~$211)
+- 15개 Live 포지션 보유 (~$215)
 - Settle: **4/30 Fed 기자회견** 후
 - **3중 중복 방지**: 파일 + Kalshi API (positions + resting orders) + 메모리
 
 **2. Spread Scanner** — 크립토 단기
 - Binance spot → sigmoid 확률 → Kalshi와 비교
 - **NO-only** 모드 (백테스트 최적화)
-- 엣지 임계값: `SPREAD_SCANNER_MIN_EDGE` env var (현재 3%)
+- 엣지 임계값: `SPREAD_SCANNER_MIN_EDGE` env var (현재 3%), **수수료 반영 후 net edge**
 - 12시간 이내 settle, 리밋 오더
+- **총 노출 한도**: bankroll 30% 초과 시 거래 정지
 - 파일 영구 저장으로 중복 방지
 
 **3. Sports Trader** — NBA/MLB/NHL
 - The Odds API 컨센서스 오즈 vs Kalshi 가격 (20K plan, $30/월)
-- 8%+ 엣지, 30분 스캔 간격 (`SPORTS_SCAN_INTERVAL=1800`)
+- **1% net edge** (수수료 반영 후), 30분 스캔 간격
+- **팀 식별**: `yes_sub_title` + `ODDS_TO_KALSHI_SHORT` dict (MLB/NBA/NHL 전팀)
+- **안전장치**: 사이클당 최대 3건, 총 노출 bankroll 30%, 같은 경기 양팀 배팅 방지, 영구 ticker 차단
 - 파일 영구 저장으로 중복 방지
 
-### PAPER (4개 — 시뮬레이션)
+### PAPER (3개 — 시뮬레이션)
 
 4. **Market Maker** — 양방향 호가, 동적 스프레드 (2-4c)
-5. **Shutdown Fade** — 셧다운 NO 매수
-6. **Sum Arb** — YES+NO < $1 아비트라지
-7. **Maker Pre-Order** — 2-30분 마켓 양방향 리밋
+5. **Shutdown Fade** — 셧다운 NO 매수 (117건 거래 중)
+6. **Maker Pre-Order** — 2-30분 마켓 양방향 리밋
+
+**제거됨**: Sum Arb — Kalshi YES+NO ≈ $1.00, 수수료 후 아비트라지 불가
 
 ---
 
-## Per-Strategy Live/Paper Control
+## Live Performance (2026-04-01 기준)
 
-```env
-TRADING_MODE=paper                    # 기본 Paper
-LIVE_STRATEGIES=mentions_trader,spread_scanner,sports_trader
-```
+### Sports Trader (settle된 17건)
+- **8W 9L, 승률 47%**
+- Revenue $187 / Cost $160 / Fees $6.59
+- **Net PnL: +$20.41**
+- 참고: 홈/어웨이 뒤집힘 버그 상태에서 배팅한 결과 (운)
 
-Live 전략은:
-- 실제 Kalshi API로 주문
-- 시작 시 실제 잔고와 bankroll 싱크
-- 기존 포지션/resting orders 로딩 (중복 방지)
-- 주문 전 실제 Kalshi 잔고 확인
-- `_traded_tickers` 파일 영구 저장
+### Spread Scanner
+- ETH NO 12x $2.64 체결 (첫 거래)
 
----
-
-## Live Investment Status
-
-| | 금액 |
-|---|---|
-| 총 입금 | $425 |
-| Live 잔고 | $200.00 |
-| 멘션 포지션 (14개) | ~$211 |
-| 수수료 지출 | ~$10.56 |
-| Settle 예정 | 4/30 Fed 기자회견 |
-| Odds API 비용 | $30/월 |
+### Mentions Trader
+- 15개 포지션, 4/30 settle 대기
 
 ---
 
@@ -128,83 +123,88 @@ Live 전략은:
 
 http://18.223.21.52:8080
 
-**헤더**: Live Balance, Live Positions, Live Fees, Live Exposure, Paper PnL, Total Trades
-**전략 카드**: 7개 전략 전부 표시, LIVE/PAPER 뱃지, Realized PnL, Win/Loss, 승률
-**Live Positions**: Kalshi 실제 포지션 테이블 (ticker, side, quantity, exposure, fees)
-**Trade History**: 전략별 필터, Live/Paper 구분
-**Open Orders**: 최근 100개 (메모리 최적화)
+**헤더**: Live Balance, Live Positions, Live Fees, Live Exposure, Paper PnL, Total Trades, **Odds API Usage**
+**Settlement History**: Kalshi API 실제 정산 — 전략별 W/L, 승률, Net PnL, 개별 거래 내역
+**Strategy Performance (Paper)**: Paper 전략만 표시 — Live는 Settlement History에서 확인
+**Live Positions**: Kalshi 실제 포지션 테이블
+**Trade History**: Live/Paper 필터 + Mode 뱃지
+**Open Orders**: 최근 100개
 
 API 엔드포인트:
 - `/api/status` — bankroll, daily PnL, trade count
 - `/api/live` — Kalshi 실제 잔고 + 포지션
 - `/api/strategy-status` — 전략별 LIVE/PAPER
-- `/api/performance` — 7개 전략 성과
+- `/api/performance` — Paper 전략 성과 (live/paper 분리)
+- `/api/settlement-history` — Kalshi settlement W/L/PnL (전략별)
+- `/api/odds-usage` — Odds API 사용량 (used/remaining)
 - `/api/settlement` — Live/Paper 분리된 PnL
 - `/api/trades`, `/api/orders`
 
 ---
 
-## Critical Bug Fixes (2026-03-31)
+## Critical Bug Fixes (2026-03-31 ~ 04-02)
 
-### 1. yes_price NO 주문 가격 뒤집힘 (CRITICAL)
-- **문제**: Kalshi API의 `yes_price`는 항상 YES 가격인데, NO 주문 시 NO 가격을 그대로 보냄
-- **증상**: GAS NO 99c 주문 → yes_price=99 → 실제 NO 비용 1c (절대 체결 안 됨)
-- **영향**: 전 전략의 모든 NO 리밋 오더 가격이 뒤집혀 있었음
-- **수정**: `order_manager.py` — NO일 때 `yes_price = 100 - price_cents`
-- **조치**: 잘못된 resting orders 24개 전부 취소
+### Phase 1: 중복 주문 ($48 손실)
+1. `_traded_tickers` 주문 후 마킹 → **주문 전**으로 이동
+2. 재시작 시 resting orders 미로딩 → positions + resting orders + 파일 3중 로딩
+3. `except: pass` → `logger.error(CRITICAL)` 명시적 로깅
+4. DB `record_order` 에러 전파 → `_live_limit_order`에서 catch
 
-### 2. 중복 주문으로 $48 손실
-- **문제**: `_traded_tickers.add(ticker)`가 주문 **이후** try 블록 안에 있어서, DB UNIQUE 에러 시 ticker 미등록 → 5분마다 반복 주문
-- **증상**: SHOC에 $47.51, GOOD에 $1.14 중복 투자 ($51.65 → $3.00)
-- **수정**: `_traded_tickers` 마킹을 주문 **전**으로 이동 (전 전략)
+### Phase 2: yes_price NO 주문 가격 뒤집힘
+5. NO 주문 시 `yes_price = 100 - price_cents` 변환 추가
+6. 잘못된 resting orders 24개 전부 취소
 
-### 3. 재시작 시 중복 방지 없음
-- **문제**: `_traded_tickers`가 메모리 only → 봇 재시작하면 빈 상태로 시작 → 같은 마켓에 또 주문
-- **수정**: 3중 방지 (mentions) / 파일 영구 저장 (spread, sports)
-  - `data/mentions_traded_tickers.json` (파일 + Kalshi positions + resting orders)
-  - `data/spread_traded_tickers.json`
-  - `data/sports_traded_tickers.json`
+### Phase 3: Sports Trader 대수술
+7. 게임 매칭: mascot 이름 → **도시명 매칭** (Phoenix Suns → "phoenix" in title)
+8. 팀 식별: title 파싱 → **`yes_sub_title`** 사용 (Kalshi가 제공하는 정확한 데이터)
+9. NHL: "ABR Mascot" 형식 (SJ Sharks, EDM Oilers) → `ODDS_TO_KALSHI_SHORT` 30팀 추가
+10. 같은 도시 두 팀: `ODDS_TO_KALSHI_SHORT` exact match 우선 (NY Mets vs Yankees)
+11. `_decimal_to_prob`: odds ≤ 1 → None 반환 (0.5 대신 skip)
+12. 수수료 반영: net edge = gross edge - fee% (8% → **1% net edge**)
+13. 사이클 한도: max 3건 + **총 노출 30% bankroll** (Kalshi API 기반)
+14. 같은 경기 양팀 배팅 방지: `game_id` 추적
+15. 영구 ticker 차단: 1시간 쿨다운 → 영구 set
+16. live bankroll 차감: `_live_limit_order`에서 size + fee 차감
 
-### 4. `except Exception: pass` 에러 삼킴
-- **문제**: init에서 positions/resting orders 로딩 실패 시 에러를 무시하고 빈 상태로 진행
-- **수정**: `logger.error(CRITICAL: ...)` 로 명시적 로깅
+### Phase 4: Paper Trading 개선
+17. Paper market order 수수료 미차감 → `bankroll -= (size + fee)`
+18. Paper limit order bankroll 미예약 → 주문 시 즉시 차감
+19. sum_arb 수수료 과소 계산 → 실제 트레이드 크기 기준 계산
+20. **Paper limit order fill 시뮬레이션** 추가 (market_maker, maker_preorder 작동)
 
-### 5. sports_trader 홈팀 감지 ternary 버그
-- **문제**: Python ternary 연산자 우선순위로 home/away 확률이 뒤바뀔 수 있음
-- **수정**: 명시적 if/else 블록으로 재작성
-
-### 6. DB record_order 에러 전파
-- **문제**: `_live_limit_order`에서 DB 에러가 exception으로 전파 → 전략의 try/except에서 catch → ticker 미등록
-- **수정**: `_live_limit_order` 내에서 DB 에러를 catch + warning 로그
+### Phase 5: sum_arb 제거
+21. Kalshi YES+NO ≈ $1.00, 수수료 후 아비트라지 불가 → 전략 + 테스트 제거
 
 ---
 
 ## Safety Mechanisms
 
 1. **3중 중복 방지** (mentions) — 파일 + Kalshi API + 메모리
-2. **파일 영구 저장** (spread, sports) — 재시작해도 복구
-3. **주문 전 마킹** — 모든 전략에서 `_traded_tickers`를 주문 전에 갱신
+2. **파일 영구 저장** (전 전략) — 재시작해도 복구
+3. **주문 전 마킹** — 모든 전략에서 `_traded_tickers`를 주문 전에 갱신 + 저장
 4. **yes_price 변환** — NO 주문 시 `100 - price_cents` 자동 변환
-5. **실제 잔고 체크** — Live 주문 전 Kalshi API로 잔고 확인
-6. **Bankroll 싱크** — 시작 시 Kalshi 잔고로 자동 동기화
-7. **Circuit Breaker** — 일일 $200 손실 한도, 연속 5패 시 15분 정지
-8. **리밋 오더 전체** — Maker: -10% vs Taker: -32%
-9. **극단 가격 필터** — 5c 미만 스킵
-10. **DB 에러 방어** — `_live_limit_order`에서 DB 실패 catch
+5. **수수료 반영 엣지** — sports/spread 모두 net edge 기준 거래
+6. **총 노출 한도** — sports: Kalshi API 기반 30%, spread: 메모리 기반 30%
+7. **사이클 한도** — sports: max 3건/사이클 + 같은 경기 양팀 방지
+8. **영구 ticker 차단** — sports: 한 번 거래한 마켓 다시 안 함
+9. **실제 잔고 체크** — Live 주문 전 Kalshi API로 잔고 확인
+10. **Bankroll 차감** — Live limit order에서도 size + fee 차감
+11. **API 실패 시 차단** — `_get_live_sports_exposure()` 실패 → `inf` 반환 → 거래 차단
+12. **Circuit Breaker** — 일일 $200 손실 한도, 연속 5패 시 15분 정지
 
 ---
 
 ## Key Learnings
 
 ### 버그에서 배운 것
-1. **yes_price 뒤집힘** → NO 주문 전부 잘못된 가격, 24개 resting orders 1센트로 생성 → 전부 취소
+1. **yes_price 뒤집힘** → NO 주문 전부 잘못된 가격, 24개 resting orders 1센트로 생성
 2. **중복 주문 $48 손실** → `_traded_tickers`를 주문 후가 아닌 전에 마킹해야 함
-3. **재시작 15회** → 배포/수동 재시작이 원인, 매 재시작마다 중복 주문 발생
-4. **except: pass 안티패턴** → 에러를 삼키면 문제가 보이지 않음
-5. **API 필드명 오류** → 모든 가격 None → 거래 0건 수 시간 방치
-6. **Sigmoid 수식 오류** → 확률 전부 ~0 → 잘못된 거래
-7. **v1 spread scanner** → 7c YES 매수 → 20/22 패배 (-$197)
-8. **Odds API 무료 티어** → 500건/월, 5분 스캔으로 14시간 만에 소진
+3. **홈/어웨이 뒤집힘** → mascot 이름으로 매칭 → 60%+ 가짜 엣지 → 39건 잘못된 배팅
+4. **수수료 미반영** → 10% gross edge가 수수료 후 3% net → 실제로는 수익 안 남
+5. **사이클 한도 없음** → 한 번에 39건 배팅 → $196 소진
+6. **NHL 매칭 실패** → "SJ Sharks" 형식 미지원 → NHL 전체 0건
+7. **Odds API 무료 티어** → 500건/월, 5분 스캔으로 14시간 만에 소진
+8. **Paper limit fill 없음** → market_maker, maker_preorder 0건 거래
 
 ### Top 트레이더 리서치
 - catboyautist ($1K→$300K): 멘션 트랜스크립트 + 공격적 사이징
@@ -232,22 +232,9 @@ cd /home/ubuntu/kalshi-arb && git checkout -- . && git pull && sudo systemctl re
 # 현황
 curl localhost:8080/api/status
 curl localhost:8080/api/live
-curl localhost:8080/api/settlement
+curl localhost:8080/api/settlement-history
+curl localhost:8080/api/odds-usage
 ```
-
----
-
-## Git History (주요)
-
-| Commit | Description |
-|--------|-------------|
-| `ef6db1c` | CRITICAL: yes_price 뒤집힘 수정 + spread/sports 파일 영구 저장 + 홈팀 감지 수정 |
-| `35a0269` | spread scanner 엣지 임계값 env var화 (SPREAD_SCANNER_MIN_EDGE) |
-| `7d2b9b7` | mentions _traded_tickers 파일 영구 저장 + init 에러 로깅 |
-| `f5f08fc` | 중복 주문 방지: 주문 전 마킹 + resting orders 로딩 + DB 에러 catch |
-| `63421ba` | 포트폴리오 로딩을 __init__으로 이동 (race condition 해결) |
-| `86a4396` | 전체 포트폴리오 스킵 (position=0 마켓 포함) |
-| `10e1f89` | resting orders 로딩 + bankroll 싱크 |
 
 ---
 
@@ -270,11 +257,23 @@ MENTIONS_ENABLED=true
 
 ---
 
+## Paper Strategy Backlog (Live 전환 전 수정 필요)
+
+| # | 전략 | 문제 | 심각도 |
+|---|---|---|---|
+| 4 | Market Maker | requote 시 기존 주문 상태 미확인 → 포지션 2배 가능 | 높음 |
+| 5 | Market Maker | MM_MAX_POSITION 미검증 → 한도 초과 가능 | 높음 |
+| 6 | Maker Preorder | 마켓 잠금 누락 (조기 return 시) | 중간 |
+| 7 | Market Maker | 인벤토리 스큐 고정 1c → 대규모 포지션 헷징 불가 | 중간 |
+| 8 | Shutdown Fade | levels_filled 조기 증가 (주문 실패해도) | 중간 |
+
+---
+
 ## Next Steps
 
-1. **4/30 Fed 기자회견** — 멘션 14개 포지션 settle → 수익 확인
-2. **크립토/스포츠 Live 거래 모니터링** — $200으로 매일 거래
-3. **수익 시 스케일업** — 추가 입금 → 더 많은 마켓
+1. **4/30 Fed 기자회견** — 멘션 15개 포지션 settle → 수익 확인
+2. **스포츠/크립토 모니터링** — 수정된 코드로 실적 추적
+3. **수익 시 스케일업** — bankroll 추가 → 더 많은 거래
 4. **멘션 빈도 갱신** — 6월 기자회견 전 최신 트랜스크립트 반영
-5. **문화/엔터 마켓** — Spotify/Billboard (GaetenD $530K 전략)
+5. **Paper → Live 전환 평가** — shutdown_fade, market_maker 실적 확인 후 판단
 6. **Kalshi-Polymarket 아비트라지** — 크로스 플랫폼 (15-20% 발생)
