@@ -9,7 +9,6 @@ from core.price_feed import PriceFeed
 from core.kalshi_client import KalshiClient
 from core.market_scanner import MarketScanner
 from core.order_manager import OrderManager
-from strategies.sum_arb import SumArbStrategy
 from strategies.maker_preorder import MakerPreorderStrategy
 from strategies.shutdown_fade import ShutdownFadeStrategy
 from strategies.spread_scanner import SpreadScannerStrategy
@@ -32,9 +31,6 @@ class Bot:
         self.kalshi_client = KalshiClient(self.config)
         self.scanner = MarketScanner(self.kalshi_client)
         self.order_manager = OrderManager(self.config, self.kalshi_client, self.db)
-        self.sum_arb = SumArbStrategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client
-        )
         self.maker_preorder = MakerPreorderStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client
         )
@@ -149,7 +145,6 @@ class Bot:
 
     async def _strategy_loop(self):
         strategies = [
-            ("sum_arb", self.sum_arb),
             ("maker_preorder", self.maker_preorder),
             ("shutdown_fade", self.shutdown_fade),
             ("spread_scanner", self.spread_scanner),

@@ -39,7 +39,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
     async def get_performance():
         all_trades = await database.get_trades()
         all_strategy_names = [
-            "sum_arb", "maker_preorder", "market_maker",
+            "maker_preorder", "market_maker",
             "shutdown_fade", "spread_scanner", "mentions_trader", "sports_trader",
         ]
 
@@ -138,7 +138,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
     async def get_strategy_status():
         live_strategies = list(config.LIVE_STRATEGIES) if config else []
         all_strategies = [
-            "sum_arb", "maker_preorder", "market_maker",
+            "maker_preorder", "market_maker",
             "shutdown_fade", "spread_scanner", "mentions_trader", "sports_trader",
         ]
         return {

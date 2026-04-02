@@ -9,7 +9,6 @@ def test_bot_initializes():
          patch("main.KalshiClient") as MockClient, \
          patch("main.MarketScanner") as MockScanner, \
          patch("main.OrderManager") as MockOM, \
-         patch("main.SumArbStrategy") as MockSumArb, \
          patch("main.MakerPreorderStrategy") as MockMaker, \
          patch("main.TradeLogger") as MockLogger, \
          patch("main.TelegramNotifier") as MockNotifier, \
@@ -25,6 +24,5 @@ def test_bot_initializes():
         from main import Bot
         b = Bot()
         assert b.config.is_paper_mode is True
-        assert b.sum_arb is not None
         assert b.maker_preorder is not None
         assert b.notifier is not None
