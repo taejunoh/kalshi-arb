@@ -374,6 +374,34 @@
       </div>
     </section>
 
+    <!-- ── Settlement History ── -->
+    <section id="settlement-history-section">
+      <div class="section-title">Settlement History (Kalshi)</div>
+      <div class="perf-grid" id="settlement-grid">
+        <div class="perf-card" style="color:var(--text-dim);font-size:12px;">Loading…</div>
+      </div>
+      <div class="table-wrap" style="margin-top:14px;">
+        <div class="table-scroll">
+          <table id="settlement-table">
+            <thead>
+              <tr>
+                <th>Settled</th>
+                <th>Market</th>
+                <th>Result</th>
+                <th>Cost</th>
+                <th>Revenue</th>
+                <th>Fees</th>
+                <th>Net</th>
+              </tr>
+            </thead>
+            <tbody id="settlement-body">
+              <tr class="empty-row"><td colspan="7">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- ── Live Positions ── -->
     <section id="positions-section">
       <div class="section-title">Live Kalshi Positions</div>
@@ -874,6 +902,83 @@ async function refreshPositions() {
 }
 
 // ─────────────────────────────────────────────
+//  Settlement History
+// ─────────────────────────────────────────────
+async function refreshSettlementHistory() {
+  try {
+    const data = await apiFetch('/api/settlement-history');
+    const grid = document.getElementById('settlement-grid');
+    const tbody = document.getElementById('settlement-body');
+
+    // Summary cards
+    const cats = ['sports', 'spread', 'mentions'];
+    grid.innerHTML = cats.map(cat => {
+      const d = data[cat] || {wins:0, losses:0, win_rate:0, net_pnl:0, total_fees:0};
+      const total = d.wins + d.losses;
+      const pnlCls = d.net_pnl > 0 ? 'positive' : d.net_pnl < 0 ? 'negative' : '';
+      return `
+        <div class="perf-card">
+          <div class="strategy-name">${cat}</div>
+          <div class="perf-row">
+            <span class="perf-key">Settled</span>
+            <span class="perf-val">${total}</span>
+          </div>
+          <div class="perf-row">
+            <span class="perf-key">Win / Loss</span>
+            <span class="perf-val"><span class="positive">${d.wins}W</span> / <span class="negative">${d.losses}L</span></span>
+          </div>
+          <div class="perf-row">
+            <span class="perf-key">Win Rate</span>
+            <span class="perf-val">${total > 0 ? d.win_rate + '%' : '—'}</span>
+          </div>
+          <div class="perf-row">
+            <span class="perf-key">Fees</span>
+            <span class="perf-val negative">-${fmtMoney(d.total_fees)}</span>
+          </div>
+          <div class="perf-row">
+            <span class="perf-key">Net PnL</span>
+            <span class="perf-val ${pnlCls}">${fmtMoney(d.net_pnl)}</span>
+          </div>
+        </div>`;
+    }).join('');
+
+    // Trade table
+    const allTrades = [];
+    for (const cat of cats) {
+      for (const t of (data[cat] || {}).trades || []) {
+        allTrades.push({...t, category: cat});
+      }
+    }
+    allTrades.sort((a, b) => (b.settled_time || '').localeCompare(a.settled_time || ''));
+
+    if (allTrades.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No settlements yet.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = allTrades.map(t => {
+      const netCls = t.net > 0 ? 'positive' : t.net < 0 ? 'negative' : '';
+      const resultBadge = t.revenue > t.cost
+        ? '<span class="badge badge-green">WIN</span>'
+        : '<span class="badge badge-red">LOSS</span>';
+      return `
+        <tr>
+          <td class="td-mono">${fmtTs(t.settled_time)}</td>
+          <td class="td-mono" title="${t.ticker}">${shortMarket(t.ticker)}</td>
+          <td>${resultBadge}</td>
+          <td class="td-mono">${fmtMoney(t.cost)}</td>
+          <td class="td-mono">${fmtMoney(t.revenue)}</td>
+          <td class="td-mono">${fmtMoney(t.fees)}</td>
+          <td class="td-mono ${netCls}">${fmtMoney(t.net)}</td>
+        </tr>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('settlement-grid').innerHTML =
+      `<div class="perf-card" style="color:var(--red);font-size:12px;">Failed: ${e.message}</div>`;
+  }
+}
+
+// ─────────────────────────────────────────────
 //  Initialise & schedule
 // ─────────────────────────────────────────────
 document.getElementById('strategy-filter').addEventListener('change', renderTrades);
@@ -883,6 +988,7 @@ async function fullRefresh() {
   await Promise.allSettled([
     refreshStatus(),
     refreshPerf(),
+    refreshSettlementHistory(),
     refreshTrades(),
     refreshOrders(),
     refreshPositions(),

@@ -207,6 +207,29 @@ class KalshiClient:
             logger.error(f"Failed to get positions: {e}")
             return []
 
+    def get_settlements(self, limit: int = 200) -> list[dict]:
+        """Fetch settlement history from Kalshi portfolio."""
+        all_settlements = []
+        cursor = None
+        try:
+            while True:
+                url = f"/trade-api/v2/portfolio/settlements?limit={limit}"
+                if cursor:
+                    url += f"&cursor={cursor}"
+                data = self._get(url)
+                if data is None:
+                    break
+                settlements = data.get("settlements", [])
+                if not settlements:
+                    break
+                all_settlements.extend(settlements)
+                cursor = data.get("cursor")
+                if not cursor:
+                    break
+        except Exception as e:
+            logger.error(f"Failed to get settlements: {e}")
+        return all_settlements
+
     def get_resting_orders(self) -> list[dict]:
         """Fetch all resting (unfilled) limit orders from Kalshi portfolio."""
         try:

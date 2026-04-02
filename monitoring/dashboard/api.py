@@ -146,6 +146,73 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             for s in all_strategies
         }
 
+    @app.get("/api/settlement-history")
+    async def get_settlement_history():
+        """Return win/loss stats from Kalshi settlement data."""
+        if not kalshi_client:
+            return {"sports": {}, "spread": {}, "mentions": {}}
+        import asyncio
+        loop = asyncio.get_event_loop()
+        settlements = await loop.run_in_executor(None, kalshi_client.get_settlements)
+
+        def categorize(ticker):
+            if any(s in ticker for s in ["NBAGAME", "MLBGAME", "NHLGAME"]):
+                return "sports"
+            if any(s in ticker for s in ["KXBTC", "KXETH", "KXSOL", "KXXRP"]):
+                return "spread"
+            if "FEDMENTION" in ticker:
+                return "mentions"
+            return "other"
+
+        stats = {}
+        for cat in ["sports", "spread", "mentions", "other"]:
+            stats[cat] = {"wins": 0, "losses": 0, "revenue": 0, "cost": 0, "fees": 0, "trades": []}
+
+        for s in settlements:
+            ticker = s.get("ticker", "")
+            cat = categorize(ticker)
+            revenue = float(s.get("revenue", 0)) / 100  # cents to dollars
+            yes_cost = float(s.get("yes_total_cost_dollars", "0"))
+            no_cost = float(s.get("no_total_cost_dollars", "0"))
+            cost = yes_cost + no_cost
+            fees = float(s.get("fee_cost", "0"))
+            net = revenue - cost - fees
+            result = s.get("market_result", "")
+
+            if revenue > cost:
+                stats[cat]["wins"] += 1
+            elif cost > 0:
+                stats[cat]["losses"] += 1
+
+            stats[cat]["revenue"] += revenue
+            stats[cat]["cost"] += cost
+            stats[cat]["fees"] += fees
+            stats[cat]["trades"].append({
+                "ticker": ticker,
+                "result": result,
+                "revenue": round(revenue, 2),
+                "cost": round(cost, 2),
+                "fees": round(fees, 2),
+                "net": round(net, 2),
+                "settled_time": s.get("settled_time", ""),
+            })
+
+        # Summary without individual trades
+        summary = {}
+        for cat, d in stats.items():
+            total = d["wins"] + d["losses"]
+            summary[cat] = {
+                "wins": d["wins"],
+                "losses": d["losses"],
+                "win_rate": round(d["wins"] / total * 100) if total > 0 else 0,
+                "total_revenue": round(d["revenue"], 2),
+                "total_cost": round(d["cost"], 2),
+                "total_fees": round(d["fees"], 2),
+                "net_pnl": round(d["revenue"] - d["cost"] - d["fees"], 2),
+                "trades": d["trades"],
+            }
+        return summary
+
     @app.get("/api/odds-usage")
     async def get_odds_usage():
         if sports_trader and hasattr(sports_trader, "odds_api_usage"):
