@@ -89,6 +89,15 @@ class Database:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
+    async def get_paper_open_orders(self):
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute(
+                "SELECT * FROM orders WHERE status = 'paper_open' ORDER BY id"
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
     async def get_unsettled_trades(self):
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row

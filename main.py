@@ -167,9 +167,10 @@ class Bot:
             await asyncio.sleep(0.2)
 
     async def _settlement_check_task(self):
-        """Periodically check if paper trades have settled and calculate PnL."""
+        """Periodically simulate paper fills and check settlements."""
         while self._running:
             try:
+                await self.settlement.simulate_paper_fills()
                 await self.settlement.check_and_settle()
             except Exception as e:
                 logger.error(f"Settlement check error: {e}")

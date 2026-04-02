@@ -41,6 +41,56 @@ class SettlementChecker:
             pnl = -size_usdc
         return round(pnl, 2)
 
+    async def simulate_paper_fills(self):
+        """Simulate fills for paper limit orders based on current market prices."""
+        open_orders = await self._db.get_paper_open_orders()
+        if not open_orders:
+            return
+
+        loop = asyncio.get_event_loop()
+        filled = 0
+        for order in open_orders:
+            ticker = order["market_id"]
+            try:
+                market = await loop.run_in_executor(None, self._client.get_market, ticker)
+                if not market or market.get("status") != "open":
+                    # Market closed/settled — cancel unfilled order
+                    await self._db.update_order_status(order["order_id"], "paper_cancelled")
+                    continue
+
+                order_side = order["side"]
+                order_price = order["price"]
+
+                yes_ask = float(market.get("yes_ask_dollars", "0") or "0")
+                no_ask = float(market.get("no_ask_dollars", "0") or "0")
+
+                # Fill if market price is at or better than our limit
+                should_fill = False
+                if order_side == "yes" and yes_ask > 0 and yes_ask <= order_price:
+                    should_fill = True
+                elif order_side == "no" and no_ask > 0 and no_ask <= order_price:
+                    should_fill = True
+
+                if should_fill:
+                    count = max(1, int(order["size"] / order_price))
+                    fee = self._order_manager.config.estimate_fee(count, int(order_price * 100))
+                    await self._db.update_order_status(order["order_id"], "paper_filled")
+                    await self._db.record_trade(
+                        strategy=order["strategy"],
+                        market_id=ticker,
+                        direction=order_side,
+                        price=order_price,
+                        size=order["size"],
+                        fee=fee,
+                        status="paper_filled",
+                    )
+                    filled += 1
+            except Exception as e:
+                logger.debug(f"Paper fill check error for {ticker}: {e}")
+
+        if filled > 0:
+            logger.info(f"[SETTLE] Simulated {filled} paper limit order fills")
+
     async def check_and_settle(self):
         """Check unsettled paper trades and settle any finalized markets."""
         unsettled = await self._db.get_unsettled_trades()
