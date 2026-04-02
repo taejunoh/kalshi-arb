@@ -78,13 +78,16 @@ kalshi-arb/
 - Settle: **4/30 Fed 기자회견** 후
 - **3중 중복 방지**: 파일 + Kalshi API (positions + resting orders) + 메모리
 
-**2. Spread Scanner** — 크립토 단기
-- Binance spot → sigmoid 확률 → Kalshi와 비교
-- **NO-only** 모드 (백테스트 최적화)
-- 엣지 임계값: `SPREAD_SCANNER_MIN_EDGE` env var (현재 3%), **수수료 반영 후 net edge**
-- 12시간 이내 settle, 리밋 오더
-- **총 노출 한도**: bankroll 30% 초과 시 거래 정지
-- 파일 영구 저장으로 중복 방지
+**2. Spread Scanner V2** — 크립토 단기 **(현재 Paper — 검증 중)**
+- **V1 실적**: 5W 11L, -$18.94 → 모델 재설계
+- **V2 모델**: Normal CDF (Black-Scholes 기반), sigmoid 제거
+  - 실시간 Binance 변동성 (120-tick rolling window)
+  - 시간 스케일링 (hours_to_close 반영, 짧은 마켓 = 더 확실)
+  - 모멘텀 (15분 캔들 방향, z-score ±1.0 cap)
+- **양방향**: YES + NO 중 더 좋은 쪽 선택 (V1은 NO-only)
+- 엣지 임계값: 3% net (수수료 반영 후)
+- **총 노출 한도**: Kalshi API 기반 bankroll 30%
+- 20+ Paper 거래 >50% 승률 확인 후 Live 전환 예정
 
 **3. Sports Trader** — NBA/MLB/NHL
 - The Odds API 컨센서스 오즈 vs Kalshi 가격 (20K plan, $30/월)
@@ -105,14 +108,16 @@ kalshi-arb/
 
 ## Live Performance (2026-04-01 기준)
 
-### Sports Trader (settle된 17건)
-- **8W 9L, 승률 47%**
-- Revenue $187 / Cost $160 / Fees $6.59
-- **Net PnL: +$20.41**
-- 참고: 홈/어웨이 뒤집힘 버그 상태에서 배팅한 결과 (운)
+### Sports Trader (settle된 24건)
+- **10W 14L, 승률 42%**
+- Revenue $187+ / Cost $160+ / Fees ~$7
+- **Net PnL: +$11.16**
+- 대부분 홈/어웨이 뒤집힘 버그 상태 거래 (운). 수정된 코드(1% net edge) 실적 축적 중
 
-### Spread Scanner
-- ETH NO 12x $2.64 체결 (첫 거래)
+### Spread Scanner V1 (종료)
+- **5W 11L, 승률 31%, -$18.94**
+- 원인: sigmoid 모델 트렌드 무시, NO-only 상승장 손실
+- V2로 재설계 완료, Paper 검증 중
 
 ### Mentions Trader
 - 15개 포지션, 4/30 settle 대기
@@ -244,7 +249,7 @@ curl localhost:8080/api/odds-usage
 KALSHI_API_KEY_ID=89aaa939-...
 KALSHI_RSA_PRIVATE_KEY_PATH=kalshi_private_key.pem
 TRADING_MODE=paper
-LIVE_STRATEGIES=mentions_trader,spread_scanner,sports_trader
+LIVE_STRATEGIES=mentions_trader,sports_trader
 MAX_SINGLE_TRADE_PCT=0.10
 SPREAD_SCANNER_ENABLED=true
 SPREAD_SCANNER_INTERVAL=60
