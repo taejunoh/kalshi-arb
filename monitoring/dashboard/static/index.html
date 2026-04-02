@@ -363,11 +363,7 @@
     <!-- ── Performance Cards ── -->
     <section id="perf-section">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
-        <div class="section-title" style="margin-bottom:0">Strategy Performance</div>
-        <div id="perf-toggle" style="display:flex;gap:2px;background:var(--surface2);border-radius:var(--radius);padding:2px;">
-          <button class="toggle-btn active" data-mode="live">Live</button>
-          <button class="toggle-btn" data-mode="paper">Paper</button>
-        </div>
+        <div class="section-title" style="margin-bottom:0">Strategy Performance (Paper)</div>
       </div>
       <div class="perf-grid" id="perf-grid">
         <div class="perf-card" style="color:var(--text-dim);font-size:12px;">Loading…</div>
@@ -669,16 +665,7 @@ async function refreshStatus() {
 // ─────────────────────────────────────────────
 let perfCache = {};
 let stratStatusCache = {};
-let perfMode = 'live';
-
-// Toggle handler
-document.getElementById('perf-toggle').addEventListener('click', e => {
-  if (!e.target.classList.contains('toggle-btn')) return;
-  document.querySelectorAll('#perf-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
-  e.target.classList.add('active');
-  perfMode = e.target.dataset.mode;
-  renderPerfCards();
-});
+const perfMode = 'paper';
 
 function renderPerfCards() {
   const grid = document.getElementById('perf-grid');
