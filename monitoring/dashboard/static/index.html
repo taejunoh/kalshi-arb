@@ -675,12 +675,19 @@ function renderPerfCards() {
     return;
   }
 
-  grid.innerHTML = strategies.map(strat => {
+  // Only show Paper strategies — Live results are in Settlement History
+  const paperStrategies = strategies.filter(strat => {
+    const mode = (stratStatusCache[strat] || {}).mode || 'PAPER';
+    return mode === 'PAPER';
+  });
+
+  if (paperStrategies.length === 0) {
+    grid.innerHTML = '<div class="perf-card" style="color:var(--text-dim);font-size:12px;">No paper strategies.</div>';
+    return;
+  }
+
+  grid.innerHTML = paperStrategies.map(strat => {
     const d = (perfCache[strat] || {})[perfMode] || {trade_count:0, total_pnl:0, total_size:0, wins:0, losses:0};
-    const currentMode = (stratStatusCache[strat] || {}).mode || 'PAPER';
-    const modeBadge = currentMode === 'LIVE'
-      ? '<span class="badge badge-green" style="float:right">LIVE</span>'
-      : '<span class="badge badge-gray" style="float:right">PAPER</span>';
 
     const pnl = parseFloat(d.total_pnl);
     const pnlStr = fmtMoney(d.total_pnl);
@@ -692,7 +699,7 @@ function renderPerfCards() {
 
     return `
       <div class="perf-card">
-        <div class="strategy-name">${strat} ${modeBadge}</div>
+        <div class="strategy-name">${strat}</div>
         <div class="perf-row">
           <span class="perf-key">Trades</span>
           <span class="perf-val">${d.trade_count}</span>
