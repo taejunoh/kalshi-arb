@@ -41,6 +41,21 @@ class SpreadScannerStrategy:
         except Exception as e:
             logger.warning(f"[SPREAD] Could not load traded tickers: {e}")
 
+    def _get_live_spread_exposure(self) -> float:
+        """Get total exposure from Kalshi API for crypto positions.
+        Returns large value on failure to prevent trading when unknown."""
+        try:
+            positions = self._client.get_positions()
+            return sum(
+                float(p.get("market_exposure_dollars", 0))
+                for p in positions
+                if any(s in p.get("ticker", "") for s in ["KXBTC", "KXETH", "KXSOL", "KXXRP"])
+                and float(p.get("position_fp", 0)) != 0
+            )
+        except Exception as e:
+            logger.error(f"[SPREAD] Failed to get exposure, blocking trades: {e}")
+            return float("inf")
+
     def _save_traded_tickers(self):
         try:
             with open(self.TRADED_TICKERS_FILE, "w") as f:
@@ -94,6 +109,9 @@ class SpreadScannerStrategy:
             return None
         market_type, threshold = parsed
 
+        if threshold <= 0 or current_price <= 0:
+            return None
+
         if market_type == "above":
             # Default volatility: ~60% annualized for crypto (conservative)
             vol = volatility if volatility and volatility > 0.01 else 0.60
@@ -104,7 +122,12 @@ class SpreadScannerStrategy:
                 # Near-zero time: price is basically at current level
                 return 0.97 if current_price > threshold else 0.03
 
-            z = (math.log(current_price / threshold) + momentum * T) / vol_sqrt_T
+            z = math.log(current_price / threshold) / vol_sqrt_T
+            # Momentum adjustment: add directly to z-score, capped at ±1.0
+            # 2% 15-min momentum → z shift ~0.4 → prob shift ~15%
+            # 5% momentum → z shift 1.0 → prob shift ~34%
+            momentum_z = max(-1.0, min(1.0, momentum * 20))
+            z += momentum_z
             prob = self._normal_cdf(z)
             return max(0.03, min(0.97, prob))
 
@@ -225,7 +248,8 @@ class SpreadScannerStrategy:
         trades_attempted = 0
 
         # Total exposure limit: max 30% of bankroll in spread positions
-        current_exposure = self._order_manager.get_strategy_exposure("spread_scanner")
+        # Use Kalshi API for real exposure (survives restarts)
+        current_exposure = self._get_live_spread_exposure()
         max_exposure = self._order_manager.bankroll * 0.30
         if current_exposure > max_exposure:
             return
