@@ -74,37 +74,71 @@ class SpreadScannerStrategy:
                 return None
         return None
 
-    def estimate_probability(self, ticker: str, current_price: float) -> Optional[float]:
-        """Estimate YES probability from Binance spot price vs market threshold."""
+    def _normal_cdf(self, x: float) -> float:
+        """Approximate Normal CDF using error function."""
+        return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+    def estimate_probability(self, ticker: str, current_price: float,
+                             hours_to_close: float = 1.0,
+                             volatility: Optional[float] = None,
+                             momentum: float = 0.0) -> Optional[float]:
+        """Estimate YES probability using volatility-based model (simplified Black-Scholes).
+
+        P(price > K at settle) = Φ(z) where z = (ln(S/K) + drift) / (σ√T)
+        - S = current spot, K = threshold, T = time in years
+        - σ = annualized volatility from Binance trades
+        - drift = momentum adjustment (positive = bullish bias)
+        """
         parsed = self._parse_threshold(ticker)
         if parsed is None:
             return None
         market_type, threshold = parsed
 
         if market_type == "above":
-            # "BTC above $X" — probability depends on distance from threshold
-            distance_pct = (current_price - threshold) / threshold
-            # Sigmoid: sharp transition around threshold
-            prob = 1.0 / (1.0 + math.exp(-distance_pct * 200))
+            # Default volatility: ~60% annualized for crypto (conservative)
+            vol = volatility if volatility and volatility > 0.01 else 0.60
+            T = max(hours_to_close / 8760.0, 0.0001)  # hours → years
+            vol_sqrt_T = vol * math.sqrt(T)
+
+            if vol_sqrt_T < 0.0001:
+                # Near-zero time: price is basically at current level
+                return 0.97 if current_price > threshold else 0.03
+
+            z = (math.log(current_price / threshold) + momentum * T) / vol_sqrt_T
+            prob = self._normal_cdf(z)
             return max(0.03, min(0.97, prob))
+
         elif market_type == "range":
-            # Range markets are harder — low probability for exact ranges
-            distance_pct = abs(current_price - threshold) / current_price
-            # Closer to threshold = higher probability
-            prob = max(0.02, 0.5 * math.exp(-distance_pct * 100))
+            # Range markets: probability of landing near threshold
+            vol = volatility if volatility and volatility > 0.01 else 0.60
+            T = max(hours_to_close / 8760.0, 0.0001)
+            vol_sqrt_T = vol * math.sqrt(T)
+            if vol_sqrt_T < 0.0001:
+                return 0.03
+            distance = abs(math.log(current_price / threshold)) / vol_sqrt_T
+            prob = max(0.02, 0.4 * math.exp(-0.5 * distance ** 2))
             return max(0.02, min(0.50, prob))
+
         return None
 
     def evaluate_crypto(self, yes_ask: float, no_ask: float, fair_prob: float) -> Optional[dict]:
-        """Compare market price to Binance-estimated fair value. NO-only mode.
-        Edge is calculated NET of Kalshi maker fees."""
+        """Compare market price to Binance-estimated fair value.
+        Bidirectional: picks whichever side has better net edge after fees."""
         min_edge = self.config.SPREAD_SCANNER_MIN_EDGE
         fee = self.config.KALSHI_FEE_PER_CONTRACT
-        # NO side only — backtest shows NO is more profitable and predictable
-        # Fee as % of contract price: min(fee, price, 1-price) / price
+
+        # YES side edge
+        yes_fee_pct = min(fee, yes_ask, 1 - yes_ask) / yes_ask if yes_ask > 0 else 0
+        yes_edge = fair_prob - yes_ask * (1 + yes_fee_pct)
+
+        # NO side edge
         no_fee_pct = min(fee, no_ask, 1 - no_ask) / no_ask if no_ask > 0 else 0
         no_edge = (1.0 - fair_prob) - no_ask * (1 + no_fee_pct)
-        if no_edge > min_edge:
+
+        # Pick better side if above threshold
+        if yes_edge > min_edge and yes_edge >= no_edge:
+            return {"side": "yes", "price": yes_ask, "edge": yes_edge, "fair": fair_prob}
+        elif no_edge > min_edge:
             return {"side": "no", "price": no_ask, "edge": no_edge, "fair": fair_prob}
         return None
 
@@ -154,7 +188,17 @@ class SpreadScannerStrategy:
             if self._price_feed.is_stale(symbol):
                 continue
 
-            fair_prob = self.estimate_probability(ticker, spot_price)
+            # V2: volatility + momentum for probability estimation
+            volatility = self._price_feed.get_volatility(symbol)
+            candle_open = self._price_feed.get_candle_open(symbol)
+            momentum = 0.0
+            if candle_open and candle_open > 0:
+                momentum = (spot_price - candle_open) / candle_open
+
+            fair_prob = self.estimate_probability(
+                ticker, spot_price, hours_to_close=hours,
+                volatility=volatility, momentum=momentum,
+            )
             if fair_prob is None:
                 continue
 

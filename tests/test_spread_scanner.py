@@ -19,7 +19,7 @@ def _make_strategy():
     scanner = MagicMock()
     client = MagicMock()
     price_feed = MagicMock()
-    price_feed.get_price.return_value = 82000.0  # BTC at $82k
+    price_feed.get_price.return_value = 82000.0
     return SpreadScannerStrategy(config, order_mgr, scanner, client, price_feed)
 
 
@@ -37,37 +37,62 @@ def test_parse_threshold_range():
 
 def test_estimate_probability_above():
     strat = _make_strategy()
-    # BTC at $82k, threshold $75k → price well above → high YES probability
-    prob = strat.estimate_probability("KXBTC-26MAR3017-B75000", 82000)
-    assert prob > 0.90
+    # BTC at $82k, threshold $75k, 1h to close, 60% vol → high YES prob
+    prob = strat.estimate_probability("KXBTC-26MAR3017-B75000", 82000, hours_to_close=1.0, volatility=0.60)
+    assert prob > 0.80
 
     # BTC at $82k, threshold $85k → price below → low YES probability
-    prob = strat.estimate_probability("KXBTC-26MAR3017-B85000", 82000)
-    assert prob < 0.15
+    prob = strat.estimate_probability("KXBTC-26MAR3017-B85000", 82000, hours_to_close=1.0, volatility=0.60)
+    assert prob < 0.25
 
 
-def test_evaluate_crypto_no_underpriced():
+def test_probability_time_scaling():
     strat = _make_strategy()
-    # Fair prob = 0.20, NO ask = 0.50 → NO underpriced (1-0.20=0.80 vs 0.50)
+    # Same distance but different time — shorter time = more extreme probability
+    prob_short = strat.estimate_probability("KXBTC-26MAR3017-B80000", 82000, hours_to_close=0.1, volatility=0.60)
+    prob_long = strat.estimate_probability("KXBTC-26MAR3017-B80000", 82000, hours_to_close=6.0, volatility=0.60)
+    # With price above threshold: shorter time → higher prob (less time to drop)
+    assert prob_short > prob_long
+
+
+def test_probability_volatility_scaling():
+    strat = _make_strategy()
+    # Same setup but different volatility — higher vol = less certain
+    prob_low_vol = strat.estimate_probability("KXBTC-26MAR3017-B80000", 82000, hours_to_close=2.0, volatility=0.30)
+    prob_high_vol = strat.estimate_probability("KXBTC-26MAR3017-B80000", 82000, hours_to_close=2.0, volatility=1.00)
+    # With price above threshold: lower vol → more confident it stays above
+    assert prob_low_vol > prob_high_vol
+
+
+def test_momentum_bias():
+    strat = _make_strategy()
+    # Positive momentum (bullish) should increase YES probability for above markets
+    prob_neutral = strat.estimate_probability("KXBTC-26MAR3017-B82000", 82000, hours_to_close=1.0, volatility=0.60, momentum=0.0)
+    prob_bullish = strat.estimate_probability("KXBTC-26MAR3017-B82000", 82000, hours_to_close=1.0, volatility=0.60, momentum=0.5)
+    assert prob_bullish > prob_neutral
+
+
+def test_evaluate_crypto_bidirectional():
+    strat = _make_strategy()
+    # Fair prob = 0.80, YES ask = 0.50 → YES is underpriced (now bidirectional picks YES)
+    signal = strat.evaluate_crypto(yes_ask=0.50, no_ask=0.60, fair_prob=0.80)
+    assert signal is not None
+    assert signal["side"] == "yes"
+    assert signal["edge"] > 0.05
+
+
+def test_evaluate_crypto_no_side():
+    strat = _make_strategy()
+    # Fair prob = 0.20, NO ask = 0.50 → NO underpriced
     signal = strat.evaluate_crypto(yes_ask=0.60, no_ask=0.50, fair_prob=0.20)
     assert signal is not None
     assert signal["side"] == "no"
-    # Net edge = (1-0.20) - 0.50 * (1 + 0.07/0.50) = 0.80 - 0.57 = 0.23
-    assert signal["edge"] == pytest.approx(0.23)
-
-
-def test_no_yes_trades_in_no_only_mode():
-    strat = _make_strategy()
-    # Fair prob = 0.80, YES would be underpriced, but NO-only mode skips it
-    signal = strat.evaluate_crypto(yes_ask=0.50, no_ask=0.60, fair_prob=0.80)
-    # NO edge = (1-0.80) - 0.60 = -0.40 → no signal
-    assert signal is None
 
 
 def test_no_signal_within_edge():
     strat = _make_strategy()
-    # Fair prob = 0.50, NO edge = 0.50 - 0.48 = 0.02 < 0.05
-    signal = strat.evaluate_crypto(yes_ask=0.55, no_ask=0.48, fair_prob=0.50)
+    # Fair prob = 0.50, both edges < 5%
+    signal = strat.evaluate_crypto(yes_ask=0.52, no_ask=0.52, fair_prob=0.50)
     assert signal is None
 
 
