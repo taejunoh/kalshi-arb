@@ -79,6 +79,7 @@ class SportsTraderStrategy:
         self._traded_tickers: dict[str, float] = {}
         self._http: Optional[httpx.AsyncClient] = None
         self.odds_api_usage: dict = {"used": 0, "remaining": 0, "last": 0}  # exposed to dashboard
+        self._prev_odds: dict[str, dict] = {}  # game_id -> {home_prob, away_prob, time}
 
         # Load persisted traded tickers to survive restarts
         self._load_traded_tickers()
@@ -143,6 +144,36 @@ class SportsTraderStrategy:
             logger.error(f"Odds API error for {sport}: {e}")
             return []
 
+    # Home court/field advantage (probability boost for home team)
+    HOME_ADVANTAGE = {
+        "basketball_nba": 0.035,   # ~3.5%
+        "baseball_mlb": 0.040,     # ~4.0%
+        "icehockey_nhl": 0.030,    # ~3.0%
+    }
+
+    def _detect_line_movement(self, game_id: str, home_prob: float, away_prob: float) -> float:
+        """Detect sharp line movement since last scan.
+        Returns movement magnitude (positive = home team getting stronger)."""
+        prev = self._prev_odds.get(game_id)
+        # Store current for next scan
+        self._prev_odds[game_id] = {
+            "home_prob": home_prob,
+            "away_prob": away_prob,
+            "time": time.time(),
+        }
+        if not prev:
+            return 0.0
+        elapsed = time.time() - prev["time"]
+        if elapsed > 7200:  # ignore if > 2 hours old
+            return 0.0
+        movement = home_prob - prev["home_prob"]
+        return movement
+
+    def _home_court_adjustment(self, sport_key: str, is_home: bool) -> float:
+        """Return probability adjustment for home court/field advantage."""
+        adv = self.HOME_ADVANTAGE.get(sport_key, 0.0)
+        return adv if is_home else -adv
+
     def _decimal_to_prob(self, decimal_odds: float) -> Optional[float]:
         """Convert decimal odds to implied probability. Returns None for invalid odds."""
         if decimal_odds <= 1.0:
@@ -204,24 +235,33 @@ class SportsTraderStrategy:
                 return game
         return None
 
-    def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float) -> Optional[dict]:
-        """Compare Kalshi price to fair probability from sportsbook consensus.
+    def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
+                 line_movement: float = 0.0, home_adj: float = 0.0) -> Optional[dict]:
+        """Compare Kalshi price to multi-signal fair probability.
+        Combines: consensus + line movement + home court advantage.
         Edge is calculated NET of Kalshi maker fees."""
-        min_edge = 0.01  # 1% minimum edge AFTER fees
-        fee_per_contract = self.config.KALSHI_FEE_PER_CONTRACT  # $0.07
+        min_edge = 0.03  # 3% minimum edge AFTER fees (raised from 1%)
+        fee_per_contract = self.config.KALSHI_FEE_PER_CONTRACT
 
-        # YES side: buy at kalshi_yes, fee per contract capped at min(fee, price, 1-price)
+        # Adjust fair probability with additional signals
+        adjusted_prob = fair_prob + home_adj
+        # Line movement: if lines moving toward a team, boost that team's prob
+        if abs(line_movement) > 0.02:  # only apply if movement > 2%
+            adjusted_prob += line_movement * 0.5  # dampen: 50% of raw movement
+        adjusted_prob = max(0.03, min(0.97, adjusted_prob))
+
+        # YES side edge
         yes_fee_pct = min(fee_per_contract, kalshi_yes, 1 - kalshi_yes) / kalshi_yes if kalshi_yes > 0 else 0
-        yes_edge = fair_prob - kalshi_yes * (1 + yes_fee_pct)
+        yes_edge = adjusted_prob - kalshi_yes * (1 + yes_fee_pct)
 
-        # NO side: buy at kalshi_no, same fee logic
+        # NO side edge
         no_fee_pct = min(fee_per_contract, kalshi_no, 1 - kalshi_no) / kalshi_no if kalshi_no > 0 else 0
-        no_edge = (1 - fair_prob) - kalshi_no * (1 + no_fee_pct)
+        no_edge = (1 - adjusted_prob) - kalshi_no * (1 + no_fee_pct)
 
         if yes_edge > min_edge and yes_edge >= no_edge:
-            return {"side": "yes", "price": kalshi_yes, "edge": yes_edge}
+            return {"side": "yes", "price": kalshi_yes, "edge": yes_edge, "adj_prob": adjusted_prob}
         elif no_edge > min_edge:
-            return {"side": "no", "price": kalshi_no, "edge": no_edge}
+            return {"side": "no", "price": kalshi_no, "edge": no_edge, "adj_prob": adjusted_prob}
         return None
 
     async def scan_and_execute(self):
@@ -319,8 +359,10 @@ class SportsTraderStrategy:
                 # First try exact short-name match for ambiguous cities (NY, LA, Chicago)
                 home_short = ODDS_TO_KALSHI_SHORT.get(home, "")
                 away_short = ODDS_TO_KALSHI_SHORT.get(away, "")
+                is_yes_home = False
                 if home_short and home_short == yes_team:
                     fair_prob = consensus["home_prob"]
+                    is_yes_home = True
                 elif away_short and away_short == yes_team:
                     fair_prob = consensus["away_prob"]
                 else:
@@ -329,26 +371,41 @@ class SportsTraderStrategy:
                     away_city = " ".join(away.split()[:-1]) if len(away.split()) > 1 else away
                     if home_city in yes_team or yes_team in home_city:
                         fair_prob = consensus["home_prob"]
+                        is_yes_home = True
                     elif away_city in yes_team or yes_team in away_city:
                         fair_prob = consensus["away_prob"]
                     else:
                         logger.debug(f"[SPORTS] Can't match YES team '{yes_team}' to {home}/{away}")
                         continue
 
-                signal = self.evaluate(ya, na, fair_prob)
+                # V2 signals
+                sport_key = sport_map.get(series, "")
+                game_odds_id = f"{consensus['home_team']}_vs_{consensus['away_team']}"
+                line_movement = self._detect_line_movement(
+                    game_odds_id, consensus["home_prob"], consensus["away_prob"]
+                )
+                # Convert home-centric movement to YES-team-centric
+                if not is_yes_home:
+                    line_movement = -line_movement
+                home_adj = self._home_court_adjustment(sport_key, is_yes_home)
+
+                signal = self.evaluate(ya, na, fair_prob,
+                                       line_movement=line_movement, home_adj=home_adj)
                 if not signal:
                     continue
 
-                size_pct = 0.10 if signal["edge"] >= 0.15 else 0.05
+                size_pct = 0.10 if signal["edge"] >= 0.10 else 0.05
                 size = self._order_manager.bankroll * size_pct
                 if size < 1.0:
                     continue
 
-                limit_price = round(fair_prob if signal["side"] == "yes" else (1 - fair_prob), 2)
+                adj_prob = signal.get("adj_prob", fair_prob)
+                limit_price = round(adj_prob if signal["side"] == "yes" else (1 - adj_prob), 2)
                 limit_price = max(0.01, min(0.99, limit_price))
 
                 logger.info(
-                    f"[SPORTS] {ticker}: {title[:40]} fair={fair_prob:.2f} "
+                    f"[SPORTS] {ticker}: {title[:40]} fair={fair_prob:.2f} adj={adj_prob:.2f} "
+                    f"line_mv={line_movement:+.2f} home_adj={home_adj:+.3f} "
                     f"ask={ya:.2f}/{na:.2f} edge={signal['edge']:.2f} "
                     f"→ {signal['side']} ${size:.2f} LIMIT@{limit_price:.2f}"
                 )
