@@ -27,6 +27,20 @@ class EconTraderStrategy:
 
         self._load_traded_tickers()
 
+    def _get_live_econ_exposure(self) -> float:
+        """Get total exposure from Kalshi API for econ positions."""
+        try:
+            positions = self._client.get_positions()
+            return sum(
+                float(p.get("market_exposure_dollars", 0))
+                for p in positions
+                if any(s in p.get("ticker", "") for s in ["KXCPI", "KXGDP", "KXUNEMPLOY"])
+                and float(p.get("position_fp", 0)) != 0
+            )
+        except Exception as e:
+            logger.error(f"[ECON] Failed to get exposure, blocking trades: {e}")
+            return float("inf")
+
     def _load_traded_tickers(self):
         try:
             if os.path.exists(self.TRADED_TICKERS_FILE):
@@ -86,9 +100,15 @@ class EconTraderStrategy:
             await self._econ.fetch_cpi_history()
             self._data_loaded = True
 
+        # Total exposure limit: max 30% of bankroll
+        total_exposure = self._get_live_econ_exposure()
+        max_exposure = self._order_manager.bankroll * 0.30
+        if total_exposure > max_exposure:
+            return
+
         trades_attempted = 0
 
-        # --- CPI Markets ---
+        # --- CPI Markets (max 5 per cycle) ---
         cpi_estimate = self._econ.estimate_cpi_mom(n_months=6)
         if cpi_estimate:
             trades_attempted += await self._scan_cpi_markets(cpi_estimate)
@@ -114,7 +134,11 @@ class EconTraderStrategy:
         fee = self.config.KALSHI_FEE_PER_CONTRACT
 
         trades = 0
+        max_trades = 5  # max per cycle
         for market in markets:
+            if trades >= max_trades:
+                break
+
             ticker = market["ticker"]
             if ticker in self._traded_tickers:
                 continue
