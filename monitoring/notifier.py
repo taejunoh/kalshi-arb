@@ -89,3 +89,17 @@ class TelegramNotifier:
     async def notify_bot_status(self, status: str, bankroll: float):
         msg = self.format_bot_status(status, bankroll)
         await self.send(msg, msg_type="bot_status")
+
+    async def notify_settlement(self, ticker: str, strategy: str, direction: str,
+                                 price: float, pnl: float, bankroll: float):
+        result = "WIN" if pnl > 0 else "LOSS"
+        emoji = "✅" if pnl > 0 else "❌"
+        msg = (
+            f"{emoji} <b>Settlement: {result}</b>\n"
+            f"Strategy: {strategy}\n"
+            f"Market: {ticker}\n"
+            f"Direction: {direction} @ {price:.3f}\n"
+            f"PnL: <b>${pnl:+.2f}</b>\n"
+            f"Bankroll: ${bankroll:.2f}"
+        )
+        await self.send(msg, msg_type="settlement")

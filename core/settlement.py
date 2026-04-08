@@ -9,10 +9,11 @@ logger = logging.getLogger("settlement")
 class SettlementChecker:
     """Check settled markets and calculate PnL for paper trades."""
 
-    def __init__(self, kalshi_client, database, order_manager):
+    def __init__(self, kalshi_client, database, order_manager, notifier=None):
         self._client = kalshi_client
         self._db = database
         self._order_manager = order_manager
+        self._notifier = notifier
         self._last_summary_time = 0.0
         # Cache settled market results to avoid repeated API calls
         self._settled_cache: dict[str, str] = {}  # ticker -> "yes" | "no"
@@ -143,6 +144,13 @@ class SettlementChecker:
                     f"[SETTLE] {ticker}: {trade['strategy']} {trade['direction']} "
                     f"@{trade['price']:.2f} → {result} | PnL: ${pnl:+.2f}"
                 )
+                # Telegram notification
+                if self._notifier:
+                    await self._notifier.notify_settlement(
+                        ticker=ticker, strategy=trade["strategy"],
+                        direction=trade["direction"], price=trade["price"],
+                        pnl=pnl, bankroll=self._order_manager.bankroll,
+                    )
 
         now = time.time()
         if settled_count > 0 or now - self._last_summary_time >= 300:

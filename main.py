@@ -62,11 +62,11 @@ class Bot:
         self.econ_trader = EconTraderStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
-        self.settlement = SettlementChecker(self.kalshi_client, self.db, self.order_manager)
-        self.trade_logger = TradeLogger()
         self.notifier = TelegramNotifier(
             self.config.TELEGRAM_BOT_TOKEN, self.config.TELEGRAM_CHAT_ID
         )
+        self.settlement = SettlementChecker(self.kalshi_client, self.db, self.order_manager, self.notifier)
+        self.trade_logger = TradeLogger()
         self._running = True
 
     async def start(self):
