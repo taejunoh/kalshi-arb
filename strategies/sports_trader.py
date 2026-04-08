@@ -237,33 +237,73 @@ class SportsTraderStrategy:
         return None
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
-                 line_movement: float = 0.0, home_adj: float = 0.0) -> Optional[dict]:
-        """Compare Kalshi price to multi-signal fair probability.
-        Combines: consensus + line movement + home court advantage.
-        Edge is calculated NET of Kalshi maker fees."""
-        min_edge = 0.03  # 3% minimum edge AFTER fees (raised from 1%)
-        fee_per_contract = self.config.KALSHI_FEE_PER_CONTRACT
+                 line_movement: float = 0.0, home_adj: float = 0.0,
+                 ticker: str = "") -> Optional[dict]:
+        """Multi-strategy evaluation. Runs 3 strategies in parallel for comparison.
+        Only the active strategy (longshot) actually trades. Others log only."""
+        fee = self.config.KALSHI_FEE_PER_CONTRACT
 
-        # Adjust fair probability with additional signals
+        # === Strategy A: Longshot (BUY cheap contracts, expect high payoff) ===
+        # Buy YES if price < 0.25 OR buy NO if price < 0.25
+        longshot_signal = None
+        if kalshi_yes <= 0.25 and kalshi_yes >= 0.05:
+            # Cheap YES — potential 4-20x payoff
+            fee_pct = min(fee, kalshi_yes, 1 - kalshi_yes) / kalshi_yes
+            cost_with_fee = kalshi_yes * (1 + fee_pct)
+            payoff_ratio = 1.0 / cost_with_fee  # how much $1 returns
+            if payoff_ratio >= 3.0:  # at least 3x payoff
+                longshot_signal = {"side": "yes", "price": kalshi_yes,
+                                   "edge": payoff_ratio, "strategy": "longshot"}
+        elif kalshi_no <= 0.25 and kalshi_no >= 0.05:
+            fee_pct = min(fee, kalshi_no, 1 - kalshi_no) / kalshi_no
+            cost_with_fee = kalshi_no * (1 + fee_pct)
+            payoff_ratio = 1.0 / cost_with_fee
+            if payoff_ratio >= 3.0:
+                longshot_signal = {"side": "no", "price": kalshi_no,
+                                   "edge": payoff_ratio, "strategy": "longshot"}
+
+        # === Strategy B: Underdog (bet AGAINST consensus favorite) ===
+        underdog_signal = None
+        # If consensus says team A wins (fair_prob > 0.60), bet on team B (NO)
+        if fair_prob > 0.60 and kalshi_no <= 0.40:
+            fee_pct = min(fee, kalshi_no, 1 - kalshi_no) / kalshi_no if kalshi_no > 0 else 0
+            payoff_ratio = 1.0 / (kalshi_no * (1 + fee_pct)) if kalshi_no > 0 else 0
+            if payoff_ratio >= 2.0:
+                underdog_signal = {"side": "no", "price": kalshi_no,
+                                   "edge": payoff_ratio, "strategy": "underdog"}
+        elif fair_prob < 0.40 and kalshi_yes <= 0.40:
+            fee_pct = min(fee, kalshi_yes, 1 - kalshi_yes) / kalshi_yes if kalshi_yes > 0 else 0
+            payoff_ratio = 1.0 / (kalshi_yes * (1 + fee_pct)) if kalshi_yes > 0 else 0
+            if payoff_ratio >= 2.0:
+                underdog_signal = {"side": "yes", "price": kalshi_yes,
+                                   "edge": payoff_ratio, "strategy": "underdog"}
+
+        # === Strategy C: V2 consensus edge (for comparison logging only) ===
+        v2_signal = None
         adjusted_prob = fair_prob + home_adj
-        # Line movement: if lines moving toward a team, boost that team's prob
-        if abs(line_movement) > 0.02:  # only apply if movement > 2%
-            adjusted_prob += line_movement * 0.5  # dampen: 50% of raw movement
+        if abs(line_movement) > 0.02:
+            adjusted_prob += line_movement * 0.5
         adjusted_prob = max(0.03, min(0.97, adjusted_prob))
-
-        # YES side edge
-        yes_fee_pct = min(fee_per_contract, kalshi_yes, 1 - kalshi_yes) / kalshi_yes if kalshi_yes > 0 else 0
+        yes_fee_pct = min(fee, kalshi_yes, 1 - kalshi_yes) / kalshi_yes if kalshi_yes > 0 else 0
+        no_fee_pct = min(fee, kalshi_no, 1 - kalshi_no) / kalshi_no if kalshi_no > 0 else 0
         yes_edge = adjusted_prob - kalshi_yes * (1 + yes_fee_pct)
-
-        # NO side edge
-        no_fee_pct = min(fee_per_contract, kalshi_no, 1 - kalshi_no) / kalshi_no if kalshi_no > 0 else 0
         no_edge = (1 - adjusted_prob) - kalshi_no * (1 + no_fee_pct)
+        if yes_edge > 0.03 and yes_edge >= no_edge:
+            v2_signal = {"side": "yes", "price": kalshi_yes, "edge": yes_edge, "strategy": "v2_consensus"}
+        elif no_edge > 0.03:
+            v2_signal = {"side": "no", "price": kalshi_no, "edge": no_edge, "strategy": "v2_consensus"}
 
-        if yes_edge > min_edge and yes_edge >= no_edge:
-            return {"side": "yes", "price": kalshi_yes, "edge": yes_edge, "adj_prob": adjusted_prob}
-        elif no_edge > min_edge:
-            return {"side": "no", "price": kalshi_no, "edge": no_edge, "adj_prob": adjusted_prob}
-        return None
+        # Log all signals for comparison
+        signals = [s for s in [longshot_signal, underdog_signal, v2_signal] if s]
+        if signals and ticker:
+            parts = " | ".join(f"{s['strategy']}:{s['side']}@{s['price']:.2f}({s['edge']:.1f}x)"
+                               if 'x' not in str(s.get('edge',''))
+                               else f"{s['strategy']}:{s['side']}@{s['price']:.2f}({s['edge']:.2f})"
+                               for s in signals)
+            logger.info(f"[SPORTS-CMP] {ticker}: {parts}")
+
+        # Active strategy: longshot (Paper testing)
+        return longshot_signal
 
     async def scan_and_execute(self):
         if not getattr(self.config, "SPORTS_ENABLED", False):
@@ -391,23 +431,25 @@ class SportsTraderStrategy:
                 home_adj = self._home_court_adjustment(sport_key, is_yes_home)
 
                 signal = self.evaluate(ya, na, fair_prob,
-                                       line_movement=line_movement, home_adj=home_adj)
+                                       line_movement=line_movement, home_adj=home_adj,
+                                       ticker=ticker)
                 if not signal:
                     continue
 
-                size_pct = 0.10 if signal["edge"] >= 0.10 else 0.05
-                size = self._order_manager.bankroll * size_pct
+                # Longshot: small fixed size ($2-3 per bet, portfolio approach)
+                size = min(3.0, self._order_manager.bankroll * 0.02)
                 if size < 1.0:
                     continue
 
-                adj_prob = signal.get("adj_prob", fair_prob)
-                limit_price = round(adj_prob if signal["side"] == "yes" else (1 - adj_prob), 2)
+                # Buy at market ask price (aggressive, want to fill)
+                limit_price = signal["price"]
                 limit_price = max(0.01, min(0.99, limit_price))
 
+                strategy_name = signal.get("strategy", "?")
+                payoff = signal.get("edge", 0)
                 logger.info(
-                    f"[SPORTS] {ticker}: {title[:40]} fair={fair_prob:.2f} adj={adj_prob:.2f} "
-                    f"line_mv={line_movement:+.2f} home_adj={home_adj:+.3f} "
-                    f"ask={ya:.2f}/{na:.2f} edge={signal['edge']:.2f} "
+                    f"[SPORTS] {ticker}: {title[:40]} [{strategy_name}] "
+                    f"ask={ya:.2f}/{na:.2f} payoff={payoff:.1f}x "
                     f"→ {signal['side']} ${size:.2f} LIMIT@{limit_price:.2f}"
                 )
                 # Mark BEFORE order to prevent duplicates even if order/DB fails
