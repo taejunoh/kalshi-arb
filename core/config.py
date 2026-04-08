@@ -56,6 +56,11 @@ class Config:
         self.SPORTS_SCAN_INTERVAL = int(os.getenv("SPORTS_SCAN_INTERVAL", "300"))
         self.ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 
+        # Economic Indicator Trader strategy
+        self.ECON_ENABLED = os.getenv("ECON_ENABLED", "false").lower() == "true"
+        self.ECON_SCAN_INTERVAL = int(os.getenv("ECON_SCAN_INTERVAL", "3600"))
+        self.ECON_MIN_EDGE = float(os.getenv("ECON_MIN_EDGE", "0.10"))
+
         # Mentions Market Trader strategy
         self.MENTIONS_ENABLED = os.getenv("MENTIONS_ENABLED", "false").lower() == "true"
         self.MENTIONS_MIN_EDGE = float(os.getenv("MENTIONS_MIN_EDGE", "0.15"))
