@@ -68,6 +68,7 @@ class SportsTraderStrategy:
     """Trade sports game markets by comparing Kalshi prices to sportsbook odds."""
 
     TRADED_TICKERS_FILE = "data/sports_traded_tickers.json"
+    STRATEGY_NAME = "sports_trader"
 
     def __init__(self, config, order_manager, kalshi_client):
         self.config = config
@@ -427,7 +428,7 @@ class SportsTraderStrategy:
                 self._save_traded_tickers()
                 await self._order_manager.limit_order(
                     ticker=ticker, side=signal["side"], price=limit_price,
-                    size_usdc=size, strategy="sports_trader", market_id=ticker,
+                    size_usdc=size, strategy=self.STRATEGY_NAME, market_id=ticker,
                 )
                 trades_attempted += 1
                 traded_games.add(game_id)

@@ -14,6 +14,7 @@ class SportsLongshotStrategy(SportsTraderStrategy):
     """Buy cheap contracts with high payoff potential. Portfolio approach."""
 
     TRADED_TICKERS_FILE = "data/sports_longshot_tickers.json"
+    STRATEGY_NAME = "sports_longshot"
 
     def __init__(self, config, order_manager, kalshi_client):
         super().__init__(config, order_manager, kalshi_client)

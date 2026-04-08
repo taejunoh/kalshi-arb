@@ -15,6 +15,7 @@ class SportsUnderdogStrategy(SportsTraderStrategy):
     systematic overpricing of favorites in prediction markets."""
 
     TRADED_TICKERS_FILE = "data/sports_underdog_tickers.json"
+    STRATEGY_NAME = "sports_underdog"
 
     def __init__(self, config, order_manager, kalshi_client):
         super().__init__(config, order_manager, kalshi_client)
