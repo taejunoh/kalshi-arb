@@ -39,8 +39,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
     async def get_performance():
         all_trades = await database.get_trades()
         all_strategy_names = [
-            "maker_preorder", "market_maker",
-            "shutdown_fade", "spread_scanner", "mentions_trader", "sports_trader", "econ_trader",
+            "maker_preorder", "market_maker", "shutdown_fade",
+            "spread_scanner", "mentions_trader",
+            "sports_trader", "sports_longshot", "sports_underdog",
+            "econ_trader",
         ]
 
         def empty_stats():
@@ -138,8 +140,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
     async def get_strategy_status():
         live_strategies = list(config.LIVE_STRATEGIES) if config else []
         all_strategies = [
-            "maker_preorder", "market_maker",
-            "shutdown_fade", "spread_scanner", "mentions_trader", "sports_trader", "econ_trader",
+            "maker_preorder", "market_maker", "shutdown_fade",
+            "spread_scanner", "mentions_trader",
+            "sports_trader", "sports_longshot", "sports_underdog",
+            "econ_trader",
         ]
         return {
             s: {"mode": "LIVE" if s in live_strategies else "PAPER"}

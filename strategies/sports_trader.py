@@ -239,71 +239,44 @@ class SportsTraderStrategy:
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
                  ticker: str = "") -> Optional[dict]:
-        """Multi-strategy evaluation. Runs 3 strategies in parallel for comparison.
-        Only the active strategy (longshot) actually trades. Others log only."""
+        """V2 consensus edge with line movement. Base strategy."""
+        min_edge = 0.03
         fee = self.config.KALSHI_FEE_PER_CONTRACT
 
-        # === Strategy A: Longshot (BUY cheap contracts, expect high payoff) ===
-        # Buy YES if price < 0.25 OR buy NO if price < 0.25
-        longshot_signal = None
-        if kalshi_yes <= 0.25 and kalshi_yes >= 0.05:
-            # Cheap YES — potential 4-20x payoff
-            fee_pct = min(fee, kalshi_yes, 1 - kalshi_yes) / kalshi_yes
-            cost_with_fee = kalshi_yes * (1 + fee_pct)
-            payoff_ratio = 1.0 / cost_with_fee  # how much $1 returns
-            if payoff_ratio >= 3.0:  # at least 3x payoff
-                longshot_signal = {"side": "yes", "price": kalshi_yes,
-                                   "edge": payoff_ratio, "strategy": "longshot"}
-        elif kalshi_no <= 0.25 and kalshi_no >= 0.05:
-            fee_pct = min(fee, kalshi_no, 1 - kalshi_no) / kalshi_no
-            cost_with_fee = kalshi_no * (1 + fee_pct)
-            payoff_ratio = 1.0 / cost_with_fee
-            if payoff_ratio >= 3.0:
-                longshot_signal = {"side": "no", "price": kalshi_no,
-                                   "edge": payoff_ratio, "strategy": "longshot"}
-
-        # === Strategy B: Underdog (bet AGAINST consensus favorite) ===
-        underdog_signal = None
-        # If consensus says team A wins (fair_prob > 0.60), bet on team B (NO)
-        if fair_prob > 0.60 and kalshi_no <= 0.40:
-            fee_pct = min(fee, kalshi_no, 1 - kalshi_no) / kalshi_no if kalshi_no > 0 else 0
-            payoff_ratio = 1.0 / (kalshi_no * (1 + fee_pct)) if kalshi_no > 0 else 0
-            if payoff_ratio >= 2.0:
-                underdog_signal = {"side": "no", "price": kalshi_no,
-                                   "edge": payoff_ratio, "strategy": "underdog"}
-        elif fair_prob < 0.40 and kalshi_yes <= 0.40:
-            fee_pct = min(fee, kalshi_yes, 1 - kalshi_yes) / kalshi_yes if kalshi_yes > 0 else 0
-            payoff_ratio = 1.0 / (kalshi_yes * (1 + fee_pct)) if kalshi_yes > 0 else 0
-            if payoff_ratio >= 2.0:
-                underdog_signal = {"side": "yes", "price": kalshi_yes,
-                                   "edge": payoff_ratio, "strategy": "underdog"}
-
-        # === Strategy C: V2 consensus edge (for comparison logging only) ===
-        v2_signal = None
-        adjusted_prob = fair_prob + home_adj
+        adjusted_prob = fair_prob
         if abs(line_movement) > 0.02:
             adjusted_prob += line_movement * 0.5
         adjusted_prob = max(0.03, min(0.97, adjusted_prob))
+
         yes_fee_pct = min(fee, kalshi_yes, 1 - kalshi_yes) / kalshi_yes if kalshi_yes > 0 else 0
         no_fee_pct = min(fee, kalshi_no, 1 - kalshi_no) / kalshi_no if kalshi_no > 0 else 0
         yes_edge = adjusted_prob - kalshi_yes * (1 + yes_fee_pct)
         no_edge = (1 - adjusted_prob) - kalshi_no * (1 + no_fee_pct)
-        if yes_edge > 0.03 and yes_edge >= no_edge:
-            v2_signal = {"side": "yes", "price": kalshi_yes, "edge": yes_edge, "strategy": "v2_consensus"}
-        elif no_edge > 0.03:
-            v2_signal = {"side": "no", "price": kalshi_no, "edge": no_edge, "strategy": "v2_consensus"}
 
-        # Log all signals for comparison
-        signals = [s for s in [longshot_signal, underdog_signal, v2_signal] if s]
-        if signals and ticker:
-            parts = " | ".join(f"{s['strategy']}:{s['side']}@{s['price']:.2f}({s['edge']:.1f}x)"
-                               if 'x' not in str(s.get('edge',''))
-                               else f"{s['strategy']}:{s['side']}@{s['price']:.2f}({s['edge']:.2f})"
-                               for s in signals)
-            logger.info(f"[SPORTS-CMP] {ticker}: {parts}")
+        if yes_edge > min_edge and yes_edge >= no_edge:
+            return {"side": "yes", "price": kalshi_yes, "edge": yes_edge, "strategy": "consensus"}
+        elif no_edge > min_edge:
+            return {"side": "no", "price": kalshi_no, "edge": no_edge, "strategy": "consensus"}
+        return None
 
-        # Active strategy: longshot (Paper testing)
-        return longshot_signal
+    def _get_trade_size(self, signal: dict) -> float:
+        """Default sizing: 5% bankroll."""
+        return self._order_manager.bankroll * 0.05
+
+    def _get_limit_price(self, signal: dict, fair_prob: float) -> float:
+        """Default: limit at adjusted fair value."""
+        adj = signal.get("adj_prob", fair_prob)
+        if signal["side"] == "yes":
+            return round(adj, 2)
+        return round(1 - adj, 2)
+
+    def _format_log(self, ticker: str, title: str, signal: dict,
+                    ya: float, na: float, fair_prob: float, size: float,
+                    limit_price: float, **kwargs) -> str:
+        """Default log format."""
+        return (f"[SPORTS] {ticker}: {title[:40]} "
+                f"fair={fair_prob:.2f} ask={ya:.2f}/{na:.2f} edge={signal['edge']:.2f} "
+                f"→ {signal['side']} ${size:.2f} LIMIT@{limit_price:.2f}")
 
     async def scan_and_execute(self):
         if not getattr(self.config, "SPORTS_ENABLED", False):
@@ -436,22 +409,19 @@ class SportsTraderStrategy:
                 if not signal:
                     continue
 
-                # Longshot: small fixed size ($2-3 per bet, portfolio approach)
-                size = min(3.0, self._order_manager.bankroll * 0.02)
+                size = self._get_trade_size(signal)
                 if size < 1.0:
                     continue
 
-                # Buy at market ask price (aggressive, want to fill)
-                limit_price = signal["price"]
+                limit_price = self._get_limit_price(signal, fair_prob)
                 limit_price = max(0.01, min(0.99, limit_price))
 
-                strategy_name = signal.get("strategy", "?")
-                payoff = signal.get("edge", 0)
-                logger.info(
-                    f"[SPORTS] {ticker}: {title[:40]} [{strategy_name}] "
-                    f"ask={ya:.2f}/{na:.2f} payoff={payoff:.1f}x "
-                    f"→ {signal['side']} ${size:.2f} LIMIT@{limit_price:.2f}"
+                log_msg = self._format_log(
+                    ticker=ticker, title=title, signal=signal,
+                    ya=ya, na=na, fair_prob=fair_prob, size=size,
+                    limit_price=limit_price, line_movement=line_movement,
                 )
+                logger.info(log_msg)
                 # Mark BEFORE order to prevent duplicates even if order/DB fails
                 self._traded_tickers[ticker] = now
                 self._save_traded_tickers()
