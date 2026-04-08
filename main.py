@@ -33,7 +33,10 @@ class Bot:
         self.price_feed = PriceFeed()
         self.kalshi_client = KalshiClient(self.config)
         self.scanner = MarketScanner(self.kalshi_client)
-        self.order_manager = OrderManager(self.config, self.kalshi_client, self.db)
+        self.notifier = TelegramNotifier(
+            self.config.TELEGRAM_BOT_TOKEN, self.config.TELEGRAM_CHAT_ID
+        )
+        self.order_manager = OrderManager(self.config, self.kalshi_client, self.db, self.notifier)
         self.maker_preorder = MakerPreorderStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client
         )
@@ -61,9 +64,6 @@ class Bot:
         )
         self.econ_trader = EconTraderStrategy(
             self.config, self.order_manager, self.kalshi_client
-        )
-        self.notifier = TelegramNotifier(
-            self.config.TELEGRAM_BOT_TOKEN, self.config.TELEGRAM_CHAT_ID
         )
         self.settlement = SettlementChecker(self.kalshi_client, self.db, self.order_manager, self.notifier)
         self.trade_logger = TradeLogger()

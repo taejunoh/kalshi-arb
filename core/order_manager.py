@@ -6,10 +6,11 @@ logger = logging.getLogger("order_manager")
 
 
 class OrderManager:
-    def __init__(self, config, kalshi_client, database):
+    def __init__(self, config, kalshi_client, database, notifier=None):
         self.config = config
         self._client = kalshi_client
         self._db = database
+        self._notifier = notifier
         self.bankroll = config.INITIAL_BANKROLL
         self._daily_loss = 0.0
         self._consecutive_losses = 0
@@ -102,7 +103,16 @@ class OrderManager:
                 logger.debug(f"Insufficient Kalshi balance: ${real_balance:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
                 return {"status": "skipped", "reason": "insufficient_balance"}
             logger.info(f"[LIVE] {strategy} LIMIT {side} {ticker} ${size_usdc:.2f} @ {price:.3f}")
-            return await self._live_limit_order(ticker, side, price, size_usdc, strategy, market_id)
+            result = await self._live_limit_order(ticker, side, price, size_usdc, strategy, market_id)
+            if self._notifier and result.get("status") != "failed":
+                await self._notifier.send(
+                    f"📊 <b>LIVE Order</b>\n"
+                    f"Strategy: {strategy}\n"
+                    f"Market: {ticker}\n"
+                    f"{side.upper()} @ {price:.3f} | ${size_usdc:.2f}",
+                    msg_type="trade",
+                )
+            return result
         return await self._paper_limit_order(ticker, side, price, size_usdc, strategy, market_id)
 
     async def cancel_order(self, order_id):
