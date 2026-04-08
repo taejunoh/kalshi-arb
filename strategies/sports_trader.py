@@ -144,11 +144,12 @@ class SportsTraderStrategy:
             logger.error(f"Odds API error for {sport}: {e}")
             return []
 
-    # Home court/field advantage (probability boost for home team)
+    # Home court/field advantage — NOT applied to consensus (already priced in by bookmakers)
+    # Kept as reference only. Only used if Kalshi specifically misprices home/away.
     HOME_ADVANTAGE = {
-        "basketball_nba": 0.035,   # ~3.5%
-        "baseball_mlb": 0.040,     # ~4.0%
-        "icehockey_nhl": 0.030,    # ~3.0%
+        "basketball_nba": 0.0,
+        "baseball_mlb": 0.0,
+        "icehockey_nhl": 0.0,
     }
 
     def _detect_line_movement(self, game_id: str, home_prob: float, away_prob: float) -> float:
