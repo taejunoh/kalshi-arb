@@ -148,7 +148,8 @@ TELEGRAM_CHAT_ID=8578917235
 | Sports V1 (bug) | 3/31 | 9W 11L +$26 | 랜덤 배팅 + 저가 고배율 = 수익 |
 | Sports V1 (fix) | 4/2-4/5 | 2W 8L -$25 | 컨센서스 엣지 = 수수료 후 0 |
 | Sports V2 | 4/8 | 0건 | 라인 이동 + 홈코트 → 홈코트 이중계산 버그 |
-| Sports V3 | 4/8~ | 비교 중 | Longshot/Underdog/Consensus 독립 비교 |
+| Sports V3 | 4/8 | 29건 paper_cancelled | limit_order → fill 시뮬레이터가 cancel, 하루 데이터 손실 |
+| Sports V3 fix | 4/9~ | 비교 중 | market_order로 변경, 즉시 paper_filled 기록 |
 | Spread V1 | 3/31-4/2 | 5W 11L -$19 | sigmoid 트렌드 무시, NO-only 편향 |
 | Spread V2 | 4/2~ | Paper 중 | Normal CDF, 양방향, 변동성 |
 | Econ V1 | 4/8 | 37건 무검증 Live | backward-looking 모델 결함 |
@@ -156,10 +157,22 @@ TELEGRAM_CHAT_ID=8578917235
 
 ---
 
+## Deployment Verification Process
+
+모든 배포/수정 후 반드시 5단계 검증 (하나라도 실패하면 "작동한다" 금지):
+
+1. **로그** — 전략 로그에 시그널/주문 출력되는가
+2. **DB** — `trades` 테이블에 `paper_filled` 또는 `filled` 상태로 기록되는가
+3. **Settlement** — settle 후 PnL이 계산되는가
+4. **Dashboard** — `/api/performance` 또는 `/api/settlement-history`에 반영되는가
+5. **Telegram** — 알림이 실제로 전송되는가
+
+---
+
 ## Next Steps
 
 1. **4/30 Fed settle** — 멘션 15개 포지션 수익 확인
-2. **스포츠 V3 비교** — Longshot vs Underdog vs Consensus settle 비교
+2. **스포츠 V3 비교** — Longshot vs Underdog vs Consensus settle 비교 (4/9~)
 3. **5월 중순** — 6/18 FOMC 마켓 오픈 시 멘션 재배팅
 4. **Spread V2 검증** — Paper 20건+ 후 판단
 5. **새 도메인 탐색** — Spotify/Billboard 마켓 오픈 시 진입 (현재 0개)
