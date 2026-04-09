@@ -426,9 +426,9 @@ class SportsTraderStrategy:
                 # Mark BEFORE order to prevent duplicates even if order/DB fails
                 self._traded_tickers[ticker] = now
                 self._save_traded_tickers()
-                await self._order_manager.limit_order(
-                    ticker=ticker, side=signal["side"], price=limit_price,
-                    size_usdc=size, strategy=self.STRATEGY_NAME, market_id=ticker,
+                await self._order_manager.market_order(
+                    ticker=ticker, side=signal["side"], size_usdc=size,
+                    price=limit_price, strategy=self.STRATEGY_NAME, market_id=ticker,
                 )
                 trades_attempted += 1
                 traded_games.add(game_id)
