@@ -41,7 +41,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         all_strategy_names = [
             "maker_preorder", "market_maker", "shutdown_fade",
             "spread_scanner", "mentions_trader",
-            "sports_trader", "sports_longshot", "sports_underdog",
+            "sports_trader", "sports_longshot", "sports_midshot", "sports_underdog",
             "econ_trader",
         ]
 
@@ -142,7 +142,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         all_strategies = [
             "maker_preorder", "market_maker", "shutdown_fade",
             "spread_scanner", "mentions_trader",
-            "sports_trader", "sports_longshot", "sports_underdog",
+            "sports_trader", "sports_longshot", "sports_midshot", "sports_underdog",
             "econ_trader",
         ]
         return {
