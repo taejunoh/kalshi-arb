@@ -77,8 +77,13 @@ class Bot:
         setup_logger("bot")
         await self.db.initialize()
 
-        # Sync bankroll with actual Kalshi balance if any strategy is live
-        if self.config.LIVE_STRATEGIES:
+        # Sync bankroll with actual Kalshi balance only in pure-live mode.
+        # In mixed mode (TRADING_MODE=paper + some live strategies), the shared
+        # order_manager.bankroll is the PAPER running state; overwriting it with
+        # Kalshi's real balance wipes paper accounting and causes phantom drains
+        # when stale paper_filled trades later settle. Live strategies in mixed
+        # mode check real Kalshi balance per-order via _live_limit_order anyway.
+        if self.config.LIVE_STRATEGIES and not self.config.is_paper_mode:
             real_balance = self.kalshi_client.get_balance()
             if real_balance is not None:
                 self.order_manager.bankroll = real_balance
