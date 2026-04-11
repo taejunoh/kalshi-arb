@@ -133,7 +133,14 @@ class SettlementChecker:
                     result=result,
                 )
                 await self._db.settle_trade(trade["id"], pnl)
-                self._order_manager.bankroll += pnl
+                # Bankroll adjustment: placement already deducted (size + fee).
+                # On win → credit full payout (capital + profit).
+                # On loss → no change (capital stays gone).
+                # Previously used `bankroll += pnl` which under-credited wins
+                # and double-drained losses after restart-sync.
+                if trade["direction"] == result:
+                    payout = trade["size"] / trade["price"]
+                    self._order_manager.bankroll += payout
                 if pnl > 0:
                     self._order_manager.record_win(pnl)
                 elif pnl < 0:

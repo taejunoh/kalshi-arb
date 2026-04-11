@@ -43,7 +43,12 @@ def test_pnl_lose_no():
     assert pnl == -40.0
 
 
-def test_settle_updates_bankroll():
+def test_settle_win_credits_full_payout():
+    """Bankroll on win should += payout (size/price), NOT just pnl.
+    Reason: placement already deducted size+fee. Settlement must refund full
+    payout (capital + profit) for the bankroll math to close.
+    Bug history: previously bankroll += pnl, which under-credited wins by size.
+    """
     checker, client, db, order_mgr = _make_checker()
     db.get_unsettled_trades = AsyncMock(return_value=[
         {"id": 1, "market_id": "MKT-1", "strategy": "spread_scanner",
@@ -53,8 +58,60 @@ def test_settle_updates_bankroll():
     import asyncio
     asyncio.get_event_loop().run_until_complete(checker.check_and_settle())
     db.settle_trade.assert_called_once()
-    # Bankroll should increase by PnL (68.0)
-    assert order_mgr.bankroll == pytest.approx(1068.0, abs=0.01)
+    # Payout = size / price = 30 / 0.30 = 100
+    assert order_mgr.bankroll == pytest.approx(1100.0, abs=0.01)
+
+
+def test_settle_loss_does_not_drain_bankroll():
+    """Bankroll on loss should += 0, NOT += pnl (which is -size).
+    Reason: placement already deducted size. Settlement must not deduct again.
+    Bug history: previously bankroll += pnl = bankroll -= size, causing
+    phantom double-deduction after restart-sync (where placement was reset
+    but pending trades remained in DB).
+    """
+    checker, client, db, order_mgr = _make_checker()
+    db.get_unsettled_trades = AsyncMock(return_value=[
+        {"id": 1, "market_id": "MKT-1", "strategy": "spread_scanner",
+         "direction": "yes", "price": 0.30, "size": 30.0, "fee": 2.0, "status": "paper_filled"},
+    ])
+    client.get_market.return_value = {"status": "finalized", "result": "no"}
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(checker.check_and_settle())
+    db.settle_trade.assert_called_once()
+    # Loss: bankroll unchanged (capital already deducted at placement)
+    assert order_mgr.bankroll == pytest.approx(1000.0, abs=0.01)
+
+
+def test_settle_win_no_side_credits_payout():
+    """NO-side win also credits full payout."""
+    checker, client, db, order_mgr = _make_checker()
+    db.get_unsettled_trades = AsyncMock(return_value=[
+        {"id": 1, "market_id": "MKT-1", "strategy": "shutdown_fade",
+         "direction": "no", "price": 0.40, "size": 40.0, "fee": 3.0, "status": "paper_filled"},
+    ])
+    client.get_market.return_value = {"status": "finalized", "result": "no"}
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(checker.check_and_settle())
+    # Payout = 40 / 0.40 = 100
+    assert order_mgr.bankroll == pytest.approx(1100.0, abs=0.01)
+
+
+def test_settle_pnl_record_unchanged():
+    """settle_trade should still record the ECONOMIC PnL (not the bankroll delta).
+    settle_trade(id, pnl) — pnl is the net gain/loss for performance tracking.
+    """
+    checker, client, db, order_mgr = _make_checker()
+    db.get_unsettled_trades = AsyncMock(return_value=[
+        {"id": 42, "market_id": "MKT-1", "strategy": "spread_scanner",
+         "direction": "yes", "price": 0.30, "size": 30.0, "fee": 2.0, "status": "paper_filled"},
+    ])
+    client.get_market.return_value = {"status": "finalized", "result": "yes"}
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(checker.check_and_settle())
+    # settle_trade was called with the economic PnL (68.0), not the payout (100)
+    args, _ = db.settle_trade.call_args
+    assert args[0] == 42
+    assert args[1] == pytest.approx(68.0, abs=0.01)
 
 
 def test_skip_non_finalized():
