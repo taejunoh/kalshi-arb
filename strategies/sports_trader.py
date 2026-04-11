@@ -307,9 +307,13 @@ class SportsTraderStrategy:
         max_trades_per_cycle = 3
         hit_limit = False
 
-        # Check total exposure ONCE per cycle (not per market)
+        # Check total exposure ONCE per cycle (not per market).
+        # Floor the cap at $10 so a temporarily weird bankroll (e.g., paper
+        # mode drained by stale settlements) doesn't silently block all sports
+        # trading. Sports per-trade size is ~$1-$3 so $10 still allows 3-4
+        # fresh trades in the worst case.
         total_exposure = self._get_live_sports_exposure()
-        max_exposure = self._order_manager.bankroll * 0.30
+        max_exposure = max(self._order_manager.bankroll * 0.30, 10.0)
         if total_exposure > max_exposure:
             logger.info(f"[SPORTS] Exposure ${total_exposure:.2f} > limit ${max_exposure:.2f}, skipping")
             return
