@@ -48,6 +48,36 @@ async def test_paper_limit_order(paper_manager):
 
 
 @pytest.mark.asyncio
+async def test_paper_limit_order_skips_when_bankroll_insufficient(paper_manager):
+    """_paper_limit_order must reject orders larger than current bankroll.
+    Previously missing this check allowed market_maker to drain bankroll
+    into deeply negative territory (observed -$817) since limit_order placed
+    quotes every 30 seconds with no balance guard. Symmetry with market_order
+    which already has this check."""
+    paper_manager.bankroll = 10.0
+    result = await paper_manager.limit_order(
+        ticker="KXBTC-25MAR20-T70000", side="BUY", price=0.48,
+        size_usdc=50.0, strategy="maker_preorder", market_id="KXBTC-25MAR20-T70000",
+    )
+    assert result["status"] == "skipped"
+    assert result["reason"] == "insufficient_bankroll"
+    # Bankroll unchanged — no placement happened
+    assert paper_manager.bankroll == 10.0
+
+
+@pytest.mark.asyncio
+async def test_paper_limit_order_skips_when_bankroll_negative(paper_manager):
+    """Even with a tiny size_usdc, negative bankroll must block new orders."""
+    paper_manager.bankroll = -100.0
+    result = await paper_manager.limit_order(
+        ticker="KXBTC-25MAR20-T70000", side="BUY", price=0.48,
+        size_usdc=0.50, strategy="market_maker", market_id="KXBTC-25MAR20-T70000",
+    )
+    assert result["status"] == "skipped"
+    assert paper_manager.bankroll == -100.0
+
+
+@pytest.mark.asyncio
 async def test_position_sizing(paper_manager):
     size = paper_manager.calculate_position_size(net_edge=0.05)
     assert size == 12.5

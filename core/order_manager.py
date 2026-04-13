@@ -113,6 +113,13 @@ class OrderManager:
                     msg_type="trade",
                 )
             return result
+        # Paper path: mirror market_order's bankroll guard. Without this,
+        # market_maker's 30-second quoting loop drains bankroll indefinitely
+        # into negative territory (observed -$817) because _paper_limit_order
+        # only deducts without checking.
+        if self.bankroll < size_usdc:
+            logger.warning(f"Insufficient bankroll: ${self.bankroll:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
+            return {"status": "skipped", "reason": "insufficient_bankroll"}
         return await self._paper_limit_order(ticker, side, price, size_usdc, strategy, market_id)
 
     async def cancel_order(self, order_id):
