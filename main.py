@@ -171,7 +171,10 @@ class Bot:
             ("spread_scanner", self.spread_scanner),
             ("market_maker", self.market_maker),
             ("mentions_trader", self.mentions_trader),
-            ("sports_trader", self.sports_trader),
+            # sports_trader (consensus) disabled — 50 trades confirmed no edge
+            # (-$13.63 net, 63% WR but expensive contracts). V3 comparison
+            # continues with longshot/midshot/underdog. Instance still exists
+            # for inheritance but scan_and_execute is not called.
             ("sports_longshot", self.sports_longshot),
             ("sports_midshot", self.sports_midshot),
             ("sports_underdog", self.sports_underdog),
