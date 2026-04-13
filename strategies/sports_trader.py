@@ -416,6 +416,10 @@ class SportsTraderStrategy:
 
                 size = self._get_trade_size(signal)
                 if size < 1.0:
+                    logger.info(
+                        f"[{self.STRATEGY_NAME}] {ticker}: signal valid but size "
+                        f"${size:.2f} < $1.00 (bankroll=${self._order_manager.bankroll:.2f}), skip"
+                    )
                     continue
 
                 limit_price = self._get_limit_price(signal, fair_prob)
