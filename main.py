@@ -166,7 +166,10 @@ class Bot:
 
     async def _strategy_loop(self):
         strategies = [
-            ("maker_preorder", self.maker_preorder),
+            # maker_preorder disabled — fires ~400 limit orders in <4s on
+            # startup, draining bankroll. No ENABLED flag in config, so
+            # removing from loop is the only way. Priority: sports V3
+            # sample collection for Live transition decision.
             ("shutdown_fade", self.shutdown_fade),
             ("spread_scanner", self.spread_scanner),
             ("market_maker", self.market_maker),
