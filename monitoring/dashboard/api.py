@@ -145,10 +145,37 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_trader", "sports_longshot", "sports_midshot", "sports_underdog",
             "econ_trader",
         ]
-        return {
-            s: {"mode": "LIVE" if s in live_strategies else "PAPER"}
-            for s in all_strategies
+        # Strategies removed from main.py _strategy_loop (no env flag to toggle).
+        # Keep in sync with main.py; see commits 59f7e44 (sports_trader) and
+        # e901f2b (maker_preorder).
+        loop_disabled = {"sports_trader", "maker_preorder"}
+        # env-flag mapping: which config attribute gates each strategy
+        flag_map = {
+            "market_maker": "MM_ENABLED",
+            "shutdown_fade": "SHUTDOWN_FADE_ENABLED",
+            "spread_scanner": "SPREAD_SCANNER_ENABLED",
+            "mentions_trader": "MENTIONS_ENABLED",
+            "econ_trader": "ECON_ENABLED",
+            "sports_longshot": "SPORTS_ENABLED",
+            "sports_midshot": "SPORTS_ENABLED",
+            "sports_underdog": "SPORTS_ENABLED",
+            "sports_trader": "SPORTS_ENABLED",
         }
+        result = {}
+        for s in all_strategies:
+            mode = "LIVE" if s in live_strategies else "PAPER"
+            in_loop = s not in loop_disabled
+            flag_attr = flag_map.get(s)
+            flag_on = True if (not flag_attr or not config) else bool(getattr(config, flag_attr, True))
+            active = in_loop and flag_on
+            if active:
+                reason = None
+            elif not in_loop:
+                reason = "removed_from_loop"
+            else:
+                reason = f"{flag_attr}=false"
+            result[s] = {"mode": mode, "active": active, "reason": reason}
+        return result
 
     @app.get("/api/settlement-history")
     async def get_settlement_history():
