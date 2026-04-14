@@ -6,8 +6,9 @@ Afterwards, the analyze step reports how often each key's payload actually
 changes in the wild — the real input to the TTL tuning decision.
 
 Usage:
-    python3 scripts/measure_odds_freshness.py [minutes]    # collect
-    python3 scripts/measure_odds_freshness.py analyze      # report only
+    python3 scripts/measure_odds_freshness.py [minutes]       # collect + analyze + send to Telegram
+    python3 scripts/measure_odds_freshness.py analyze          # report only, stdout
+    python3 scripts/measure_odds_freshness.py send             # analyze + send Telegram
 
 Expected cost: ~360 Odds API calls per hour of measurement.
 """
@@ -109,45 +110,43 @@ async def collect(api_key: str, duration_min: int):
             await asyncio.sleep(POLL_INTERVAL_SEC)
 
 
-def analyze(log_file: str):
+def _build_report(log_file: str) -> str:
+    """Return the analysis as a multi-line string (for stdout OR Telegram)."""
     if not os.path.exists(log_file):
-        print(f"No log at {log_file}", file=sys.stderr)
-        sys.exit(1)
+        return f"No log at {log_file}"
     by_key: dict = defaultdict(list)
     with open(log_file) as f:
         for line in f:
             r = json.loads(line)
             by_key[(r["region"], r["sport"])].append(r)
 
-    print()
-    print("=" * 92)
-    print(f"{'key':24} {'ticks':>6} {'payload(noisy)':>15} {'pinnacle':>10} "
-          f"{'est.pinnacle.TTL':>18}")
-    print("=" * 92)
+    lines: list = []
+    P = lines.append
+
+    P("<b>Odds API Freshness Report</b>")
+    P("")
+    P("<pre>")
+    P(f"{'key':24} {'ticks':>6} {'pnl-chg':>8} {'est.TTL(s)':>12}")
+    P("-" * 54)
     for key, records in sorted(by_key.items()):
         n = len(records)
-        payload_changes = 0
         pinnacle_changes = 0
-        prev_pl, prev_pn = None, None
+        prev_pn = None
         first_ts, last_ts = None, None
         for r in records:
             first_ts = first_ts or r["ts"]
             last_ts = r["ts"]
-            if prev_pl is not None and r["payload_hash"] != prev_pl:
-                payload_changes += 1
             if prev_pn is not None and r["pinnacle_hash"] != prev_pn:
                 pinnacle_changes += 1
-            prev_pl, prev_pn = r["payload_hash"], r["pinnacle_hash"]
+            prev_pn = r["pinnacle_hash"]
         est_ttl = (f">{n * POLL_INTERVAL_SEC}" if pinnacle_changes == 0
                    else f"{_seconds_between(first_ts, last_ts) / pinnacle_changes:.0f}")
-        print(f"{str(key):24} {n:>6} {payload_changes:>15} {pinnacle_changes:>10} "
-              f"{est_ttl:>18}")
+        P(f"{str(key):24} {n:>6} {pinnacle_changes:>8} {est_ttl:>12}")
+    P("</pre>")
 
     # Per-bookmaker change rate (the real signal)
-    print()
-    print("=" * 92)
-    print(f"Per-bookmaker price change rate (per sport, averaged over regions):")
-    print("=" * 92)
+    P("")
+    P("<b>Per-bookmaker price-change gaps</b>")
     by_bm: dict = defaultdict(lambda: defaultdict(lambda: {"changes": 0, "seen": 0, "span": 0.0}))
     for (region, sport), records in sorted(by_key.items()):
         if not records:
@@ -166,24 +165,44 @@ def analyze(log_file: str):
             by_bm[sport][bm]["span"] = max(by_bm[sport][bm]["span"], span)
 
     for sport in sorted(by_bm):
-        print(f"\n--- {sport} ---")
+        P("")
+        P(f"<b>{sport}</b>")
+        P("<pre>")
+        P(f"{'bookmaker':20} {'chg':>4} {'rate':>6} {'gap(s)':>8}")
         bms = by_bm[sport]
-        # Sort by changes descending
         ranked = sorted(bms.items(), key=lambda kv: -kv[1]["changes"])
-        print(f"  {'bookmaker':25} {'seen':>6} {'changes':>8} {'change-rate':>12} "
-              f"{'avg.gap(s)':>12}")
-        for bm, stats in ranked[:12]:
+        for bm, stats in ranked[:10]:
             rate = stats["changes"] / max(1, stats["seen"])
             gap = (stats["span"] / stats["changes"]) if stats["changes"] else float("inf")
             gap_str = f"{gap:.0f}" if gap != float("inf") else "∞"
-            print(f"  {bm:25} {stats['seen']:>6} {stats['changes']:>8} {rate:>11.1%} "
-                  f"{gap_str:>12}")
+            P(f"{bm:20} {stats['changes']:>4} {rate:>5.0%}  {gap_str:>8}")
+        P("</pre>")
 
-    print()
-    print("Interpretation:")
-    print("  avg.gap(s) = average seconds between this book's price changes.")
-    print("  If a book's avg gap ≤ 300s → TTL 300s captures every other move.")
-    print("  If ≥ 900s → current TTL is already enough for that book.")
+    P("")
+    P("<i>gap(s) = avg seconds between that book's price changes.</i>")
+    P("<i>Decision: if many books have gap &lt; 300s, upgrade quota + lower TTL.</i>")
+    return "\n".join(lines)
+
+
+def analyze(log_file: str):
+    print(_build_report(log_file))
+
+
+async def send_analysis(log_file: str):
+    cfg = Config()
+    if not cfg.TELEGRAM_BOT_TOKEN or not cfg.TELEGRAM_CHAT_ID:
+        print("No TELEGRAM_BOT_TOKEN / CHAT_ID — printing to stdout instead.")
+        analyze(log_file)
+        return
+    from monitoring.notifier import TelegramNotifier
+    report = _build_report(log_file)
+    notifier = TelegramNotifier(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_CHAT_ID)
+    # Telegram caps messages at 4096 chars — split if needed
+    MAX = 3800
+    parts = [report[i:i + MAX] for i in range(0, len(report), MAX)]
+    for i, part in enumerate(parts):
+        await notifier.send(part, msg_type=f"odds_freshness_{i}")
+    print(f"Sent {len(parts)} Telegram message(s), {len(report)} chars total.")
 
 
 def _seconds_between(iso_a: str, iso_b: str) -> float:
@@ -194,15 +213,20 @@ def _seconds_between(iso_a: str, iso_b: str) -> float:
 
 if __name__ == "__main__":
     cfg = Config()
-    if not cfg.ODDS_API_KEY:
-        print("ODDS_API_KEY not set", file=sys.stderr)
-        sys.exit(1)
-    if len(sys.argv) > 1 and sys.argv[1] == "analyze":
+    arg = sys.argv[1] if len(sys.argv) > 1 else None
+    if arg == "analyze":
         analyze(OUT_FILE)
+    elif arg == "send":
+        asyncio.run(send_analysis(OUT_FILE))
     else:
-        minutes = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_DURATION_MIN
+        if not cfg.ODDS_API_KEY:
+            print("ODDS_API_KEY not set", file=sys.stderr)
+            sys.exit(1)
+        minutes = int(arg) if arg else DEFAULT_DURATION_MIN
         print(f"Measuring Odds API for {minutes} min, poll every {POLL_INTERVAL_SEC}s, "
               f"{len(REGIONS) * len(SPORTS)} keys per tick...", flush=True)
         asyncio.run(collect(cfg.ODDS_API_KEY, minutes))
-        print("\n--- Analysis ---")
+        print("\n--- Analysis (stdout) ---")
         analyze(OUT_FILE)
+        print("\n--- Sending to Telegram ---")
+        asyncio.run(send_analysis(OUT_FILE))
