@@ -205,6 +205,24 @@
       color: var(--text-dim);
       border: 1px solid var(--border);
     }
+    .version-badge {
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      margin-right: 6px;
+    }
+    .version-badge.v3 {
+      background: rgba(168, 85, 247, 0.12);
+      color: #a855f7;
+      border: 1px solid rgba(168, 85, 247, 0.35);
+    }
+    .version-badge.v4 {
+      background: rgba(59, 130, 246, 0.12);
+      color: #3b82f6;
+      border: 1px solid rgba(59, 130, 246, 0.35);
+    }
     .perf-card.disabled {
       opacity: 0.55;
     }
@@ -779,10 +797,16 @@ function renderPerfCardsByMode(mode, gridId) {
     const cardCls = isActive ? 'perf-card' : 'perf-card disabled';
     const titleAttr = status.reason ? ` title="${status.reason}"` : '';
 
+    const v3Strats = new Set(['sports_longshot', 'sports_midshot', 'sports_underdog']);
+    const v4Strats = new Set(['sports_pinnacle_edge', 'sports_v4_edge', 'sports_liquidity_filtered', 'sports_consolidated']);
+    let versionBadge = '';
+    if (v3Strats.has(strat)) versionBadge = '<span class="version-badge v3">V3</span>';
+    else if (v4Strats.has(strat)) versionBadge = '<span class="version-badge v4">V4</span>';
+
     return `
       <div class="${cardCls}"${titleAttr}>
         <div class="strategy-name">
-          <span>${strat}</span>
+          <span>${versionBadge}${strat}</span>
           <span class="status-badge ${statusCls}">${statusLabel}</span>
         </div>
         <div class="perf-row">
