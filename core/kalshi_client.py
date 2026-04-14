@@ -1,4 +1,5 @@
 import base64
+import copy
 import logging
 import time
 from typing import Optional
@@ -8,6 +9,21 @@ import httpx
 logger = logging.getLogger("kalshi_client")
 
 CRYPTO_SERIES_PREFIXES = {"KXBTC", "KXETH", "KXSOL", "KXXRP"}
+
+# TTL cache for portfolio endpoints (positions, settlements). The dashboard
+# auto-refreshes every 15s — without this, any open browser tab generates
+# 4+ Kalshi API calls/min and hits the 429 rate limit. 30s TTL is a safe
+# stale window for "current positions" data.
+_PORTFOLIO_CACHE: dict[str, tuple[float, list]] = {}
+_PORTFOLIO_CACHE_TTL = 30.0
+
+
+def _portfolio_cache_now() -> float:
+    return time.time()
+
+
+def _portfolio_cache_reset() -> None:
+    _PORTFOLIO_CACHE.clear()
 
 
 class KalshiClient:
@@ -198,17 +214,25 @@ class KalshiClient:
             return False
 
     def get_positions(self):
+        cached = self._portfolio_cache_lookup("positions")
+        if cached is not None:
+            return cached
         try:
             data = self._get("/trade-api/v2/portfolio/positions")
             if data is None:
                 return []
-            return data.get("market_positions", [])
+            positions = data.get("market_positions", [])
+            self._portfolio_cache_store("positions", positions)
+            return copy.deepcopy(positions)
         except Exception as e:
             logger.error(f"Failed to get positions: {e}")
             return []
 
     def get_settlements(self, limit: int = 200) -> list[dict]:
         """Fetch settlement history from Kalshi portfolio."""
+        cached = self._portfolio_cache_lookup("settlements")
+        if cached is not None:
+            return cached
         all_settlements = []
         cursor = None
         try:
@@ -228,7 +252,21 @@ class KalshiClient:
                     break
         except Exception as e:
             logger.error(f"Failed to get settlements: {e}")
-        return all_settlements
+        self._portfolio_cache_store("settlements", all_settlements)
+        return copy.deepcopy(all_settlements)
+
+    # ── Portfolio cache helpers ─────────────────────────────────────
+    def _portfolio_cache_lookup(self, key: str) -> Optional[list]:
+        hit = _PORTFOLIO_CACHE.get(key)
+        if hit is None:
+            return None
+        cached_at, data = hit
+        if _portfolio_cache_now() - cached_at >= _PORTFOLIO_CACHE_TTL:
+            return None
+        return copy.deepcopy(data)
+
+    def _portfolio_cache_store(self, key: str, data: list) -> None:
+        _PORTFOLIO_CACHE[key] = (_portfolio_cache_now(), copy.deepcopy(data))
 
     def get_resting_orders(self) -> list[dict]:
         """Fetch all resting (unfilled) limit orders from Kalshi portfolio."""
