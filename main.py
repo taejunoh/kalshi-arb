@@ -18,6 +18,10 @@ from strategies.sports_trader import SportsTraderStrategy
 from strategies.sports_longshot import SportsLongshotStrategy
 from strategies.sports_midshot import SportsMidshotStrategy
 from strategies.sports_underdog import SportsUnderdogStrategy
+from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
+from strategies.sports_v4_edge import SportsV4EdgeStrategy
+from strategies.sports_liquidity_filtered import SportsLiquidityFilteredStrategy
+from strategies.sports_consolidated import SportsConsolidatedStrategy
 from strategies.econ_trader import EconTraderStrategy
 from core.settlement import SettlementChecker
 from monitoring.logger import setup_logger, TradeLogger
@@ -64,6 +68,18 @@ class Bot:
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_underdog = SportsUnderdogStrategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_v4_edge = SportsV4EdgeStrategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_liquidity_filtered = SportsLiquidityFilteredStrategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_consolidated = SportsConsolidatedStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.econ_trader = EconTraderStrategy(
@@ -181,6 +197,10 @@ class Bot:
             ("sports_longshot", self.sports_longshot),
             ("sports_midshot", self.sports_midshot),
             ("sports_underdog", self.sports_underdog),
+            ("sports_pinnacle_edge", self.sports_pinnacle_edge),
+            ("sports_v4_edge", self.sports_v4_edge),
+            ("sports_liquidity_filtered", self.sports_liquidity_filtered),
+            ("sports_consolidated", self.sports_consolidated),
             ("econ_trader", self.econ_trader),
         ]
         while self._running:

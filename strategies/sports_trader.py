@@ -81,6 +81,7 @@ class SportsTraderStrategy:
         self._http: Optional[httpx.AsyncClient] = None
         self.odds_api_usage: dict = {"used": 0, "remaining": 0, "last": 0}  # exposed to dashboard
         self._prev_odds: dict[str, dict] = {}  # game_id -> {home_prob, away_prob, time}
+        self._last_pinnacle_yes_prob: Optional[float] = None  # set per-market during scan
 
         # Load persisted traded tickers to survive restarts
         self._load_traded_tickers()
@@ -463,6 +464,14 @@ class SportsTraderStrategy:
                 if not is_yes_home:
                     line_movement = -line_movement
                 home_adj = self._home_court_adjustment(sport_key, is_yes_home)
+
+                # Expose Pinnacle prob (YES-team perspective) for subclasses that want it
+                if pinnacle is not None:
+                    self._last_pinnacle_yes_prob = (
+                        pinnacle["home_prob"] if is_yes_home else pinnacle["away_prob"]
+                    )
+                else:
+                    self._last_pinnacle_yes_prob = None
 
                 signal = self.evaluate(ya, na, fair_prob,
                                        line_movement=line_movement, home_adj=home_adj,

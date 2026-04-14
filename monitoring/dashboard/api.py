@@ -64,6 +64,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "maker_preorder", "market_maker", "shutdown_fade",
             "spread_scanner", "mentions_trader",
             "sports_trader", "sports_longshot", "sports_midshot", "sports_underdog",
+            "sports_pinnacle_edge", "sports_v4_edge",
+            "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
         ]
 
@@ -233,6 +235,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "maker_preorder", "market_maker", "shutdown_fade",
             "spread_scanner", "mentions_trader",
             "sports_trader", "sports_longshot", "sports_midshot", "sports_underdog",
+            "sports_pinnacle_edge", "sports_v4_edge",
+            "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
         ]
         # Strategies removed from main.py _strategy_loop (no env flag to toggle).
