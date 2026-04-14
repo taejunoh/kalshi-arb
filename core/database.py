@@ -149,12 +149,15 @@ class Database:
             await conn.commit()
 
     async def get_clv_positive_rate(self, strategy: str, days: int = 30) -> float:
-        """Fraction of trades (for strategy, within last N days) where the closing price
-        moved favorably relative to entry.
+        """Fraction of trades where closing line moved favorably vs entry.
 
-        YES direction: CLV+ when closing yes_ask > entry yes_ask.
-        NO direction: CLV+ when closing no_ask > entry no_ask.
-        Only trades with both entry AND closing snapshots are counted.
+        YES direction: CLV+ when close_yes_ask > entry_yes_ask.
+        NO direction: CLV+ when close_no_ask > entry_no_ask.
+
+        Prefers 'pre_close' snapshot (captured minutes before game start —
+        the true closing line) over 'closing' snapshot (captured at
+        settlement, where yes_ask is 0 or 1 and CLV+ ≈ win rate).
+        Only trades with both an entry AND some close-side snapshot count.
         """
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
@@ -162,12 +165,15 @@ class Database:
                 """
                 SELECT t.direction,
                        e.yes_ask AS entry_yes, e.no_ask AS entry_no,
-                       c.yes_ask AS close_yes, c.no_ask AS close_no
+                       COALESCE(pc.yes_ask, cl.yes_ask) AS close_yes,
+                       COALESCE(pc.no_ask, cl.no_ask) AS close_no
                 FROM trades t
                 JOIN clv_snapshots e ON e.trade_id = t.id AND e.snapshot_at = 'entry'
-                JOIN clv_snapshots c ON c.trade_id = t.id AND c.snapshot_at = 'closing'
+                LEFT JOIN clv_snapshots pc ON pc.trade_id = t.id AND pc.snapshot_at = 'pre_close'
+                LEFT JOIN clv_snapshots cl ON cl.trade_id = t.id AND cl.snapshot_at = 'closing'
                 WHERE t.strategy = ?
                   AND t.timestamp >= datetime('now', ?)
+                  AND (pc.id IS NOT NULL OR cl.id IS NOT NULL)
                 """,
                 (strategy, f"-{int(days)} days"),
             )

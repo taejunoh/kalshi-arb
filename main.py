@@ -27,6 +27,7 @@ from strategies.sports_liquidity_filtered import SportsLiquidityFilteredStrategy
 from strategies.sports_consolidated import SportsConsolidatedStrategy
 from strategies.econ_trader import EconTraderStrategy
 from core.settlement import SettlementChecker
+from core.clv_tracker import CLVTracker
 from monitoring.logger import setup_logger, TradeLogger
 from monitoring.notifier import TelegramNotifier
 from monitoring.dashboard.api import create_app
@@ -98,6 +99,7 @@ class Bot:
             self.config, self.order_manager, self.kalshi_client
         )
         self.settlement = SettlementChecker(self.kalshi_client, self.db, self.order_manager, self.notifier)
+        self.clv_tracker = CLVTracker(self.kalshi_client, self.db)
         self.trade_logger = TradeLogger()
         self._running = True
 
@@ -145,6 +147,7 @@ class Bot:
             asyncio.create_task(self._strategy_loop()),
             asyncio.create_task(self._dashboard_task()),
             asyncio.create_task(self._settlement_check_task()),
+            asyncio.create_task(self._clv_tracker_task()),
             asyncio.create_task(self._daily_reset_task()),
         ]
 
@@ -239,6 +242,17 @@ class Bot:
                 await self.settlement.check_and_settle()
             except Exception as e:
                 logger.error(f"Settlement check error: {e}")
+            await asyncio.sleep(60)
+
+    async def _clv_tracker_task(self):
+        """Capture pre-close snapshots ~T-5min before each sports game
+        starts, so CLV+ rate reflects the true closing-line value rather
+        than the degenerate settled (1.0/0.0) prices."""
+        while self._running:
+            try:
+                await self.clv_tracker.capture_pre_close_snapshots()
+            except Exception as e:
+                logger.error(f"CLV tracker error: {e}")
             await asyncio.sleep(60)
 
     async def _daily_reset_task(self):
