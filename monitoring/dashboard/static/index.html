@@ -722,6 +722,14 @@ function renderPerfCardsByMode(mode, gridId) {
     return hasActivity || stratMode === mode;
   });
 
+  // Sort ACTIVE first, then DISABLED. Within each group keep insertion order.
+  filtered.sort((a, b) => {
+    const aActive = (stratStatusCache[a] || {}).active !== false;
+    const bActive = (stratStatusCache[b] || {}).active !== false;
+    if (aActive === bActive) return 0;
+    return aActive ? -1 : 1;
+  });
+
   if (filtered.length === 0) {
     grid.innerHTML = `<div class="perf-card" style="color:var(--text-dim);font-size:12px;">No ${modeKey} strategies.</div>`;
     return;
