@@ -18,6 +18,9 @@ from strategies.sports_trader import SportsTraderStrategy
 from strategies.sports_longshot import SportsLongshotStrategy
 from strategies.sports_midshot import SportsMidshotStrategy
 from strategies.sports_underdog import SportsUnderdogStrategy
+from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
+from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
+from strategies.sports_underdog_v31 import SportsUnderdogV31Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_liquidity_filtered import SportsLiquidityFilteredStrategy
@@ -68,6 +71,15 @@ class Bot:
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_underdog = SportsUnderdogStrategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_longshot_v31 = SportsLongshotV31Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_midshot_v31 = SportsMidshotV31Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_underdog_v31 = SportsUnderdogV31Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
@@ -197,6 +209,9 @@ class Bot:
             ("sports_longshot", self.sports_longshot),
             ("sports_midshot", self.sports_midshot),
             ("sports_underdog", self.sports_underdog),
+            ("sports_longshot_v31", self.sports_longshot_v31),
+            ("sports_midshot_v31", self.sports_midshot_v31),
+            ("sports_underdog_v31", self.sports_underdog_v31),
             ("sports_pinnacle_edge", self.sports_pinnacle_edge),
             ("sports_v4_edge", self.sports_v4_edge),
             ("sports_liquidity_filtered", self.sports_liquidity_filtered),

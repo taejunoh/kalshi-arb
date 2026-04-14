@@ -69,6 +69,7 @@ class SportsTraderStrategy:
 
     TRADED_TICKERS_FILE = "data/sports_traded_tickers.json"
     STRATEGY_NAME = "sports_trader"
+    REGION_OVERRIDE: Optional[str] = None  # subclass can pin a specific Odds API region
 
     def __init__(self, config, order_manager, kalshi_client):
         self.config = config
@@ -118,6 +119,12 @@ class SportsTraderStrategy:
             logger.error(f"[SPORTS] Failed to get exposure, blocking trades: {e}")
             return float("inf")  # Block trading when exposure unknown
 
+    def _get_odds_region(self) -> str:
+        """Per-strategy Odds API region: subclass REGION_OVERRIDE wins, else config default."""
+        if self.REGION_OVERRIDE:
+            return self.REGION_OVERRIDE
+        return getattr(self.config, "ODDS_API_REGION", "eu")
+
     async def _fetch_odds(self, sport: str) -> list[dict]:
         """Fetch odds from The Odds API."""
         if not self._odds_api_key:
@@ -129,7 +136,7 @@ class SportsTraderStrategy:
                 f"https://api.the-odds-api.com/v4/sports/{sport}/odds",
                 params={
                     "apiKey": self._odds_api_key,
-                    "regions": getattr(self.config, "ODDS_API_REGION", "eu"),
+                    "regions": self._get_odds_region(),
                     "markets": "h2h",
                     "oddsFormat": "decimal",
                 },

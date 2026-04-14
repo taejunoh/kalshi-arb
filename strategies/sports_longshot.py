@@ -15,6 +15,7 @@ class SportsLongshotStrategy(SportsTraderStrategy):
 
     TRADED_TICKERS_FILE = "data/sports_longshot_tickers.json"
     STRATEGY_NAME = "sports_longshot"
+    REGION_OVERRIDE = "us"  # V3 baseline stays on US retail books for continuity
 
     def __init__(self, config, order_manager, kalshi_client):
         super().__init__(config, order_manager, kalshi_client)

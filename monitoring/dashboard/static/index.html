@@ -222,6 +222,11 @@
       color: #a855f7;
       border: 1px solid rgba(168, 85, 247, 0.35);
     }
+    .version-badge.v31 {
+      background: rgba(236, 72, 153, 0.12);
+      color: #ec4899;
+      border: 1px solid rgba(236, 72, 153, 0.35);
+    }
     .version-badge.v4 {
       background: rgba(59, 130, 246, 0.12);
       color: #3b82f6;
@@ -802,9 +807,11 @@ function renderPerfCardsByMode(mode, gridId) {
     const titleAttr = status.reason ? ` title="${status.reason}"` : '';
 
     const v3Strats = new Set(['sports_longshot', 'sports_midshot', 'sports_underdog']);
+    const v31Strats = new Set(['sports_longshot_v31', 'sports_midshot_v31', 'sports_underdog_v31']);
     const v4Strats = new Set(['sports_pinnacle_edge', 'sports_v4_edge', 'sports_liquidity_filtered', 'sports_consolidated']);
     let versionBadge = '';
     if (v3Strats.has(strat)) versionBadge = '<span class="version-badge v3">V3</span>';
+    else if (v31Strats.has(strat)) versionBadge = '<span class="version-badge v31">V3.1</span>';
     else if (v4Strats.has(strat)) versionBadge = '<span class="version-badge v4">V4</span>';
 
     return `
