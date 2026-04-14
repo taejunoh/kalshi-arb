@@ -174,20 +174,19 @@ class Database:
             rows = await cursor.fetchall()
         if not rows:
             return 0.0
-        total = len(rows)
         pos = 0
+        total = 0
         for r in rows:
-            if r["direction"] == "YES":
-                entry = r["entry_yes"]
-                close = r["close_yes"]
+            if (r["direction"] or "").lower() == "yes":
+                entry, close = r["entry_yes"], r["close_yes"]
             else:
-                entry = r["entry_no"]
-                close = r["close_no"]
+                entry, close = r["entry_no"], r["close_no"]
             if entry is None or close is None:
                 continue
+            total += 1
             if close > entry:
                 pos += 1
-        return pos / total
+        return pos / total if total > 0 else 0.0
 
     async def set_bot_state(self, key: str, value: float) -> None:
         now = datetime.now(timezone.utc).isoformat()

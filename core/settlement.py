@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
+from typing import Optional
 
 logger = logging.getLogger("settlement")
 
@@ -24,8 +25,10 @@ class SettlementChecker:
         self._order_manager = order_manager
         self._notifier = notifier
         self._last_summary_time = 0.0
-        # Cache settled market results to avoid repeated API calls
-        self._settled_cache: dict[str, str] = {}  # ticker -> "yes" | "no"
+        # Cache settled market results to avoid repeated API calls.
+        # Value: (result, yes_ask, no_ask) — asks needed for CLV closing snapshots
+        # across multiple check_and_settle() calls on the same ticker.
+        self._settled_cache: dict[str, tuple[str, Optional[float], Optional[float]]] = {}
 
     def calculate_pnl(self, direction: str, price: float, size_usdc: float,
                       fee: float, result: str) -> float:
@@ -117,9 +120,10 @@ class SettlementChecker:
 
         loop = asyncio.get_event_loop()
         for ticker, trades in by_market.items():
-            market = None
-            result = self._settled_cache.get(ticker)
-            if not result:
+            cached = self._settled_cache.get(ticker)
+            if cached is not None:
+                result, close_yes_ask, close_no_ask = cached
+            else:
                 market = await loop.run_in_executor(None, self._client.get_market, ticker)
                 if not market:
                     continue
@@ -128,11 +132,9 @@ class SettlementChecker:
                 result = market.get("result")
                 if not result:
                     continue
-                self._settled_cache[ticker] = result
-
-            # Closing asks — only present when we fetched market this iteration
-            close_yes_ask = _safe_float(market.get("yes_ask_dollars")) if market else None
-            close_no_ask = _safe_float(market.get("no_ask_dollars")) if market else None
+                close_yes_ask = _safe_float(market.get("yes_ask_dollars"))
+                close_no_ask = _safe_float(market.get("no_ask_dollars"))
+                self._settled_cache[ticker] = (result, close_yes_ask, close_no_ask)
 
             # Settle all trades for this market
             for trade in trades:

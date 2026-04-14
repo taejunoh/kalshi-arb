@@ -74,26 +74,24 @@ async def test_record_clv_snapshot_allows_both_entry_and_closing(db):
 @pytest.mark.asyncio
 async def test_clv_positive_rate_counts_favorable_movement(db):
     """YES trade: closing_yes_ask > entry_yes_ask means CLV+.
-    NO trade: closing_no_ask > entry_no_ask means CLV+."""
-    # Trade 1: YES bet, price moved up → CLV+
+    NO trade: closing_no_ask > entry_no_ask means CLV+.
+    Production writes direction as lowercase `yes`/`no`; rate must match that."""
     await db.record_trade(
-        strategy="sports_pinnacle_edge", market_id="m1", direction="YES",
+        strategy="sports_pinnacle_edge", market_id="m1", direction="yes",
         price=0.40, size=3.0, fee=0.07, status="paper_settled", pnl=1.5,
     )
     await db.record_clv_snapshot(trade_id=1, snapshot_at="entry", yes_ask=0.40, no_ask=0.62)
     await db.record_clv_snapshot(trade_id=1, snapshot_at="closing", yes_ask=0.55, no_ask=0.47)
 
-    # Trade 2: YES bet, price moved down → CLV-
     await db.record_trade(
-        strategy="sports_pinnacle_edge", market_id="m2", direction="YES",
+        strategy="sports_pinnacle_edge", market_id="m2", direction="yes",
         price=0.60, size=3.0, fee=0.07, status="paper_settled", pnl=-2.0,
     )
     await db.record_clv_snapshot(trade_id=2, snapshot_at="entry", yes_ask=0.60, no_ask=0.42)
     await db.record_clv_snapshot(trade_id=2, snapshot_at="closing", yes_ask=0.50, no_ask=0.52)
 
-    # Trade 3: NO bet, no_ask moved up → CLV+
     await db.record_trade(
-        strategy="sports_pinnacle_edge", market_id="m3", direction="NO",
+        strategy="sports_pinnacle_edge", market_id="m3", direction="no",
         price=0.30, size=3.0, fee=0.07, status="paper_settled", pnl=1.0,
     )
     await db.record_clv_snapshot(trade_id=3, snapshot_at="entry", yes_ask=0.72, no_ask=0.30)
@@ -102,6 +100,43 @@ async def test_clv_positive_rate_counts_favorable_movement(db):
     rate = await db.get_clv_positive_rate("sports_pinnacle_edge", days=30)
     # 2 of 3 favorable → 66.7%
     assert abs(rate - 2 / 3) < 1e-6
+
+
+@pytest.mark.asyncio
+async def test_clv_positive_rate_lowercase_direction(db):
+    """Case-sensitive compare against 'YES' would silently route every real
+    trade into the else branch. Production writes lowercase, so this is a
+    regression test for the direction-case bug."""
+    # A single YES trade where the YES side moved favorably — should be CLV+.
+    # If code compared against 'YES' (uppercase), it'd fall through to NO branch
+    # and see no_ask 0.62→0.47 (down) = CLV- → rate 0.0 instead of 1.0.
+    await db.record_trade(strategy="sports_pinnacle_edge", market_id="m1", direction="yes",
+                          price=0.40, size=3.0, fee=0.07, status="paper_settled", pnl=1.5)
+    await db.record_clv_snapshot(trade_id=1, snapshot_at="entry", yes_ask=0.40, no_ask=0.62)
+    await db.record_clv_snapshot(trade_id=1, snapshot_at="closing", yes_ask=0.55, no_ask=0.47)
+
+    rate = await db.get_clv_positive_rate("sports_pinnacle_edge", days=30)
+    assert rate == 1.0
+
+
+@pytest.mark.asyncio
+async def test_clv_positive_rate_skips_null_snapshot_rows_from_denominator(db):
+    """Rows with NULL closing asks (e.g. settled_cache hit) must not inflate the denominator."""
+    # Real settled row with both snapshots, moved favorably
+    await db.record_trade(strategy="sports_pinnacle_edge", market_id="m1", direction="yes",
+                          price=0.40, size=3.0, fee=0.07, status="paper_settled", pnl=1.5)
+    await db.record_clv_snapshot(trade_id=1, snapshot_at="entry", yes_ask=0.40, no_ask=0.62)
+    await db.record_clv_snapshot(trade_id=1, snapshot_at="closing", yes_ask=0.55, no_ask=0.47)
+
+    # Second settled row where the closing snapshot missed asks (NULL)
+    await db.record_trade(strategy="sports_pinnacle_edge", market_id="m2", direction="yes",
+                          price=0.40, size=3.0, fee=0.07, status="paper_settled", pnl=1.5)
+    await db.record_clv_snapshot(trade_id=2, snapshot_at="entry", yes_ask=0.40, no_ask=0.62)
+    await db.record_clv_snapshot(trade_id=2, snapshot_at="closing", yes_ask=None, no_ask=None)
+
+    rate = await db.get_clv_positive_rate("sports_pinnacle_edge", days=30)
+    # Only trade 1 counts → 1/1 = 100%, NOT 1/2 = 50%.
+    assert rate == 1.0
 
 
 @pytest.mark.asyncio

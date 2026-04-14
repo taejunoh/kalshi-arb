@@ -115,6 +115,36 @@ def test_settle_pnl_record_unchanged():
     assert args[1] == pytest.approx(68.0, abs=0.01)
 
 
+def test_settle_cache_hit_still_writes_non_null_closing_snapshot():
+    """Across two check_and_settle calls on the same ticker, the second
+    call hits _settled_cache and historically left closing yes_ask/no_ask
+    as NULL. Regression test ensures the cache carries the asks too."""
+    checker, client, db, order_mgr = _make_checker()
+    db.record_clv_snapshot = AsyncMock()
+    client.get_market.return_value = {"status": "finalized", "result": "yes",
+                                       "yes_ask_dollars": "1.00", "no_ask_dollars": "0.00"}
+
+    import asyncio
+    # Call A: trade 1 settles, market fetched, cache populated
+    db.get_unsettled_trades = AsyncMock(return_value=[
+        {"id": 1, "market_id": "MKT-1", "strategy": "sports_pinnacle_edge",
+         "direction": "yes", "price": 0.30, "size": 3.0, "fee": 0.07, "status": "paper_filled"},
+    ])
+    asyncio.get_event_loop().run_until_complete(checker.check_and_settle())
+
+    # Call B: trade 2 settles from a later batch — cache HIT (result only)
+    db.get_unsettled_trades = AsyncMock(return_value=[
+        {"id": 2, "market_id": "MKT-1", "strategy": "sports_pinnacle_edge",
+         "direction": "no", "price": 0.70, "size": 3.0, "fee": 0.07, "status": "paper_filled"},
+    ])
+    asyncio.get_event_loop().run_until_complete(checker.check_and_settle())
+
+    assert db.record_clv_snapshot.await_count == 2
+    for call in db.record_clv_snapshot.await_args_list:
+        assert call.kwargs["yes_ask"] is not None, "closing yes_ask must not be NULL even on cache hit"
+        assert call.kwargs["no_ask"] is not None, "closing no_ask must not be NULL even on cache hit"
+
+
 def test_settle_persists_bankroll_after_win_credit():
     """Win credit must also write through to bot_state so a restart doesn't lose it."""
     checker, client, db, order_mgr = _make_checker()

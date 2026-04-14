@@ -10,6 +10,24 @@ import httpx
 
 logger = logging.getLogger("sports_trader")
 
+# Shared Odds API cache across all sports strategies to avoid blowing the
+# monthly quota (10 strategies × 3 sports × 288 scans/day = 8640 calls/day
+# uncached → ~260K/mo vs 20K allotted). Keyed by (region, sport).
+_ODDS_CACHE: dict[tuple[str, str], tuple[float, list[dict], dict]] = {}
+# TTL must keep (2 regions × 3 sports) × 86400 / TTL calls/day under 20K/month
+# quota. 900s = 15min → ~576/day → ~17K/month, under quota with headroom.
+# Odds change slowly (lines move O(minutes), not seconds), so 15min staleness
+# is fine for decisioning.
+_ODDS_CACHE_TTL = 900.0
+
+
+def _odds_cache_now() -> float:
+    return time.time()
+
+
+def _odds_cache_reset() -> None:
+    _ODDS_CACHE.clear()
+
 # Kalshi sports series
 SPORTS_SERIES = ["KXNBAGAME", "KXMLBGAME", "KXNHLGAME"]
 
@@ -126,31 +144,46 @@ class SportsTraderStrategy:
         return getattr(self.config, "ODDS_API_REGION", "eu")
 
     async def _fetch_odds(self, sport: str) -> list[dict]:
-        """Fetch odds from The Odds API."""
+        """Fetch odds from The Odds API, shared-cached by (region, sport)."""
         if not self._odds_api_key:
             return []
-        if self._http is None:
-            self._http = httpx.AsyncClient(timeout=10)
+        region = self._get_odds_region()
+        cache_key = (region, sport)
+        now = _odds_cache_now()
+        hit = _ODDS_CACHE.get(cache_key)
+        if hit is not None:
+            cached_at, data, usage = hit
+            if now - cached_at < _ODDS_CACHE_TTL:
+                self.odds_api_usage = usage
+                return data
+
         try:
-            resp = await self._http.get(
-                f"https://api.the-odds-api.com/v4/sports/{sport}/odds",
-                params={
-                    "apiKey": self._odds_api_key,
-                    "regions": self._get_odds_region(),
-                    "markets": "h2h",
-                    "oddsFormat": "decimal",
-                },
-            )
-            resp.raise_for_status()
-            # Track API usage from response headers
-            self.odds_api_usage = {
-                "used": int(resp.headers.get("x-requests-used", 0)),
-                "remaining": int(resp.headers.get("x-requests-remaining", 0)),
-                "last": int(resp.headers.get("x-requests-last", 0)),
-            }
-            return resp.json()
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"https://api.the-odds-api.com/v4/sports/{sport}/odds",
+                    params={
+                        "apiKey": self._odds_api_key,
+                        "regions": region,
+                        "markets": "h2h",
+                        "oddsFormat": "decimal",
+                    },
+                )
+                resp.raise_for_status()
+                usage = {
+                    "used": int(resp.headers.get("x-requests-used", 0)),
+                    "remaining": int(resp.headers.get("x-requests-remaining", 0)),
+                    "last": int(resp.headers.get("x-requests-last", 0)),
+                }
+                data = resp.json()
+                self.odds_api_usage = usage
+                _ODDS_CACHE[cache_key] = (now, data, usage)
+                return data
         except Exception as e:
             logger.error(f"Odds API error for {sport}: {e}")
+            # Keep serving stale cache rather than failing all strategies
+            if hit is not None:
+                self.odds_api_usage = hit[2]
+                return hit[1]
             return []
 
     # Home court/field advantage — NOT applied to consensus (already priced in by bookmakers)
