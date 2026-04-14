@@ -711,9 +711,15 @@ function renderPerfCardsByMode(mode, gridId) {
   }
 
   const modeKey = mode.toLowerCase();  // 'paper' | 'live'
+  // Show a strategy in this mode's section if it has activity in that bucket
+  // OR if the strategy is currently configured in this mode. This ensures
+  // legacy Live positions (e.g., econ_trader disabled but still has Kalshi
+  // positions) show up in the Live section even when not in LIVE_STRATEGIES.
   const filtered = strategies.filter(strat => {
+    const data = (perfCache[strat] || {})[modeKey] || {};
+    const hasActivity = (data.trade_count || 0) > 0;
     const stratMode = (stratStatusCache[strat] || {}).mode || 'PAPER';
-    return stratMode === mode;
+    return hasActivity || stratMode === mode;
   });
 
   if (filtered.length === 0) {
