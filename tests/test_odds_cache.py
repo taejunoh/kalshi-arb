@@ -77,15 +77,11 @@ async def test_different_region_is_separate_cache_entry():
     assert len(calls) == 2
 
 
-@pytest.mark.asyncio
-async def test_cache_expires_after_ttl():
-    s = _make(region="eu")
+def _fake_client_counting(count):
     mock_resp = MagicMock()
     mock_resp.json.return_value = []
     mock_resp.headers = {"x-requests-used": "0", "x-requests-remaining": "9999", "x-requests-last": "0"}
     mock_resp.raise_for_status = MagicMock()
-
-    count = {"n": 0}
 
     class FakeClient:
         def __init__(self, *a, **k): pass
@@ -95,18 +91,59 @@ async def test_cache_expires_after_ttl():
         async def __aenter__(self): return self
         async def __aexit__(self, *a): pass
 
-    with patch("httpx.AsyncClient", FakeClient), \
+    return FakeClient
+
+
+@pytest.mark.asyncio
+async def test_eu_cache_expires_after_600s():
+    """eu region uses 600s TTL (Pinnacle upstream gap ~883s)."""
+    s = _make(region="eu")
+    count = {"n": 0}
+    with patch("httpx.AsyncClient", _fake_client_counting(count)), \
          patch("strategies.sports_trader._odds_cache_now") as mock_now:
         mock_now.return_value = 1000.0
         await s._fetch_odds("basketball_nba")
-        # Within TTL — second call is cached
-        mock_now.return_value = 1500.0  # 500s later, TTL=900
+        mock_now.return_value = 1599.0  # 599s later — within TTL
         await s._fetch_odds("basketball_nba")
         assert count["n"] == 1
-        # After TTL expiry
-        mock_now.return_value = 2000.0  # 1000s later, past TTL
+        mock_now.return_value = 1601.0  # 601s later — expired
         await s._fetch_odds("basketball_nba")
         assert count["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_us_cache_expires_after_60s():
+    """us region uses 60s TTL matched to retail book 60-90s tick cadence."""
+    s = _make(region="us")
+    count = {"n": 0}
+    with patch("httpx.AsyncClient", _fake_client_counting(count)), \
+         patch("strategies.sports_trader._odds_cache_now") as mock_now:
+        mock_now.return_value = 1000.0
+        await s._fetch_odds("basketball_nba")
+        mock_now.return_value = 1059.0  # 59s later — within TTL
+        await s._fetch_odds("basketball_nba")
+        assert count["n"] == 1
+        mock_now.return_value = 1061.0  # 61s later — expired
+        await s._fetch_odds("basketball_nba")
+        assert count["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_region_ttls_independent():
+    """us TTL expiring should not evict eu entry, and vice versa."""
+    s_eu = _make(region="eu")
+    s_us = _make(region="us")
+    count = {"n": 0}
+    with patch("httpx.AsyncClient", _fake_client_counting(count)), \
+         patch("strategies.sports_trader._odds_cache_now") as mock_now:
+        mock_now.return_value = 1000.0
+        await s_eu._fetch_odds("basketball_nba")
+        await s_us._fetch_odds("basketball_nba")
+        assert count["n"] == 2
+        mock_now.return_value = 1100.0  # +100s: us expired (>60), eu fresh (<600)
+        await s_eu._fetch_odds("basketball_nba")  # cache hit
+        await s_us._fetch_odds("basketball_nba")  # miss — refetch
+        assert count["n"] == 3
 
 
 @pytest.mark.asyncio

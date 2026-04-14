@@ -14,11 +14,16 @@ logger = logging.getLogger("sports_trader")
 # monthly quota (10 strategies × 3 sports × 288 scans/day = 8640 calls/day
 # uncached → ~260K/mo vs 20K allotted). Keyed by (region, sport).
 _ODDS_CACHE: dict[tuple[str, str], tuple[float, list[dict], dict]] = {}
-# TTL must keep (2 regions × 3 sports) × 86400 / TTL calls/day under 20K/month
-# quota. 900s = 15min → ~576/day → ~17K/month, under quota with headroom.
-# Odds change slowly (lines move O(minutes), not seconds), so 15min staleness
-# is fine for decisioning.
-_ODDS_CACHE_TTL = 900.0
+# Per-region TTL matched to upstream tick cadence (2026-04-14 freshness measurement):
+# us retail (matchbook/betfair) ticks 63~98s → 60s TTL keeps every scan fresh.
+# eu (Pinnacle dominant) upstream gap ~883s → 600s TTL avoids duplicate fetch.
+# Default for unknown region falls back to the old 300s sweet spot.
+_ODDS_CACHE_TTL_BY_REGION: dict[str, float] = {"us": 60.0, "eu": 600.0}
+_ODDS_CACHE_TTL_DEFAULT = 300.0
+
+
+def _odds_cache_ttl(region: str) -> float:
+    return _ODDS_CACHE_TTL_BY_REGION.get(region, _ODDS_CACHE_TTL_DEFAULT)
 
 
 def _odds_cache_now() -> float:
@@ -88,6 +93,7 @@ class SportsTraderStrategy:
     TRADED_TICKERS_FILE = "data/sports_traded_tickers.json"
     STRATEGY_NAME = "sports_trader"
     REGION_OVERRIDE: Optional[str] = None  # subclass can pin a specific Odds API region
+    SCAN_INTERVAL_OVERRIDE: Optional[float] = None  # subclass can override scan cadence (us retail books tick faster)
 
     def __init__(self, config, order_manager, kalshi_client):
         self.config = config
@@ -149,6 +155,12 @@ class SportsTraderStrategy:
             logger.error(f"[SPORTS] Failed to get exposure, blocking trades: {e}")
             return float("inf")  # Block trading when exposure unknown
 
+    def _get_scan_interval(self) -> float:
+        """Per-strategy scan cadence: subclass SCAN_INTERVAL_OVERRIDE wins, else config default."""
+        if self.SCAN_INTERVAL_OVERRIDE is not None:
+            return float(self.SCAN_INTERVAL_OVERRIDE)
+        return float(getattr(self.config, "SPORTS_SCAN_INTERVAL", 300))
+
     def _get_odds_region(self) -> str:
         """Per-strategy Odds API region: subclass REGION_OVERRIDE wins, else config default."""
         if self.REGION_OVERRIDE:
@@ -165,7 +177,7 @@ class SportsTraderStrategy:
         hit = _ODDS_CACHE.get(cache_key)
         if hit is not None:
             cached_at, data, usage = hit
-            if now - cached_at < _ODDS_CACHE_TTL:
+            if now - cached_at < _odds_cache_ttl(region):
                 self.odds_api_usage = usage
                 return data
 
@@ -402,7 +414,7 @@ class SportsTraderStrategy:
         if self._order_manager.is_circuit_breaker_active():
             return
         now = time.time()
-        scan_interval = getattr(self.config, "SPORTS_SCAN_INTERVAL", 300)
+        scan_interval = self._get_scan_interval()
         if now - self._last_scan_time < scan_interval:
             return
         self._last_scan_time = now

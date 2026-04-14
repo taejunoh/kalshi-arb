@@ -40,3 +40,23 @@ def test_explicit_none_falls_back_to_config():
     config.ODDS_API_REGION = "uk"
     s = Explicit(config, MagicMock(), MagicMock())
     assert s._get_odds_region() == "uk"
+
+
+def test_scan_interval_override_wins_over_config():
+    """Subclass can pin its own scan cadence via SCAN_INTERVAL_OVERRIDE."""
+    class Fast(SportsTraderStrategy):
+        SCAN_INTERVAL_OVERRIDE = 120.0
+    config = MagicMock()
+    config.KALSHI_FEE_PER_CONTRACT = 0.07
+    config.ODDS_API_KEY = ""
+    config.ODDS_API_REGION = "us"
+    config.SPORTS_SCAN_INTERVAL = 300
+    s = Fast(config, MagicMock(), MagicMock())
+    assert s._get_scan_interval() == 120.0
+
+
+def test_scan_interval_default_uses_config():
+    """With no SCAN_INTERVAL_OVERRIDE, uses config.SPORTS_SCAN_INTERVAL."""
+    s = _make_base()
+    s.config.SPORTS_SCAN_INTERVAL = 300
+    assert s._get_scan_interval() == 300.0
