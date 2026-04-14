@@ -6,6 +6,15 @@ from collections import defaultdict
 logger = logging.getLogger("settlement")
 
 
+def _safe_float(v) -> float | None:
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 class SettlementChecker:
     """Check settled markets and calculate PnL for paper trades."""
 
@@ -108,20 +117,22 @@ class SettlementChecker:
 
         loop = asyncio.get_event_loop()
         for ticker, trades in by_market.items():
-            # Check cache first
+            market = None
             result = self._settled_cache.get(ticker)
             if not result:
-                # Query API (run in executor to avoid blocking)
                 market = await loop.run_in_executor(None, self._client.get_market, ticker)
                 if not market:
                     continue
-                status = market.get("status", "")
-                if status not in ("finalized", "settled"):
+                if market.get("status", "") not in ("finalized", "settled"):
                     continue
                 result = market.get("result")
                 if not result:
                     continue
                 self._settled_cache[ticker] = result
+
+            # Closing asks — only present when we fetched market this iteration
+            close_yes_ask = _safe_float(market.get("yes_ask_dollars")) if market else None
+            close_no_ask = _safe_float(market.get("no_ask_dollars")) if market else None
 
             # Settle all trades for this market
             for trade in trades:
@@ -133,6 +144,14 @@ class SettlementChecker:
                     result=result,
                 )
                 await self._db.settle_trade(trade["id"], pnl)
+                # Best-effort closing CLV snapshot (ignore errors — settlement must continue)
+                try:
+                    await self._db.record_clv_snapshot(
+                        trade_id=trade["id"], snapshot_at="closing",
+                        yes_ask=close_yes_ask, no_ask=close_no_ask, pinnacle_prob=None,
+                    )
+                except Exception as e:
+                    logger.debug(f"[SETTLE] CLV closing snapshot failed for trade {trade['id']}: {e}")
                 # Bankroll adjustment: placement already deducted (size + fee).
                 # On win → credit full payout (capital + profit).
                 # On loss → no change (capital stays gone).

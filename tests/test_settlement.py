@@ -114,6 +114,43 @@ def test_settle_pnl_record_unchanged():
     assert args[1] == pytest.approx(68.0, abs=0.01)
 
 
+def test_settle_records_closing_clv_snapshot():
+    """On settlement, a 'closing' CLV snapshot is recorded for the trade."""
+    checker, client, db, order_mgr = _make_checker()
+    db.get_unsettled_trades = AsyncMock(return_value=[
+        {"id": 7, "market_id": "NBA-LAL-BOS", "strategy": "sports_pinnacle_edge",
+         "direction": "yes", "price": 0.30, "size": 3.0, "fee": 0.07, "status": "paper_filled"},
+    ])
+    client.get_market.return_value = {
+        "status": "finalized", "result": "yes",
+        "yes_ask_dollars": "1.00", "no_ask_dollars": "0.00",
+    }
+    db.record_clv_snapshot = AsyncMock()
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(checker.check_and_settle())
+    db.record_clv_snapshot.assert_awaited_once_with(
+        trade_id=7, snapshot_at="closing",
+        yes_ask=1.0, no_ask=0.0, pinnacle_prob=None,
+    )
+
+
+def test_settle_closing_snapshot_tolerates_missing_asks():
+    """If market lacks yes_ask_dollars/no_ask_dollars, snapshot uses NULL values and still records."""
+    checker, client, db, order_mgr = _make_checker()
+    db.get_unsettled_trades = AsyncMock(return_value=[
+        {"id": 7, "market_id": "NBA-LAL-BOS", "strategy": "sports_pinnacle_edge",
+         "direction": "yes", "price": 0.30, "size": 3.0, "fee": 0.07, "status": "paper_filled"},
+    ])
+    client.get_market.return_value = {"status": "finalized", "result": "yes"}
+    db.record_clv_snapshot = AsyncMock()
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(checker.check_and_settle())
+    db.record_clv_snapshot.assert_awaited_once()
+    call_kwargs = db.record_clv_snapshot.await_args.kwargs
+    assert call_kwargs["trade_id"] == 7
+    assert call_kwargs["snapshot_at"] == "closing"
+
+
 def test_skip_non_finalized():
     checker, client, db, order_mgr = _make_checker()
     db.get_unsettled_trades = AsyncMock(return_value=[

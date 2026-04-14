@@ -133,12 +133,12 @@ class OrderManager:
         count = max(1, int(size_usdc / price))
         fee = self.config.estimate_fee(count, int(price * 100))
         self.bankroll -= (size_usdc + fee)
-        await self._db.record_trade(
+        trade_id = await self._db.record_trade(
             strategy=strategy, market_id=market_id, direction=side,
             price=price, size=size_usdc, fee=fee, status="paper_filled",
         )
         logger.info(f"[PAPER] Market {side} | {strategy} | ${size_usdc:.2f} @ {price:.3f} | bankroll: ${self.bankroll:.2f}")
-        return {"order_id": order_id, "status": "paper_filled", "size_usdc": size_usdc, "price": price}
+        return {"order_id": order_id, "status": "paper_filled", "size_usdc": size_usdc, "price": price, "trade_id": trade_id}
 
     async def _paper_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
         order_id = f"paper_{uuid.uuid4().hex[:8]}"
@@ -159,12 +159,12 @@ class OrderManager:
             return {"status": "failed"}
         order_id = resp.get("id", "unknown")
         fee = self.config.estimate_fee(count, int(price * 100))
-        await self._db.record_trade(
+        trade_id = await self._db.record_trade(
             strategy=strategy, market_id=market_id, direction=side,
             price=price, size=size_usdc, fee=fee, status="filled",
         )
         self.bankroll -= size_usdc
-        return {"order_id": order_id, "status": "filled", "size_usdc": size_usdc, "price": price}
+        return {"order_id": order_id, "status": "filled", "size_usdc": size_usdc, "price": price, "trade_id": trade_id}
 
     async def _live_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
         count = max(1, int(size_usdc / price))

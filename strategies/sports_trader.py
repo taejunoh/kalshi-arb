@@ -128,7 +128,7 @@ class SportsTraderStrategy:
                 f"https://api.the-odds-api.com/v4/sports/{sport}/odds",
                 params={
                     "apiKey": self._odds_api_key,
-                    "regions": "us",
+                    "regions": getattr(self.config, "ODDS_API_REGION", "eu"),
                     "markets": "h2h",
                     "oddsFormat": "decimal",
                 },
@@ -181,6 +181,61 @@ class SportsTraderStrategy:
         if decimal_odds <= 1.0:
             return None
         return 1.0 / decimal_odds
+
+    async def _record_entry_clv(self, order_result: dict, yes_ask: float, no_ask: float,
+                                 pinnacle_prob: Optional[float]) -> None:
+        """Record 'entry' CLV snapshot after a successful order. No-op on skip/failure."""
+        if not order_result:
+            return
+        if order_result.get("status") not in ("paper_filled", "filled"):
+            return
+        trade_id = order_result.get("trade_id")
+        if trade_id is None:
+            return
+        try:
+            await self._order_manager._db.record_clv_snapshot(
+                trade_id=trade_id, snapshot_at="entry",
+                yes_ask=yes_ask, no_ask=no_ask, pinnacle_prob=pinnacle_prob,
+            )
+        except Exception as e:
+            logger.warning(f"[SPORTS] CLV entry snapshot failed for trade {trade_id}: {e}")
+
+    def _has_sufficient_depth(self, ticker: str, side: str, size_usdc: float) -> bool:
+        """True iff the ticker's orderbook on `side` has at least size_usdc of resting liquidity."""
+        yes_depth, no_depth = self._client.get_order_book_depth(ticker)
+        available = yes_depth if side == "yes" else no_depth
+        return available >= size_usdc
+
+    def _pinnacle_probability(self, game: dict) -> Optional[dict]:
+        """Pinnacle-only implied probability (vig removed). Returns None if Pinnacle absent."""
+        home_team = game.get("home_team", "")
+        away_team = game.get("away_team", "")
+        for bm in game.get("bookmakers", []):
+            if bm.get("key") != "pinnacle":
+                continue
+            home_prob = None
+            away_prob = None
+            for market in bm.get("markets", []):
+                if market.get("key") != "h2h":
+                    continue
+                for outcome in market.get("outcomes", []):
+                    prob = self._decimal_to_prob(outcome.get("price", 0))
+                    if prob is None:
+                        continue
+                    if outcome.get("name") == home_team:
+                        home_prob = prob
+                    elif outcome.get("name") == away_team:
+                        away_prob = prob
+            if home_prob is None or away_prob is None:
+                return None
+            total = home_prob + away_prob
+            return {
+                "home_team": home_team,
+                "away_team": away_team,
+                "home_prob": home_prob / total,
+                "away_prob": away_prob / total,
+            }
+        return None
 
     def _consensus_probability(self, game: dict) -> Optional[dict]:
         """Calculate consensus probability from multiple bookmakers."""
@@ -368,6 +423,7 @@ class SportsTraderStrategy:
                 consensus = self._consensus_probability(matched_game)
                 if not consensus:
                     continue
+                pinnacle = self._pinnacle_probability(matched_game)
 
                 # Determine which team YES refers to using yes_sub_title (most reliable)
                 # e.g., ticker -MIN has yes_sub_title="Minnesota", -DET has "Detroit"
@@ -434,9 +490,16 @@ class SportsTraderStrategy:
                 # Mark BEFORE order to prevent duplicates even if order/DB fails
                 self._traded_tickers[ticker] = now
                 self._save_traded_tickers()
-                await self._order_manager.market_order(
+                order_result = await self._order_manager.market_order(
                     ticker=ticker, side=signal["side"], size_usdc=size,
                     price=limit_price, strategy=self.STRATEGY_NAME, market_id=ticker,
+                )
+                # Record entry CLV snapshot (Pinnacle prob for the YES-team side, if available)
+                pin_prob_for_side = None
+                if pinnacle is not None:
+                    pin_prob_for_side = pinnacle["home_prob"] if is_yes_home else pinnacle["away_prob"]
+                await self._record_entry_clv(
+                    order_result or {}, yes_ask=ya, no_ask=na, pinnacle_prob=pin_prob_for_side,
                 )
                 trades_attempted += 1
                 traded_games.add(game_id)

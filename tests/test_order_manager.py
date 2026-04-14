@@ -38,6 +38,17 @@ async def test_paper_market_order(paper_manager):
 
 
 @pytest.mark.asyncio
+async def test_paper_market_order_exposes_trade_id(paper_manager):
+    """CLV snapshots need the trade row id — market_order must return it."""
+    result = await paper_manager.market_order(
+        ticker="NBA-LAL-BOS", side="yes", size_usdc=3.0,
+        price=0.45, strategy="sports_pinnacle_edge", market_id="NBA-LAL-BOS",
+    )
+    assert result["status"] == "paper_filled"
+    assert result.get("trade_id") == 1
+
+
+@pytest.mark.asyncio
 async def test_paper_limit_order(paper_manager):
     result = await paper_manager.limit_order(
         ticker="KXBTC-25MAR20-T70000", side="BUY", price=0.48,

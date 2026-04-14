@@ -140,6 +140,33 @@ async def test_get_performance_live_bucket_from_kalshi(db):
 
 
 @pytest.mark.asyncio
+async def test_performance_paper_includes_clv_positive_rate(db):
+    """Paper bucket exposes clv_positive_rate for each strategy."""
+    await db.record_trade(
+        strategy="sports_pinnacle_edge", market_id="m-win", direction="YES",
+        price=0.40, size=3.0, fee=0.07, status="paper_settled", pnl=1.5,
+    )
+    # trade_id 3 (after 2 fixture trades)
+    await db.record_clv_snapshot(trade_id=3, snapshot_at="entry", yes_ask=0.40, no_ask=0.62)
+    await db.record_clv_snapshot(trade_id=3, snapshot_at="closing", yes_ask=0.55, no_ask=0.47)
+
+    await db.record_trade(
+        strategy="sports_pinnacle_edge", market_id="m-lose", direction="YES",
+        price=0.60, size=3.0, fee=0.07, status="paper_settled", pnl=-3.0,
+    )
+    await db.record_clv_snapshot(trade_id=4, snapshot_at="entry", yes_ask=0.60, no_ask=0.42)
+    await db.record_clv_snapshot(trade_id=4, snapshot_at="closing", yes_ask=0.50, no_ask=0.52)
+
+    app = create_app(db, bankroll=1000.0)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.get("/api/performance")
+    data = resp.json()
+    # 1 of 2 favorable → 50%
+    assert data["sports_pinnacle_edge"]["paper"]["clv_positive_rate"] == pytest.approx(0.5, abs=1e-6)
+
+
+@pytest.mark.asyncio
 async def test_strategy_status_marks_loop_disabled(db):
     """Strategies removed from main.py _strategy_loop should report active=false
     with reason='removed_from_loop'. Currently: sports_trader, maker_preorder."""

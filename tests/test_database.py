@@ -58,6 +58,21 @@ async def test_update_order_status(db):
 
 
 @pytest.mark.asyncio
+async def test_record_trade_returns_trade_id(db):
+    """record_trade must return the new row id so callers can attach CLV snapshots."""
+    trade_id_1 = await db.record_trade(
+        strategy="sum_arb", market_id="m1", direction="YES",
+        price=0.48, size=100.0, fee=1.51, status="filled",
+    )
+    trade_id_2 = await db.record_trade(
+        strategy="sum_arb", market_id="m2", direction="NO",
+        price=0.52, size=50.0, fee=0.75, status="filled",
+    )
+    assert trade_id_1 == 1
+    assert trade_id_2 == 2
+
+
+@pytest.mark.asyncio
 async def test_get_daily_pnl(db):
     await db.record_trade(
         strategy="sum_arb", market_id="m1", direction="YES",

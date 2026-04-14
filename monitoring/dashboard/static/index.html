@@ -761,7 +761,7 @@ function renderPerfCardsByMode(mode, gridId) {
   }
 
   grid.innerHTML = filtered.map(strat => {
-    const d = (perfCache[strat] || {})[modeKey] || {trade_count:0, total_pnl:0, total_size:0, wins:0, losses:0};
+    const d = (perfCache[strat] || {})[modeKey] || {trade_count:0, total_pnl:0, total_size:0, wins:0, losses:0, clv_positive_rate:0};
 
     const pnl = parseFloat(d.total_pnl);
     const pnlStr = fmtMoney(d.total_pnl);
@@ -770,6 +770,7 @@ function renderPerfCardsByMode(mode, gridId) {
     const losses = d.losses || 0;
     const total = wins + losses;
     const winRate = total > 0 ? ((wins / total) * 100).toFixed(0) + '%' : '—';
+    const clvRate = d.clv_positive_rate > 0 ? (d.clv_positive_rate * 100).toFixed(0) + '%' : '—';
 
     const status = stratStatusCache[strat] || {};
     const isActive = status.active !== false;  // default true if undefined (backward compat)
@@ -799,6 +800,10 @@ function renderPerfCardsByMode(mode, gridId) {
         <div class="perf-row">
           <span class="perf-key">Win Rate</span>
           <span class="perf-val">${winRate}</span>
+        </div>
+        <div class="perf-row">
+          <span class="perf-key">CLV+</span>
+          <span class="perf-val">${clvRate}</span>
         </div>
         <div class="perf-row">
           <span class="perf-key">Volume</span>

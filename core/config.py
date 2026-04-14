@@ -55,6 +55,7 @@ class Config:
         self.SPORTS_ENABLED = os.getenv("SPORTS_ENABLED", "false").lower() == "true"
         self.SPORTS_SCAN_INTERVAL = int(os.getenv("SPORTS_SCAN_INTERVAL", "300"))
         self.ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
+        self.ODDS_API_REGION = os.getenv("ODDS_API_REGION", "eu")
 
         # Economic Indicator Trader strategy
         self.ECON_ENABLED = os.getenv("ECON_ENABLED", "false").lower() == "true"

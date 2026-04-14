@@ -68,7 +68,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         ]
 
         def empty_stats():
-            return {"trade_count": 0, "total_pnl": 0.0, "total_size": 0.0, "wins": 0, "losses": 0}
+            return {"trade_count": 0, "total_pnl": 0.0, "total_size": 0.0, "wins": 0, "losses": 0,
+                    "clv_positive_rate": 0.0}
 
         strategies = {s: {"live": empty_stats(), "paper": empty_stats()} for s in all_strategy_names}
 
@@ -143,6 +144,14 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 bucket = strategies[strat]["live"]
                 bucket["trade_count"] += 1
                 bucket["total_size"] += exp
+
+        # CLV+ rate per strategy (Paper bucket; uses clv_snapshots joined via trades)
+        for strat_name in strategies:
+            try:
+                rate = await database.get_clv_positive_rate(strat_name, days=30)
+            except Exception:
+                rate = 0.0
+            strategies[strat_name]["paper"]["clv_positive_rate"] = rate
 
         return strategies
 
