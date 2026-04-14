@@ -142,10 +142,46 @@ class OrderManager:
         return await self._paper_limit_order(ticker, side, price, size_usdc, strategy, market_id)
 
     async def cancel_order(self, order_id):
+        """Cancel an order. If the order was still open (not yet filled),
+        restore its size+fee to bankroll. Filled orders don't refund because
+        their capital is already committed to a position. Historically the
+        missing refund caused requote-heavy strategies (market_maker,
+        mentions_trader) to slowly drain bankroll."""
+        refunded = await self._refund_if_open(order_id)
         if self.config.is_paper_mode:
             await self._db.update_order_status(order_id, "cancelled")
             return True
-        return self._client.cancel_order(order_id)
+        ok = self._client.cancel_order(order_id)
+        if not ok and refunded:
+            # Kalshi refused the cancel — our refund was speculative. Roll back.
+            self.bankroll -= refunded
+            await self._persist_bankroll()
+        return ok
+
+    async def _refund_if_open(self, order_id: str) -> float:
+        """If the order is in 'open'/'paper_open', credit size+fee back and
+        return the refund amount. Otherwise return 0. No-op for unknown ids."""
+        import aiosqlite
+        async with aiosqlite.connect(self._db.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute(
+                "SELECT status, price, size FROM orders WHERE order_id = ?", (order_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return 0.0
+        if row["status"] not in ("open", "paper_open"):
+            return 0.0
+        price = float(row["price"])
+        size = float(row["size"])
+        if price <= 0:
+            return 0.0
+        count = max(1, int(size / price))
+        fee = self.config.estimate_fee(count, int(price * 100))
+        refund = size + fee
+        self.bankroll += refund
+        await self._persist_bankroll()
+        return refund
 
     async def _paper_market_order(self, ticker, side, size_usdc, price, strategy, market_id):
         order_id = f"paper_{uuid.uuid4().hex[:8]}"
