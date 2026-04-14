@@ -23,6 +23,18 @@ def test_v3_pinned_to_us():
     assert _make(SportsUnderdogStrategy)._get_odds_region() == "us"
 
 
+def test_v4_all_use_eu_region():
+    """All V4 strategies (including liquidity_filtered which inherits from midshot)
+    must use EU region, not inherit midshot's us override."""
+    from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
+    from strategies.sports_v4_edge import SportsV4EdgeStrategy
+    from strategies.sports_liquidity_filtered import SportsLiquidityFilteredStrategy
+    from strategies.sports_consolidated import SportsConsolidatedStrategy
+    for cls in (SportsPinnacleEdgeStrategy, SportsV4EdgeStrategy,
+                SportsLiquidityFilteredStrategy, SportsConsolidatedStrategy):
+        assert _make(cls)._get_odds_region() == "eu", f"{cls.__name__} not on eu"
+
+
 def test_v31_pinned_to_eu():
     assert _make(SportsLongshotV31Strategy)._get_odds_region() == "eu"
     assert _make(SportsMidshotV31Strategy)._get_odds_region() == "eu"

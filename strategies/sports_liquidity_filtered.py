@@ -15,6 +15,7 @@ class SportsLiquidityFilteredStrategy(SportsMidshotStrategy):
 
     TRADED_TICKERS_FILE = "data/sports_liquidity_filtered_tickers.json"
     STRATEGY_NAME = "sports_liquidity_filtered"
+    REGION_OVERRIDE = "eu"  # V4 strategies all use EU sharp-book consensus
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
