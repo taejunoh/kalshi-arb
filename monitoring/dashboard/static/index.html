@@ -175,20 +175,20 @@
       padding: 18px 20px;
     }
 
+    .perf-card .strategy-header {
+      margin-bottom: 14px;
+    }
+    .perf-card .strategy-badges {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
     .perf-card .strategy-name {
       font-size: 12px;
       font-weight: 700;
       color: var(--accent);
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      margin-bottom: 14px;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 8px;
-    }
-    .perf-card .strategy-name > span:first-child {
-      min-width: 0;
       word-break: break-word;
       line-height: 1.35;
     }
@@ -216,7 +216,6 @@
       border-radius: 3px;
       letter-spacing: 0.08em;
       font-weight: 700;
-      margin-right: 6px;
     }
     .version-badge.v3 {
       background: rgba(168, 85, 247, 0.12);
@@ -810,9 +809,12 @@ function renderPerfCardsByMode(mode, gridId) {
 
     return `
       <div class="${cardCls}"${titleAttr}>
-        <div class="strategy-name">
-          <span>${versionBadge}${strat}</span>
-          <span class="status-badge ${statusCls}">${statusLabel}</span>
+        <div class="strategy-header">
+          <div class="strategy-badges">
+            ${versionBadge}
+            <span class="status-badge ${statusCls}">${statusLabel}</span>
+          </div>
+          <div class="strategy-name">${strat}</div>
         </div>
         <div class="perf-row">
           <span class="perf-key">Trades</span>
