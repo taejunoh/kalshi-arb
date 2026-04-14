@@ -58,9 +58,10 @@ class CLVTracker:
     game start. Runs on a timer from main.py."""
 
     # When to snapshot: game start - N minutes. Wide enough to not miss
-    # the window between task ticks, narrow enough to be close to "closing line".
+    # the window if a tick is delayed (e.g. slate-wide HTTP latency), narrow
+    # enough to still be close to the actual "closing line" moment.
     PRE_CLOSE_WINDOW_MIN_AHEAD = 5.0   # start capturing 5 min before game
-    PRE_CLOSE_WINDOW_MIN_BEHIND = 1.0  # still acceptable 1 min after (edge cases)
+    PRE_CLOSE_WINDOW_MIN_BEHIND = 3.0  # absorb up to 3 min of tick lag
 
     def __init__(self, kalshi_client, database):
         self._client = kalshi_client
@@ -77,7 +78,7 @@ class CLVTracker:
                 FROM trades t
                 LEFT JOIN clv_snapshots c
                     ON c.trade_id = t.id AND c.snapshot_at = 'pre_close'
-                WHERE t.status = 'paper_filled'
+                WHERE t.status IN ('paper_filled', 'filled')
                   AND t.pnl = 0
                   AND c.id IS NULL
                   AND t.strategy LIKE 'sports_%'
@@ -111,7 +112,7 @@ class CLVTracker:
                 )
                 captured += 1
             except Exception as e:
-                logger.debug(f"pre_close snapshot failed for {ticker}: {e}")
+                logger.warning(f"pre_close snapshot failed for {ticker}: {e}")
         if captured > 0:
             logger.info(f"[CLV] Captured {captured} pre-close snapshots")
         return captured

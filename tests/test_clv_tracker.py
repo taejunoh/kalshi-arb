@@ -132,6 +132,59 @@ async def test_does_not_duplicate_pre_close(db, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_captures_pre_close_for_live_trade(db, monkeypatch):
+    """Live sports trades (status='filled', not 'paper_filled') must also
+    get pre_close snapshots. Otherwise CLV+ silently regresses to win rate
+    the moment a sports strategy goes live."""
+    await db.record_trade(strategy="sports_pinnacle_edge",
+                           market_id="KXMLBGAME-26APR142210NYMLAD-NYM",
+                           direction="yes", price=0.40, size=3.0, fee=0.07,
+                           status="filled")  # <- live, not paper
+    await db.record_clv_snapshot(trade_id=1, snapshot_at="entry",
+                                  yes_ask=0.40, no_ask=0.62)
+    client = MagicMock()
+    client.get_market.return_value = {"yes_ask_dollars": "0.55", "no_ask_dollars": "0.47"}
+    tracker = CLVTracker(client, db)
+    fake_now = datetime(2026, 4, 15, 2, 7, tzinfo=timezone.utc)
+    monkeypatch.setattr("core.clv_tracker._now_utc", lambda: fake_now)
+    await tracker.capture_pre_close_snapshots()
+
+    import aiosqlite
+    async with aiosqlite.connect(db.db_path) as conn:
+        cursor = await conn.execute(
+            "SELECT COUNT(*) FROM clv_snapshots WHERE snapshot_at='pre_close'"
+        )
+        count = (await cursor.fetchone())[0]
+    assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_captures_pre_close_with_wider_behind_window(db, monkeypatch):
+    """Widen BEHIND window to 3min — allows tick lag without missing games.
+    Game started 2 minutes ago; still in window."""
+    await db.record_trade(strategy="sports_pinnacle_edge",
+                           market_id="KXMLBGAME-26APR142210NYMLAD-NYM",
+                           direction="yes", price=0.40, size=3.0, fee=0.07,
+                           status="paper_filled")
+    await db.record_clv_snapshot(trade_id=1, snapshot_at="entry",
+                                  yes_ask=0.40, no_ask=0.62)
+    client = MagicMock()
+    client.get_market.return_value = {"yes_ask_dollars": "0.55", "no_ask_dollars": "0.47"}
+    tracker = CLVTracker(client, db)
+    fake_now = datetime(2026, 4, 15, 2, 12, tzinfo=timezone.utc)  # T+2min
+    monkeypatch.setattr("core.clv_tracker._now_utc", lambda: fake_now)
+    await tracker.capture_pre_close_snapshots()
+
+    import aiosqlite
+    async with aiosqlite.connect(db.db_path) as conn:
+        cursor = await conn.execute(
+            "SELECT COUNT(*) FROM clv_snapshots WHERE snapshot_at='pre_close'"
+        )
+        count = (await cursor.fetchone())[0]
+    assert count == 1  # would have been 0 with BEHIND=1.0
+
+
+@pytest.mark.asyncio
 async def test_skips_non_sports_tickers(db, monkeypatch):
     """Only sports tickers get pre_close treatment."""
     await db.record_trade(strategy="mentions_trader", market_id="KXFEDMENTION-26APR",
