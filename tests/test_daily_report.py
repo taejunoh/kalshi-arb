@@ -61,6 +61,31 @@ async def test_report_includes_bankroll_and_timestamp(db):
 
 
 @pytest.mark.asyncio
+async def test_report_prepends_season_reminder_when_due(db, monkeypatch):
+    """On T-7 day of a tracked season, report should lead with the heads-up."""
+    from datetime import date
+    monkeypatch.setattr(
+        "scripts.daily_report._today_et",
+        lambda: date(2026, 5, 8),  # 7 days before WNBA opener 2026-05-15
+    )
+    text = await build_report(db, bankroll=2000.0)
+    # Reminder should appear above the main report body
+    assert "WNBA" in text
+    assert text.index("WNBA") < text.index("V3 ")
+
+
+@pytest.mark.asyncio
+async def test_report_has_no_reminder_on_ordinary_day(db, monkeypatch):
+    from datetime import date
+    monkeypatch.setattr(
+        "scripts.daily_report._today_et",
+        lambda: date(2026, 6, 10),
+    )
+    text = await build_report(db, bankroll=2000.0)
+    assert "season opens" not in text
+
+
+@pytest.mark.asyncio
 async def test_report_handles_zero_trades_gracefully(db):
     text = await build_report(db, bankroll=2000.0)
     # Empty strategies should show placeholder (no division by zero)

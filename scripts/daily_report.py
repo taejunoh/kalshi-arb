@@ -7,7 +7,7 @@ import asyncio
 import logging
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 
 # Make package imports work when launched as a standalone script.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,8 +15,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.config import Config
 from core.database import Database
 from monitoring.notifier import TelegramNotifier
+from scripts.season_reminders import get_active_reminders
 
 logger = logging.getLogger("daily_report")
+
+
+def _today_et() -> date:
+    """Current date in US Eastern (EDT during DST, EST otherwise). Overridable for tests."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/New_York")).date()
 
 GROUPS = [
     ("V3 (us, baseline)", [
@@ -64,7 +71,12 @@ async def build_report(db: Database, bankroll: float) -> str:
         f"{et.strftime('%Y-%m-%d %H:%M')} ET\n"
         f"Bankroll: ${bankroll:.2f}"
     )
-    sections = [header]
+    sections = []
+    # Season-opening reminders fire exactly 7 days before a tracked sport's
+    # regular season begins. Prepended so they show at the top of Telegram.
+    for reminder in get_active_reminders(_today_et()):
+        sections.append(reminder)
+    sections.append(header)
     for group_label, names in GROUPS:
         rows = [await _strategy_row(db, n) for n in names]
         sections.append(f"\n<b>{group_label}</b>\n" + "\n".join(rows))
