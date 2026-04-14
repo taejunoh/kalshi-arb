@@ -49,6 +49,13 @@ class Database:
                     UNIQUE(trade_id, snapshot_at)
                 )
             """)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS bot_state (
+                    key TEXT PRIMARY KEY,
+                    value REAL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_status_pnl ON trades(status, pnl)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_trade ON clv_snapshots(trade_id)")
@@ -181,6 +188,22 @@ class Database:
             if close > entry:
                 pos += 1
         return pos / total
+
+    async def set_bot_state(self, key: str, value: float) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                """INSERT INTO bot_state (key, value, updated_at) VALUES (?, ?, ?)
+                   ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at""",
+                (key, value, now),
+            )
+            await conn.commit()
+
+    async def get_bot_state(self, key: str) -> Optional[float]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute("SELECT value FROM bot_state WHERE key = ?", (key,))
+            row = await cursor.fetchone()
+        return row[0] if row else None
 
     async def get_daily_pnl(self):
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")

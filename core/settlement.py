@@ -160,6 +160,7 @@ class SettlementChecker:
                 if trade["direction"] == result:
                     payout = trade["size"] / trade["price"]
                     self._order_manager.bankroll += payout
+                    await self._order_manager._persist_bankroll()
                 if pnl > 0:
                     self._order_manager.record_win(pnl)
                 elif pnl < 0:

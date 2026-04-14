@@ -105,6 +105,10 @@ class Bot:
         setup_logger("bot")
         await self.db.initialize()
 
+        # Restore bankroll from DB if prior run persisted one (paper mode only —
+        # full-live mode overrides below with the actual Kalshi balance).
+        await self.order_manager.hydrate_bankroll()
+
         # Sync bankroll with actual Kalshi balance only in pure-live mode.
         # In mixed mode (TRADING_MODE=paper + some live strategies), the shared
         # order_manager.bankroll is the PAPER running state; overwriting it with

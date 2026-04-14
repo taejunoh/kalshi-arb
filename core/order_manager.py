@@ -44,6 +44,25 @@ class OrderManager:
     def reset_daily(self):
         self._daily_loss = 0.0
 
+    async def hydrate_bankroll(self) -> None:
+        """Restore bankroll from DB if present (survives restarts). No-op in live
+        mode — main.py's real_balance sync overrides after this if applicable."""
+        if self._db is None:
+            return
+        stored = await self._db.get_bot_state("bankroll")
+        if stored is not None:
+            self.bankroll = stored
+            logger.info(f"Hydrated bankroll from DB: ${self.bankroll:.2f}")
+
+    async def _persist_bankroll(self) -> None:
+        """Write current bankroll to DB. Called after every mutation."""
+        if self._db is None:
+            return
+        try:
+            await self._db.set_bot_state("bankroll", self.bankroll)
+        except Exception as e:
+            logger.warning(f"Bankroll persist failed: {e}")
+
     # ── Position tracking ────────────────────────────────────────────
 
     def get_position(self, strategy: str, ticker: str) -> dict:
@@ -133,6 +152,7 @@ class OrderManager:
         count = max(1, int(size_usdc / price))
         fee = self.config.estimate_fee(count, int(price * 100))
         self.bankroll -= (size_usdc + fee)
+        await self._persist_bankroll()
         trade_id = await self._db.record_trade(
             strategy=strategy, market_id=market_id, direction=side,
             price=price, size=size_usdc, fee=fee, status="paper_filled",
@@ -145,6 +165,7 @@ class OrderManager:
         count = max(1, int(size_usdc / price))
         fee = self.config.estimate_fee(count, int(price * 100))
         self.bankroll -= (size_usdc + fee)
+        await self._persist_bankroll()
         await self._db.record_order(
             order_id=order_id, market_id=market_id, strategy=strategy,
             side=side, price=price, size=size_usdc, order_type="limit", status="paper_open",
@@ -164,6 +185,7 @@ class OrderManager:
             price=price, size=size_usdc, fee=fee, status="filled",
         )
         self.bankroll -= size_usdc
+        await self._persist_bankroll()
         return {"order_id": order_id, "status": "filled", "size_usdc": size_usdc, "price": price, "trade_id": trade_id}
 
     async def _live_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):

@@ -71,27 +71,16 @@ async def build_report(db: Database, bankroll: float) -> str:
     return "\n".join(sections)
 
 
-async def _fetch_live_bankroll(fallback: float) -> float:
-    """Query the running dashboard for the live order_manager bankroll.
-    Fallback to `fallback` (usually config.INITIAL_BANKROLL) on any error."""
-    import httpx
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get("http://localhost:8080/api/status")
-            if resp.status_code == 200:
-                return float(resp.json().get("bankroll", fallback))
-    except Exception as e:
-        logger.warning(f"Live bankroll fetch failed, using fallback ${fallback:.2f}: {e}")
-    return fallback
-
-
 async def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     config = Config()
     db = Database()
     await db.initialize()
 
-    bankroll = await _fetch_live_bankroll(fallback=config.INITIAL_BANKROLL)
+    # Live bankroll comes from the bot's write-through to bot_state table.
+    # Falls back to config.INITIAL_BANKROLL when the bot hasn't persisted yet.
+    persisted = await db.get_bot_state("bankroll")
+    bankroll = persisted if persisted is not None else config.INITIAL_BANKROLL
 
     text = await build_report(db, bankroll=bankroll)
     logger.info("Report:\n%s", text)

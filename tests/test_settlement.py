@@ -10,6 +10,7 @@ def _make_checker():
     db.settle_trade = AsyncMock()
     order_mgr = MagicMock()
     order_mgr.bankroll = 1000.0
+    order_mgr._persist_bankroll = AsyncMock()
     return SettlementChecker(client, db, order_mgr), client, db, order_mgr
 
 
@@ -112,6 +113,21 @@ def test_settle_pnl_record_unchanged():
     args, _ = db.settle_trade.call_args
     assert args[0] == 42
     assert args[1] == pytest.approx(68.0, abs=0.01)
+
+
+def test_settle_persists_bankroll_after_win_credit():
+    """Win credit must also write through to bot_state so a restart doesn't lose it."""
+    checker, client, db, order_mgr = _make_checker()
+    order_mgr._persist_bankroll = AsyncMock()
+    db.get_unsettled_trades = AsyncMock(return_value=[
+        {"id": 1, "market_id": "MKT-1", "strategy": "sports_pinnacle_edge",
+         "direction": "yes", "price": 0.30, "size": 3.0, "fee": 0.07, "status": "paper_filled"},
+    ])
+    client.get_market.return_value = {"status": "finalized", "result": "yes",
+                                       "yes_ask_dollars": "1.00", "no_ask_dollars": "0.00"}
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(checker.check_and_settle())
+    order_mgr._persist_bankroll.assert_awaited()
 
 
 def test_settle_records_closing_clv_snapshot():
