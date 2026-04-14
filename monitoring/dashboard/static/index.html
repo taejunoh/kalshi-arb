@@ -385,7 +385,17 @@
 
   <main>
 
-    <!-- ── Performance Cards ── -->
+    <!-- ── Performance Cards (Live) ── -->
+    <section id="perf-live-section">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div class="section-title" style="margin-bottom:0">Strategy Performance (Live)</div>
+      </div>
+      <div class="perf-grid" id="perf-live-grid">
+        <div class="perf-card" style="color:var(--text-dim);font-size:12px;">Loading…</div>
+      </div>
+    </section>
+
+    <!-- ── Performance Cards (Paper) ── -->
     <section id="perf-section">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
         <div class="section-title" style="margin-bottom:0">Strategy Performance (Paper)</div>
@@ -692,27 +702,27 @@ let perfCache = {};
 let stratStatusCache = {};
 const perfMode = 'paper';
 
-function renderPerfCards() {
-  const grid = document.getElementById('perf-grid');
+function renderPerfCardsByMode(mode, gridId) {
+  const grid = document.getElementById(gridId);
   const strategies = Object.keys(perfCache);
   if (strategies.length === 0) {
     grid.innerHTML = '<div class="perf-card" style="color:var(--text-dim);font-size:12px;">No strategy data yet.</div>';
     return;
   }
 
-  // Only show Paper strategies — Live results are in Settlement History
-  const paperStrategies = strategies.filter(strat => {
-    const mode = (stratStatusCache[strat] || {}).mode || 'PAPER';
-    return mode === 'PAPER';
+  const modeKey = mode.toLowerCase();  // 'paper' | 'live'
+  const filtered = strategies.filter(strat => {
+    const stratMode = (stratStatusCache[strat] || {}).mode || 'PAPER';
+    return stratMode === mode;
   });
 
-  if (paperStrategies.length === 0) {
-    grid.innerHTML = '<div class="perf-card" style="color:var(--text-dim);font-size:12px;">No paper strategies.</div>';
+  if (filtered.length === 0) {
+    grid.innerHTML = `<div class="perf-card" style="color:var(--text-dim);font-size:12px;">No ${modeKey} strategies.</div>`;
     return;
   }
 
-  grid.innerHTML = paperStrategies.map(strat => {
-    const d = (perfCache[strat] || {})[perfMode] || {trade_count:0, total_pnl:0, total_size:0, wins:0, losses:0};
+  grid.innerHTML = filtered.map(strat => {
+    const d = (perfCache[strat] || {})[modeKey] || {trade_count:0, total_pnl:0, total_size:0, wins:0, losses:0};
 
     const pnl = parseFloat(d.total_pnl);
     const pnlStr = fmtMoney(d.total_pnl);
@@ -757,6 +767,11 @@ function renderPerfCards() {
         </div>
       </div>`;
   }).join('');
+}
+
+function renderPerfCards() {
+  renderPerfCardsByMode('LIVE', 'perf-live-grid');
+  renderPerfCardsByMode('PAPER', 'perf-grid');
 }
 
 async function refreshPerf() {
