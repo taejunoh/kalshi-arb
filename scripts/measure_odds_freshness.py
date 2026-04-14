@@ -32,32 +32,41 @@ OUT_FILE = "data/odds_freshness_log.jsonl"
 
 
 def summarize(data: list) -> dict:
+    """Per-bookmaker price hashing so we can see which books move how often.
+
+    payload_hash = full response hash (polluted by last_update timestamps,
+                   use only as a sanity check, not a price signal)
+    per_bm_hash = {bookmaker_key: hash_of_just_its_prices} — this is the
+                   clean signal for "how often do THIS book's prices change"
+    """
     payload_hash = hashlib.md5(
         json.dumps(data, sort_keys=True).encode()
     ).hexdigest()[:12]
-    pinnacle = []
+    from collections import defaultdict
+    per_bm_prices: dict = defaultdict(list)
     for game in data:
         for bm in game.get("bookmakers", []):
-            if bm.get("key") != "pinnacle":
+            bm_key = bm.get("key", "")
+            if not bm_key:
                 continue
             for market in bm.get("markets", []):
                 if market.get("key") != "h2h":
                     continue
                 for outcome in market.get("outcomes", []):
-                    pinnacle.append(
+                    per_bm_prices[bm_key].append(
                         f"{game.get('home_team', '?')}-"
                         f"{outcome.get('name', '?')}:{outcome.get('price')}"
                     )
-    # Hash of just the Pinnacle section — lets us detect Pinnacle moves
-    # separately from bulk book moves
-    pinnacle_hash = hashlib.md5(
-        ";".join(sorted(pinnacle)).encode()
-    ).hexdigest()[:12]
+    per_bm_hash = {
+        bm: hashlib.md5(";".join(sorted(prices)).encode()).hexdigest()[:8]
+        for bm, prices in per_bm_prices.items()
+    }
     return {
         "payload_hash": payload_hash,
-        "pinnacle_hash": pinnacle_hash,
+        "pinnacle_hash": per_bm_hash.get("pinnacle", "none"),
+        "per_bm_hash": per_bm_hash,
         "num_games": len(data),
-        "pinnacle_prices": len(pinnacle),
+        "num_bookmakers": len(per_bm_hash),
     }
 
 
@@ -112,39 +121,69 @@ def analyze(log_file: str):
 
     print()
     print("=" * 92)
-    print(f"{'key':22} {'ticks':>6} {'payload-changes':>16} {'pinnacle-changes':>18} "
-          f"{'est.TTL (s)':>12}")
+    print(f"{'key':24} {'ticks':>6} {'payload(noisy)':>15} {'pinnacle':>10} "
+          f"{'est.pinnacle.TTL':>18}")
     print("=" * 92)
     for key, records in sorted(by_key.items()):
         n = len(records)
         payload_changes = 0
         pinnacle_changes = 0
         prev_pl, prev_pn = None, None
-        first_ts = None
-        last_ts = None
+        first_ts, last_ts = None, None
         for r in records:
-            if first_ts is None:
-                first_ts = r["ts"]
+            first_ts = first_ts or r["ts"]
             last_ts = r["ts"]
             if prev_pl is not None and r["payload_hash"] != prev_pl:
                 payload_changes += 1
             if prev_pn is not None and r["pinnacle_hash"] != prev_pn:
                 pinnacle_changes += 1
             prev_pl, prev_pn = r["payload_hash"], r["pinnacle_hash"]
+        est_ttl = (f">{n * POLL_INTERVAL_SEC}" if pinnacle_changes == 0
+                   else f"{_seconds_between(first_ts, last_ts) / pinnacle_changes:.0f}")
+        print(f"{str(key):24} {n:>6} {payload_changes:>15} {pinnacle_changes:>10} "
+              f"{est_ttl:>18}")
 
-        # Estimated effective TTL: average seconds between payload changes
-        if payload_changes == 0:
-            est_ttl = f"> {n * POLL_INTERVAL_SEC}"
-        else:
-            span = _seconds_between(first_ts, last_ts)
-            est_ttl = f"{span / payload_changes:.0f}"
-        print(f"{str(key):22} {n:>6} {payload_changes:>16} {pinnacle_changes:>18} "
-              f"{est_ttl:>12}")
+    # Per-bookmaker change rate (the real signal)
+    print()
+    print("=" * 92)
+    print(f"Per-bookmaker price change rate (per sport, averaged over regions):")
+    print("=" * 92)
+    by_bm: dict = defaultdict(lambda: defaultdict(lambda: {"changes": 0, "seen": 0, "span": 0.0}))
+    for (region, sport), records in sorted(by_key.items()):
+        if not records:
+            continue
+        prev_per_bm = {}
+        first_ts, last_ts = records[0]["ts"], records[-1]["ts"]
+        span = _seconds_between(first_ts, last_ts)
+        for r in records:
+            for bm, h in (r.get("per_bm_hash") or {}).items():
+                if bm in prev_per_bm:
+                    by_bm[sport][bm]["seen"] += 1
+                    if prev_per_bm[bm] != h:
+                        by_bm[sport][bm]["changes"] += 1
+                prev_per_bm[bm] = h
+        for bm in by_bm[sport]:
+            by_bm[sport][bm]["span"] = max(by_bm[sport][bm]["span"], span)
+
+    for sport in sorted(by_bm):
+        print(f"\n--- {sport} ---")
+        bms = by_bm[sport]
+        # Sort by changes descending
+        ranked = sorted(bms.items(), key=lambda kv: -kv[1]["changes"])
+        print(f"  {'bookmaker':25} {'seen':>6} {'changes':>8} {'change-rate':>12} "
+              f"{'avg.gap(s)':>12}")
+        for bm, stats in ranked[:12]:
+            rate = stats["changes"] / max(1, stats["seen"])
+            gap = (stats["span"] / stats["changes"]) if stats["changes"] else float("inf")
+            gap_str = f"{gap:.0f}" if gap != float("inf") else "∞"
+            print(f"  {bm:25} {stats['seen']:>6} {stats['changes']:>8} {rate:>11.1%} "
+                  f"{gap_str:>12}")
+
     print()
     print("Interpretation:")
-    print("  est.TTL ≈ seconds between payload hash changes.")
-    print("  If est.TTL ≥ current TTL (900s) → current cache is not losing freshness.")
-    print("  If est.TTL ≤ 60s → we're missing updates every cache hit; tighter TTL helps.")
+    print("  avg.gap(s) = average seconds between this book's price changes.")
+    print("  If a book's avg gap ≤ 300s → TTL 300s captures every other move.")
+    print("  If ≥ 900s → current TTL is already enough for that book.")
 
 
 def _seconds_between(iso_a: str, iso_b: str) -> float:
