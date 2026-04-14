@@ -116,11 +116,23 @@ class SportsTraderStrategy:
             logger.warning(f"[SPORTS] Could not load traded tickers: {e}")
 
     def _save_traded_tickers(self):
+        """Atomic write: tmp → fsync → replace. Crash mid-write leaves the
+        previous (valid) file untouched rather than a truncated one that
+        would lose the "already traded this ticker" guard on restart."""
+        tmp_path = self.TRADED_TICKERS_FILE + ".tmp"
         try:
-            with open(self.TRADED_TICKERS_FILE, "w") as f:
+            with open(tmp_path, "w") as f:
                 json.dump(self._traded_tickers, f)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, self.TRADED_TICKERS_FILE)
         except Exception as e:
             logger.warning(f"[SPORTS] Could not save traded tickers: {e}")
+            # Best-effort cleanup of tmp so it doesn't accumulate on repeat failures
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
     def _get_live_sports_exposure(self) -> float:
         """Get total exposure from Kalshi API for sports positions.
@@ -279,7 +291,16 @@ class SportsTraderStrategy:
         return None
 
     def _consensus_probability(self, game: dict) -> Optional[dict]:
-        """Calculate consensus probability from multiple bookmakers."""
+        """Vig-adjusted average implied probability across ALL bookmakers
+        present in the response.
+
+        Note: when running with regions=eu, Pinnacle is one of the books
+        averaged here. This is intentional — V3.1's design is "EU
+        sharp-book consensus (which naturally includes Pinnacle)". V4's
+        sports_pinnacle_edge isolates Pinnacle separately, so the A/B
+        question is "weighted sharp consensus vs Pinnacle-only signal",
+        not "non-Pinnacle consensus vs Pinnacle".
+        """
         bookmakers = game.get("bookmakers", [])
         if not bookmakers:
             return None

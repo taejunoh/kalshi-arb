@@ -1,7 +1,16 @@
-"""Sports Consolidated — union of longshot/midshot/underdog filters.
+"""Sports Consolidated — V3's three price-filter strategies merged into one.
 
-Fires once per game (vs V3's triple-fire on overlapping conditions) so
-bankroll deployment is deduped. Union = price 0.05–0.40 AND payoff >= 2.0.
+Name rationale: V3 (longshot/midshot/underdog) has overlapping price ranges,
+so the same market can "triple-fire" and drain 3× the bankroll on a single
+edge that all three agree on. This strategy "consolidates" those into a
+single filter (price 0.05–0.40, payoff ≥ 2x) that covers the union of
+their qualifying conditions while firing at most once per market.
+
+Implementation is a broad price/payoff filter rather than three separate
+checks because the union of {longshot:5-25c + 3x, midshot:5-35c + 2.5x,
+underdog:5-40c + 2x} is functionally equivalent to (5-40c + 2x) with the
+tightest edge case (midshot at 35c requiring 2.5x) already implied by the
+price ceiling. Simpler code, same coverage.
 """
 import logging
 from typing import Optional

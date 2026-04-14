@@ -115,6 +115,20 @@ def test_settle_pnl_record_unchanged():
     assert args[1] == pytest.approx(68.0, abs=0.01)
 
 
+def test_settled_cache_evicts_oldest_when_over_cap():
+    """Cache must not grow unbounded; capped at MAX_SETTLED_CACHE entries."""
+    from core.settlement import SettlementChecker, MAX_SETTLED_CACHE
+    checker, _, _, _ = _make_checker()
+    # Fill just past the cap — oldest entries should get evicted
+    for i in range(MAX_SETTLED_CACHE + 5):
+        checker._remember_settled(f"T-{i}", "yes", 1.0, 0.0)
+    assert len(checker._settled_cache) == MAX_SETTLED_CACHE
+    # The earliest 5 should be gone; the newest should remain
+    assert "T-0" not in checker._settled_cache
+    assert "T-4" not in checker._settled_cache
+    assert f"T-{MAX_SETTLED_CACHE + 4}" in checker._settled_cache
+
+
 def test_settle_cache_hit_still_writes_non_null_closing_snapshot():
     """Across two check_and_settle calls on the same ticker, the second
     call hits _settled_cache and historically left closing yes_ask/no_ask

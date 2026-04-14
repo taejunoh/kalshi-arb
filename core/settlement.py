@@ -6,6 +6,10 @@ from typing import Optional
 
 logger = logging.getLogger("settlement")
 
+# Cap for _settled_cache to prevent unbounded growth over long-running bots.
+# ~30 games/day × 180 days of history ≈ 5400 entries; 2000 keeps ~2 months hot.
+MAX_SETTLED_CACHE = 2000
+
 
 def _safe_float(v) -> float | None:
     if v is None or v == "":
@@ -28,7 +32,16 @@ class SettlementChecker:
         # Cache settled market results to avoid repeated API calls.
         # Value: (result, yes_ask, no_ask) — asks needed for CLV closing snapshots
         # across multiple check_and_settle() calls on the same ticker.
+        # Insertion-ordered dict → oldest entry is evicted first when cap reached.
         self._settled_cache: dict[str, tuple[str, Optional[float], Optional[float]]] = {}
+
+    def _remember_settled(self, ticker: str, result: str,
+                          yes_ask: Optional[float], no_ask: Optional[float]) -> None:
+        """Insert with FIFO cap so the cache doesn't grow forever."""
+        self._settled_cache[ticker] = (result, yes_ask, no_ask)
+        while len(self._settled_cache) > MAX_SETTLED_CACHE:
+            oldest_key = next(iter(self._settled_cache))
+            del self._settled_cache[oldest_key]
 
     def calculate_pnl(self, direction: str, price: float, size_usdc: float,
                       fee: float, result: str) -> float:
@@ -134,7 +147,7 @@ class SettlementChecker:
                     continue
                 close_yes_ask = _safe_float(market.get("yes_ask_dollars"))
                 close_no_ask = _safe_float(market.get("no_ask_dollars"))
-                self._settled_cache[ticker] = (result, close_yes_ask, close_no_ask)
+                self._remember_settled(ticker, result, close_yes_ask, close_no_ask)
 
             # Settle all trades for this market
             for trade in trades:
