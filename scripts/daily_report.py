@@ -71,29 +71,27 @@ async def build_report(db: Database, bankroll: float) -> str:
     return "\n".join(sections)
 
 
+async def _fetch_live_bankroll(fallback: float) -> float:
+    """Query the running dashboard for the live order_manager bankroll.
+    Fallback to `fallback` (usually config.INITIAL_BANKROLL) on any error."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get("http://localhost:8080/api/status")
+            if resp.status_code == 200:
+                return float(resp.json().get("bankroll", fallback))
+    except Exception as e:
+        logger.warning(f"Live bankroll fetch failed, using fallback ${fallback:.2f}: {e}")
+    return fallback
+
+
 async def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     config = Config()
     db = Database()
     await db.initialize()
 
-    # Running bankroll: reconstruct from DB (placements - refunds) so the
-    # cron report doesn't require a live OrderManager handle.
-    all_trades = await db.get_trades()
-    bankroll = config.INITIAL_BANKROLL
-    for t in all_trades:
-        status = t.get("status", "")
-        if not status.startswith("paper"):
-            continue
-        size = t.get("size", 0) or 0
-        fee = t.get("fee", 0) or 0
-        # Placement deducts size + fee
-        bankroll -= (size + fee)
-        # Win: payout = size / price credited back
-        if status == "paper_settled" and (t.get("pnl", 0) or 0) > 0:
-            price = t.get("price", 0) or 0
-            if price > 0:
-                bankroll += size / price
+    bankroll = await _fetch_live_bankroll(fallback=config.INITIAL_BANKROLL)
 
     text = await build_report(db, bankroll=bankroll)
     logger.info("Report:\n%s", text)
