@@ -362,6 +362,14 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
 
     @app.get("/api/odds-usage")
     async def get_odds_usage():
+        # Read from the shared module-level cache: every sports_* subclass
+        # writes the latest (x-requests-used, remaining, last) headers here on
+        # each fetch. The `sports_trader` instance itself is deprecated and no
+        # longer runs, so reading its attribute returned stale zeros.
+        from strategies.sports_trader import _ODDS_CACHE
+        if _ODDS_CACHE:
+            _, _, usage = max(_ODDS_CACHE.values(), key=lambda v: v[0])
+            return usage
         if sports_trader and hasattr(sports_trader, "odds_api_usage"):
             return sports_trader.odds_api_usage
         return {"used": 0, "remaining": 0, "last": 0}
