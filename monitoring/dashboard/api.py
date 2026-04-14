@@ -253,6 +253,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot": "SPORTS_ENABLED",
             "sports_midshot": "SPORTS_ENABLED",
             "sports_underdog": "SPORTS_ENABLED",
+            "sports_pinnacle_edge": "SPORTS_ENABLED",
+            "sports_v4_edge": "SPORTS_ENABLED",
+            "sports_liquidity_filtered": "SPORTS_ENABLED",
+            "sports_consolidated": "SPORTS_ENABLED",
             "sports_trader": "SPORTS_ENABLED",
         }
         result = {}
