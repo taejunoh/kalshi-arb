@@ -35,8 +35,30 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         orders = await database.get_open_orders()
         return orders
 
+    def _categorize_live_ticker(ticker: str) -> Optional[str]:
+        """Map Kalshi ticker to a strategy name for Live bucket accounting.
+        Kalshi has no concept of our strategy names, so we infer from ticker
+        prefix. Returns None if ticker doesn't belong to any known Live
+        strategy (caller skips)."""
+        if "FEDMENTION" in ticker:
+            return "mentions_trader"
+        if any(s in ticker for s in ["KXCPI", "KXGDP", "KXFED"]):
+            # Legacy: econ_trader placed live CPI/GDP/FED trades before being
+            # disabled. Positions still tracked on Kalshi.
+            return "econ_trader"
+        if any(s in ticker for s in ["NBAGAME", "MLBGAME", "NHLGAME"]):
+            # Sports subclasses (longshot/midshot/underdog) cannot be
+            # disambiguated from ticker alone. Attribute to generic
+            # sports_trader. Currently none are Live anyway.
+            return "sports_trader"
+        return None
+
     @app.get("/api/performance")
     async def get_performance():
+        """Return performance stats per strategy. Paper bucket is reconstructed
+        from the local DB (source of truth for Paper sim). Live bucket is
+        reconstructed from Kalshi API (positions + settlements) — source of
+        truth for real money, regardless of local DB state."""
         all_trades = await database.get_trades()
         all_strategy_names = [
             "maker_preorder", "market_maker", "shutdown_fade",
@@ -49,20 +71,79 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             return {"trade_count": 0, "total_pnl": 0.0, "total_size": 0.0, "wins": 0, "losses": 0}
 
         strategies = {s: {"live": empty_stats(), "paper": empty_stats()} for s in all_strategy_names}
+
+        # Paper bucket — from local DB trades (only paper_* statuses)
         for trade in all_trades:
+            status = trade.get("status", "")
+            if not status.startswith("paper"):
+                continue
             strat = trade["strategy"]
             if strat not in strategies:
                 strategies[strat] = {"live": empty_stats(), "paper": empty_stats()}
-            is_paper = trade.get("status", "").startswith("paper")
-            bucket = strategies[strat]["paper" if is_paper else "live"]
+            bucket = strategies[strat]["paper"]
             bucket["trade_count"] += 1
-            bucket["total_pnl"] += trade.get("pnl", 0)
-            bucket["total_size"] += trade.get("size", 0)
-            pnl = trade.get("pnl", 0)
+            bucket["total_pnl"] += trade.get("pnl", 0) or 0
+            bucket["total_size"] += trade.get("size", 0) or 0
+            pnl = trade.get("pnl", 0) or 0
             if pnl > 0:
                 bucket["wins"] += 1
             elif pnl < 0:
                 bucket["losses"] += 1
+
+        # Live bucket — from Kalshi API (positions for open, settlements for closed)
+        if kalshi_client:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            try:
+                positions = await loop.run_in_executor(None, kalshi_client.get_positions)
+            except Exception:
+                positions = []
+            try:
+                settlements = await loop.run_in_executor(None, kalshi_client.get_settlements)
+            except Exception:
+                settlements = []
+
+            # Settled trades: wins/losses/realized PnL
+            for s in settlements:
+                ticker = s.get("ticker", "")
+                strat = _categorize_live_ticker(ticker)
+                if not strat or strat not in strategies:
+                    continue
+                revenue = float(s.get("revenue", 0)) / 100  # cents → dollars
+                yes_cost = float(s.get("yes_total_cost_dollars", "0") or 0)
+                no_cost = float(s.get("no_total_cost_dollars", "0") or 0)
+                cost = yes_cost + no_cost
+                fees = float(s.get("fee_cost", "0") or 0)
+                net = revenue - cost - fees
+                bucket = strategies[strat]["live"]
+                bucket["trade_count"] += 1
+                bucket["total_size"] += cost
+                bucket["total_pnl"] += net
+                if revenue > cost:
+                    bucket["wins"] += 1
+                elif cost > 0:
+                    bucket["losses"] += 1
+
+            # Open positions: count and exposure, PnL unrealized (stays 0 until settled)
+            for p in positions:
+                try:
+                    pos_fp = float(p.get("position_fp", 0) or 0)
+                except (TypeError, ValueError):
+                    pos_fp = 0
+                if pos_fp == 0:
+                    continue  # closed / zero position, skip
+                ticker = p.get("ticker", "")
+                strat = _categorize_live_ticker(ticker)
+                if not strat or strat not in strategies:
+                    continue
+                try:
+                    exp = float(p.get("market_exposure_dollars", 0) or 0)
+                except (TypeError, ValueError):
+                    exp = 0
+                bucket = strategies[strat]["live"]
+                bucket["trade_count"] += 1
+                bucket["total_size"] += exp
+
         return strategies
 
     @app.get("/api/settlement")
