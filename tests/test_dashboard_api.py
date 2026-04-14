@@ -194,6 +194,47 @@ async def test_strategy_status_marks_env_disabled(db):
 
 
 @pytest.mark.asyncio
+async def test_settlement_history_categorizes_by_strategy_name(db):
+    """Settlement history groups settlements into strategy-name categories.
+    Ensures econ_trader settlements don't get dumped into 'other' bucket."""
+    class MockKalshi:
+        def get_settlements(self, limit=200):
+            return [
+                # Econ trader loss
+                {"ticker": "KXCPI-26MAR-T0.3", "revenue": 0,
+                 "yes_total_cost_dollars": "0", "no_total_cost_dollars": "5.00",
+                 "fee_cost": "0.10", "market_result": "yes", "settled_time": "2026-04-10T13:00Z"},
+                # Sports trader win
+                {"ticker": "KXNBAGAME-26APR10TEAM-X", "revenue": 1800,
+                 "yes_total_cost_dollars": "6.00", "no_total_cost_dollars": "0",
+                 "fee_cost": "0.30", "market_result": "yes", "settled_time": "2026-04-11T02:00Z"},
+                # Mentions trader (future)
+                {"ticker": "KXFEDMENTION-26APR-FAKE", "revenue": 1000,
+                 "yes_total_cost_dollars": "8.00", "no_total_cost_dollars": "0",
+                 "fee_cost": "0.20", "market_result": "yes", "settled_time": "2026-04-30T20:00Z"},
+                # Shutdown fade
+                {"ticker": "KXNUMSHUTDOWNS-27JAN01-T2", "revenue": 2000,
+                 "yes_total_cost_dollars": "0", "no_total_cost_dollars": "5.00",
+                 "fee_cost": "0.10", "market_result": "no", "settled_time": "2027-01-01T15:00Z"},
+            ]
+        def get_positions(self):
+            return []
+
+    app = create_app(db, kalshi_client=MockKalshi())
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.get("/api/settlement-history")
+    data = resp.json()
+    assert "econ_trader" in data
+    assert data["econ_trader"]["losses"] == 1
+    assert data["sports_trader"]["wins"] == 1
+    assert data["mentions_trader"]["wins"] == 1
+    assert data["shutdown_fade"]["wins"] == 1
+    # 'other' bucket stays empty because all tickers match a known strategy
+    assert data["other"]["wins"] == 0 and data["other"]["losses"] == 0
+
+
+@pytest.mark.asyncio
 async def test_strategy_status_mode_live_for_live_strategies(db):
     """mentions_trader in LIVE_STRATEGIES should show mode=LIVE."""
     class MockConfig:

@@ -268,16 +268,29 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         settlements = await loop.run_in_executor(None, kalshi_client.get_settlements)
 
         def categorize(ticker):
+            """Map ticker → strategy name. Keep in sync with
+            _categorize_live_ticker above and ticker patterns used by
+            each strategy's scan loop."""
             if any(s in ticker for s in ["NBAGAME", "MLBGAME", "NHLGAME"]):
-                return "sports"
+                return "sports_trader"
             if any(s in ticker for s in ["KXBTC", "KXETH", "KXSOL", "KXXRP"]):
-                return "spread"
+                return "spread_scanner"
+            if "FEDMENTION-26APR-SHUT" in ticker or "NUMSHUTDOWNS" in ticker:
+                return "shutdown_fade"
             if "FEDMENTION" in ticker:
-                return "mentions"
+                return "mentions_trader"
+            if any(s in ticker for s in ["KXCPI", "KXGDP"]) or (
+                ticker.startswith("KXFED") and "MENTION" not in ticker
+            ):
+                return "econ_trader"
             return "other"
 
+        categories = [
+            "sports_trader", "spread_scanner", "mentions_trader",
+            "econ_trader", "shutdown_fade", "other",
+        ]
         stats = {}
-        for cat in ["sports", "spread", "mentions", "other"]:
+        for cat in categories:
             stats[cat] = {"wins": 0, "losses": 0, "revenue": 0, "cost": 0, "fees": 0, "trades": []}
 
         for s in settlements:

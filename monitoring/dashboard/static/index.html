@@ -960,9 +960,19 @@ async function refreshSettlementHistory() {
     const grid = document.getElementById('settlement-grid');
     const tbody = document.getElementById('settlement-body');
 
-    // Summary cards
-    const cats = ['sports', 'spread', 'mentions'];
-    grid.innerHTML = cats.map(cat => {
+    // Summary cards — show any category with settled trades, plus configured
+    // strategies even when empty (so Live strategies still appear).
+    const allCats = [
+      'sports_trader', 'spread_scanner', 'mentions_trader',
+      'econ_trader', 'shutdown_fade', 'other',
+    ];
+    const visibleCats = allCats.filter(cat => {
+      const d = data[cat] || {};
+      const total = (d.wins || 0) + (d.losses || 0);
+      return total > 0;
+    });
+    if (visibleCats.length === 0) visibleCats.push('sports_trader');
+    grid.innerHTML = visibleCats.map(cat => {
       const d = data[cat] || {wins:0, losses:0, win_rate:0, net_pnl:0, total_fees:0};
       const total = d.wins + d.losses;
       const pnlCls = d.net_pnl > 0 ? 'positive' : d.net_pnl < 0 ? 'negative' : '';
@@ -994,7 +1004,7 @@ async function refreshSettlementHistory() {
 
     // Trade table
     const allTrades = [];
-    for (const cat of cats) {
+    for (const cat of allCats) {
       for (const t of (data[cat] || {}).trades || []) {
         allTrades.push({...t, category: cat});
       }
