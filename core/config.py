@@ -37,7 +37,9 @@ class Config:
         self.MM_MAX_POSITION = float(os.getenv("MM_MAX_POSITION", "200"))
         self.MM_MAX_MARKETS = int(os.getenv("MM_MAX_MARKETS", "3"))
 
-        # Shutdown Fade strategy
+        # Shutdown Fade strategy — DEPRECATED V1, see docs/future-work/shutdown-fade-redesign.md.
+        # Flag retained for dashboard/.env 호환성. 값과 무관하게 전략 실행 안 됨 (main.py 에서 제거됨,
+        # 인스턴스화 시도 시 RuntimeError). 재설계 후 새 클래스로 부활 예정.
         self.SHUTDOWN_FADE_ENABLED = os.getenv("SHUTDOWN_FADE_ENABLED", "false").lower() == "true"
         self.SHUTDOWN_FADE_THRESHOLD = float(os.getenv("SHUTDOWN_FADE_THRESHOLD", "0.25"))
         self.SHUTDOWN_FADE_SCALE_LEVELS = int(os.getenv("SHUTDOWN_FADE_SCALE_LEVELS", "3"))

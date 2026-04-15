@@ -1,3 +1,13 @@
+"""DEPRECATED V1 — DO NOT IMPORT OR INSTANTIATE.
+
+폐기 사유: thesis 결함 (이질적 마켓을 단일 heuristic 으로 묶음) + 실행 결함
+(`_active_positions` in-memory only → 재시작 시 중복 진입, DB 가드 부재).
+실제 paper 에서 3 ticker 에 121건 체결로 정상 상한의 약 13배 초과.
+
+재설계 전까지 본 클래스는 인스턴스화 차단. 근거 및 선행 연구 항목:
+`docs/future-work/shutdown-fade-redesign.md`.
+"""
+
 import logging
 import time
 from typing import Optional
@@ -9,10 +19,17 @@ SCALE_IN_THRESHOLDS = [0.25, 0.35, 0.50]
 
 
 class ShutdownFadeStrategy:
-    """Buy NO on government shutdown markets when YES is elevated.
-    Historical base rate: Congress almost always deals last-minute."""
+    """DEPRECATED V1 — see module docstring. Raises on __init__."""
 
     def __init__(self, config, order_manager, market_scanner, kalshi_client):
+        logger.error(
+            "shutdown_fade V1 is DEPRECATED — instantiation blocked. "
+            "See docs/future-work/shutdown-fade-redesign.md"
+        )
+        raise RuntimeError(
+            "shutdown_fade is deprecated — see docs/future-work/shutdown-fade-redesign.md"
+        )
+        # Unreachable below; preserved for reference during redesign.
         self.config = config
         self._order_manager = order_manager
         self._scanner = market_scanner

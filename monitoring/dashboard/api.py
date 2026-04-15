@@ -271,7 +271,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         # Strategies removed from main.py _strategy_loop (no env flag to toggle).
         # Keep in sync with main.py; see commits 59f7e44 (sports_trader) and
         # e901f2b (maker_preorder).
-        loop_disabled = {"sports_trader", "maker_preorder"}
+        loop_disabled = {"sports_trader", "maker_preorder", "shutdown_fade"}
         # env-flag mapping: which config attribute gates each strategy
         flag_map = {
             "market_maker": "MM_ENABLED",
@@ -300,6 +300,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             active = in_loop and flag_on
             if active:
                 reason = None
+            elif s == "shutdown_fade":
+                reason = "DEPRECATED — see docs/future-work/shutdown-fade-redesign.md"
             elif not in_loop:
                 reason = "removed_from_loop"
             else:

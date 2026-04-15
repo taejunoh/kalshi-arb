@@ -10,7 +10,6 @@ from core.kalshi_client import KalshiClient
 from core.market_scanner import MarketScanner
 from core.order_manager import OrderManager
 from strategies.maker_preorder import MakerPreorderStrategy
-from strategies.shutdown_fade import ShutdownFadeStrategy
 from strategies.spread_scanner import SpreadScannerStrategy
 from strategies.market_maker import MarketMakerStrategy
 from strategies.mentions_trader import MentionsTraderStrategy
@@ -47,9 +46,6 @@ class Bot:
         )
         self.order_manager = OrderManager(self.config, self.kalshi_client, self.db, self.notifier)
         self.maker_preorder = MakerPreorderStrategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client
-        )
-        self.shutdown_fade = ShutdownFadeStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client
         )
         self.spread_scanner = SpreadScannerStrategy(
@@ -205,7 +201,7 @@ class Bot:
             # startup, draining bankroll. No ENABLED flag in config, so
             # removing from loop is the only way. Priority: sports V3
             # sample collection for Live transition decision.
-            ("shutdown_fade", self.shutdown_fade),
+            # shutdown_fade deprecated — see docs/future-work/shutdown-fade-redesign.md
             ("spread_scanner", self.spread_scanner),
             ("market_maker", self.market_maker),
             ("mentions_trader", self.mentions_trader),

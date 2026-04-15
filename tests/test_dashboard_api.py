@@ -168,8 +168,9 @@ async def test_performance_paper_includes_clv_positive_rate(db):
 
 @pytest.mark.asyncio
 async def test_strategy_status_marks_loop_disabled(db):
-    """Strategies removed from main.py _strategy_loop should report active=false
-    with reason='removed_from_loop'. Currently: sports_trader, maker_preorder."""
+    """Strategies removed from main.py _strategy_loop should report active=false.
+    sports_trader / maker_preorder → 'removed_from_loop'.
+    shutdown_fade → DEPRECATED reason."""
     class MockConfig:
         LIVE_STRATEGIES = set()
         MM_ENABLED = True
@@ -189,6 +190,8 @@ async def test_strategy_status_marks_loop_disabled(db):
     assert data["sports_trader"]["reason"] == "removed_from_loop"
     assert data["maker_preorder"]["active"] is False
     assert data["maker_preorder"]["reason"] == "removed_from_loop"
+    assert data["shutdown_fade"]["active"] is False
+    assert "DEPRECATED" in data["shutdown_fade"]["reason"]
     # sports subclasses remain active (in loop, flag on)
     assert data["sports_longshot"]["active"] is True
     assert data["sports_longshot"]["reason"] is None
@@ -214,8 +217,9 @@ async def test_strategy_status_marks_env_disabled(db):
     data = resp.json()
     assert data["market_maker"]["active"] is False
     assert data["market_maker"]["reason"] == "MM_ENABLED=false"
+    # shutdown_fade: DEPRECATED takes precedence over env flag
     assert data["shutdown_fade"]["active"] is False
-    assert data["shutdown_fade"]["reason"] == "SHUTDOWN_FADE_ENABLED=false"
+    assert "DEPRECATED" in data["shutdown_fade"]["reason"]
     assert data["spread_scanner"]["active"] is True
     assert data["mentions_trader"]["mode"] == "PAPER"
 
