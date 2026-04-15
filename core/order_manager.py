@@ -1,6 +1,7 @@
 import logging
 import time
 import uuid
+from typing import Optional
 
 logger = logging.getLogger("order_manager")
 
@@ -105,16 +106,20 @@ class OrderManager:
             return True  # Global live mode
         return strategy in self.config.LIVE_STRATEGIES
 
-    async def market_order(self, ticker, side, size_usdc, price, strategy, market_id):
+    async def market_order(self, ticker, side, size_usdc, price, strategy, market_id,
+                           minutes_to_start: Optional[float] = None):
         if self.bankroll < size_usdc:
             logger.warning(f"Insufficient bankroll: ${self.bankroll:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
             return {"status": "skipped", "reason": "insufficient_bankroll"}
         if self._is_live(strategy):
             logger.info(f"[LIVE] {strategy} {side} {ticker} ${size_usdc:.2f} @ {price:.3f}")
-            return await self._live_market_order(ticker, side, size_usdc, price, strategy, market_id)
-        return await self._paper_market_order(ticker, side, size_usdc, price, strategy, market_id)
+            return await self._live_market_order(ticker, side, size_usdc, price, strategy, market_id,
+                                                 minutes_to_start=minutes_to_start)
+        return await self._paper_market_order(ticker, side, size_usdc, price, strategy, market_id,
+                                              minutes_to_start=minutes_to_start)
 
-    async def limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
+    async def limit_order(self, ticker, side, price, size_usdc, strategy, market_id,
+                          minutes_to_start: Optional[float] = None):
         if self._is_live(strategy):
             # Check real Kalshi balance before placing live order
             real_balance = self._client.get_balance()
@@ -122,7 +127,8 @@ class OrderManager:
                 logger.debug(f"Insufficient Kalshi balance: ${real_balance:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
                 return {"status": "skipped", "reason": "insufficient_balance"}
             logger.info(f"[LIVE] {strategy} LIMIT {side} {ticker} ${size_usdc:.2f} @ {price:.3f}")
-            result = await self._live_limit_order(ticker, side, price, size_usdc, strategy, market_id)
+            result = await self._live_limit_order(ticker, side, price, size_usdc, strategy, market_id,
+                                                  minutes_to_start=minutes_to_start)
             if self._notifier and result.get("status") != "failed":
                 await self._notifier.send(
                     f"📊 <b>LIVE Order</b>\n"
@@ -139,7 +145,8 @@ class OrderManager:
         if self.bankroll < size_usdc:
             logger.warning(f"Insufficient bankroll: ${self.bankroll:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
             return {"status": "skipped", "reason": "insufficient_bankroll"}
-        return await self._paper_limit_order(ticker, side, price, size_usdc, strategy, market_id)
+        return await self._paper_limit_order(ticker, side, price, size_usdc, strategy, market_id,
+                                              minutes_to_start=minutes_to_start)
 
     async def cancel_order(self, order_id):
         """Cancel an order. If the order was still open (not yet filled),
@@ -183,7 +190,8 @@ class OrderManager:
         await self._persist_bankroll()
         return refund
 
-    async def _paper_market_order(self, ticker, side, size_usdc, price, strategy, market_id):
+    async def _paper_market_order(self, ticker, side, size_usdc, price, strategy, market_id,
+                                   minutes_to_start: Optional[float] = None):
         order_id = f"paper_{uuid.uuid4().hex[:8]}"
         count = max(1, int(size_usdc / price))
         fee = self.config.estimate_fee(count, int(price * 100))
@@ -192,11 +200,13 @@ class OrderManager:
         trade_id = await self._db.record_trade(
             strategy=strategy, market_id=market_id, direction=side,
             price=price, size=size_usdc, fee=fee, status="paper_filled",
+            minutes_to_start=minutes_to_start,
         )
         logger.info(f"[PAPER] Market {side} | {strategy} | ${size_usdc:.2f} @ {price:.3f} | bankroll: ${self.bankroll:.2f}")
         return {"order_id": order_id, "status": "paper_filled", "size_usdc": size_usdc, "price": price, "trade_id": trade_id}
 
-    async def _paper_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
+    async def _paper_limit_order(self, ticker, side, price, size_usdc, strategy, market_id,
+                                  minutes_to_start: Optional[float] = None):
         order_id = f"paper_{uuid.uuid4().hex[:8]}"
         count = max(1, int(size_usdc / price))
         fee = self.config.estimate_fee(count, int(price * 100))
@@ -209,7 +219,8 @@ class OrderManager:
         logger.info(f"[PAPER] Limit {side} | {strategy} | ${size_usdc:.2f} @ {price:.3f} | bankroll: ${self.bankroll:.2f}")
         return {"order_id": order_id, "status": "paper_open", "price": price, "size_usdc": size_usdc}
 
-    async def _live_market_order(self, ticker, side, size_usdc, price, strategy, market_id):
+    async def _live_market_order(self, ticker, side, size_usdc, price, strategy, market_id,
+                                  minutes_to_start: Optional[float] = None):
         count = max(1, int(size_usdc / price))
         resp = self._client.place_market_order(ticker, side, count)
         if resp is None:
@@ -219,12 +230,14 @@ class OrderManager:
         trade_id = await self._db.record_trade(
             strategy=strategy, market_id=market_id, direction=side,
             price=price, size=size_usdc, fee=fee, status="filled",
+            minutes_to_start=minutes_to_start,
         )
         self.bankroll -= size_usdc
         await self._persist_bankroll()
         return {"order_id": order_id, "status": "filled", "size_usdc": size_usdc, "price": price, "trade_id": trade_id}
 
-    async def _live_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
+    async def _live_limit_order(self, ticker, side, price, size_usdc, strategy, market_id,
+                                 minutes_to_start: Optional[float] = None):
         count = max(1, int(size_usdc / price))
         # Kalshi API: yes_price is ALWAYS the YES contract price in cents.
         # When buying NO at price X, yes_price = 100 - X (since NO cost = 100 - yes_price).
