@@ -1,6 +1,7 @@
 # V3 vs V31 가설 테스트 — Follow-up 가이드
 
 배포일: 2026-04-15
+Live 활성화: 2026-04-15 13:27 UTC (V31 3개 + mentions 기존)
 Spec: [docs/superpowers/specs/2026-04-15-v3-v31-hypothesis-test-design.md](../superpowers/specs/2026-04-15-v3-v31-hypothesis-test-design.md)
 Plan: [docs/superpowers/plans/2026-04-15-v3-v31-hypothesis-test.md](../superpowers/plans/2026-04-15-v3-v31-hypothesis-test.md)
 
