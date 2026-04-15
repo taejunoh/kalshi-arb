@@ -18,7 +18,9 @@ def _make(region="eu"):
     config.KALSHI_FEE_PER_CONTRACT = 0.07
     config.ODDS_API_KEY = "fake-key"
     config.ODDS_API_REGION = region
-    s = SportsTraderStrategy(config, MagicMock(), MagicMock())
+    om = MagicMock()
+    om._notifier = None  # prevent _check_quota auto-Mock await
+    s = SportsTraderStrategy(config, om, MagicMock())
     return s
 
 
