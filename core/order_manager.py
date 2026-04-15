@@ -303,13 +303,21 @@ class OrderManager:
                 f"LIVE order {strategy} {ticker}: balance ${balance:.2f} < required ${required:.2f}, skipping"
             )
             return {"status": "failed", "reason": "insufficient_balance"}
-        # Kalshi market order requires yes_price. For side=yes, yes_price is the
-        # max YES cost we'll pay. For side=no, Kalshi's yes_price = 100 - no_cost,
-        # so we convert the same way limit orders do. buy_max_cost adds a
-        # per-contract spend cap (2¢ slippage tolerance).
+        # Kalshi market order requires yes_price. We bake 2¢ slippage tolerance
+        # INTO the yes_price so a small ask drift doesn't reject the order:
+        # - side=yes: signal price 33 + 2 = yes_price 35 (accept fills ≤ 35)
+        # - side=no:  signal price 33 → NO cap 35 → yes_price = 100 - 35 = 65
+        #   (accept fills where yes_price ≥ 65, i.e., NO cost ≤ 35)
+        # buy_max_cost is left as a redundant per-contract safety cap.
         price_cents = int(round(price * 100))
-        yes_price_cents = price_cents if side == "yes" else (100 - price_cents)
-        buy_max_cost = price_cents + 2
+        slippage = 2
+        if side == "yes":
+            yes_price_cents = price_cents + slippage
+        else:
+            yes_price_cents = 100 - (price_cents + slippage)
+        # Clamp to Kalshi's valid range [1, 99]
+        yes_price_cents = max(1, min(99, yes_price_cents))
+        buy_max_cost = price_cents + slippage
         resp = self._client.place_market_order(
             ticker, side, count,
             yes_price_cents=yes_price_cents,
