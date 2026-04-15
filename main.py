@@ -22,7 +22,6 @@ from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
 from strategies.sports_underdog_v31 import SportsUnderdogV31Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
-from strategies.sports_liquidity_filtered import SportsLiquidityFilteredStrategy
 from strategies.sports_consolidated import SportsConsolidatedStrategy
 from strategies.econ_trader import EconTraderStrategy
 from core.settlement import SettlementChecker
@@ -83,9 +82,6 @@ class Bot:
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_v4_edge = SportsV4EdgeStrategy(
-            self.config, self.order_manager, self.kalshi_client
-        )
-        self.sports_liquidity_filtered = SportsLiquidityFilteredStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_consolidated = SportsConsolidatedStrategy(
@@ -218,7 +214,10 @@ class Bot:
             ("sports_underdog_v31", self.sports_underdog_v31),
             ("sports_pinnacle_edge", self.sports_pinnacle_edge),
             ("sports_v4_edge", self.sports_v4_edge),
-            ("sports_liquidity_filtered", self.sports_liquidity_filtered),
+            # sports_liquidity_filtered removed 2026-04-15 — $3 trade size made
+            # depth filter inert, 100% trade overlap with sports_midshot_v31
+            # (identical PnL $65.99/n=26). Experiment meaningless until live
+            # sizing. See /Users/taejunoh/.claude/plans/drifting-finding-galaxy.md
             ("sports_consolidated", self.sports_consolidated),
             ("econ_trader", self.econ_trader),
         ]
