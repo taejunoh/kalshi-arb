@@ -176,18 +176,35 @@ class KalshiClient:
             logger.error(f"Failed to get order book for {ticker}: {e}")
             return 0.0, 0.0
 
-    def place_market_order(self, ticker: str, side: str, count: int):
+    def place_market_order(self, ticker: str, side: str, count: int,
+                            buy_max_cost_cents: Optional[int] = None):
+        """Submit a market buy order. Kalshi requires `buy_max_cost` (max cents
+        PER CONTRACT willing to pay) for market orders — without it, 400.
+        Caller passes the signal price plus small slippage tolerance."""
+        payload = {
+            "ticker": ticker, "action": "buy", "side": side,
+            "count": count, "type": "market",
+        }
+        if buy_max_cost_cents is not None:
+            payload["buy_max_cost"] = int(buy_max_cost_cents)
         try:
-            data = self._post("/trade-api/v2/portfolio/orders", {
-                "ticker": ticker, "action": "buy", "side": side,
-                "count": count, "type": "market",
-            })
+            data = self._post("/trade-api/v2/portfolio/orders", payload)
             if data is None:
                 return None
-            logger.info(f"Market order placed: {side} {count}x {ticker}")
+            logger.info(f"Market order placed: {side} {count}x {ticker} "
+                        f"(max {buy_max_cost_cents}¢)")
             return data.get("order", {})
+        except httpx.HTTPStatusError as e:
+            # Surface Kalshi's error body so we know which field is wrong
+            body = ""
+            try:
+                body = e.response.text[:500]
+            except Exception:
+                pass
+            logger.error(f"Market order failed: {e} | body={body} | payload={payload}")
+            return None
         except Exception as e:
-            logger.error(f"Market order failed: {e}")
+            logger.error(f"Market order failed: {e} | payload={payload}")
             return None
 
     def place_limit_order(self, ticker: str, side: str, price_cents: int, count: int):

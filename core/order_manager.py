@@ -303,7 +303,11 @@ class OrderManager:
                 f"LIVE order {strategy} {ticker}: balance ${balance:.2f} < required ${required:.2f}, skipping"
             )
             return {"status": "failed", "reason": "insufficient_balance"}
-        resp = self._client.place_market_order(ticker, side, count)
+        # Market order buy_max_cost: ceil(signal price × 100) + 2¢ slippage tolerance.
+        # Tight enough to preserve edge (V31 avg $2.5/trade relies on clean fills)
+        # but not so tight the order silently misses on 1¢ drift.
+        buy_max_cost = int(round(price * 100)) + 2
+        resp = self._client.place_market_order(ticker, side, count, buy_max_cost_cents=buy_max_cost)
         if resp is None:
             return {"status": "failed"}
         order_id = resp.get("id", "unknown")
