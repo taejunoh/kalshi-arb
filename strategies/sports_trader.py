@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -20,6 +21,34 @@ _ODDS_CACHE: dict[tuple[str, str], tuple[float, list[dict], dict]] = {}
 # Default for unknown region falls back to the old 300s sweet spot.
 _ODDS_CACHE_TTL_BY_REGION: dict[str, float] = {"us": 60.0, "eu": 600.0}
 _ODDS_CACHE_TTL_DEFAULT = 300.0
+from core.pinnacle_age import PinnacleAgeTracker
+_PINNACLE_AGE = PinnacleAgeTracker()
+
+
+def _compute_pinnacle_payload_hash(games: list[dict]) -> Optional[str]:
+    """Deterministic hash of Pinnacle h2h outcomes across all games in a response.
+
+    Returns None if no game has Pinnacle odds. Game order-independent via sort.
+    """
+    entries = []
+    for g in games:
+        gid = g.get("id") or g.get("commence_time") or ""
+        for bm in g.get("bookmakers", []):
+            if bm.get("key") != "pinnacle":
+                continue
+            for mkt in bm.get("markets", []):
+                if mkt.get("key") != "h2h":
+                    continue
+                outs = tuple(
+                    (o.get("name"), o.get("price"))
+                    for o in mkt.get("outcomes", [])
+                )
+                entries.append((gid, outs))
+    if not entries:
+        return None
+    entries.sort()
+    payload = json.dumps(entries, sort_keys=True, default=str)
+    return hashlib.sha1(payload.encode()).hexdigest()[:12]
 
 
 def _now_utc() -> datetime:
@@ -197,6 +226,7 @@ class SportsTraderStrategy:
             cached_at, data, usage = hit
             if now - cached_at < _odds_cache_ttl(region):
                 self.odds_api_usage = usage
+                _PINNACLE_AGE.observe(region, sport, _compute_pinnacle_payload_hash(data))
                 return data
 
         try:
@@ -219,6 +249,8 @@ class SportsTraderStrategy:
                 data = resp.json()
                 self.odds_api_usage = usage
                 _ODDS_CACHE[cache_key] = (now, data, usage)
+                pinnacle_hash = _compute_pinnacle_payload_hash(data)
+                _PINNACLE_AGE.observe(region, sport, pinnacle_hash)
                 return data
         except Exception as e:
             logger.error(f"Odds API error for {sport}: {e}")

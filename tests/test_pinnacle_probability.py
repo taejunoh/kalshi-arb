@@ -79,3 +79,39 @@ def test_pinnacle_returns_none_for_empty_bookmakers():
     strat = _make_strategy()
     game = _game_with_books([])
     assert strat._pinnacle_probability(game) is None
+
+
+def test_pinnacle_payload_hash_stable_when_unchanged():
+    from strategies.sports_trader import _compute_pinnacle_payload_hash
+    games = [
+        {"id": "g1", "bookmakers": [
+            {"key": "pinnacle", "markets": [
+                {"key": "h2h", "outcomes": [{"name": "A", "price": 1.8},
+                                             {"name": "B", "price": 2.1}]}]}]},
+        {"id": "g2", "bookmakers": [
+            {"key": "pinnacle", "markets": [
+                {"key": "h2h", "outcomes": [{"name": "X", "price": 1.5},
+                                             {"name": "Y", "price": 2.6}]}]}]},
+    ]
+    h1 = _compute_pinnacle_payload_hash(games)
+    h2 = _compute_pinnacle_payload_hash(list(reversed(games)))
+    assert h1 == h2
+
+
+def test_pinnacle_payload_hash_changes_on_price_move():
+    from strategies.sports_trader import _compute_pinnacle_payload_hash
+    games = [{"id": "g1", "bookmakers": [
+        {"key": "pinnacle", "markets": [
+            {"key": "h2h", "outcomes": [{"name": "A", "price": 1.8},
+                                         {"name": "B", "price": 2.1}]}]}]}]
+    h1 = _compute_pinnacle_payload_hash(games)
+    games[0]["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = 1.85
+    h2 = _compute_pinnacle_payload_hash(games)
+    assert h1 != h2
+
+
+def test_pinnacle_payload_hash_none_when_no_pinnacle():
+    from strategies.sports_trader import _compute_pinnacle_payload_hash
+    games = [{"id": "g1", "bookmakers": [
+        {"key": "fanduel", "markets": [{"key": "h2h", "outcomes": []}]}]}]
+    assert _compute_pinnacle_payload_hash(games) is None
