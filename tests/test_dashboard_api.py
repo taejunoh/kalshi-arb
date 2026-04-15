@@ -281,3 +281,56 @@ async def test_strategy_status_mode_live_for_live_strategies(db):
     assert data["mentions_trader"]["mode"] == "LIVE"
     assert data["mentions_trader"]["active"] is True
     assert data["sports_midshot"]["mode"] == "PAPER"
+
+
+@pytest.mark.asyncio
+async def test_performance_splits_sports_paper_pre_live(tmp_path):
+    database = Database(str(tmp_path / "t.db"))
+    await database.initialize()
+    # Pre-game winner
+    await database.record_trade(
+        strategy="sports_longshot", market_id="KXMLBGAME-x", direction="yes",
+        price=0.3, size=2.0, fee=0.07, status="paper_settled", pnl=4.0,
+        minutes_to_start=45.0,
+    )
+    # Pre-game loser
+    await database.record_trade(
+        strategy="sports_longshot", market_id="KXMLBGAME-y", direction="yes",
+        price=0.3, size=2.0, fee=0.07, status="paper_settled", pnl=-2.0,
+        minutes_to_start=120.0,
+    )
+    # Live loser
+    await database.record_trade(
+        strategy="sports_longshot", market_id="KXMLBGAME-z", direction="yes",
+        price=0.3, size=2.0, fee=0.07, status="paper_settled", pnl=-2.0,
+        minutes_to_start=-30.0,
+    )
+    # Untagged (still counts in top-level total only)
+    await database.record_trade(
+        strategy="sports_longshot", market_id="KXMLBGAME-w", direction="yes",
+        price=0.3, size=2.0, fee=0.07, status="paper_settled", pnl=-2.0,
+    )
+    # Non-sports strategy should NOT get pre/live keys
+    await database.record_trade(
+        strategy="market_maker", market_id="m1", direction="yes",
+        price=0.5, size=5.0, fee=0.07, status="paper_filled", pnl=0.0,
+    )
+    app = create_app(database, bankroll=1000.0)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.get("/api/performance")
+    data = resp.json()
+    longshot_paper = data["sports_longshot"]["paper"]
+    assert longshot_paper["trade_count"] == 4          # total unchanged
+    assert longshot_paper["pre"]["trade_count"] == 2
+    assert longshot_paper["pre"]["total_pnl"] == pytest.approx(2.0)
+    assert longshot_paper["pre"]["wins"] == 1
+    assert longshot_paper["pre"]["losses"] == 1
+    assert longshot_paper["live"]["trade_count"] == 1
+    assert longshot_paper["live"]["total_pnl"] == pytest.approx(-2.0)
+    assert longshot_paper["live"]["wins"] == 0
+    assert longshot_paper["live"]["losses"] == 1
+    # Non-sports: no pre/live keys
+    mm_paper = data["market_maker"]["paper"]
+    assert "pre" not in mm_paper
+    assert "live" not in mm_paper

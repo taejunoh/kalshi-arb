@@ -74,7 +74,18 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             return {"trade_count": 0, "total_pnl": 0.0, "total_size": 0.0, "wins": 0, "losses": 0,
                     "clv_positive_rate": 0.0}
 
-        strategies = {s: {"live": empty_stats(), "paper": empty_stats()} for s in all_strategy_names}
+        def empty_split():
+            return {"trade_count": 0, "total_pnl": 0.0, "wins": 0, "losses": 0}
+
+        SPORTS_PREFIX = "sports_"
+
+        strategies = {}
+        for s in all_strategy_names:
+            paper = empty_stats()
+            if s.startswith(SPORTS_PREFIX):
+                paper["pre"] = empty_split()
+                paper["live"] = empty_split()
+            strategies[s] = {"live": empty_stats(), "paper": paper}
 
         # Paper bucket — from local DB trades (only paper_* statuses)
         for trade in all_trades:
@@ -83,16 +94,32 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 continue
             strat = trade["strategy"]
             if strat not in strategies:
-                strategies[strat] = {"live": empty_stats(), "paper": empty_stats()}
+                paper = empty_stats()
+                if strat.startswith(SPORTS_PREFIX):
+                    paper["pre"] = empty_split()
+                    paper["live"] = empty_split()
+                strategies[strat] = {"live": empty_stats(), "paper": paper}
             bucket = strategies[strat]["paper"]
-            bucket["trade_count"] += 1
-            bucket["total_pnl"] += trade.get("pnl", 0) or 0
-            bucket["total_size"] += trade.get("size", 0) or 0
             pnl = trade.get("pnl", 0) or 0
+            size = trade.get("size", 0) or 0
+            bucket["trade_count"] += 1
+            bucket["total_pnl"] += pnl
+            bucket["total_size"] += size
             if pnl > 0:
                 bucket["wins"] += 1
             elif pnl < 0:
                 bucket["losses"] += 1
+            # Sports pre/live split
+            if strat.startswith(SPORTS_PREFIX):
+                mts = trade.get("minutes_to_start")
+                if mts is not None:
+                    sub = bucket["pre"] if mts > 0 else bucket["live"]
+                    sub["trade_count"] += 1
+                    sub["total_pnl"] += pnl
+                    if pnl > 0:
+                        sub["wins"] += 1
+                    elif pnl < 0:
+                        sub["losses"] += 1
 
         # Live bucket — from Kalshi API (positions for open, settlements for closed)
         if kalshi_client:
