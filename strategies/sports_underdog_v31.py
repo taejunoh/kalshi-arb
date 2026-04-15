@@ -12,3 +12,4 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     TRADED_TICKERS_FILE = "data/sports_underdog_v31_tickers.json"
     STRATEGY_NAME = "sports_underdog_v31"
     REGION_OVERRIDE = "eu"
+    MIN_DEPTH_USDC = 5.0

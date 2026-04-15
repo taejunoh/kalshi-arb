@@ -141,6 +141,7 @@ class SportsTraderStrategy:
     STRATEGY_NAME = "sports_trader"
     REGION_OVERRIDE: Optional[str] = None  # subclass can pin a specific Odds API region
     SCAN_INTERVAL_OVERRIDE: Optional[float] = None  # subclass can override scan cadence (us retail books tick faster)
+    MIN_DEPTH_USDC = 0.0  # Subclasses override to enforce orderbook depth before market order
 
     def __init__(self, config, order_manager, kalshi_client):
         self.config = config
@@ -674,6 +675,15 @@ class SportsTraderStrategy:
                     logger.info(
                         f"[{self.STRATEGY_NAME}] {ticker}: signal valid but size "
                         f"${size:.2f} < $1.00 (bankroll=${self._order_manager.bankroll:.2f}), skip"
+                    )
+                    continue
+
+                if self.MIN_DEPTH_USDC > 0 and not self._has_sufficient_depth(
+                    ticker, signal["side"], self.MIN_DEPTH_USDC
+                ):
+                    logger.debug(
+                        f"[{self.STRATEGY_NAME}] {ticker}: depth < ${self.MIN_DEPTH_USDC:.0f} "
+                        f"on {signal['side']}, skip"
                     )
                     continue
 

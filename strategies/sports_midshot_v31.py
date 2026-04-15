@@ -12,3 +12,4 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     TRADED_TICKERS_FILE = "data/sports_midshot_v31_tickers.json"
     STRATEGY_NAME = "sports_midshot_v31"
     REGION_OVERRIDE = "eu"
+    MIN_DEPTH_USDC = 5.0

@@ -15,3 +15,4 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
     TRADED_TICKERS_FILE = "data/sports_longshot_v31_tickers.json"
     STRATEGY_NAME = "sports_longshot_v31"
     REGION_OVERRIDE = "eu"
+    MIN_DEPTH_USDC = 5.0
