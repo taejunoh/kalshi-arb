@@ -70,6 +70,7 @@ async def test_live_order_extracts_realized_from_kalshi_response(tmp_path):
     config.MAX_DAILY_LOSS_LIVE = 200
     config.MAX_CONSECUTIVE_LOSSES = 1000
     client = MagicMock()
+    client.get_balance = MagicMock(return_value=100.0)
     # Kalshi market-order response with realized fill info
     client.place_market_order = MagicMock(return_value={
         "id": "ord123",
@@ -104,6 +105,7 @@ async def test_live_order_fallback_when_fill_fields_missing(tmp_path):
     config.MAX_DAILY_LOSS_LIVE = 200
     config.MAX_CONSECUTIVE_LOSSES = 1000
     client = MagicMock()
+    client.get_balance = MagicMock(return_value=100.0)
     # Response without realized fields
     client.place_market_order = MagicMock(return_value={"id": "ord123", "status": "filled"})
     om = OrderManager(config, kalshi_client=client, database=db, notifier=None)

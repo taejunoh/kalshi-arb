@@ -264,11 +264,22 @@ class OrderManager:
     async def _live_market_order(self, ticker, side, size_usdc, price, strategy, market_id,
                                   minutes_to_start: Optional[float] = None):
         count = max(1, int(size_usdc / price))
+        fee = self.config.estimate_fee(count, int(price * 100))
+        # Real balance guard — prevent Kalshi from rejecting order + error spam
+        balance = self._client.get_balance()
+        if balance is None:
+            logger.warning(f"LIVE order {strategy} {ticker}: balance check failed (API error), skipping")
+            return {"status": "failed", "reason": "balance_check_failed"}
+        required = size_usdc + fee
+        if balance < required:
+            logger.warning(
+                f"LIVE order {strategy} {ticker}: balance ${balance:.2f} < required ${required:.2f}, skipping"
+            )
+            return {"status": "failed", "reason": "insufficient_balance"}
         resp = self._client.place_market_order(ticker, side, count)
         if resp is None:
             return {"status": "failed"}
         order_id = resp.get("id", "unknown")
-        fee = self.config.estimate_fee(count, int(price * 100))
         # Extract realized fill price from Kalshi response if available
         realized = None
         fill_cost = resp.get("taker_fill_cost")
