@@ -150,12 +150,20 @@ class MentionsTraderStrategy:
 
         now = time.time()
         trades_attempted = 0
+        skipped_cooldown = 0
+        skipped_already_traded = 0
+        skipped_no_parse = 0
+        skipped_no_freq = 0
+        skipped_no_price = 0
+        skipped_no_edge = 0
 
         for market in markets:
             ticker = market["ticker"]
             if now - self._evaluated.get(ticker, 0) < 300:
+                skipped_cooldown += 1
                 continue
             if ticker in self._traded_tickers:
+                skipped_already_traded += 1
                 continue
             self._evaluated[ticker] = now
 
@@ -166,19 +174,23 @@ class MentionsTraderStrategy:
                     title = market.get("title", "")
                     parsed = self.parse_market_title(title)
                 if parsed is None:
+                    skipped_no_parse += 1
                     continue
                 person, keyword = parsed
 
                 freq = await self._data_provider.get_mention_frequency(person, keyword)
                 if freq is None:
+                    skipped_no_freq += 1
                     continue
 
                 yes_price, no_price = self._client.get_market_prices(ticker)
                 if yes_price is None:
+                    skipped_no_price += 1
                     continue
 
                 signal = self.evaluate(yes_price, freq)
                 if signal is None:
+                    skipped_no_edge += 1
                     continue
 
                 # Aggressive sizing: use edge-based percentage instead of Kelly
@@ -208,6 +220,9 @@ class MentionsTraderStrategy:
         if now - self._last_summary_time >= 60:
             logger.info(
                 f"[MENTIONS] Found {len(markets)} mention markets, "
-                f"{trades_attempted} trades attempted"
+                f"{trades_attempted} trades attempted "
+                f"(skip: cooldown={skipped_cooldown}, already_traded={skipped_already_traded}, "
+                f"no_parse={skipped_no_parse}, no_freq={skipped_no_freq}, "
+                f"no_price={skipped_no_price}, no_edge={skipped_no_edge})"
             )
             self._last_summary_time = now
