@@ -590,9 +590,11 @@ class SportsTraderStrategy:
                 # Mark BEFORE order to prevent duplicates even if order/DB fails
                 self._traded_tickers[ticker] = now
                 self._save_traded_tickers()
+                minutes_to_start = _commence_time_to_minutes(matched_game.get("commence_time"))
                 order_result = await self._order_manager.market_order(
                     ticker=ticker, side=signal["side"], size_usdc=size,
                     price=limit_price, strategy=self.STRATEGY_NAME, market_id=ticker,
+                    minutes_to_start=minutes_to_start,
                 )
                 # Record entry CLV snapshot (Pinnacle prob for the YES-team side, if available)
                 pin_prob_for_side = None
