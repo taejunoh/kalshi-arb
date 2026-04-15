@@ -127,8 +127,7 @@ class OrderManager:
                 logger.debug(f"Insufficient Kalshi balance: ${real_balance:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
                 return {"status": "skipped", "reason": "insufficient_balance"}
             logger.info(f"[LIVE] {strategy} LIMIT {side} {ticker} ${size_usdc:.2f} @ {price:.3f}")
-            result = await self._live_limit_order(ticker, side, price, size_usdc, strategy, market_id,
-                                                  minutes_to_start=minutes_to_start)
+            result = await self._live_limit_order(ticker, side, price, size_usdc, strategy, market_id)
             if self._notifier and result.get("status") != "failed":
                 await self._notifier.send(
                     f"📊 <b>LIVE Order</b>\n"
@@ -145,8 +144,7 @@ class OrderManager:
         if self.bankroll < size_usdc:
             logger.warning(f"Insufficient bankroll: ${self.bankroll:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
             return {"status": "skipped", "reason": "insufficient_bankroll"}
-        return await self._paper_limit_order(ticker, side, price, size_usdc, strategy, market_id,
-                                              minutes_to_start=minutes_to_start)
+        return await self._paper_limit_order(ticker, side, price, size_usdc, strategy, market_id)
 
     async def cancel_order(self, order_id):
         """Cancel an order. If the order was still open (not yet filled),
@@ -205,8 +203,12 @@ class OrderManager:
         logger.info(f"[PAPER] Market {side} | {strategy} | ${size_usdc:.2f} @ {price:.3f} | bankroll: ${self.bankroll:.2f}")
         return {"order_id": order_id, "status": "paper_filled", "size_usdc": size_usdc, "price": price, "trade_id": trade_id}
 
-    async def _paper_limit_order(self, ticker, side, price, size_usdc, strategy, market_id,
-                                  minutes_to_start: Optional[float] = None):
+    # NOTE: limit orders do not currently participate in sports pre/live tagging.
+    # The `record_trade` call happens later in settlement.simulate_paper_fills,
+    # which has no access to commence_time. If a sports strategy ever enters via
+    # limit_order, persist minutes_to_start on the orders row so settlement can
+    # forward it.
+    async def _paper_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
         order_id = f"paper_{uuid.uuid4().hex[:8]}"
         count = max(1, int(size_usdc / price))
         fee = self.config.estimate_fee(count, int(price * 100))
@@ -236,8 +238,7 @@ class OrderManager:
         await self._persist_bankroll()
         return {"order_id": order_id, "status": "filled", "size_usdc": size_usdc, "price": price, "trade_id": trade_id}
 
-    async def _live_limit_order(self, ticker, side, price, size_usdc, strategy, market_id,
-                                 minutes_to_start: Optional[float] = None):
+    async def _live_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
         count = max(1, int(size_usdc / price))
         # Kalshi API: yes_price is ALWAYS the YES contract price in cents.
         # When buying NO at price X, yes_price = 100 - X (since NO cost = 100 - yes_price).
