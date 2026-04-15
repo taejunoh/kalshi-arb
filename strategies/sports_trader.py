@@ -214,6 +214,44 @@ class SportsTraderStrategy:
             return self.REGION_OVERRIDE
         return getattr(self.config, "ODDS_API_REGION", "eu")
 
+    async def _dual_region_consensus(
+        self, sport: str, game: dict
+    ) -> tuple[Optional[float], Optional[float], Optional[float], Optional[int]]:
+        """Return (us_consensus, eu_consensus, pinnacle_prob, pinnacle_age_s).
+
+        Pulls both regions (cached when possible). Pinnacle data is pulled
+        from the eu response (eu regions include Pinnacle).
+        """
+        current_region = self._get_odds_region()
+        other_region = "eu" if current_region == "us" else "us"
+
+        current_data = await self._fetch_odds(sport)
+        self.REGION_OVERRIDE, saved = other_region, self.REGION_OVERRIDE
+        try:
+            other_data = await self._fetch_odds(sport)
+        finally:
+            self.REGION_OVERRIDE = saved
+
+        us_data = current_data if current_region == "us" else other_data
+        eu_data = current_data if current_region == "eu" else other_data
+
+        us_game = next((g for g in us_data if g.get("id") == game.get("id")), None) if us_data else None
+        eu_game = next((g for g in eu_data if g.get("id") == game.get("id")), None) if eu_data else None
+
+        _us_cons = self._consensus_probability(us_game) if us_game else None
+        _eu_cons = self._consensus_probability(eu_game) if eu_game else None
+        _pin = self._pinnacle_probability(eu_game) if eu_game else None
+
+        # Extract home_prob float for DB storage (single reference point).
+        us_prob: Optional[float] = _us_cons["home_prob"] if _us_cons else None
+        eu_prob: Optional[float] = _eu_cons["home_prob"] if _eu_cons else None
+        pinnacle_prob: Optional[float] = _pin["home_prob"] if _pin else None
+
+        eu_hash = _compute_pinnacle_payload_hash(eu_data) if eu_data else None
+        pinnacle_age_s = _PINNACLE_AGE.observe("eu", sport, eu_hash)
+
+        return us_prob, eu_prob, pinnacle_prob, pinnacle_age_s
+
     async def _fetch_odds(self, sport: str) -> list[dict]:
         """Fetch odds from The Odds API, shared-cached by (region, sport)."""
         if not self._odds_api_key:
@@ -297,20 +335,43 @@ class SportsTraderStrategy:
             return None
         return 1.0 / decimal_odds
 
-    async def _record_entry_clv(self, order_result: dict, yes_ask: float, no_ask: float,
-                                 pinnacle_prob: Optional[float]) -> None:
-        """Record 'entry' CLV snapshot after a successful order. No-op on skip/failure."""
-        if not order_result:
-            return
-        if order_result.get("status") not in ("paper_filled", "filled"):
-            return
-        trade_id = order_result.get("trade_id")
-        if trade_id is None:
-            return
+    async def _record_entry_clv(
+        self,
+        trade_id: int,
+        ticker: str,
+        game: dict,
+        sport: str,
+        pinnacle_prob: Optional[float],
+    ):
+        """Record entry snapshot with parallel us/eu consensus + freshness."""
+        try:
+            yes_ask, no_ask = self._client.get_market_prices(ticker)
+        except Exception:
+            yes_ask, no_ask = None, None
+        kalshi_yes_bid, kalshi_yes_ask = None, None
+        get_top = getattr(self._client, "get_top_of_book", None)
+        if callable(get_top):
+            try:
+                tob = get_top(ticker)
+                if tob and len(tob) >= 2:
+                    kalshi_yes_bid, kalshi_yes_ask = tob[0], tob[1]
+            except Exception:
+                pass
+        if kalshi_yes_ask is None:
+            kalshi_yes_ask = yes_ask
+        us_prob, eu_prob, _pin_dual, age_s = await self._dual_region_consensus(sport, game)
         try:
             await self._order_manager._db.record_clv_snapshot(
-                trade_id=trade_id, snapshot_at="entry",
-                yes_ask=yes_ask, no_ask=no_ask, pinnacle_prob=pinnacle_prob,
+                trade_id=trade_id,
+                snapshot_at="entry",
+                yes_ask=yes_ask,
+                no_ask=no_ask,
+                pinnacle_prob=pinnacle_prob,
+                us_consensus_prob=us_prob,
+                eu_consensus_prob=eu_prob,
+                pinnacle_age_s=age_s,
+                kalshi_yes_bid=kalshi_yes_bid,
+                kalshi_yes_ask=kalshi_yes_ask,
             )
         except Exception as e:
             logger.warning(f"[SPORTS] CLV entry snapshot failed for trade {trade_id}: {e}")
@@ -632,9 +693,16 @@ class SportsTraderStrategy:
                 pin_prob_for_side = None
                 if pinnacle is not None:
                     pin_prob_for_side = pinnacle["home_prob"] if is_yes_home else pinnacle["away_prob"]
-                await self._record_entry_clv(
-                    order_result or {}, yes_ask=ya, no_ask=na, pinnacle_prob=pin_prob_for_side,
-                )
+                _entry_trade_id = (order_result or {}).get("trade_id")
+                _entry_status = (order_result or {}).get("status")
+                if _entry_trade_id is not None and _entry_status in ("paper_filled", "filled"):
+                    await self._record_entry_clv(
+                        trade_id=_entry_trade_id,
+                        ticker=ticker,
+                        game=matched_game,
+                        sport=sport_map.get(series, series),
+                        pinnacle_prob=pin_prob_for_side,
+                    )
                 trades_attempted += 1
                 traded_games.add(game_id)
 

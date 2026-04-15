@@ -1,9 +1,12 @@
 """Unit tests for sports entry CLV snapshot helper."""
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from strategies.sports_trader import SportsTraderStrategy
+
+
+_GAME = {"id": "g1", "home_team": "H", "away_team": "A", "bookmakers": []}
 
 
 def _make_strategy() -> SportsTraderStrategy:
@@ -16,42 +19,66 @@ def _make_strategy() -> SportsTraderStrategy:
     order_mgr._db = MagicMock()
     order_mgr._db.record_clv_snapshot = AsyncMock()
     client = MagicMock()
+    client.get_market_prices = MagicMock(return_value=(0.45, 0.57))
     return SportsTraderStrategy(config, order_mgr, client)
+
+
+def _patch_dual(strat, us_prob=0.50, eu_prob=0.50, pin_prob=0.48, age_s=120):
+    """Patch _dual_region_consensus to avoid real network calls."""
+    async def _fake(sport, game):
+        return us_prob, eu_prob, pin_prob, age_s
+    strat._dual_region_consensus = _fake
 
 
 @pytest.mark.asyncio
 async def test_record_entry_clv_calls_db_with_trade_id():
     strat = _make_strategy()
-    order_result = {"status": "paper_filled", "trade_id": 42, "size_usdc": 3.0}
-    await strat._record_entry_clv(order_result, yes_ask=0.45, no_ask=0.57, pinnacle_prob=0.50)
-    strat._order_manager._db.record_clv_snapshot.assert_awaited_once_with(
-        trade_id=42, snapshot_at="entry", yes_ask=0.45, no_ask=0.57, pinnacle_prob=0.50,
+    _patch_dual(strat)
+    await strat._record_entry_clv(
+        trade_id=42, ticker="KXNBAGAME-26APR01DENMIA-DEN",
+        game=_GAME, sport="basketball_nba", pinnacle_prob=0.50,
     )
-
-
-@pytest.mark.asyncio
-async def test_record_entry_clv_skips_when_order_failed():
-    strat = _make_strategy()
-    order_result = {"status": "skipped", "reason": "insufficient_bankroll"}
-    await strat._record_entry_clv(order_result, yes_ask=0.45, no_ask=0.57, pinnacle_prob=0.50)
-    strat._order_manager._db.record_clv_snapshot.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_record_entry_clv_skips_when_trade_id_missing():
-    """Live orders that return status=failed lack trade_id — skip silently."""
-    strat = _make_strategy()
-    order_result = {"status": "paper_filled"}  # no trade_id
-    await strat._record_entry_clv(order_result, yes_ask=0.45, no_ask=0.57, pinnacle_prob=None)
-    strat._order_manager._db.record_clv_snapshot.assert_not_awaited()
+    strat._order_manager._db.record_clv_snapshot.assert_awaited_once_with(
+        trade_id=42, snapshot_at="entry",
+        yes_ask=0.45, no_ask=0.57, pinnacle_prob=0.50,
+        us_consensus_prob=0.50, eu_consensus_prob=0.50,
+        pinnacle_age_s=120,
+        kalshi_yes_bid=None, kalshi_yes_ask=0.45,
+    )
 
 
 @pytest.mark.asyncio
 async def test_record_entry_clv_allows_null_pinnacle():
     """If Pinnacle absent for this game, snapshot still records with pinnacle_prob=None."""
     strat = _make_strategy()
-    order_result = {"status": "paper_filled", "trade_id": 7, "size_usdc": 3.0}
-    await strat._record_entry_clv(order_result, yes_ask=0.30, no_ask=0.72, pinnacle_prob=None)
+    _patch_dual(strat, pin_prob=None)
+    await strat._record_entry_clv(
+        trade_id=7, ticker="KXNBAGAME-26APR01DENMIA-DEN",
+        game=_GAME, sport="basketball_nba", pinnacle_prob=None,
+    )
     strat._order_manager._db.record_clv_snapshot.assert_awaited_once_with(
-        trade_id=7, snapshot_at="entry", yes_ask=0.30, no_ask=0.72, pinnacle_prob=None,
+        trade_id=7, snapshot_at="entry",
+        yes_ask=0.45, no_ask=0.57, pinnacle_prob=None,
+        us_consensus_prob=0.50, eu_consensus_prob=0.50,
+        pinnacle_age_s=120,
+        kalshi_yes_bid=None, kalshi_yes_ask=0.45,
+    )
+
+
+@pytest.mark.asyncio
+async def test_record_entry_clv_uses_get_top_of_book_when_available():
+    """If client has get_top_of_book, kalshi_yes_bid/ask are populated from it."""
+    strat = _make_strategy()
+    strat._client.get_top_of_book = MagicMock(return_value=(0.44, 0.46))
+    _patch_dual(strat)
+    await strat._record_entry_clv(
+        trade_id=99, ticker="KXNBAGAME-26APR01DENMIA-DEN",
+        game=_GAME, sport="basketball_nba", pinnacle_prob=0.50,
+    )
+    strat._order_manager._db.record_clv_snapshot.assert_awaited_once_with(
+        trade_id=99, snapshot_at="entry",
+        yes_ask=0.45, no_ask=0.57, pinnacle_prob=0.50,
+        us_consensus_prob=0.50, eu_consensus_prob=0.50,
+        pinnacle_age_s=120,
+        kalshi_yes_bid=0.44, kalshi_yes_ask=0.46,
     )
