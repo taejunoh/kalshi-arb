@@ -156,3 +156,31 @@ async def test_clv_positive_rate_skips_trades_without_closing(db):
     # no closing
     rate = await db.get_clv_positive_rate("sports_pinnacle_edge", days=30)
     assert rate == 0.0
+
+
+@pytest.mark.asyncio
+async def test_record_clv_snapshot_writes_new_instrumentation_fields(tmp_path):
+    from core.database import Database
+    import aiosqlite
+    db = Database(str(tmp_path / "t.db"))
+    await db.initialize()
+    trade_id = await db.record_trade(
+        "sports_longshot_v31", "KX-GAME-TEST", "yes", 0.45, 10.0, 0.0, "paper_filled"
+    )
+    await db.record_clv_snapshot(
+        trade_id=trade_id, snapshot_at="entry",
+        yes_ask=0.46, no_ask=0.54, pinnacle_prob=0.40,
+        us_consensus_prob=0.43, eu_consensus_prob=0.40,
+        pinnacle_age_s=42, kalshi_yes_bid=0.45, kalshi_yes_ask=0.46,
+    )
+    async with aiosqlite.connect(db.db_path) as conn:
+        conn.row_factory = aiosqlite.Row
+        cur = await conn.execute(
+            "SELECT * FROM clv_snapshots WHERE trade_id=?", (trade_id,)
+        )
+        row = await cur.fetchone()
+    assert row["us_consensus_prob"] == 0.43
+    assert row["eu_consensus_prob"] == 0.40
+    assert row["pinnacle_age_s"] == 42
+    assert row["kalshi_yes_bid"] == 0.45
+    assert row["kalshi_yes_ask"] == 0.46

@@ -151,16 +151,30 @@ class Database:
             )
             await conn.commit()
 
-    async def record_clv_snapshot(self, trade_id: int, snapshot_at: str,
-                                   yes_ask: Optional[float], no_ask: Optional[float],
-                                   pinnacle_prob: Optional[float] = None):
+    async def record_clv_snapshot(
+        self,
+        trade_id: int,
+        snapshot_at: str,
+        yes_ask: Optional[float],
+        no_ask: Optional[float],
+        pinnacle_prob: Optional[float] = None,
+        us_consensus_prob: Optional[float] = None,
+        eu_consensus_prob: Optional[float] = None,
+        pinnacle_age_s: Optional[int] = None,
+        kalshi_yes_bid: Optional[float] = None,
+        kalshi_yes_ask: Optional[float] = None,
+    ):
         now = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.db_path) as conn:
             await conn.execute(
                 """INSERT INTO clv_snapshots
-                   (trade_id, snapshot_at, snapshot_time, yes_ask, no_ask, pinnacle_prob)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (trade_id, snapshot_at, now, yes_ask, no_ask, pinnacle_prob),
+                   (trade_id, snapshot_at, snapshot_time, yes_ask, no_ask, pinnacle_prob,
+                    us_consensus_prob, eu_consensus_prob, pinnacle_age_s,
+                    kalshi_yes_bid, kalshi_yes_ask)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (trade_id, snapshot_at, now, yes_ask, no_ask, pinnacle_prob,
+                 us_consensus_prob, eu_consensus_prob, pinnacle_age_s,
+                 kalshi_yes_bid, kalshi_yes_ask),
             )
             await conn.commit()
 
