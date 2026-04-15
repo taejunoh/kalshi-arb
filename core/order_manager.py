@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 import uuid
 from typing import Optional
@@ -24,7 +25,17 @@ class OrderManager:
         max_size = self.bankroll * self.config.MAX_SINGLE_TRADE_PCT
         return min(kelly_size, max_size)
 
+    def is_kill_switch_active(self) -> bool:
+        """True if /tmp/kalshi_stop exists. Emergency halt for all new entries.
+        Existing positions still settle. Override path via KILL_SWITCH_FILE env."""
+        path = os.environ.get("KILL_SWITCH_FILE", "/tmp/kalshi_stop")
+        return os.path.exists(path)
+
     def is_circuit_breaker_active(self, strategy: Optional[str] = None) -> bool:
+        # Kill-switch file: instant halt for all new entries across strategies.
+        # Existing open positions continue to settle via the settlement task.
+        if self.is_kill_switch_active():
+            return True
         # NOTE: consecutive-loss pause is intentionally GLOBAL across paper+live.
         # 5 consecutive losses anywhere pauses ALL entries for 15min. Rationale:
         # a losing streak is likely due to a systemic signal issue (bad data,
