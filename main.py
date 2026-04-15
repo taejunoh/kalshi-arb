@@ -43,9 +43,12 @@ class Bot:
         self.notifier = TelegramNotifier(
             self.config.TELEGRAM_BOT_TOKEN, self.config.TELEGRAM_CHAT_ID
         )
-        _err_handler = TelegramErrorHandler(self.notifier)
-        _err_handler.setLevel(logging.ERROR)
-        logging.getLogger().addHandler(_err_handler)
+        # TelegramErrorHandler disabled 2026-04-15 — caused silent startup hang
+        # (post-setup_logger, no Bot-starting log, scan loops never run). Needs
+        # diagnosis before re-enable. See docs/future-work/telegram-error-handler.md
+        # _err_handler = TelegramErrorHandler(self.notifier)
+        # _err_handler.setLevel(logging.ERROR)
+        # logging.getLogger().addHandler(_err_handler)
         self.order_manager = OrderManager(self.config, self.kalshi_client, self.db, self.notifier)
         self.maker_preorder = MakerPreorderStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client
