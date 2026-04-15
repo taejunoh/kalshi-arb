@@ -71,43 +71,55 @@ def summarize(data: list) -> dict:
     }
 
 
+async def sample_once(api_key: str, tick: int = 1) -> list:
+    """One pass over (region, sport) matrix. Returns list of records
+    identical in shape to the jsonl rows. Caller handles appending."""
+    rows: list = []
+    ts = datetime.now(timezone.utc).isoformat()
+    async with httpx.AsyncClient(timeout=15) as client:
+        for region in REGIONS:
+            for sport in SPORTS:
+                try:
+                    resp = await client.get(
+                        f"https://api.the-odds-api.com/v4/sports/{sport}/odds",
+                        params={
+                            "apiKey": api_key,
+                            "regions": region,
+                            "markets": "h2h",
+                            "oddsFormat": "decimal",
+                        },
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    rec = {
+                        "ts": ts,
+                        "tick": tick,
+                        "region": region,
+                        "sport": sport,
+                        "remaining": resp.headers.get("x-requests-remaining", "?"),
+                        **summarize(data),
+                    }
+                    rows.append(rec)
+                except Exception as e:
+                    print(f"[ERR] {region}/{sport}: {e}", flush=True)
+    return rows
+
+
 async def collect(api_key: str, duration_min: int):
     os.makedirs("data", exist_ok=True)
-    async with httpx.AsyncClient(timeout=15) as client:
-        deadline = datetime.now(timezone.utc).timestamp() + duration_min * 60
-        tick_num = 0
-        while datetime.now(timezone.utc).timestamp() < deadline:
-            tick_num += 1
-            ts = datetime.now(timezone.utc).isoformat()
-            for region in REGIONS:
-                for sport in SPORTS:
-                    try:
-                        resp = await client.get(
-                            f"https://api.the-odds-api.com/v4/sports/{sport}/odds",
-                            params={
-                                "apiKey": api_key,
-                                "regions": region,
-                                "markets": "h2h",
-                                "oddsFormat": "decimal",
-                            },
-                        )
-                        resp.raise_for_status()
-                        data = resp.json()
-                        rec = {
-                            "ts": ts,
-                            "tick": tick_num,
-                            "region": region,
-                            "sport": sport,
-                            "remaining": resp.headers.get("x-requests-remaining", "?"),
-                            **summarize(data),
-                        }
-                        with open(OUT_FILE, "a") as f:
-                            f.write(json.dumps(rec) + "\n")
-                    except Exception as e:
-                        print(f"[ERR] {region}/{sport}: {e}", flush=True)
-            print(f"[tick {tick_num}] {ts[11:19]} done. remaining: "
-                  f"{resp.headers.get('x-requests-remaining', '?')}", flush=True)
-            await asyncio.sleep(POLL_INTERVAL_SEC)
+    deadline = datetime.now(timezone.utc).timestamp() + duration_min * 60
+    tick_num = 0
+    while datetime.now(timezone.utc).timestamp() < deadline:
+        tick_num += 1
+        rows = await sample_once(api_key, tick=tick_num)
+        remaining = "?"
+        for rec in rows:
+            remaining = rec.get("remaining", "?")
+            with open(OUT_FILE, "a") as f:
+                f.write(json.dumps(rec) + "\n")
+        ts = rows[0]["ts"] if rows else datetime.now(timezone.utc).isoformat()
+        print(f"[tick {tick_num}] {ts[11:19]} done. remaining: {remaining}", flush=True)
+        await asyncio.sleep(POLL_INTERVAL_SEC)
 
 
 def _build_report(log_file: str) -> str:

@@ -145,6 +145,7 @@ class Bot:
             asyncio.create_task(self._settlement_check_task()),
             asyncio.create_task(self._clv_tracker_task()),
             asyncio.create_task(self._daily_reset_task()),
+            asyncio.create_task(self._freshness_sample_loop()),
         ]
 
         try:
@@ -281,6 +282,26 @@ class Bot:
             # Reset daily counters
             self.order_manager.reset_daily()
             logger.info(f"Daily reset complete. Yesterday PnL: ${daily_pnl:.2f}")
+
+    async def _freshness_sample_loop(self):
+        """Capture one Odds API freshness sample every 5 minutes."""
+        import json as _json
+        import os
+        from scripts.measure_odds_freshness import sample_once
+        out_path = os.path.join(os.path.dirname(__file__), "data", "odds_freshness_log.jsonl")
+        tick = 0
+        while self._running:
+            tick += 1
+            try:
+                api_key = self.config.ODDS_API_KEY
+                if api_key:
+                    rows = await sample_once(api_key, tick=tick)
+                    with open(out_path, "a") as f:
+                        for r in rows:
+                            f.write(_json.dumps(r) + "\n")
+            except Exception as e:
+                logger.warning(f"freshness sample failed: {e}")
+            await asyncio.sleep(300)
 
     async def shutdown(self):
         logger.info("Shutting down...")
