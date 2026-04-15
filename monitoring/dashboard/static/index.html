@@ -808,7 +808,7 @@ function renderPerfCardsByMode(mode, gridId) {
 
     const v3Strats = new Set(['sports_longshot', 'sports_midshot', 'sports_underdog']);
     const v31Strats = new Set(['sports_longshot_v31', 'sports_midshot_v31', 'sports_underdog_v31']);
-    const v4Strats = new Set(['sports_pinnacle_edge', 'sports_v4_edge', 'sports_liquidity_filtered', 'sports_consolidated']);
+    const v4Strats = new Set(['sports_pinnacle_edge', 'sports_v4_edge', 'sports_consolidated']);
     let versionBadge = '';
     if (v3Strats.has(strat)) versionBadge = '<span class="version-badge v3">V3</span>';
     else if (v31Strats.has(strat)) versionBadge = '<span class="version-badge v31">V3.1</span>';

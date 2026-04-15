@@ -66,7 +66,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_trader", "sports_longshot", "sports_midshot", "sports_underdog",
             "sports_longshot_v31", "sports_midshot_v31", "sports_underdog_v31",
             "sports_pinnacle_edge", "sports_v4_edge",
-            "sports_liquidity_filtered", "sports_consolidated",
+            "sports_consolidated",
             "econ_trader",
         ]
 
@@ -78,6 +78,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             return {"trade_count": 0, "total_pnl": 0.0, "wins": 0, "losses": 0}
 
         SPORTS_PREFIX = "sports_"
+        # Removed strategies — keep historical DB rows but hide from dashboard.
+        RETIRED = {"sports_liquidity_filtered"}
 
         strategies = {}
         for s in all_strategy_names:
@@ -93,6 +95,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             if not status.startswith("paper"):
                 continue
             strat = trade["strategy"]
+            if strat in RETIRED:
+                continue
             if strat not in strategies:
                 paper = empty_stats()
                 if strat.startswith(SPORTS_PREFIX):
@@ -213,8 +217,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     live_fees += float(p.get("fees_paid_dollars", 0))
 
         by_strategy = {}
+        RETIRED = {"sports_liquidity_filtered"}
         for t in paper_settled:
             strat = t["strategy"]
+            if strat in RETIRED:
+                continue
             if strat not in by_strategy:
                 by_strategy[strat] = {"settled": 0, "pnl": 0.0, "wins": 0, "losses": 0}
             by_strategy[strat]["settled"] += 1
@@ -265,7 +272,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_trader", "sports_longshot", "sports_midshot", "sports_underdog",
             "sports_longshot_v31", "sports_midshot_v31", "sports_underdog_v31",
             "sports_pinnacle_edge", "sports_v4_edge",
-            "sports_liquidity_filtered", "sports_consolidated",
+            "sports_consolidated",
             "econ_trader",
         ]
         # Strategies removed from main.py _strategy_loop (no env flag to toggle).
@@ -287,7 +294,6 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_underdog_v31": "SPORTS_ENABLED",
             "sports_pinnacle_edge": "SPORTS_ENABLED",
             "sports_v4_edge": "SPORTS_ENABLED",
-            "sports_liquidity_filtered": "SPORTS_ENABLED",
             "sports_consolidated": "SPORTS_ENABLED",
             "sports_trader": "SPORTS_ENABLED",
         }
