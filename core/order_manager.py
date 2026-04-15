@@ -360,7 +360,9 @@ class OrderManager:
             minutes_to_start=minutes_to_start,
             realized_fill_price=realized,
         )
-        self.bankroll -= size_usdc
+        # Deduct cost + fee so local bankroll stays in sync with Kalshi's real
+        # balance, which already reflects both. Matches paper order semantics.
+        self.bankroll -= (size_usdc + fee)
         await self._persist_bankroll()
         slip_note = f" realized={realized:.3f}" if realized is not None else ""
         logger.info(f"[LIVE] Market {side} | {strategy} | ${size_usdc:.2f} @ {price:.3f}{slip_note}")
@@ -466,7 +468,8 @@ class OrderManager:
             minutes_to_start=minutes_to_start,
             realized_fill_price=realized,
         )
-        self.bankroll -= actual_size
+        # Deduct cost + fee (Kalshi's real balance already reflects both).
+        self.bankroll -= (actual_size + actual_fee)
         await self._persist_bankroll()
         slip_note = f" realized={realized:.3f}" if realized is not None else ""
         partial_note = f" (partial {filled_count}/{count})" if filled_count < count else ""

@@ -160,6 +160,11 @@ class SportsTraderStrategy:
         self.odds_api_usage: dict = {"used": 0, "remaining": 0, "last": 0}  # exposed to dashboard
         self._prev_odds: dict[str, dict] = {}  # game_id -> {home_prob, away_prob, time}
         self._last_pinnacle_yes_prob: Optional[float] = None  # set per-market during scan
+        # Background entry tasks — a v31 limit+TTL order can block up to 60s
+        # polling for fills. Dispatching via asyncio.create_task lets the
+        # scanner continue past the order while it resolves. The set is
+        # self-cleaning via the done-callback registered at launch.
+        self._pending_entry_tasks: set[asyncio.Task] = set()
 
         # Load persisted traded tickers to survive restarts
         self._load_traded_tickers()
@@ -388,6 +393,41 @@ class SportsTraderStrategy:
         if decimal_odds <= 1.0:
             return None
         return 1.0 / decimal_odds
+
+    async def _dispatch_entry(
+        self,
+        *,
+        ticker: str,
+        side: str,
+        size: float,
+        limit_price: float,
+        minutes_to_start: Optional[float],
+        matched_game: dict,
+        sport: str,
+        pinnacle_prob: Optional[float],
+    ):
+        """Place the order and record CLV in the background so the scanner
+        loop isn't blocked by a v31 limit+TTL poll (can be up to 60s)."""
+        try:
+            order_result = await self._order_manager.market_order(
+                ticker=ticker, side=side, size_usdc=size,
+                price=limit_price, strategy=self.STRATEGY_NAME, market_id=ticker,
+                minutes_to_start=minutes_to_start,
+            )
+            trade_id = (order_result or {}).get("trade_id")
+            status = (order_result or {}).get("status")
+            if trade_id is not None and status in ("paper_filled", "filled"):
+                await self._record_entry_clv(
+                    trade_id=trade_id,
+                    ticker=ticker,
+                    game=matched_game,
+                    sport=sport,
+                    pinnacle_prob=pinnacle_prob,
+                )
+        except Exception as e:
+            logger.exception(
+                f"[{self.STRATEGY_NAME}] entry dispatch failed for {ticker}: {e}"
+            )
 
     async def _record_entry_clv(
         self,
@@ -747,25 +787,17 @@ class SportsTraderStrategy:
                 self._traded_tickers[ticker] = now
                 self._save_traded_tickers()
                 minutes_to_start = _commence_time_to_minutes(matched_game.get("commence_time"))
-                order_result = await self._order_manager.market_order(
-                    ticker=ticker, side=signal["side"], size_usdc=size,
-                    price=limit_price, strategy=self.STRATEGY_NAME, market_id=ticker,
-                    minutes_to_start=minutes_to_start,
-                )
-                # Record entry CLV snapshot (Pinnacle prob for the YES-team side, if available)
                 pin_prob_for_side = None
                 if pinnacle is not None:
                     pin_prob_for_side = pinnacle["home_prob"] if is_yes_home else pinnacle["away_prob"]
-                _entry_trade_id = (order_result or {}).get("trade_id")
-                _entry_status = (order_result or {}).get("status")
-                if _entry_trade_id is not None and _entry_status in ("paper_filled", "filled"):
-                    await self._record_entry_clv(
-                        trade_id=_entry_trade_id,
-                        ticker=ticker,
-                        game=matched_game,
-                        sport=sport_map.get(series, series),
-                        pinnacle_prob=pin_prob_for_side,
-                    )
+                task = asyncio.create_task(self._dispatch_entry(
+                    ticker=ticker, side=signal["side"], size=size,
+                    limit_price=limit_price, minutes_to_start=minutes_to_start,
+                    matched_game=matched_game, sport=sport_map.get(series, series),
+                    pinnacle_prob=pin_prob_for_side,
+                ))
+                self._pending_entry_tasks.add(task)
+                task.add_done_callback(self._pending_entry_tasks.discard)
                 trades_attempted += 1
                 traded_games.add(game_id)
 
