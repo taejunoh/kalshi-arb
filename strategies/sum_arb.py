@@ -40,7 +40,7 @@ class SumArbStrategy:
         }
 
     async def scan_and_execute(self):
-        if self._order_manager.is_circuit_breaker_active():
+        if self._order_manager.is_circuit_breaker_active(strategy="sum_arb"):
             return
         markets = self._scanner.get_unlocked_markets()
         best_gap = None

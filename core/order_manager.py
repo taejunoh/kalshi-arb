@@ -25,7 +25,10 @@ class OrderManager:
         return min(kelly_size, max_size)
 
     def is_circuit_breaker_active(self, strategy: Optional[str] = None) -> bool:
-        # Consecutive-loss pause is strategy-agnostic (preserves prior behavior)
+        # NOTE: consecutive-loss pause is intentionally GLOBAL across paper+live.
+        # 5 consecutive losses anywhere pauses ALL entries for 15min. Rationale:
+        # a losing streak is likely due to a systemic signal issue (bad data,
+        # API lag) that affects both modes equally. Daily-loss caps ARE split.
         if self._consecutive_losses >= self.config.MAX_CONSECUTIVE_LOSSES:
             if time.time() < self._pause_until:
                 return True
@@ -54,6 +57,13 @@ class OrderManager:
             logger.warning(f"Circuit breaker: {self._consecutive_losses} consecutive losses. Pausing.")
 
     def record_win(self, amount: float = 0.0, strategy: Optional[str] = None):
+        """Reset consecutive loss counter on a win.
+
+        `strategy` is accepted for API symmetry with record_loss but unused —
+        we don't track daily wins by bucket (only losses gate circuit breakers).
+        Keep the parameter so settlement can call record_win/record_loss with
+        the same signature without branching.
+        """
         self._consecutive_losses = 0
 
     def reset_daily(self):

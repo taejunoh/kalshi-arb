@@ -87,7 +87,7 @@ class ShutdownFadeStrategy:
     async def scan_and_execute(self):
         if not self.config.SHUTDOWN_FADE_ENABLED:
             return
-        if self._order_manager.is_circuit_breaker_active():
+        if self._order_manager.is_circuit_breaker_active(strategy="shutdown_fade"):
             return
         markets = self._find_shutdown_markets()
         for market in markets:

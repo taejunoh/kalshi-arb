@@ -529,7 +529,7 @@ class SportsTraderStrategy:
     async def scan_and_execute(self):
         if not getattr(self.config, "SPORTS_ENABLED", False):
             return
-        if self._order_manager.is_circuit_breaker_active():
+        if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
             return
         now = time.time()
         scan_interval = self._get_scan_interval()

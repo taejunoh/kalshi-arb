@@ -40,7 +40,7 @@ class MakerPreorderStrategy:
             return False
 
     async def scan_and_execute(self):
-        if self._order_manager.is_circuit_breaker_active():
+        if self._order_manager.is_circuit_breaker_active(strategy="maker_preorder"):
             return
         await self._monitor_active_orders()
         markets = self._scanner.get_unlocked_markets()

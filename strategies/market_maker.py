@@ -99,7 +99,7 @@ class MarketMakerStrategy:
     async def scan_and_execute(self):
         if not self.config.MM_ENABLED:
             return
-        if self._order_manager.is_circuit_breaker_active():
+        if self._order_manager.is_circuit_breaker_active(strategy="market_maker"):
             await self._cancel_all_quotes()
             return
 

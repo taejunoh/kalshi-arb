@@ -134,7 +134,7 @@ class MentionsTraderStrategy:
     async def scan_and_execute(self):
         if not self.config.MENTIONS_ENABLED:
             return
-        if self._order_manager.is_circuit_breaker_active():
+        if self._order_manager.is_circuit_breaker_active(strategy="mentions_trader"):
             return
 
         # Get all markets from the broad pool and filter by ticker prefix + title regex

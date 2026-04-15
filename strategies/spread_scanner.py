@@ -179,7 +179,7 @@ class SpreadScannerStrategy:
     async def scan_and_execute(self):
         if not self.config.SPREAD_SCANNER_ENABLED:
             return
-        if self._order_manager.is_circuit_breaker_active():
+        if self._order_manager.is_circuit_breaker_active(strategy="spread_scanner"):
             return
         now = time.time()
         if now - self._last_scan_time < self.config.SPREAD_SCANNER_INTERVAL:

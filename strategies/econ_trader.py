@@ -86,7 +86,7 @@ class EconTraderStrategy:
     async def scan_and_execute(self):
         if not getattr(self.config, "ECON_ENABLED", False):
             return
-        if self._order_manager.is_circuit_breaker_active():
+        if self._order_manager.is_circuit_breaker_active(strategy="econ_trader"):
             return
 
         now = time.time()
