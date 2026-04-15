@@ -61,6 +61,11 @@ class Database:
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_status_pnl ON trades(status, pnl)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_trade ON clv_snapshots(trade_id)")
+            await self._add_column_if_missing(conn, "clv_snapshots", "us_consensus_prob", "REAL")
+            await self._add_column_if_missing(conn, "clv_snapshots", "eu_consensus_prob", "REAL")
+            await self._add_column_if_missing(conn, "clv_snapshots", "pinnacle_age_s", "INTEGER")
+            await self._add_column_if_missing(conn, "clv_snapshots", "kalshi_yes_bid", "REAL")
+            await self._add_column_if_missing(conn, "clv_snapshots", "kalshi_yes_ask", "REAL")
             await conn.commit()
 
     async def close(self):

@@ -132,3 +132,15 @@ async def test_initialize_adds_minutes_to_start_to_legacy_db(tmp_path):
         cursor = await conn.execute("PRAGMA table_info(trades)")
         cols = {row[1] for row in await cursor.fetchall()}
     assert "minutes_to_start" in cols
+
+
+@pytest.mark.asyncio
+async def test_clv_snapshots_has_new_instrumentation_columns(tmp_path):
+    db = Database(str(tmp_path / "t.db"))
+    await db.initialize()
+    async with aiosqlite.connect(db.db_path) as conn:
+        cur = await conn.execute("PRAGMA table_info(clv_snapshots)")
+        cols = {r[1] for r in await cur.fetchall()}
+    expected = {"us_consensus_prob", "eu_consensus_prob",
+                "pinnacle_age_s", "kalshi_yes_bid", "kalshi_yes_ask"}
+    assert expected.issubset(cols), f"missing: {expected - cols}"
