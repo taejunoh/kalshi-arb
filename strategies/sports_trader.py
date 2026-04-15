@@ -221,6 +221,12 @@ class SportsTraderStrategy:
 
         Pulls both regions (cached when possible). Pinnacle data is pulled
         from the eu response (eu regions include Pinnacle).
+
+        NOTE: all three probabilities returned here are HOME-team referenced
+        (scalar extracted from the home_prob field). The legacy
+        `clv_snapshots.pinnacle_prob` column written by the caller is
+        YES-side-adjusted. Analysis code must join with trades to resolve
+        home↔YES/NO orientation before comparing columns.
         """
         current_region = self._get_odds_region()
         other_region = "eu" if current_region == "us" else "us"
