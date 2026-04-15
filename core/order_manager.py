@@ -189,7 +189,7 @@ class OrderManager:
                           minutes_to_start: Optional[float] = None):
         if self._is_live(strategy):
             # Check real Kalshi balance before placing live order
-            real_balance = self._client.get_balance()
+            real_balance = self._client.get_balance(max_age_s=60)
             if real_balance is not None and real_balance < size_usdc:
                 logger.debug(f"Insufficient Kalshi balance: ${real_balance:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
                 return {"status": "skipped", "reason": "insufficient_balance"}
@@ -293,7 +293,7 @@ class OrderManager:
         count = max(1, int(size_usdc / price))
         fee = self.config.estimate_fee(count, int(price * 100))
         # Real balance guard — prevent Kalshi from rejecting order + error spam
-        balance = self._client.get_balance()
+        balance = self._client.get_balance(max_age_s=60)
         if balance is None:
             logger.warning(f"LIVE order {strategy} {ticker}: balance check failed (API error), skipping")
             return {"status": "failed", "reason": "balance_check_failed"}
@@ -310,6 +310,7 @@ class OrderManager:
         resp = self._client.place_market_order(ticker, side, count, buy_max_cost_cents=buy_max_cost)
         if resp is None:
             return {"status": "failed"}
+        self._client.invalidate_balance_cache()
         order_id = resp.get("id", "unknown")
         # Extract realized fill price from Kalshi response if available
         realized = None
@@ -338,6 +339,7 @@ class OrderManager:
         resp = self._client.place_limit_order(ticker, side, yes_price_cents, count)
         if resp is None:
             return {"status": "failed"}
+        self._client.invalidate_balance_cache()
         order_id = resp.get("id", "unknown")
         fee = self.config.estimate_fee(count, yes_price_cents)
         self.bankroll -= (size_usdc + fee)

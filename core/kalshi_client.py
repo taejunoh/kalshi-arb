@@ -33,6 +33,8 @@ class KalshiClient:
         self._private_key = None
         self._last_request_time = 0.0
         self._min_request_interval = 0.1
+        self._balance_cache_value: Optional[float] = None
+        self._balance_cache_ts: float = 0.0
 
     def _init_http(self):
         if self._http is not None:
@@ -296,15 +298,32 @@ class KalshiClient:
             logger.error(f"Failed to get resting orders: {e}")
             return []
 
-    def get_balance(self) -> Optional[float]:
+    def get_balance(self, max_age_s: float = 0) -> Optional[float]:
+        """Fetch balance in dollars. If max_age_s > 0, return cached value
+        when younger than max_age_s; else always fresh fetch.
+
+        Caller must invalidate via invalidate_balance_cache() after any
+        action that changes balance (buy fills, withdrawals)."""
+        now = time.time()
+        if max_age_s > 0 and self._balance_cache_value is not None \
+                and (now - self._balance_cache_ts) < max_age_s:
+            return self._balance_cache_value
         try:
             data = self._get("/trade-api/v2/portfolio/balance")
             if data is None:
                 return None
-            return data.get("balance", 0) / 100  # cents to dollars
+            bal = data.get("balance", 0) / 100  # cents to dollars
+            self._balance_cache_value = bal
+            self._balance_cache_ts = now
+            return bal
         except Exception as e:
             logger.error(f"Balance check failed: {e}")
             return None
+
+    def invalidate_balance_cache(self):
+        """Call after any order that may change balance."""
+        self._balance_cache_value = None
+        self._balance_cache_ts = 0.0
 
     # ── Broad market methods (all markets, not just crypto) ──────────
 
