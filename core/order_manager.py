@@ -423,11 +423,19 @@ class OrderManager:
             except (TypeError, ValueError):
                 pass
             final_status = info.get("status")
-            fill_cost = info.get("taker_fill_cost_dollars")
-            if fill_cost and filled_count > 0:
+            # Total fill cost = taker + maker. A limit that rests and gets
+            # hit is booked as a maker fill with taker_fill_cost_dollars=0,
+            # so reading only taker yielded realized=0.000 for resting fills.
+            try:
+                taker_cost = float(info.get("taker_fill_cost_dollars") or 0)
+                maker_cost = float(info.get("maker_fill_cost_dollars") or 0)
+            except (TypeError, ValueError):
+                taker_cost = maker_cost = 0.0
+            total_cost = taker_cost + maker_cost
+            if total_cost > 0 and filled_count > 0:
                 try:
-                    realized = float(fill_cost) / filled_count
-                except (TypeError, ValueError, ZeroDivisionError):
+                    realized = total_cost / filled_count
+                except ZeroDivisionError:
                     realized = None
             if filled_count >= count or remaining == 0 or final_status in ("executed", "canceled"):
                 break
@@ -444,12 +452,14 @@ class OrderManager:
                         filled_count = max(filled_count, int(float(info.get("fill_count_fp", 0) or 0)))
                     except (TypeError, ValueError):
                         pass
-                    fc = info.get("taker_fill_cost_dollars")
-                    if fc and filled_count > 0:
-                        try:
-                            realized = float(fc) / filled_count
-                        except (TypeError, ValueError, ZeroDivisionError):
-                            pass
+                    try:
+                        tc = float(info.get("taker_fill_cost_dollars") or 0)
+                        mc = float(info.get("maker_fill_cost_dollars") or 0)
+                        total = tc + mc
+                        if total > 0 and filled_count > 0:
+                            realized = total / filled_count
+                    except (TypeError, ValueError, ZeroDivisionError):
+                        pass
 
         if filled_count == 0:
             logger.info(
