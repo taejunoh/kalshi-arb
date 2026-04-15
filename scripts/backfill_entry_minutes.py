@@ -74,40 +74,47 @@ def main():
     client = KalshiClient(config)
 
     conn = sqlite3.connect(args.db)
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        """SELECT id, timestamp, market_id FROM trades
-           WHERE strategy LIKE 'sports_%' AND minutes_to_start IS NULL"""
-    ).fetchall()
-    logger.info(f"candidates: {len(rows)}")
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """SELECT id, timestamp, market_id FROM trades
+               WHERE strategy LIKE 'sports_%' AND minutes_to_start IS NULL"""
+        ).fetchall()
+        logger.info(f"candidates: {len(rows)}")
 
-    start_cache: dict[str, datetime | None] = {}
-    updated = 0
-    skipped = 0
-    for r in rows:
-        mkt = r["market_id"]
-        if mkt not in start_cache:
-            start_cache[mkt] = resolve_start_utc(mkt, client)
-        start = start_cache[mkt]
-        if start is None:
-            skipped += 1
-            continue
-        trade_ts = datetime.fromisoformat(r["timestamp"].replace("Z", "+00:00"))
-        if trade_ts.tzinfo is None:
-            trade_ts = trade_ts.replace(tzinfo=timezone.utc)
-        minutes = (start - trade_ts).total_seconds() / 60.0
-        if args.dry_run:
-            logger.info(f"[DRY] trade {r['id']} {mkt} -> {minutes:+.1f} min")
-        else:
-            conn.execute(
-                "UPDATE trades SET minutes_to_start=? WHERE id=?",
-                (minutes, r["id"]),
-            )
-        updated += 1
+        start_cache: dict[str, datetime | None] = {}
+        updated = 0
+        skipped = 0
+        for r in rows:
+            mkt = r["market_id"]
+            if mkt not in start_cache:
+                start_cache[mkt] = resolve_start_utc(mkt, client)
+            start = start_cache[mkt]
+            if start is None:
+                skipped += 1
+                continue
+            try:
+                trade_ts = datetime.fromisoformat(r["timestamp"].replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                logger.warning(f"trade {r['id']}: malformed timestamp {r['timestamp']!r}, skipping")
+                skipped += 1
+                continue
+            if trade_ts.tzinfo is None:
+                trade_ts = trade_ts.replace(tzinfo=timezone.utc)
+            minutes = (start - trade_ts).total_seconds() / 60.0
+            if args.dry_run:
+                logger.info(f"[DRY] trade {r['id']} {mkt} -> {minutes:+.1f} min")
+            else:
+                conn.execute(
+                    "UPDATE trades SET minutes_to_start=? WHERE id=?",
+                    (minutes, r["id"]),
+                )
+            updated += 1
 
-    if not args.dry_run:
-        conn.commit()
-    conn.close()
+        if not args.dry_run:
+            conn.commit()
+    finally:
+        conn.close()
     logger.info(f"updated: {updated}  skipped: {skipped}  unique_markets: {len(start_cache)}")
 
 
