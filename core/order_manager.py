@@ -153,8 +153,35 @@ class OrderManager:
             return {"status": "skipped", "reason": "insufficient_bankroll"}
         if self._is_live(strategy):
             logger.info(f"[LIVE] {strategy} {side} {ticker} ${size_usdc:.2f} @ {price:.3f}")
-            return await self._live_market_order(ticker, side, size_usdc, price, strategy, market_id,
-                                                 minutes_to_start=minutes_to_start)
+            result = await self._live_market_order(ticker, side, size_usdc, price, strategy, market_id,
+                                                   minutes_to_start=minutes_to_start)
+            if self._notifier and result.get("status") == "filled":
+                # Build a richer msg when realized fill is available (Task 4)
+                realized = None
+                try:
+                    import sqlite3
+                    conn = sqlite3.connect(self._db.db_path)
+                    row = conn.execute(
+                        "SELECT realized_fill_price FROM trades WHERE id=?",
+                        (result.get("trade_id"),),
+                    ).fetchone()
+                    conn.close()
+                    if row and row[0] is not None:
+                        realized = row[0]
+                except Exception:
+                    pass
+                slip_line = ""
+                if realized is not None:
+                    slip_cents = (realized - price) * 100
+                    slip_line = f"\nRealized: {realized:.3f} (slip {slip_cents:+.1f}¢)"
+                await self._notifier.send(
+                    f"📊 <b>LIVE Market Order</b>\n"
+                    f"Strategy: {strategy}\n"
+                    f"Market: {ticker}\n"
+                    f"{side.upper()} @ {price:.3f} | ${size_usdc:.2f}{slip_line}",
+                    msg_type="trade",
+                )
+            return result
         return await self._paper_market_order(ticker, side, size_usdc, price, strategy, market_id,
                                               minutes_to_start=minutes_to_start)
 
