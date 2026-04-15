@@ -289,6 +289,7 @@ class Bot:
         import os
         from scripts.measure_odds_freshness import sample_once
         out_path = os.path.join(os.path.dirname(__file__), "data", "odds_freshness_log.jsonl")
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
         tick = 0
         while self._running:
             tick += 1
@@ -299,9 +300,15 @@ class Bot:
                     with open(out_path, "a") as f:
                         for r in rows:
                             f.write(_json.dumps(r) + "\n")
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 logger.warning(f"freshness sample failed: {e}")
-            await asyncio.sleep(300)
+            # Cooperative sleep — break into 5s chunks so shutdown is responsive
+            for _ in range(60):
+                if not self._running:
+                    return
+                await asyncio.sleep(5)
 
     async def shutdown(self):
         logger.info("Shutting down...")
