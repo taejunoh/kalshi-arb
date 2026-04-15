@@ -81,13 +81,17 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         # Removed strategies — keep historical DB rows but hide from dashboard.
         RETIRED = {"sports_liquidity_filtered", "sports_consolidated"}
 
+        def _stats_with_split(strat_name: str) -> dict:
+            """Sports strategies get pre/live sub-buckets for minutes_to_start split."""
+            s = empty_stats()
+            if strat_name.startswith(SPORTS_PREFIX):
+                s["pre"] = empty_split()
+                s["live"] = empty_split()
+            return s
+
         strategies = {}
         for s in all_strategy_names:
-            paper = empty_stats()
-            if s.startswith(SPORTS_PREFIX):
-                paper["pre"] = empty_split()
-                paper["live"] = empty_split()
-            strategies[s] = {"live": empty_stats(), "paper": paper}
+            strategies[s] = {"live": _stats_with_split(s), "paper": _stats_with_split(s)}
 
         # Paper bucket — from local DB trades (only paper_* statuses)
         for trade in all_trades:
@@ -98,11 +102,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             if strat in RETIRED:
                 continue
             if strat not in strategies:
-                paper = empty_stats()
-                if strat.startswith(SPORTS_PREFIX):
-                    paper["pre"] = empty_split()
-                    paper["live"] = empty_split()
-                strategies[strat] = {"live": empty_stats(), "paper": paper}
+                strategies[strat] = {"live": _stats_with_split(strat), "paper": _stats_with_split(strat)}
             bucket = strategies[strat]["paper"]
             pnl = trade.get("pnl", 0) or 0
             size = trade.get("size", 0) or 0
@@ -124,6 +124,38 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                         sub["wins"] += 1
                     elif pnl < 0:
                         sub["losses"] += 1
+
+        # Live pre/live split — from local DB rows where strategy is in LIVE_STRATEGIES.
+        # Main live totals still come from Kalshi API (authoritative for real money);
+        # this pass only populates the pre/live sub-buckets which need minutes_to_start
+        # metadata that the Kalshi settlements endpoint does not expose.
+        live_strategies_cfg = set(config.LIVE_STRATEGIES) if config else set()
+        for trade in all_trades:
+            strat = trade["strategy"]
+            if strat in RETIRED or strat not in live_strategies_cfg:
+                continue
+            if not strat.startswith(SPORTS_PREFIX):
+                continue
+            if trade.get("status", "").startswith("paper"):
+                # These rows predate Live activation; already counted in paper bucket.
+                continue
+            if strat not in strategies:
+                strategies[strat] = {"live": _stats_with_split(strat), "paper": _stats_with_split(strat)}
+            bucket = strategies[strat]["live"]
+            if "pre" not in bucket:  # bucket was init'd before strat was known — augment now
+                bucket["pre"] = empty_split()
+                bucket["live"] = empty_split()
+            mts = trade.get("minutes_to_start")
+            if mts is None:
+                continue
+            pnl = trade.get("pnl", 0) or 0
+            sub = bucket["pre"] if mts > 0 else bucket["live"]
+            sub["trade_count"] += 1
+            sub["total_pnl"] += pnl
+            if pnl > 0:
+                sub["wins"] += 1
+            elif pnl < 0:
+                sub["losses"] += 1
 
         # Live bucket — from Kalshi API (positions for open, settlements for closed)
         if kalshi_client:
