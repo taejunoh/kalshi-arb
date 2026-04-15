@@ -304,6 +304,16 @@
       border: 1px solid rgba(59, 130, 246, 0.35);
     }
     .perf-card.disabled {
+      /* Opacity removed from the card itself because CSS opacity inherits
+         to all descendants including the ::after tooltip pseudo-element,
+         which made retirement-reason tooltips look transparent. Dim the
+         specific children instead so the info-icon tooltip stays solid. */
+      background: rgba(255, 255, 255, 0.015);
+    }
+    .perf-card.disabled .strategy-name,
+    .perf-card.disabled .perf-row,
+    .perf-card.disabled .status-badge,
+    .perf-card.disabled .version-badge {
       opacity: 0.55;
     }
 
