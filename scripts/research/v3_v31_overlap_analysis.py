@@ -69,13 +69,17 @@ def bucket_stats(conn, trades, direction_key=2, pnl_key=4):
     clvs = [clv_direction(conn, r[0], r[direction_key]) for r in trades]
     clv_pos = sum(1 for c in clvs if c > 0)
     clv_neg = sum(1 for c in clvs if c < 0)
+    clv_known = sum(1 for c in clvs if c != 0)  # trades with entry+close snapshots
+    # Rate over trades-with-data, not trades-total
+    denom = clv_known if clv_known > 0 else len(trades)
     return {
         "n": len(trades),
         "pnl_total": round(pnl, 2),
         "pnl_per_trade": round(pnl / len(trades), 3) if trades else 0,
         "win_rate": round(wins / len(trades), 3) if trades else 0,
-        "clv_positive_rate": round(clv_pos / len(trades), 3) if trades else 0,
-        "clv_negative_rate": round(clv_neg / len(trades), 3) if trades else 0,
+        "clv_coverage": f"{clv_known}/{len(trades)}",
+        "clv_positive_rate": round(clv_pos / denom, 3) if clv_known else None,
+        "clv_negative_rate": round(clv_neg / denom, 3) if clv_known else None,
     }
 
 
@@ -160,15 +164,17 @@ def main():
 
     lines = [f"# V3 vs V31 Overlap Analysis — {today}", ""]
     lines.append("## (a) CLV direction per bucket\n")
-    lines.append("| pair | bucket | n | PnL | per-trade | win rate | CLV+ rate | CLV- rate |")
-    lines.append("|---|---|---:|---:|---:|---:|---:|---:|")
+    lines.append("| pair | bucket | n | PnL | per-trade | win rate | CLV cov | CLV+ rate | CLV- rate |")
+    lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|")
     for pair_name, b in buckets.items():
         for bkt, trades in b.items():
             s = bucket_stats(conn, trades)
+            pos = s["clv_positive_rate"] if s["clv_positive_rate"] is not None else "N/A"
+            neg = s["clv_negative_rate"] if s["clv_negative_rate"] is not None else "N/A"
             lines.append(
                 f"| {pair_name} | {bkt} | {s['n']} | {s['pnl_total']} | "
                 f"{s['pnl_per_trade']} | {s['win_rate']} | "
-                f"{s['clv_positive_rate']} | {s['clv_negative_rate']} |"
+                f"{s['clv_coverage']} | {pos} | {neg} |"
             )
     lines.append("")
     lines.append("## (b) V31 entry Pinnacle-Kalshi gap")
