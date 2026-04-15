@@ -20,9 +20,11 @@ class Database:
                     size REAL NOT NULL,
                     fee REAL NOT NULL DEFAULT 0,
                     pnl REAL DEFAULT 0,
-                    status TEXT NOT NULL
+                    status TEXT NOT NULL,
+                    minutes_to_start REAL
                 )
             """)
+            await self._add_column_if_missing(conn, "trades", "minutes_to_start", "REAL")
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS orders (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,13 +66,22 @@ class Database:
     async def close(self):
         pass
 
-    async def record_trade(self, strategy, market_id, direction, price, size, fee, status, pnl=0.0) -> int:
+    @staticmethod
+    async def _add_column_if_missing(conn, table: str, column: str, col_type: str):
+        cursor = await conn.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in await cursor.fetchall()}
+        if column not in existing:
+            await conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+
+    async def record_trade(self, strategy, market_id, direction, price, size, fee, status,
+                           pnl=0.0, minutes_to_start: Optional[float] = None) -> int:
         now = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.db_path) as conn:
             cursor = await conn.execute(
-                """INSERT INTO trades (timestamp, strategy, market_id, direction, price, size, fee, pnl, status)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (now, strategy, market_id, direction, price, size, fee, pnl, status),
+                """INSERT INTO trades
+                   (timestamp, strategy, market_id, direction, price, size, fee, pnl, status, minutes_to_start)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (now, strategy, market_id, direction, price, size, fee, pnl, status, minutes_to_start),
             )
             await conn.commit()
             return cursor.lastrowid

@@ -84,3 +84,51 @@ async def test_get_daily_pnl(db):
     )
     daily_pnl = await db.get_daily_pnl()
     assert daily_pnl == 1.0
+
+
+@pytest.mark.asyncio
+async def test_record_trade_persists_minutes_to_start(db):
+    await db.record_trade(
+        strategy="sports_trader", market_id="KXMLBGAME-26APR102140TEX-TEX",
+        direction="yes", price=0.50, size=2.0, fee=0.07, status="paper_filled",
+        minutes_to_start=37.5,
+    )
+    trades = await db.get_trades()
+    assert len(trades) == 1
+    assert trades[0]["minutes_to_start"] == 37.5
+
+
+@pytest.mark.asyncio
+async def test_record_trade_defaults_minutes_to_start_null(db):
+    await db.record_trade(
+        strategy="market_maker", market_id="KXMKT-X", direction="yes",
+        price=0.50, size=10.0, fee=0.0, status="paper_filled",
+    )
+    trades = await db.get_trades()
+    assert len(trades) == 1
+    assert trades[0]["minutes_to_start"] is None
+
+
+@pytest.mark.asyncio
+async def test_initialize_adds_minutes_to_start_to_legacy_db(tmp_path):
+    # Simulate a pre-migration DB: create trades table WITHOUT the column
+    import aiosqlite
+    db_path = str(tmp_path / "legacy.db")
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.execute("""
+            CREATE TABLE trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL, strategy TEXT NOT NULL,
+                market_id TEXT NOT NULL, direction TEXT NOT NULL,
+                price REAL NOT NULL, size REAL NOT NULL,
+                fee REAL NOT NULL DEFAULT 0, pnl REAL DEFAULT 0,
+                status TEXT NOT NULL
+            )
+        """)
+        await conn.commit()
+    database = Database(db_path)
+    await database.initialize()
+    async with aiosqlite.connect(db_path) as conn:
+        cursor = await conn.execute("PRAGMA table_info(trades)")
+        cols = {row[1] for row in await cursor.fetchall()}
+    assert "minutes_to_start" in cols
