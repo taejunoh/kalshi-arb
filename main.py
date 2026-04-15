@@ -27,6 +27,7 @@ from core.settlement import SettlementChecker
 from core.clv_tracker import CLVTracker
 from monitoring.logger import setup_logger, TradeLogger
 from monitoring.notifier import TelegramNotifier
+from monitoring.telegram_error_handler import TelegramErrorHandler
 from monitoring.dashboard.api import create_app
 
 logger = logging.getLogger("bot")
@@ -42,6 +43,9 @@ class Bot:
         self.notifier = TelegramNotifier(
             self.config.TELEGRAM_BOT_TOKEN, self.config.TELEGRAM_CHAT_ID
         )
+        _err_handler = TelegramErrorHandler(self.notifier)
+        _err_handler.setLevel(logging.ERROR)
+        logging.getLogger().addHandler(_err_handler)
         self.order_manager = OrderManager(self.config, self.kalshi_client, self.db, self.notifier)
         self.maker_preorder = MakerPreorderStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client
