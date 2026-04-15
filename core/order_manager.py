@@ -265,13 +265,22 @@ class OrderManager:
             return {"status": "failed"}
         order_id = resp.get("id", "unknown")
         fee = self.config.estimate_fee(count, int(price * 100))
+        # Extract realized fill price from Kalshi response if available
+        realized = None
+        fill_cost = resp.get("taker_fill_cost")
+        fill_count = resp.get("taker_fill_count")
+        if fill_cost and fill_count and fill_count > 0:
+            realized = (fill_cost / fill_count) / 100.0
         trade_id = await self._db.record_trade(
             strategy=strategy, market_id=market_id, direction=side,
             price=price, size=size_usdc, fee=fee, status="filled",
             minutes_to_start=minutes_to_start,
+            realized_fill_price=realized,
         )
         self.bankroll -= size_usdc
         await self._persist_bankroll()
+        slip_note = f" realized={realized:.3f}" if realized is not None else ""
+        logger.info(f"[LIVE] Market {side} | {strategy} | ${size_usdc:.2f} @ {price:.3f}{slip_note}")
         return {"order_id": order_id, "status": "filled", "size_usdc": size_usdc, "price": price, "trade_id": trade_id}
 
     async def _live_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
