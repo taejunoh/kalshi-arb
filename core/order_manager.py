@@ -13,7 +13,8 @@ class OrderManager:
         self._db = database
         self._notifier = notifier
         self.bankroll = config.INITIAL_BANKROLL
-        self._daily_loss = 0.0
+        self._daily_loss_paper = 0.0
+        self._daily_loss_live = 0.0
         self._consecutive_losses = 0
         self._pause_until = 0.0
         self._positions: dict[tuple[str, str], dict] = {}  # (strategy, ticker) -> position
@@ -23,27 +24,41 @@ class OrderManager:
         max_size = self.bankroll * self.config.MAX_SINGLE_TRADE_PCT
         return min(kelly_size, max_size)
 
-    def is_circuit_breaker_active(self) -> bool:
-        if self._daily_loss >= self.config.MAX_DAILY_LOSS:
-            return True
+    def is_circuit_breaker_active(self, strategy: Optional[str] = None) -> bool:
+        # Consecutive-loss pause is strategy-agnostic (preserves prior behavior)
         if self._consecutive_losses >= self.config.MAX_CONSECUTIVE_LOSSES:
             if time.time() < self._pause_until:
                 return True
             self._consecutive_losses = 0
+        # Daily loss caps: either strategy-specific or either-breached
+        if strategy is not None:
+            if self._is_live(strategy):
+                return self._daily_loss_live >= self.config.MAX_DAILY_LOSS_LIVE
+            return self._daily_loss_paper >= self.config.MAX_DAILY_LOSS
+        # No strategy given: conservative — True if EITHER cap breached
+        if self._daily_loss_paper >= self.config.MAX_DAILY_LOSS:
+            return True
+        if self._daily_loss_live >= self.config.MAX_DAILY_LOSS_LIVE:
+            return True
         return False
 
-    def record_loss(self, amount: float = 0.0):
+    def record_loss(self, amount: float = 0.0, strategy: Optional[str] = None):
         self._consecutive_losses += 1
-        self._daily_loss += amount
+        if strategy is not None and self._is_live(strategy):
+            self._daily_loss_live += amount
+        else:
+            # Legacy callers (no strategy) land here with paper bucket
+            self._daily_loss_paper += amount
         if self._consecutive_losses >= self.config.MAX_CONSECUTIVE_LOSSES:
             self._pause_until = time.time() + 900
             logger.warning(f"Circuit breaker: {self._consecutive_losses} consecutive losses. Pausing.")
 
-    def record_win(self, amount: float = 0.0):
+    def record_win(self, amount: float = 0.0, strategy: Optional[str] = None):
         self._consecutive_losses = 0
 
     def reset_daily(self):
-        self._daily_loss = 0.0
+        self._daily_loss_paper = 0.0
+        self._daily_loss_live = 0.0
 
     async def hydrate_bankroll(self) -> None:
         """Restore bankroll from DB if present (survives restarts). No-op in live

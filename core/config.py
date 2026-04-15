@@ -27,6 +27,9 @@ class Config:
         self.MAX_SINGLE_TRADE_PCT = float(os.getenv("MAX_SINGLE_TRADE_PCT", "0.10"))
         self.MAX_DIRECTIONAL_LOSS = float(os.getenv("MAX_DIRECTIONAL_LOSS", "50"))
         self.MAX_DAILY_LOSS = float(os.getenv("MAX_DAILY_LOSS", "200"))
+        # Live-strategy daily loss cap — independent from paper MAX_DAILY_LOSS.
+        # Set to same default so both modes have identical limits by default.
+        self.MAX_DAILY_LOSS_LIVE = float(os.getenv("MAX_DAILY_LOSS_LIVE", "200"))
         self.MAX_CONSECUTIVE_LOSSES = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "5"))
 
         # Market Maker strategy

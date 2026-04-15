@@ -96,9 +96,9 @@ async def test_position_sizing(paper_manager):
 
 @pytest.mark.asyncio
 async def test_circuit_breaker(paper_manager):
-    paper_manager._daily_loss = 201.0
+    paper_manager._daily_loss_paper = 201.0
     assert paper_manager.is_circuit_breaker_active() is True
-    paper_manager._daily_loss = 50.0
+    paper_manager._daily_loss_paper = 50.0
     assert paper_manager.is_circuit_breaker_active() is False
 
 

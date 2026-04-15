@@ -177,9 +177,9 @@ class SettlementChecker:
                     self._order_manager.bankroll += payout
                     await self._order_manager._persist_bankroll()
                 if pnl > 0:
-                    self._order_manager.record_win(pnl)
+                    self._order_manager.record_win(pnl, strategy=trade["strategy"])
                 elif pnl < 0:
-                    self._order_manager.record_loss(abs(pnl))
+                    self._order_manager.record_loss(abs(pnl), strategy=trade["strategy"])
                 total_pnl += pnl
                 settled_count += 1
                 logger.info(
