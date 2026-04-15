@@ -63,11 +63,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         all_strategy_names = [
             "maker_preorder", "market_maker", "shutdown_fade",
             "spread_scanner", "mentions_trader",
-            "sports_trader", "sports_longshot", "sports_midshot", "sports_underdog",
+            "sports_longshot", "sports_midshot", "sports_underdog",
             "sports_longshot_v31", "sports_midshot_v31", "sports_underdog_v31",
             "sports_pinnacle_edge", "sports_v4_edge",
-            "sports_consolidated",
-            "econ_trader",
         ]
 
         def empty_stats():
@@ -79,7 +77,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
 
         SPORTS_PREFIX = "sports_"
         # Removed strategies — keep historical DB rows but hide from dashboard.
-        RETIRED = {"sports_liquidity_filtered", "sports_consolidated"}
+        RETIRED = {"sports_liquidity_filtered", "sports_consolidated",
+                   "sports_trader", "econ_trader"}
 
         def _stats_with_split(strat_name: str) -> dict:
             """Sports strategies get pre/live sub-buckets for minutes_to_start split."""
@@ -249,7 +248,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     live_fees += float(p.get("fees_paid_dollars", 0))
 
         by_strategy = {}
-        RETIRED = {"sports_liquidity_filtered", "sports_consolidated"}
+        RETIRED = {"sports_liquidity_filtered", "sports_consolidated",
+                   "sports_trader", "econ_trader"}
         for t in paper_settled:
             strat = t["strategy"]
             if strat in RETIRED:
@@ -301,11 +301,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         all_strategies = [
             "maker_preorder", "market_maker", "shutdown_fade",
             "spread_scanner", "mentions_trader",
-            "sports_trader", "sports_longshot", "sports_midshot", "sports_underdog",
+            "sports_longshot", "sports_midshot", "sports_underdog",
             "sports_longshot_v31", "sports_midshot_v31", "sports_underdog_v31",
             "sports_pinnacle_edge", "sports_v4_edge",
-            "sports_consolidated",
-            "econ_trader",
         ]
         # Strategies removed from main.py _strategy_loop (no env flag to toggle).
         # Keep in sync with main.py; see commits 59f7e44 (sports_trader) and

@@ -132,11 +132,9 @@ async def test_get_performance_live_bucket_from_kalshi(db):
     assert m["total_pnl"] == pytest.approx(9.5, abs=0.01)
     # total_size = 10 (settled cost) + 45.16 (open exposure)
     assert m["total_size"] == pytest.approx(55.16, abs=0.01)
-    # econ_trader: 1 open position (CPI-T0.4) + 1 losing settle
-    e = data["econ_trader"]["live"]
-    assert e["trade_count"] == 2
-    assert e["losses"] == 1
-    assert e["total_pnl"] == pytest.approx(-5.10, abs=0.01)  # 0 - 5 - 0.10
+    # econ_trader is now RETIRED — hidden from /api/performance (visible in
+    # Settlement History for historical Kalshi record).
+    assert "econ_trader" not in data
 
 
 @pytest.mark.asyncio
@@ -186,8 +184,10 @@ async def test_strategy_status_marks_loop_disabled(db):
         resp = await ac.get("/api/strategy-status")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["sports_trader"]["active"] is False
-    assert data["sports_trader"]["reason"] == "removed_from_loop"
+    # sports_trader / econ_trader removed from performance list (RETIRED); still
+    # visible in Settlement History for historical Kalshi record.
+    assert "sports_trader" not in data
+    assert "econ_trader" not in data
     assert data["maker_preorder"]["active"] is False
     assert data["maker_preorder"]["reason"] == "removed_from_loop"
     assert data["shutdown_fade"]["active"] is False
