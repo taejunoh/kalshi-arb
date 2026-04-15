@@ -210,6 +210,27 @@
       color: var(--text-dim);
       border: 1px solid var(--border);
     }
+    .info-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      margin-left: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 50%;
+      background: rgba(120, 120, 120, 0.15);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+      cursor: help;
+      user-select: none;
+    }
+    .info-icon:hover {
+      background: rgba(234, 179, 8, 0.18);
+      color: #eab308;
+      border-color: rgba(234, 179, 8, 0.4);
+    }
     .version-badge {
       font-size: 9px;
       padding: 2px 6px;
@@ -804,6 +825,16 @@ function renderPerfCardsByMode(mode, gridId) {
     const statusCls = isActive ? 'active' : 'disabled';
     const statusLabel = isActive ? 'ACTIVE' : 'DISABLED';
     const cardCls = isActive ? 'perf-card' : 'perf-card disabled';
+    // Info icon shown only on disabled cards; tooltip text prefers reason_detail (human) over reason (machine).
+    const tooltipText = status.reason_detail || status.reason || '';
+    const escapedTooltip = tooltipText
+      .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const infoIcon = (!isActive && tooltipText)
+      ? `<span class="info-icon" title="${escapedTooltip}" aria-label="폐기 사유">i</span>`
+      : '';
+    // Card-level title kept for backward compat (shows machine reason);
+    // the icon's title surfaces the human detail.
     const titleAttr = status.reason ? ` title="${status.reason}"` : '';
 
     const v3Strats = new Set(['sports_longshot', 'sports_midshot', 'sports_underdog']);
@@ -819,7 +850,7 @@ function renderPerfCardsByMode(mode, gridId) {
         <div class="strategy-header">
           <div class="strategy-badges">
             ${versionBadge}
-            <span class="status-badge ${statusCls}">${statusLabel}</span>
+            <span class="status-badge ${statusCls}">${statusLabel}</span>${infoIcon}
           </div>
           <div class="strategy-name">${strat}</div>
         </div>

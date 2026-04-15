@@ -298,6 +298,30 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_consolidated": "SPORTS_ENABLED",
             "sports_trader": "SPORTS_ENABLED",
         }
+        # Per-strategy retirement explanation for dashboard tooltip. Machine-
+        # parseable reason (e.g. 'removed_from_loop') still exposed below for
+        # backward-compat assertions; detail goes into reason_detail.
+        retirement_detail = {
+            "shutdown_fade":
+                "DEPRECATED (2026-04-15): V1 의 thesis 결함(이질 마켓 단일 heuristic) + "
+                "실행 결함(in-memory state 로 재시작 시 중복 진입). 121건 체결로 상한의 13배 초과. "
+                "재설계 대기 — docs/future-work/shutdown-fade-redesign.md",
+            "sports_liquidity_filtered":
+                "Retired (2026-04-15): sports_midshot_v31 과 ticker 100% 중복. "
+                "$3 fixed trade size 로 depth filter 가 무력화됨 → 별도 alpha 없이 "
+                "paper exposure 만 2배. Live sizing 재설계 시 부활 검토.",
+            "sports_consolidated":
+                "Retired (2026-04-15): sports_underdog_v31 과 ticker 55/55 중복, "
+                "direction 96% 일치. consensus 검사 없는 순수 price filter 라 V31 보다 "
+                "median 35분 일찍, $0.06 비싸게 진입 → per-trade edge $1.36 vs V31 $2.36.",
+            "sports_trader":
+                "Disabled (2026-04-11): V2 consensus/line-movement 전략. 50건 paper 에서 "
+                "-$19.45, 63% WR 이지만 계약 비싸서 net edge 0. V3/V31 에 대체. "
+                "클래스는 sports_* 전략들의 base 로 남아있음.",
+            "maker_preorder":
+                "Disabled: 봇 시작 시 ~400 limit orders 를 4초 내 발사해 bankroll 드레인. "
+                "env flag 없이 scan loop 에서만 제거. 재설계 필요.",
+        }
         result = {}
         for s in all_strategies:
             mode = "LIVE" if s in live_strategies else "PAPER"
@@ -307,13 +331,17 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             active = in_loop and flag_on
             if active:
                 reason = None
+                reason_detail = None
             elif s == "shutdown_fade":
                 reason = "DEPRECATED — see docs/future-work/shutdown-fade-redesign.md"
+                reason_detail = retirement_detail[s]
             elif not in_loop:
                 reason = "removed_from_loop"
+                reason_detail = retirement_detail.get(s, "Strategy removed from scan loop (no detail available).")
             else:
                 reason = f"{flag_attr}=false"
-            result[s] = {"mode": mode, "active": active, "reason": reason}
+                reason_detail = retirement_detail.get(s, f"Disabled via env flag {flag_attr}=false.")
+            result[s] = {"mode": mode, "active": active, "reason": reason, "reason_detail": reason_detail}
         return result
 
     @app.get("/api/settlement-history")
