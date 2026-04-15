@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -20,6 +20,24 @@ _ODDS_CACHE: dict[tuple[str, str], tuple[float, list[dict], dict]] = {}
 # Default for unknown region falls back to the old 300s sweet spot.
 _ODDS_CACHE_TTL_BY_REGION: dict[str, float] = {"us": 60.0, "eu": 600.0}
 _ODDS_CACHE_TTL_DEFAULT = 300.0
+
+
+def _now_utc() -> datetime:
+    """Indirection so tests can patch the clock."""
+    return datetime.now(timezone.utc)
+
+
+def _commence_time_to_minutes(commence_time: Optional[str]) -> Optional[float]:
+    """Convert Odds API ISO-8601 commence_time to minutes-until-start from now.
+    Positive = pre-game, zero/negative = live. Returns None if unparseable."""
+    if not commence_time:
+        return None
+    try:
+        iso = commence_time.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(iso)
+    except (ValueError, TypeError):
+        return None
+    return (dt - _now_utc()).total_seconds() / 60.0
 
 
 def _odds_cache_ttl(region: str) -> float:
