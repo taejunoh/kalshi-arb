@@ -21,6 +21,11 @@ _ODDS_CACHE: dict[tuple[str, str], tuple[float, list[dict], dict]] = {}
 # Default for unknown region falls back to the old 300s sweet spot.
 _ODDS_CACHE_TTL_BY_REGION: dict[str, float] = {"us": 60.0, "eu": 600.0}
 _ODDS_CACHE_TTL_DEFAULT = 300.0
+
+# Quota thresholds for Odds API monthly allowance
+QUOTA_WARN_THRESHOLD = 5000   # Telegram warn (once per day)
+QUOTA_HALT_THRESHOLD = 1000   # Halt all sports strategies
+
 from core.pinnacle_age import PinnacleAgeTracker
 _PINNACLE_AGE = PinnacleAgeTracker()
 
@@ -215,6 +220,35 @@ class SportsTraderStrategy:
             return self.REGION_OVERRIDE
         return getattr(self.config, "ODDS_API_REGION", "eu")
 
+    async def _check_quota(self, remaining: int):
+        """Monitor Odds API quota. Emit Telegram warn at < WARN, set halt flag at < HALT."""
+        import datetime
+        if remaining < QUOTA_HALT_THRESHOLD:
+            if not self._order_manager._quota_exhausted:
+                self._order_manager._quota_exhausted = True
+                logger.error(
+                    f"[QUOTA] Odds API quota critical: {remaining} remaining. Sports strategies halted."
+                )
+                notifier = getattr(self._order_manager, "_notifier", None)
+                if notifier:
+                    await notifier.send(
+                        f"⚠️ <b>Odds API quota critical</b>\nOnly {remaining} calls remaining.\nSports strategies halted until quota resets.",
+                        msg_type="quota_halt",
+                    )
+        elif remaining < QUOTA_WARN_THRESHOLD:
+            # Auto-recover from halt if we rose above halt threshold
+            self._order_manager._quota_exhausted = False
+            notifier = getattr(self._order_manager, "_notifier", None)
+            if notifier:
+                today = datetime.date.today().isoformat()
+                await notifier.send(
+                    f"ℹ️ Odds API quota low: {remaining} remaining.",
+                    msg_type=f"quota_warn_{today}",
+                )
+        else:
+            # Healthy — clear halt flag
+            self._order_manager._quota_exhausted = False
+
     async def _dual_region_consensus(
         self, sport: str, game: dict
     ) -> tuple[Optional[float], Optional[float], Optional[float], Optional[int]]:
@@ -293,6 +327,7 @@ class SportsTraderStrategy:
                 }
                 data = resp.json()
                 self.odds_api_usage = usage
+                await self._check_quota(usage.get("remaining", 0))
                 _ODDS_CACHE[cache_key] = (now, data, usage)
                 pinnacle_hash = _compute_pinnacle_payload_hash(data)
                 _PINNACLE_AGE.observe(region, sport, pinnacle_hash)

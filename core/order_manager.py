@@ -19,6 +19,7 @@ class OrderManager:
         self._consecutive_losses = 0
         self._pause_until = 0.0
         self._positions: dict[tuple[str, str], dict] = {}  # (strategy, ticker) -> position
+        self._quota_exhausted = False  # Set when Odds API remaining < QUOTA_HALT_THRESHOLD
 
     def calculate_position_size(self, net_edge: float) -> float:
         kelly_size = self.bankroll * self.config.KELLY_FRACTION * net_edge
@@ -35,6 +36,9 @@ class OrderManager:
         # Kill-switch file: instant halt for all new entries across strategies.
         # Existing open positions continue to settle via the settlement task.
         if self.is_kill_switch_active():
+            return True
+        # Quota halt — only blocks sports_* strategies (others don't use Odds API)
+        if self._quota_exhausted and strategy and strategy.startswith("sports_"):
             return True
         # NOTE: consecutive-loss pause is intentionally GLOBAL across paper+live.
         # 5 consecutive losses anywhere pauses ALL entries for 15min. Rationale:
