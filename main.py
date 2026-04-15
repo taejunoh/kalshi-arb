@@ -22,7 +22,6 @@ from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
 from strategies.sports_underdog_v31 import SportsUnderdogV31Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
-from strategies.sports_consolidated import SportsConsolidatedStrategy
 from strategies.econ_trader import EconTraderStrategy
 from core.settlement import SettlementChecker
 from core.clv_tracker import CLVTracker
@@ -82,9 +81,6 @@ class Bot:
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_v4_edge = SportsV4EdgeStrategy(
-            self.config, self.order_manager, self.kalshi_client
-        )
-        self.sports_consolidated = SportsConsolidatedStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.econ_trader = EconTraderStrategy(
@@ -218,7 +214,11 @@ class Bot:
             # depth filter inert, 100% trade overlap with sports_midshot_v31
             # (identical PnL $65.99/n=26). Experiment meaningless until live
             # sizing. See /Users/taejunoh/.claude/plans/drifting-finding-galaxy.md
-            ("sports_consolidated", self.sports_consolidated),
+            # sports_consolidated removed 2026-04-15 — 100% ticker overlap
+            # with sports_underdog_v31 (55/55), 96% same direction. Pure
+            # price/payoff filter (no edge check) fires ~35min earlier than
+            # V31 at $0.06 higher entry → per-trade edge $1.36 vs V31's $2.36.
+            # No orthogonal signal. See docs/future-work/v3-v31-follow-ups.md
             ("econ_trader", self.econ_trader),
         ]
         while self._running:

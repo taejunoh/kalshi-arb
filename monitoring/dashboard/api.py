@@ -79,7 +79,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
 
         SPORTS_PREFIX = "sports_"
         # Removed strategies — keep historical DB rows but hide from dashboard.
-        RETIRED = {"sports_liquidity_filtered"}
+        RETIRED = {"sports_liquidity_filtered", "sports_consolidated"}
 
         strategies = {}
         for s in all_strategy_names:
@@ -217,7 +217,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     live_fees += float(p.get("fees_paid_dollars", 0))
 
         by_strategy = {}
-        RETIRED = {"sports_liquidity_filtered"}
+        RETIRED = {"sports_liquidity_filtered", "sports_consolidated"}
         for t in paper_settled:
             strat = t["strategy"]
             if strat in RETIRED:
