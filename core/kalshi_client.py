@@ -229,6 +229,18 @@ class KalshiClient:
             logger.error(f"Limit order failed: {e}")
             return None
 
+    def get_order(self, order_id: str) -> Optional[dict]:
+        """Fetch a single order by id. Returns the order dict or None on error.
+        Used by limit+TTL path to poll fill status before cancelling."""
+        try:
+            data = self._get(f"/trade-api/v2/portfolio/orders/{order_id}")
+            if data is None:
+                return None
+            return data.get("order")
+        except Exception as e:
+            logger.error(f"get_order failed for {order_id}: {e}")
+            return None
+
     def cancel_order(self, order_id: str) -> bool:
         try:
             self._delete(f"/trade-api/v2/portfolio/orders/{order_id}")

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import time
@@ -5,6 +6,20 @@ import uuid
 from typing import Optional
 
 logger = logging.getLogger("order_manager")
+
+# Strategies that should use limit+TTL instead of market orders for live fills.
+# Rationale: V31 entries are small ($3), low-priced (often <30¢), which produces
+# high contract counts that exceed the top-of-book depth → Kalshi's market order
+# is fill-or-kill and rejects with 409. Limit at signal price mirrors paper
+# semantics (same price, same size eventually) and sheds the FOK risk. Unfilled
+# limits cancel after LIMIT_TTL_SECONDS so the position doesn't drift off-signal.
+LIMIT_TTL_STRATEGIES = {
+    "sports_longshot_v31",
+    "sports_midshot_v31",
+    "sports_underdog_v31",
+}
+LIMIT_TTL_SECONDS = 60
+LIMIT_TTL_POLL_INTERVAL = 5
 
 
 class OrderManager:
@@ -153,8 +168,14 @@ class OrderManager:
             return {"status": "skipped", "reason": "insufficient_bankroll"}
         if self._is_live(strategy):
             logger.info(f"[LIVE] {strategy} {side} {ticker} ${size_usdc:.2f} @ {price:.3f}")
-            result = await self._live_market_order(ticker, side, size_usdc, price, strategy, market_id,
-                                                   minutes_to_start=minutes_to_start)
+            if strategy in LIMIT_TTL_STRATEGIES:
+                result = await self._live_limit_ttl_order(
+                    ticker, side, size_usdc, price, strategy, market_id,
+                    minutes_to_start=minutes_to_start,
+                )
+            else:
+                result = await self._live_market_order(ticker, side, size_usdc, price, strategy, market_id,
+                                                       minutes_to_start=minutes_to_start)
             if self._notifier and result.get("status") == "filled":
                 # Build a richer msg when realized fill is available (Task 4)
                 realized = None
@@ -344,6 +365,119 @@ class OrderManager:
         slip_note = f" realized={realized:.3f}" if realized is not None else ""
         logger.info(f"[LIVE] Market {side} | {strategy} | ${size_usdc:.2f} @ {price:.3f}{slip_note}")
         return {"order_id": order_id, "status": "filled", "size_usdc": size_usdc, "price": price, "trade_id": trade_id}
+
+    async def _live_limit_ttl_order(self, ticker, side, size_usdc, price, strategy, market_id,
+                                     minutes_to_start: Optional[float] = None):
+        """Live limit order with a TTL — mirrors paper semantics (exact signal
+        price, no slippage). Places a limit at signal price, polls fill status
+        up to LIMIT_TTL_SECONDS, cancels remainder if not fully filled. Partial
+        fills are recorded at actual size; unfilled orders return `skipped`
+        (not `failed`, so strategy state isn't dirtied with a fake entry).
+        """
+        count = max(1, int(size_usdc / price))
+        price_cents = int(round(price * 100))
+        yes_price_cents = price_cents if side == "yes" else (100 - price_cents)
+        yes_price_cents = max(1, min(99, yes_price_cents))
+        expected_fee = self.config.estimate_fee(count, int(price * 100))
+
+        balance = self._client.get_balance(max_age_s=60)
+        if balance is None:
+            logger.warning(f"LIVE limit {strategy} {ticker}: balance check failed, skipping")
+            return {"status": "failed", "reason": "balance_check_failed"}
+        required = size_usdc + expected_fee
+        if balance < required:
+            logger.warning(
+                f"LIVE limit {strategy} {ticker}: balance ${balance:.2f} < required ${required:.2f}, skipping"
+            )
+            return {"status": "failed", "reason": "insufficient_balance"}
+
+        resp = self._client.place_limit_order(ticker, side, yes_price_cents, count)
+        if resp is None:
+            return {"status": "failed"}
+        self._client.invalidate_balance_cache()
+        order_id = resp.get("order_id") or resp.get("id") or "unknown"
+        logger.info(
+            f"[LIVE] Limit placed {side} {count}x {ticker} @ {yes_price_cents}¢ "
+            f"(signal {price:.3f}) order={order_id[:12]} TTL={LIMIT_TTL_SECONDS}s"
+        )
+
+        filled_count = 0
+        realized = None
+        elapsed = 0
+        final_status = None
+        while elapsed < LIMIT_TTL_SECONDS:
+            await asyncio.sleep(LIMIT_TTL_POLL_INTERVAL)
+            elapsed += LIMIT_TTL_POLL_INTERVAL
+            info = self._client.get_order(order_id)
+            if info is None:
+                continue
+            try:
+                filled_count = int(float(info.get("fill_count_fp", 0) or 0))
+            except (TypeError, ValueError):
+                filled_count = 0
+            remaining = None
+            try:
+                remaining = int(float(info.get("remaining_count_fp", 0) or 0))
+            except (TypeError, ValueError):
+                pass
+            final_status = info.get("status")
+            fill_cost = info.get("taker_fill_cost_dollars")
+            if fill_cost and filled_count > 0:
+                try:
+                    realized = float(fill_cost) / filled_count
+                except (TypeError, ValueError, ZeroDivisionError):
+                    realized = None
+            if filled_count >= count or remaining == 0 or final_status in ("executed", "canceled"):
+                break
+
+        if filled_count < count:
+            # Either TTL expired with resting qty, or Kalshi already finalized
+            # (executed/canceled) but remaining_count is nonzero → best-effort cancel.
+            cancelled = self._client.cancel_order(order_id)
+            if not cancelled:
+                # Re-read to see if a late fill landed during the cancel race
+                info = self._client.get_order(order_id)
+                if info is not None:
+                    try:
+                        filled_count = max(filled_count, int(float(info.get("fill_count_fp", 0) or 0)))
+                    except (TypeError, ValueError):
+                        pass
+                    fc = info.get("taker_fill_cost_dollars")
+                    if fc and filled_count > 0:
+                        try:
+                            realized = float(fc) / filled_count
+                        except (TypeError, ValueError, ZeroDivisionError):
+                            pass
+
+        if filled_count == 0:
+            logger.info(
+                f"[LIVE] Limit TTL expired unfilled: {strategy} {ticker} {side} @ {price:.3f} (status={final_status})"
+            )
+            return {"status": "skipped", "reason": "limit_ttl_unfilled", "order_id": order_id}
+
+        # Actual filled size in USDC. Use signal price so bankroll and paper
+        # comparison stay in the same reference frame; realized_fill_price
+        # captures any favorable slippage in CLV tracking.
+        actual_size = filled_count * price
+        actual_fee = self.config.estimate_fee(filled_count, price_cents)
+        trade_id = await self._db.record_trade(
+            strategy=strategy, market_id=market_id, direction=side,
+            price=price, size=actual_size, fee=actual_fee, status="filled",
+            minutes_to_start=minutes_to_start,
+            realized_fill_price=realized,
+        )
+        self.bankroll -= actual_size
+        await self._persist_bankroll()
+        slip_note = f" realized={realized:.3f}" if realized is not None else ""
+        partial_note = f" (partial {filled_count}/{count})" if filled_count < count else ""
+        logger.info(
+            f"[LIVE] Limit filled {side} | {strategy} | ${actual_size:.2f} @ {price:.3f}{slip_note}{partial_note}"
+        )
+        return {
+            "order_id": order_id, "status": "filled",
+            "size_usdc": actual_size, "price": price,
+            "trade_id": trade_id, "filled_count": filled_count,
+        }
 
     async def _live_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
         count = max(1, int(size_usdc / price))
