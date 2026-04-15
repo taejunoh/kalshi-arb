@@ -74,3 +74,25 @@ def test_no_strategy_arg_unaffected_by_quota_flag():
     # No strategy arg: quota flag doesn't apply (conservative either-breached
     # logic still runs but daily caps untouched → False)
     assert om.is_circuit_breaker_active() is False
+
+
+@pytest.mark.asyncio
+async def test_middle_band_does_not_clear_halt_flag():
+    """If previously halted and quota bounces into middle band, flag stays set
+    until full recovery above WARN threshold."""
+    strat, om, notifier = _make_strategy()
+    om._quota_exhausted = True
+    await strat._check_quota(3000)  # middle band
+    assert om._quota_exhausted is True  # still halted
+
+
+@pytest.mark.asyncio
+async def test_full_recovery_sends_recovery_alert():
+    strat, om, notifier = _make_strategy()
+    om._quota_exhausted = True
+    await strat._check_quota(12000)
+    assert om._quota_exhausted is False
+    # Recovery alert fired
+    calls = notifier.send.call_args_list
+    msg_types = [c.kwargs.get("msg_type") for c in calls]
+    assert "quota_recovery" in msg_types

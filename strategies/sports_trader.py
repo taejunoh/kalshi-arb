@@ -221,33 +221,45 @@ class SportsTraderStrategy:
         return getattr(self.config, "ODDS_API_REGION", "eu")
 
     async def _check_quota(self, remaining: int):
-        """Monitor Odds API quota. Emit Telegram warn at < WARN, set halt flag at < HALT."""
-        import datetime
+        """Monitor Odds API quota. Tri-state: healthy (>=WARN) / warn (HALT..WARN) / halted (<HALT).
+
+        - <HALT: set _quota_exhausted flag, send one-time halt alert. Sports scans stop.
+        - >=WARN: clear flag (recovered). If transitioned from halted, send recovery alert.
+        - HALT..WARN: flag untouched. Send daily warn (rate-limited by date-suffixed msg_type).
+        """
+        notifier = getattr(self._order_manager, "_notifier", None)
         if remaining < QUOTA_HALT_THRESHOLD:
             if not self._order_manager._quota_exhausted:
                 self._order_manager._quota_exhausted = True
                 logger.error(
                     f"[QUOTA] Odds API quota critical: {remaining} remaining. Sports strategies halted."
                 )
-                notifier = getattr(self._order_manager, "_notifier", None)
                 if notifier:
                     await notifier.send(
                         f"⚠️ <b>Odds API quota critical</b>\nOnly {remaining} calls remaining.\nSports strategies halted until quota resets.",
                         msg_type="quota_halt",
                     )
-        elif remaining < QUOTA_WARN_THRESHOLD:
-            # Auto-recover from halt if we rose above halt threshold
-            self._order_manager._quota_exhausted = False
-            notifier = getattr(self._order_manager, "_notifier", None)
+        elif remaining >= QUOTA_WARN_THRESHOLD:
+            # Full recovery
+            if self._order_manager._quota_exhausted:
+                self._order_manager._quota_exhausted = False
+                logger.info(
+                    f"[QUOTA] Odds API quota recovered: {remaining} remaining. Sports strategies resumed."
+                )
+                if notifier:
+                    await notifier.send(
+                        f"✅ Odds API quota recovered: {remaining} remaining.\nSports strategies resumed.",
+                        msg_type="quota_recovery",
+                    )
+        else:
+            # Middle band — flag untouched, daily warn
+            import datetime
+            today = datetime.date.today().isoformat()
             if notifier:
-                today = datetime.date.today().isoformat()
                 await notifier.send(
                     f"ℹ️ Odds API quota low: {remaining} remaining.",
                     msg_type=f"quota_warn_{today}",
                 )
-        else:
-            # Healthy — clear halt flag
-            self._order_manager._quota_exhausted = False
 
     async def _dual_region_consensus(
         self, sport: str, game: dict
