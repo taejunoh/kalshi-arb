@@ -303,11 +303,18 @@ class OrderManager:
                 f"LIVE order {strategy} {ticker}: balance ${balance:.2f} < required ${required:.2f}, skipping"
             )
             return {"status": "failed", "reason": "insufficient_balance"}
-        # Market order buy_max_cost: ceil(signal price × 100) + 2¢ slippage tolerance.
-        # Tight enough to preserve edge (V31 avg $2.5/trade relies on clean fills)
-        # but not so tight the order silently misses on 1¢ drift.
-        buy_max_cost = int(round(price * 100)) + 2
-        resp = self._client.place_market_order(ticker, side, count, buy_max_cost_cents=buy_max_cost)
+        # Kalshi market order requires yes_price. For side=yes, yes_price is the
+        # max YES cost we'll pay. For side=no, Kalshi's yes_price = 100 - no_cost,
+        # so we convert the same way limit orders do. buy_max_cost adds a
+        # per-contract spend cap (2¢ slippage tolerance).
+        price_cents = int(round(price * 100))
+        yes_price_cents = price_cents if side == "yes" else (100 - price_cents)
+        buy_max_cost = price_cents + 2
+        resp = self._client.place_market_order(
+            ticker, side, count,
+            yes_price_cents=yes_price_cents,
+            buy_max_cost_cents=buy_max_cost,
+        )
         if resp is None:
             return {"status": "failed"}
         self._client.invalidate_balance_cache()

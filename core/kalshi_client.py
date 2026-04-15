@@ -179,13 +179,19 @@ class KalshiClient:
             return 0.0, 0.0
 
     def place_market_order(self, ticker: str, side: str, count: int,
+                            yes_price_cents: int,
                             buy_max_cost_cents: Optional[int] = None):
-        """Submit a market buy order. Kalshi requires `buy_max_cost` (max cents
-        PER CONTRACT willing to pay) for market orders — without it, 400.
-        Caller passes the signal price plus small slippage tolerance."""
+        """Submit a market buy order. Kalshi requires exactly one of yes_price /
+        no_price / yes_price_dollars / no_price_dollars (we use yes_price cents,
+        matching the limit-order pattern). `buy_max_cost` is an additional
+        total-spend cap per contract (accepted alongside yes_price).
+
+        Side conversion (caller): Kalshi's yes_price is always the YES contract
+        reference. For side='no', caller must pass (100 - no_ask_cents)."""
         payload = {
             "ticker": ticker, "action": "buy", "side": side,
             "count": count, "type": "market",
+            "yes_price": int(yes_price_cents),
         }
         if buy_max_cost_cents is not None:
             payload["buy_max_cost"] = int(buy_max_cost_cents)
@@ -194,7 +200,7 @@ class KalshiClient:
             if data is None:
                 return None
             logger.info(f"Market order placed: {side} {count}x {ticker} "
-                        f"(max {buy_max_cost_cents}¢)")
+                        f"yes_price={yes_price_cents}¢ max={buy_max_cost_cents}¢")
             return data.get("order", {})
         except httpx.HTTPStatusError as e:
             # Surface Kalshi's error body so we know which field is wrong

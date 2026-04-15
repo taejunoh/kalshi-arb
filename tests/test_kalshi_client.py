@@ -83,7 +83,8 @@ def test_place_market_order():
         json=lambda: {"order": {"id": "ord_123", "status": "executed"}},
         raise_for_status=lambda: None,
     )
-    resp = client.place_market_order("KXBTC-25MAR20-T70000", "yes", 10)
+    resp = client.place_market_order("KXBTC-25MAR20-T70000", "yes", 10,
+                                      yes_price_cents=35, buy_max_cost_cents=35)
     assert resp["id"] == "ord_123"
 
 
