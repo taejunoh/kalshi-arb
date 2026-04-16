@@ -175,6 +175,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 strat = _categorize_live_ticker(ticker)
                 if not strat or strat not in strategies:
                     continue
+                # Sports tickers can't disambiguate longshot/midshot/underdog
+                # — attribution is done from the DB below instead.
+                if strat.startswith(SPORTS_PREFIX) or strat == "sports_trader":
+                    continue
                 revenue = float(s.get("revenue", 0)) / 100  # cents → dollars
                 yes_cost = float(s.get("yes_total_cost_dollars", "0") or 0)
                 no_cost = float(s.get("no_total_cost_dollars", "0") or 0)
@@ -188,6 +192,27 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 if revenue > cost:
                     bucket["wins"] += 1
                 elif cost > 0:
+                    bucket["losses"] += 1
+
+            # Sports live aggregates: use DB strategy column since Kalshi
+            # ticker alone can't distinguish v31 subtypes.
+            for trade in all_trades:
+                if trade.get("status") != "settled":
+                    continue
+                strat = trade["strategy"]
+                if not strat.startswith(SPORTS_PREFIX) or strat in RETIRED:
+                    continue
+                if strat not in strategies:
+                    continue
+                bucket = strategies[strat]["live"]
+                pnl = trade.get("pnl", 0) or 0
+                size = trade.get("size", 0) or 0
+                bucket["trade_count"] += 1
+                bucket["total_pnl"] += pnl
+                bucket["total_size"] += size
+                if pnl > 0:
+                    bucket["wins"] += 1
+                elif pnl < 0:
                     bucket["losses"] += 1
 
             # Open positions: count and exposure, PnL unrealized (stays 0 until settled)
