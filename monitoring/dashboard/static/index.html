@@ -45,6 +45,7 @@
     .perf-val,
     .td-mono,
     #s-paper-pnl,
+    #s-live-pnl,
     #s-trades,
     #s-odds-usage,
     #refresh-ts,
@@ -498,6 +499,10 @@
         <span class="stat-value neutral" id="s-live-exposure">—</span>
       </div>
       <div class="stat">
+        <span class="stat-label">Live PnL</span>
+        <span class="stat-value neutral" id="s-live-pnl">—</span>
+      </div>
+      <div class="stat">
         <span class="stat-label">Paper PnL</span>
         <span class="stat-value neutral" id="s-paper-pnl">—</span>
       </div>
@@ -794,6 +799,7 @@ async function refreshStatus() {
     // Live fees & exposure
     const liveFeesEl = document.getElementById('s-live-fees');
     const liveExpEl = document.getElementById('s-live-exposure');
+    const livePnlEl = document.getElementById('s-live-pnl');
     const paperPnlEl = document.getElementById('s-paper-pnl');
 
     if (s.live) {
@@ -801,6 +807,11 @@ async function refreshStatus() {
       liveFeesEl.className = 'stat-value negative';
       liveExpEl.textContent = fmtMoney(s.live.exposure);
       liveExpEl.className = 'stat-value neutral';
+      if (s.live.realized_pnl !== undefined) {
+        const lp = parseFloat(s.live.realized_pnl);
+        livePnlEl.textContent = fmtMoney(s.live.realized_pnl) + ` (${s.live.settled_count} settled)`;
+        livePnlEl.className = 'stat-value ' + (!isNaN(lp) && lp !== 0 ? (lp > 0 ? 'positive' : 'negative') : 'neutral');
+      }
     }
 
     if (s.paper) {

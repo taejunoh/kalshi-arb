@@ -256,6 +256,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         paper_settled = [t for t in all_trades if t.get("status") == "paper_settled"]
         paper_unsettled = [t for t in all_trades if t.get("status") in ("paper_filled", "paper_open")]
         paper_pnl = sum(t.get("pnl", 0) for t in paper_settled)
+        # Live realized PnL: DB rows with status='settled' carry strategy-
+        # attributed PnL from our settlement pass. Kalshi's settlements API
+        # can't disambiguate sports v31 subtypes, so DB is the source here.
+        live_settled = [t for t in all_trades if t.get("status") == "settled"]
+        live_pnl = sum(t.get("pnl", 0) for t in live_settled)
 
         # Live: calculate from Kalshi positions
         live_fees = 0.0
@@ -299,6 +304,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "positions": live_positions,
                 "exposure": round(live_exposure, 2),
                 "fees_paid": round(live_fees, 2),
+                "settled_count": len(live_settled),
+                "realized_pnl": round(live_pnl, 2),
             },
             # Keep backward compat
             "settled_count": len(paper_settled),
