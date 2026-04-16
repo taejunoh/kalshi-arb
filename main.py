@@ -123,6 +123,15 @@ class Bot:
         logger.info(f"Bot starting in {mode} mode | Bankroll: ${self.order_manager.bankroll:.2f} | Live: {live_strats}")
         await self.notifier.notify_bot_status("Started", self.order_manager.bankroll)
 
+        # Cancel any resting limit orders from a previous session. v31's
+        # limit+TTL poller is an asyncio task that dies on restart, so any
+        # still-resting order is an orphan that will fill later without the
+        # bot knowing (observed 2026-04-16: a 09:02 order filled at 14:21
+        # after a mid-day restart, DB had no record, Kalshi notified the user).
+        # All current LIVE_STRATEGIES use short-lived limits, so a blanket
+        # cancel is safe; if a market-making strategy is added, revisit.
+        self._reconcile_resting_orders()
+
         if not self.config.is_paper_mode:
             logger.info("Running live mode pre-flight checks...")
             if not self.kalshi_client.preflight_check():
@@ -236,6 +245,36 @@ class Bot:
                     logger.error(f"{name} loop error: {e}")
                     await self.notifier.notify_error(f"{name}: {e}")
             await asyncio.sleep(0.2)
+
+    def _reconcile_resting_orders(self):
+        """Cancel every resting limit order on Kalshi. Called once at startup.
+
+        Rationale: the _live_limit_ttl_order poller is an asyncio task that
+        dies on bot restart, leaving orphan orders that can fill hours later
+        without any DB record. Since all current LIVE_STRATEGIES place only
+        short-lived (≤60s TTL) limits, any still-resting order predates this
+        process and is an orphan by definition.
+        """
+        try:
+            resting = self.kalshi_client.get_resting_orders()
+        except Exception as e:
+            logger.warning(f"[STARTUP] Failed to list resting orders: {e}")
+            return
+        if not resting:
+            logger.info("[STARTUP] No resting orders to reconcile")
+            return
+        logger.warning(f"[STARTUP] Cancelling {len(resting)} orphaned resting orders")
+        for o in resting:
+            oid = o.get("order_id") or ""
+            ticker = o.get("ticker", "")
+            side = o.get("side", "")
+            try:
+                ok = self.kalshi_client.cancel_order(oid)
+                logger.warning(
+                    f"[STARTUP] cancel {oid[:12]} {ticker} {side} -> {ok}"
+                )
+            except Exception as e:
+                logger.error(f"[STARTUP] cancel {oid[:12]} failed: {e}")
 
     async def _settlement_check_task(self):
         """Periodically simulate paper fills and check settlements."""
