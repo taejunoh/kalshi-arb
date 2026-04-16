@@ -3,16 +3,23 @@ import time
 from monitoring.notifier import TelegramNotifier
 
 
-def test_rate_limiting():
+def test_rate_limiting_for_throttled_types():
     notifier = TelegramNotifier(bot_token="fake", chat_id="fake")
-    # First message should not be rate-limited
-    assert notifier._should_send("trade") is True
-    # Record the send
-    notifier._last_sent["trade"] = time.time()
-    # Immediate second message of same type should be rate-limited
-    assert notifier._should_send("trade") is False
-    # Different type should not be rate-limited
     assert notifier._should_send("error") is True
+    notifier._last_sent["error"] = time.time()
+    assert notifier._should_send("error") is False
+    # Different throttled type still gets through.
+    assert notifier._should_send("bot_status") is True
+
+
+def test_trade_and_settlement_are_unthrottled():
+    # Each fill/settle is a distinct event the user needs to see — sharing a
+    # 60s window silently dropped back-to-back live fills.
+    notifier = TelegramNotifier(bot_token="fake", chat_id="fake")
+    notifier._last_sent["trade"] = time.time()
+    notifier._last_sent["settlement"] = time.time()
+    assert notifier._should_send("trade") is True
+    assert notifier._should_send("settlement") is True
 
 
 def test_format_trade_message():

@@ -9,6 +9,12 @@ logger = logging.getLogger("notifier")
 
 RATE_LIMIT_SECONDS = 60.0
 
+# Discrete events — each occurrence is a distinct piece of info the user needs
+# to see. Rate-limiting these hides fills/settlements during active minutes,
+# which is the opposite of what we want. Repeatable/spammy types (errors,
+# status, summary) stay rate-limited to avoid flooding.
+UNTHROTTLED_MSG_TYPES = frozenset({"trade", "settlement"})
+
 
 class TelegramNotifier:
     """Send trade alerts and status updates via Telegram Bot API."""
@@ -23,6 +29,8 @@ class TelegramNotifier:
         return bool(self._bot_token) and bool(self._chat_id)
 
     def _should_send(self, msg_type: str) -> bool:
+        if msg_type in UNTHROTTLED_MSG_TYPES:
+            return True
         last = self._last_sent.get(msg_type)
         if last is None:
             return True
