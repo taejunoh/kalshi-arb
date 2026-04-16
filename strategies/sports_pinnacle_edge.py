@@ -18,6 +18,14 @@ class SportsPinnacleEdgeStrategy(SportsTraderStrategy):
     TRADED_TICKERS_FILE = "data/sports_pinnacle_edge_tickers.json"
     STRATEGY_NAME = "sports_pinnacle_edge"
     MIN_EDGE = 0.05
+    # Max accepted age of the eu odds payload (seconds). Production measurement
+    # showed upstream Pinnacle gaps around 880s, during which the "edge" we
+    # detected was just Kalshi moving ahead of a stale Pinnacle print — the
+    # signal was systematically wrong (13% WR vs 34% fair at 34¢ mean price).
+    # 300s is tight enough to exclude blatantly stale data but loose enough
+    # that eu cache (600s TTL) will still deliver signals when Pinnacle is
+    # updating on its normal cadence.
+    MAX_PINNACLE_AGE_S = 300
 
     def __init__(self, config, order_manager, kalshi_client):
         super().__init__(config, order_manager, kalshi_client)
@@ -30,6 +38,13 @@ class SportsPinnacleEdgeStrategy(SportsTraderStrategy):
                  ticker: str = "") -> Optional[dict]:
         pin_yes = self._last_pinnacle_yes_prob
         if pin_yes is None:
+            return None
+        age = self._last_pinnacle_age_s
+        if age is not None and age > self.MAX_PINNACLE_AGE_S:
+            logger.debug(
+                f"[PIN-EDGE] {ticker}: pinnacle stale age={age}s > "
+                f"{self.MAX_PINNACLE_AGE_S}s, skip"
+            )
             return None
         fee = self.config.KALSHI_FEE_PER_CONTRACT
 
@@ -63,6 +78,8 @@ class SportsPinnacleEdgeStrategy(SportsTraderStrategy):
                     ya: float, na: float, fair_prob: float, size: float,
                     limit_price: float, **kwargs) -> str:
         pin = self._last_pinnacle_yes_prob
+        age = self._last_pinnacle_age_s
+        age_s = f"age={age}s" if age is not None else "age=?"
         return (f"[PIN-EDGE] {ticker}: {title[:40]} "
-                f"pin_yes={pin:.2f} ask={ya:.2f}/{na:.2f} edge={signal['edge']:.3f} "
+                f"pin_yes={pin:.2f} {age_s} ask={ya:.2f}/{na:.2f} edge={signal['edge']:.3f} "
                 f"→ {signal['side']} ${size:.2f} LIMIT@{limit_price:.2f}")

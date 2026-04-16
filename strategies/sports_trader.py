@@ -160,6 +160,7 @@ class SportsTraderStrategy:
         self.odds_api_usage: dict = {"used": 0, "remaining": 0, "last": 0}  # exposed to dashboard
         self._prev_odds: dict[str, dict] = {}  # game_id -> {home_prob, away_prob, time}
         self._last_pinnacle_yes_prob: Optional[float] = None  # set per-market during scan
+        self._last_pinnacle_age_s: Optional[int] = None  # seconds since Pinnacle payload changed; subclasses gate on this
         # Background entry tasks — a v31 limit+TTL order can block up to 60s
         # polling for fills. Dispatching via asyncio.create_task lets the
         # scanner continue past the order while it resolves. The set is
@@ -748,8 +749,18 @@ class SportsTraderStrategy:
                     self._last_pinnacle_yes_prob = (
                         pinnacle["home_prob"] if is_yes_home else pinnacle["away_prob"]
                     )
+                    # Payload-level freshness: seconds since the eu odds payload
+                    # for this sport last changed. Subclasses (pinnacle_edge)
+                    # reject stale signals. Observe is idempotent per hash —
+                    # _fetch_odds already recorded first-seen, so this returns
+                    # the current age of the payload we're about to act on.
+                    eu_hash = _compute_pinnacle_payload_hash(odds_games)
+                    self._last_pinnacle_age_s = _PINNACLE_AGE.observe(
+                        self._get_odds_region(), sport_key, eu_hash
+                    )
                 else:
                     self._last_pinnacle_yes_prob = None
+                    self._last_pinnacle_age_s = None
 
                 signal = self.evaluate(ya, na, fair_prob,
                                        line_movement=line_movement, home_adj=home_adj,
