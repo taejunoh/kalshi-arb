@@ -21,7 +21,11 @@ def _safe_float(v) -> float | None:
 
 
 class SettlementChecker:
-    """Check settled markets and calculate PnL for paper trades."""
+    """Check settled markets and calculate PnL for paper and live trades.
+    Paper fills transition paper_filled → paper_settled and credit the
+    paper bankroll on win. Live fills transition filled → settled without
+    touching the paper bankroll — Kalshi's real balance already reflects
+    the outcome. Both modes feed the shared circuit-breaker counter."""
 
     def __init__(self, kalshi_client, database, order_manager, notifier=None):
         self._client = kalshi_client
@@ -118,7 +122,8 @@ class SettlementChecker:
             logger.info(f"[SETTLE] Simulated {filled} paper limit order fills")
 
     async def check_and_settle(self):
-        """Check unsettled paper trades and settle any finalized markets."""
+        """Check unsettled trades (paper + live) and settle any finalized
+        markets. See class docstring for the paper vs live split."""
         unsettled = await self._db.get_unsettled_trades()
         if not unsettled:
             return
@@ -151,6 +156,8 @@ class SettlementChecker:
 
             # Settle all trades for this market
             for trade in trades:
+                is_live = trade["status"] == "filled"
+                settled_status = "settled" if is_live else "paper_settled"
                 pnl = self.calculate_pnl(
                     direction=trade["direction"],
                     price=trade["price"],
@@ -158,7 +165,7 @@ class SettlementChecker:
                     fee=trade["fee"],
                     result=result,
                 )
-                await self._db.settle_trade(trade["id"], pnl)
+                await self._db.settle_trade(trade["id"], pnl, status=settled_status)
                 # Best-effort closing CLV snapshot (ignore errors — settlement must continue)
                 try:
                     await self._db.record_clv_snapshot(
@@ -167,15 +174,17 @@ class SettlementChecker:
                     )
                 except Exception as e:
                     logger.debug(f"[SETTLE] CLV closing snapshot failed for trade {trade['id']}: {e}")
-                # Bankroll adjustment: placement already deducted (size + fee).
-                # On win → credit full payout (capital + profit).
-                # On loss → no change (capital stays gone).
-                # Previously used `bankroll += pnl` which under-credited wins
-                # and double-drained losses after restart-sync.
-                if trade["direction"] == result:
+                # Bankroll: only paper trades touch order_manager.bankroll.
+                # Live wins/losses settle directly on Kalshi's real balance
+                # — crediting the paper bankroll here would inflate it with
+                # live winnings and mix the two modes' accounting.
+                if not is_live and trade["direction"] == result:
                     payout = trade["size"] / trade["price"]
                     self._order_manager.bankroll += payout
                     await self._order_manager._persist_bankroll()
+                # Circuit-breaker counters fire on both paper & live so a
+                # losing streak anywhere pauses all entries (see order_manager
+                # docstring). Daily loss cap is split per-mode via _is_live.
                 if pnl > 0:
                     self._order_manager.record_win(pnl, strategy=trade["strategy"])
                 elif pnl < 0:
@@ -183,8 +192,8 @@ class SettlementChecker:
                 total_pnl += pnl
                 settled_count += 1
                 logger.info(
-                    f"[SETTLE] {ticker}: {trade['strategy']} {trade['direction']} "
-                    f"@{trade['price']:.2f} → {result} | PnL: ${pnl:+.2f}"
+                    f"[SETTLE{'-LIVE' if is_live else ''}] {ticker}: {trade['strategy']} "
+                    f"{trade['direction']} @{trade['price']:.2f} → {result} | PnL: ${pnl:+.2f}"
                 )
                 # Telegram notification
                 if self._notifier:

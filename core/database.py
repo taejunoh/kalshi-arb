@@ -143,7 +143,8 @@ class Database:
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
-                "SELECT * FROM trades WHERE pnl = 0 AND status IN ('paper_filled', 'paper_open')"
+                "SELECT * FROM trades "
+                "WHERE pnl = 0 AND status IN ('paper_filled', 'paper_open', 'filled')"
             )
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
