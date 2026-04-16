@@ -287,13 +287,18 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 bucket["trade_count"] += 1
                 bucket["total_size"] += exp
 
-        # CLV+ rate per strategy (Paper bucket; uses clv_snapshots joined via trades)
+        # CLV+ rate per strategy, split by mode so paper vs live cards show
+        # independent signal quality (same-strategy live trades get their
+        # own clv_snapshots rows now that live settlement records closing).
         for strat_name in strategies:
-            try:
-                rate = await database.get_clv_positive_rate(strat_name, days=30)
-            except Exception:
-                rate = 0.0
-            strategies[strat_name]["paper"]["clv_positive_rate"] = rate
+            for mode in ("paper", "live"):
+                try:
+                    rate = await database.get_clv_positive_rate(
+                        strat_name, days=30, mode=mode
+                    )
+                except Exception:
+                    rate = 0.0
+                strategies[strat_name][mode]["clv_positive_rate"] = rate
 
         return strategies
 

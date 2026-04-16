@@ -183,7 +183,8 @@ class Database:
             )
             await conn.commit()
 
-    async def get_clv_positive_rate(self, strategy: str, days: int = 30) -> float:
+    async def get_clv_positive_rate(self, strategy: str, days: int = 30,
+                                     mode: Optional[str] = None) -> float:
         """Fraction of trades where closing line moved favorably vs entry.
 
         YES direction: CLV+ when close_yes_ask > entry_yes_ask.
@@ -193,11 +194,18 @@ class Database:
         the true closing line) over 'closing' snapshot (captured at
         settlement, where yes_ask is 0 or 1 and CLV+ ≈ win rate).
         Only trades with both an entry AND some close-side snapshot count.
+
+        `mode`: None → all trades. 'paper' → paper_* only. 'live' → filled/settled only.
         """
+        status_clause = ""
+        if mode == "paper":
+            status_clause = " AND t.status LIKE 'paper%'"
+        elif mode == "live":
+            status_clause = " AND t.status IN ('filled', 'settled')"
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
-                """
+                f"""
                 SELECT t.direction,
                        e.yes_ask AS entry_yes, e.no_ask AS entry_no,
                        COALESCE(pc.yes_ask, cl.yes_ask) AS close_yes,
@@ -209,6 +217,7 @@ class Database:
                 WHERE t.strategy = ?
                   AND t.timestamp >= datetime('now', ?)
                   AND (pc.id IS NOT NULL OR cl.id IS NOT NULL)
+                  {status_clause}
                 """,
                 (strategy, f"-{int(days)} days"),
             )
