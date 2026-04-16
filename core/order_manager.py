@@ -21,6 +21,18 @@ LIMIT_TTL_STRATEGIES = {
 LIMIT_TTL_SECONDS = 60
 LIMIT_TTL_POLL_INTERVAL = 5
 
+# Strategies that should record a paper twin alongside every live entry.
+# Rationale: keep generating paper_filled rows under the same strategy name
+# so paper and live stats accumulate in parallel from the same signal. The
+# twin runs idealized (instant fill at signal price) and diverges from live
+# only where Kalshi execution forces it (TTL expiry, partial fill). Dashboard
+# already splits paper/live by status for each strategy card.
+PAPER_TWIN_STRATEGIES = {
+    "sports_longshot_v31",
+    "sports_midshot_v31",
+    "sports_underdog_v31",
+}
+
 
 class OrderManager:
     def __init__(self, config, kalshi_client, database, notifier=None):
@@ -168,6 +180,13 @@ class OrderManager:
             return {"status": "skipped", "reason": "insufficient_bankroll"}
         if self._is_live(strategy):
             logger.info(f"[LIVE] {strategy} {side} {ticker} ${size_usdc:.2f} @ {price:.3f}")
+            # Paper twin: same signal, same strategy name, idealized fill.
+            # Runs as a background task so it doesn't block the live path.
+            if strategy in PAPER_TWIN_STRATEGIES:
+                asyncio.create_task(self._paper_market_order(
+                    ticker, side, size_usdc, price, strategy, market_id,
+                    minutes_to_start=minutes_to_start,
+                ))
             if strategy in LIMIT_TTL_STRATEGIES:
                 result = await self._live_limit_ttl_order(
                     ticker, side, size_usdc, price, strategy, market_id,
