@@ -1,8 +1,23 @@
+from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from typing import Optional
+from zoneinfo import ZoneInfo
 import os
+
+
+def _today_cutoff_utc() -> str:
+    """Most recent 06:00 ET boundary as UTC ISO string.
+    Chosen over midnight so the boundary lands in a quiet window between
+    west-coast late games (end ~01:30 ET) and next-day pre-game activity
+    (starts ~08:00 ET) — no games get split across the cutoff."""
+    et = datetime.now(ZoneInfo("America/New_York"))
+    if et.hour < 6:
+        start = (et - timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+    else:
+        start = et.replace(hour=6, minute=0, second=0, microsecond=0)
+    return start.astimezone(timezone.utc).isoformat()
 
 
 def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None, sports_trader=None) -> FastAPI:
@@ -68,9 +83,14 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_pinnacle_edge", "sports_v4_edge",
         ]
 
+        today_cutoff = _today_cutoff_utc()
+
+        def empty_today():
+            return {"trade_count": 0, "total_pnl": 0.0, "wins": 0, "losses": 0}
+
         def empty_stats():
             return {"trade_count": 0, "total_pnl": 0.0, "total_size": 0.0, "wins": 0, "losses": 0,
-                    "clv_positive_rate": 0.0}
+                    "clv_positive_rate": 0.0, "today": empty_today()}
 
         def empty_split():
             return {"trade_count": 0, "total_pnl": 0.0, "wins": 0, "losses": 0}
@@ -112,6 +132,15 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 bucket["wins"] += 1
             elif pnl < 0:
                 bucket["losses"] += 1
+            # Today (since most recent 06:00 ET) — based on entry timestamp
+            if trade.get("timestamp", "") >= today_cutoff:
+                t = bucket["today"]
+                t["trade_count"] += 1
+                t["total_pnl"] += pnl
+                if pnl > 0:
+                    t["wins"] += 1
+                elif pnl < 0:
+                    t["losses"] += 1
             # Sports pre/live split
             if strat.startswith(SPORTS_PREFIX):
                 mts = trade.get("minutes_to_start")
@@ -214,6 +243,29 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     bucket["wins"] += 1
                 elif pnl < 0:
                     bucket["losses"] += 1
+                if trade.get("timestamp", "") >= today_cutoff:
+                    t = bucket["today"]
+                    t["trade_count"] += 1
+                    t["total_pnl"] += pnl
+                    if pnl > 0:
+                        t["wins"] += 1
+                    elif pnl < 0:
+                        t["losses"] += 1
+
+            # Also count live filled (open) as entries in today's sub-bucket — they
+            # aren't settled yet so PnL stays 0 until finalization, but the user
+            # sees a signal was taken today.
+            for trade in all_trades:
+                if trade.get("status") != "filled":
+                    continue
+                if trade.get("timestamp", "") < today_cutoff:
+                    continue
+                strat = trade["strategy"]
+                if not strat.startswith(SPORTS_PREFIX) or strat in RETIRED:
+                    continue
+                if strat not in strategies:
+                    continue
+                strategies[strat]["live"]["today"]["trade_count"] += 1
 
             # Open positions: count and exposure, PnL unrealized (stays 0 until settled)
             for p in positions:

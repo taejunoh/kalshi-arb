@@ -949,6 +949,16 @@ function renderPerfCardsByMode(mode, gridId) {
           <span class="perf-key">Volume</span>
           <span class="perf-val">${fmtMoney(d.total_size)}</span>
         </div>
+        ${d.today ? `
+        <div class="perf-row" style="border-top:1px solid var(--text-dim);padding-top:6px;margin-top:4px;">
+          <span class="perf-key">Today</span>
+          <span class="perf-val">
+            n=${d.today.trade_count}
+            ${d.today.total_pnl !== 0 ? `<span class="${d.today.total_pnl >= 0 ? 'positive' : 'negative'}">${fmtMoney(d.today.total_pnl)}</span>` : ''}
+            ${d.today.wins + d.today.losses > 0 ? `(${((d.today.wins / (d.today.wins + d.today.losses)) * 100).toFixed(0)}%)` : ''}
+          </span>
+        </div>
+        ` : ''}
         ${d.pre ? `
         <div class="perf-row" style="border-top:1px solid var(--text-dim);padding-top:6px;margin-top:4px;">
           <span class="perf-key">Pre-game</span>
