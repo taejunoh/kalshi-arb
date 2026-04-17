@@ -22,9 +22,11 @@ _ODDS_CACHE: dict[tuple[str, str], tuple[float, list[dict], dict]] = {}
 _ODDS_CACHE_TTL_BY_REGION: dict[str, float] = {"us": 60.0, "eu": 600.0}
 _ODDS_CACHE_TTL_DEFAULT = 300.0
 
-# Quota thresholds for Odds API monthly allowance
-QUOTA_WARN_THRESHOLD = 5000   # Telegram warn (once per day)
-QUOTA_HALT_THRESHOLD = 1000   # Halt all sports strategies
+# Quota thresholds for Odds API monthly allowance (20K calls/mo)
+QUOTA_MONTHLY_ALLOWANCE = 20000
+QUOTA_WARN_THRESHOLD = 5000    # 25%: daily warn
+QUOTA_HALT_THRESHOLD = 1000    # 5%:  halt all sports strategies (one-time alert)
+QUOTA_CRITICAL_THRESHOLD = 400 # 2%:  extra one-time alert after halt
 
 from core.pinnacle_age import PinnacleAgeTracker
 _PINNACLE_AGE = PinnacleAgeTracker()
@@ -147,6 +149,12 @@ class SportsTraderStrategy:
     REGION_OVERRIDE: Optional[str] = None  # subclass can pin a specific Odds API region
     SCAN_INTERVAL_OVERRIDE: Optional[float] = None  # subclass can override scan cadence (us retail books tick faster)
     MIN_DEPTH_USDC = 0.0  # Subclasses override to enforce orderbook depth before market order
+    # Minimum entry price (0–1). Used by longshot variants whose paper-
+    # settled data shows a structural dead zone in the 10–20¢ bucket
+    # (ROI −40% to −63% in paper, even worse in live). Above the floor
+    # signals are positive-EV; below it they are systematically bad
+    # regardless of fee drag. Subclasses set to e.g. 0.20; None = no filter.
+    MIN_ENTRY_PRICE: Optional[float] = None
 
     def __init__(self, config, order_manager, kalshi_client):
         self.config = config
@@ -227,28 +235,42 @@ class SportsTraderStrategy:
         return getattr(self.config, "ODDS_API_REGION", "eu")
 
     async def _check_quota(self, remaining: int):
-        """Monitor Odds API quota. Tri-state: healthy (>=WARN) / warn (HALT..WARN) / halted (<HALT).
+        """Monitor Odds API quota with stepped milestone alerts.
 
-        - <HALT: set _quota_exhausted flag, send one-time halt alert. Sports scans stop.
-        - >=WARN: clear flag (recovered). If transitioned from halted, send recovery alert.
-        - HALT..WARN: flag untouched. Send daily warn (rate-limited by date-suffixed msg_type).
+        Thresholds (based on 20K/mo allowance):
+        - <2% (CRITICAL): one-time extra alert on top of halt.
+        - <5% (HALT): set _quota_exhausted, one-time halt alert. Sports scans stop.
+        - 5-25% (middle band): flag untouched, once-per-day warn.
+        - >=25% (WARN): clear flags (recovered). If transitioned from halted, recovery alert.
         """
         notifier = getattr(self._order_manager, "_notifier", None)
+        om = self._order_manager
         if remaining < QUOTA_HALT_THRESHOLD:
-            if not self._order_manager._quota_exhausted:
-                self._order_manager._quota_exhausted = True
+            if not om._quota_exhausted:
+                om._quota_exhausted = True
                 logger.error(
-                    f"[QUOTA] Odds API quota critical: {remaining} remaining. Sports strategies halted."
+                    f"[QUOTA] Odds API quota 5% threshold: {remaining} remaining. Sports strategies halted."
                 )
                 if notifier:
                     await notifier.send(
-                        f"⚠️ <b>Odds API quota critical</b>\nOnly {remaining} calls remaining.\nSports strategies halted until quota resets.",
+                        f"⚠️ <b>Odds API quota at 5%</b>\nOnly {remaining} calls remaining.\nSports strategies halted until quota resets.",
                         msg_type="quota_halt",
                     )
+            if remaining < QUOTA_CRITICAL_THRESHOLD and not om._quota_critical_alerted:
+                om._quota_critical_alerted = True
+                logger.error(
+                    f"[QUOTA] Odds API quota 2% threshold: {remaining} remaining."
+                )
+                if notifier:
+                    await notifier.send(
+                        f"🚨 <b>Odds API quota at 2%</b>\nOnly {remaining} calls remaining. Quota nearly depleted.",
+                        msg_type="quota_critical",
+                    )
         elif remaining >= QUOTA_WARN_THRESHOLD:
-            # Full recovery
-            if self._order_manager._quota_exhausted:
-                self._order_manager._quota_exhausted = False
+            # Full recovery — clear all milestone flags
+            if om._quota_exhausted:
+                om._quota_exhausted = False
+                om._quota_critical_alerted = False
                 logger.info(
                     f"[QUOTA] Odds API quota recovered: {remaining} remaining. Sports strategies resumed."
                 )
@@ -258,14 +280,19 @@ class SportsTraderStrategy:
                         msg_type="quota_recovery",
                     )
         else:
-            # Middle band — flag untouched, daily warn
+            # Middle band — flag untouched, warn once per day.
+            # Notifier only has a 60s rate-limit per msg_type, so we dedupe here
+            # by tracking the last warn date on OrderManager (shared across all
+            # sports_* strategies and their fetches).
             import datetime
             today = datetime.date.today().isoformat()
-            if notifier:
-                await notifier.send(
-                    f"ℹ️ Odds API quota low: {remaining} remaining.",
-                    msg_type=f"quota_warn_{today}",
-                )
+            if om._quota_warn_date != today:
+                om._quota_warn_date = today
+                if notifier:
+                    await notifier.send(
+                        f"ℹ️ Odds API quota low: {remaining} remaining.",
+                        msg_type=f"quota_warn_{today}",
+                    )
 
     async def _dual_region_consensus(
         self, sport: str, game: dict
@@ -787,6 +814,17 @@ class SportsTraderStrategy:
 
                 limit_price = self._get_limit_price(signal, fair_prob)
                 limit_price = max(0.01, min(0.99, limit_price))
+
+                # Entry price floor. For longshot the paper data carves out
+                # a dead zone below ~20¢ (n=29 settled at −46% ROI) where
+                # signals lose even under idealized execution. Above the
+                # floor longshot paper ROI is solidly positive (+24–25%).
+                if self.MIN_ENTRY_PRICE is not None and limit_price < self.MIN_ENTRY_PRICE:
+                    logger.debug(
+                        f"[{self.STRATEGY_NAME}] {ticker}: limit_price "
+                        f"{limit_price:.3f} < floor {self.MIN_ENTRY_PRICE:.2f}, skip"
+                    )
+                    continue
 
                 log_msg = self._format_log(
                     ticker=ticker, title=title, signal=signal,

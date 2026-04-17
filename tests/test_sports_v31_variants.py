@@ -59,3 +59,12 @@ def test_v31_inherits_evaluate_logic():
     v31 = _make(SportsLongshotV31Strategy)
     args = {"kalshi_yes": 0.15, "kalshi_no": 0.88, "fair_prob": 0.20, "ticker": "T"}
     assert v3.evaluate(**args) == v31.evaluate(**args)
+
+
+def test_longshot_v31_has_entry_price_floor_and_siblings_do_not():
+    """Longshot v31 is the only v31 variant with a 20¢ entry-price floor
+    because its <20¢ bucket lost money in paper (−46% ROI over n=29) even
+    with idealized fills. Siblings have no such structural dead zone."""
+    assert SportsLongshotV31Strategy.MIN_ENTRY_PRICE == 0.20
+    assert SportsMidshotV31Strategy.MIN_ENTRY_PRICE is None
+    assert SportsUnderdogV31Strategy.MIN_ENTRY_PRICE is None
