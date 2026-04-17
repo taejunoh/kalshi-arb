@@ -693,7 +693,7 @@ class SportsTraderStrategy:
         )
         kalshi_balance = self._client.get_balance(max_age_s=60)
         kalshi_total = (kalshi_balance or 0.0) + all_exp
-        max_sports_exposure = max(kalshi_total * 0.30, 10.0)
+        max_sports_exposure = max(kalshi_total * 0.50, 10.0)
         if sports_exp > max_sports_exposure:
             logger.info(
                 f"[SPORTS] Exposure ${sports_exp:.2f} > limit ${max_sports_exposure:.2f} "
