@@ -28,29 +28,34 @@ def _msg_types(notifier):
 
 
 @pytest.mark.asyncio
-async def test_fresh_quota_below_first_bucket_silent():
-    """used=1000 (remaining=19000) is still in bucket 0 — no alert yet."""
+async def test_first_fetch_seeds_bucket_without_alerting():
+    """First fetch after boot seeds the tracker to current bucket — no alert.
+    This prevents restart spam: the last known bucket was already alerted by
+    the previous process (or not, but either way the user doesn't need a
+    'you're here now' message on every restart)."""
     strat, om, notifier = _make_strategy()
-    await strat._check_quota(19000)
-    assert om._quota_exhausted is False
+    await strat._check_quota(3935)  # used=16065, bucket 8
+    assert om._quota_last_alert_bucket == 8
     notifier.send.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_bucket_crossing_fires_alert():
-    """Crossing used=2000 (remaining=18000) fires the first bucket alert."""
+async def test_bucket_crossing_fires_alert_after_seed():
+    """After seed, crossing to the next bucket fires one alert."""
     strat, om, notifier = _make_strategy()
-    await strat._check_quota(18000)
-    assert om._quota_last_alert_bucket == 1
+    await strat._check_quota(3935)  # seed at bucket 8
+    await strat._check_quota(1900)  # used=18100, bucket 9
+    assert om._quota_last_alert_bucket == 9
     types = _msg_types(notifier)
-    assert any(t and t.startswith("quota_bucket_") for t in types)
+    assert "quota_bucket_9" in types
 
 
 @pytest.mark.asyncio
 async def test_same_bucket_no_duplicate():
     """Repeated calls within the same bucket don't re-alert."""
     strat, om, notifier = _make_strategy()
-    await strat._check_quota(18000)  # bucket 1
+    await strat._check_quota(19500)  # seed at bucket 0
+    await strat._check_quota(18000)  # bucket 1 — alert
     await strat._check_quota(17500)  # still bucket 1
     await strat._check_quota(16500)  # still bucket 1
     assert sum(1 for t in _msg_types(notifier) if t and t.startswith("quota_bucket_")) == 1
@@ -58,25 +63,27 @@ async def test_same_bucket_no_duplicate():
 
 @pytest.mark.asyncio
 async def test_each_new_bucket_alerts_once():
-    """Every 2000 used triggers exactly one alert."""
+    """Every 2000 used triggers exactly one alert (after seed)."""
     strat, om, notifier = _make_strategy()
+    await strat._check_quota(19500)  # seed at bucket 0
     for remaining in [18000, 16000, 14000, 12000, 10000]:  # buckets 1..5
         await strat._check_quota(remaining)
     bucket_alerts = [t for t in _msg_types(notifier) if t and t.startswith("quota_bucket_")]
-    assert len(bucket_alerts) == 5
     assert bucket_alerts == [f"quota_bucket_{i}" for i in range(1, 6)]
 
 
 @pytest.mark.asyncio
 async def test_monthly_reset_resets_bucket_tracker():
-    """If `used` drops below the last-alerted bucket floor (quota reset), tracker resets."""
+    """If `used` drops below the last-alerted bucket floor (quota reset),
+    re-seed to current bucket without alerting."""
     strat, om, notifier = _make_strategy()
-    await strat._check_quota(4000)  # used=16000, bucket 8
+    await strat._check_quota(19500)  # seed at bucket 0
+    await strat._check_quota(4000)  # used=16000, bucket 8 — alert
     assert om._quota_last_alert_bucket == 8
     # Month rolls over → provider resets quota to full
-    await strat._check_quota(19500)  # used=500, well below bucket 8 floor (16000)
-    assert om._quota_last_alert_bucket == 0
-    # Next 2000 used should alert as bucket 1 again (not bucket 9)
+    await strat._check_quota(19500)  # used=500, below bucket 8 floor
+    assert om._quota_last_alert_bucket == 0  # re-seeded (silent)
+    # From here, crossing bucket 1 should alert again
     await strat._check_quota(18000)
     assert om._quota_last_alert_bucket == 1
 

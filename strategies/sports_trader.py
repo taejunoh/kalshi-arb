@@ -253,14 +253,16 @@ class SportsTraderStrategy:
         notifier = getattr(self._order_manager, "_notifier", None)
         om = self._order_manager
         used = max(0, QUOTA_MONTHLY_ALLOWANCE - remaining)
-
-        # Monthly reset: `used` dropped below the last-alerted bucket's floor
-        # (quota reset by provider), so bucket counter resets to 0.
-        if used < om._quota_last_alert_bucket * QUOTA_ALERT_INTERVAL:
-            om._quota_last_alert_bucket = 0
-
         current_bucket = used // QUOTA_ALERT_INTERVAL
-        if current_bucket > om._quota_last_alert_bucket:
+
+        if om._quota_last_alert_bucket is None:
+            # Seed on first fetch after boot so restarts don't re-fire the current bucket.
+            om._quota_last_alert_bucket = current_bucket
+        elif used < om._quota_last_alert_bucket * QUOTA_ALERT_INTERVAL:
+            # Monthly reset detected: provider rolled quota over, `used` dropped
+            # below prior bucket floor. Treat as fresh cycle.
+            om._quota_last_alert_bucket = current_bucket
+        elif current_bucket > om._quota_last_alert_bucket:
             om._quota_last_alert_bucket = current_bucket
             if notifier:
                 await notifier.send(

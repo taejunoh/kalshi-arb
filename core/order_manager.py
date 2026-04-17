@@ -59,7 +59,9 @@ class OrderManager:
         self._pause_until = 0.0
         self._positions: dict[tuple[str, str], dict] = {}  # (strategy, ticker) -> position
         self._quota_exhausted = False  # Set when Odds API remaining < QUOTA_HALT_THRESHOLD (5%)
-        self._quota_last_alert_bucket = 0  # used // QUOTA_ALERT_INTERVAL of last informational alert
+        # None until first fetch seeds it to the current bucket (avoids firing a
+        # stale-bucket alert on every restart); thereafter set to last-alerted bucket.
+        self._quota_last_alert_bucket: int | None = None
         # Shared per-game stake accounting for v33 variants. v33 caps aggregate
         # exposure across longshot/midshot/underdog on the same game (paper
         # analysis 2026-04-17 showed 75% intra-game outcome correlation). Key
