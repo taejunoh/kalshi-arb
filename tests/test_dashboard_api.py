@@ -192,9 +192,15 @@ async def test_strategy_status_marks_loop_disabled(db):
     assert data["maker_preorder"]["reason"] == "removed_from_loop"
     assert data["shutdown_fade"]["active"] is False
     assert "DEPRECATED" in data["shutdown_fade"]["reason"]
-    # sports subclasses remain active (in loop, flag on)
-    assert data["sports_longshot"]["active"] is True
-    assert data["sports_longshot"]["reason"] is None
+    # sports_longshot retired 2026-04-17 (V31 replaces); pinnacle_edge
+    # retired same day for -37.5% ROI pending post-gate re-evaluation.
+    assert data["sports_longshot"]["active"] is False
+    assert data["sports_longshot"]["reason"] == "removed_from_loop"
+    assert data["sports_pinnacle_edge"]["active"] is False
+    assert data["sports_pinnacle_edge"]["reason"] == "removed_from_loop"
+    # v31 siblings still active.
+    assert data["sports_longshot_v31"]["active"] is True
+    assert data["sports_midshot"]["active"] is True
 
 
 @pytest.mark.asyncio

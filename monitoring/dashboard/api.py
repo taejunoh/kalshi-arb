@@ -398,7 +398,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         # Keep in sync with main.py; see commits 59f7e44 (sports_trader) and
         # e901f2b (maker_preorder).
         loop_disabled = {"sports_trader", "maker_preorder", "shutdown_fade",
-                         "sports_liquidity_filtered", "sports_consolidated"}
+                         "sports_liquidity_filtered", "sports_consolidated",
+                         "sports_longshot", "sports_pinnacle_edge"}
         # env-flag mapping: which config attribute gates each strategy
         flag_map = {
             "market_maker": "MM_ENABLED",
@@ -440,6 +441,14 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "maker_preorder":
                 "Disabled: 봇 시작 시 ~400 limit orders 를 4초 내 발사해 bankroll 드레인. "
                 "env flag 없이 scan loop 에서만 제거. 재설계 필요.",
+            "sports_longshot":
+                "Disabled (2026-04-17): V3 longshot. 127 settled -11.0% ROI 대비 "
+                "sports_longshot_v31 paper 은 동일 signal 공간에서 +8.9%. 같이 돌면 "
+                "bankroll 만 양분되고 추가 edge 없음 → V31 에 일원화.",
+            "sports_pinnacle_edge":
+                "Disabled (2026-04-17): 37 settled -37.5% ROI. 4/16 (80ad42e) "
+                "freshness gate 추가됐지만 post-gate 표본 부족. gate 이후 충분한 "
+                "데이터 쌓이면 재평가 후 부활 검토.",
         }
         result = {}
         for s in all_strategies:
