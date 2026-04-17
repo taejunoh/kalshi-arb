@@ -20,6 +20,8 @@ def _make(region="eu"):
     config.ODDS_API_REGION = region
     om = MagicMock()
     om._notifier = None  # prevent _check_quota auto-Mock await
+    om._quota_last_alert_bucket = 0  # int, not Mock, so bucket arithmetic works
+    om._quota_exhausted = False
     s = SportsTraderStrategy(config, om, MagicMock())
     return s
 

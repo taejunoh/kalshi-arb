@@ -24,9 +24,9 @@ _ODDS_CACHE_TTL_DEFAULT = 300.0
 
 # Quota thresholds for Odds API monthly allowance (20K calls/mo)
 QUOTA_MONTHLY_ALLOWANCE = 20000
-QUOTA_WARN_THRESHOLD = 5000    # 25%: daily warn
-QUOTA_HALT_THRESHOLD = 1000    # 5%:  halt all sports strategies (one-time alert)
-QUOTA_CRITICAL_THRESHOLD = 400 # 2%:  extra one-time alert after halt
+QUOTA_WARN_THRESHOLD = 5000    # 25%: recovery clears halt flag once we're back above
+QUOTA_HALT_THRESHOLD = 1000    # 5%:  halt all sports strategies
+QUOTA_ALERT_INTERVAL = 2000    # Informational alert every N calls used (10 per month)
 
 from core.pinnacle_age import PinnacleAgeTracker
 _PINNACLE_AGE = PinnacleAgeTracker()
@@ -243,64 +243,52 @@ class SportsTraderStrategy:
         return getattr(self.config, "ODDS_API_REGION", "eu")
 
     async def _check_quota(self, remaining: int):
-        """Monitor Odds API quota with stepped milestone alerts.
+        """Monitor Odds API quota with bucket-based alerts.
 
-        Thresholds (based on 20K/mo allowance):
-        - <2% (CRITICAL): one-time extra alert on top of halt.
-        - <5% (HALT): set _quota_exhausted, one-time halt alert. Sports scans stop.
-        - 5-25% (middle band): flag untouched, once-per-day warn.
-        - >=25% (WARN): clear flags (recovered). If transitioned from halted, recovery alert.
+        - Every QUOTA_ALERT_INTERVAL (2000) calls used: one informational alert.
+          Bucket-based dedup means each bucket fires at most once per cycle.
+        - <HALT (5%): set _quota_exhausted flag. Sports strategies stop entering.
+        - >=WARN (25%): clear halt flag (monthly reset or recovery).
         """
         notifier = getattr(self._order_manager, "_notifier", None)
         om = self._order_manager
+        used = max(0, QUOTA_MONTHLY_ALLOWANCE - remaining)
+
+        # Monthly reset: `used` dropped below the last-alerted bucket's floor
+        # (quota reset by provider), so bucket counter resets to 0.
+        if used < om._quota_last_alert_bucket * QUOTA_ALERT_INTERVAL:
+            om._quota_last_alert_bucket = 0
+
+        current_bucket = used // QUOTA_ALERT_INTERVAL
+        if current_bucket > om._quota_last_alert_bucket:
+            om._quota_last_alert_bucket = current_bucket
+            if notifier:
+                await notifier.send(
+                    f"📊 Odds API quota: {used:,} used / {remaining:,} remaining.",
+                    msg_type=f"quota_bucket_{current_bucket}",
+                )
+
         if remaining < QUOTA_HALT_THRESHOLD:
             if not om._quota_exhausted:
                 om._quota_exhausted = True
                 logger.error(
-                    f"[QUOTA] Odds API quota 5% threshold: {remaining} remaining. Sports strategies halted."
+                    f"[QUOTA] Odds API halt threshold: {remaining} remaining. Sports strategies halted."
                 )
                 if notifier:
                     await notifier.send(
                         f"⚠️ <b>Odds API quota at 5%</b>\nOnly {remaining} calls remaining.\nSports strategies halted until quota resets.",
                         msg_type="quota_halt",
                     )
-            if remaining < QUOTA_CRITICAL_THRESHOLD and not om._quota_critical_alerted:
-                om._quota_critical_alerted = True
-                logger.error(
-                    f"[QUOTA] Odds API quota 2% threshold: {remaining} remaining."
+        elif remaining >= QUOTA_WARN_THRESHOLD and om._quota_exhausted:
+            om._quota_exhausted = False
+            logger.info(
+                f"[QUOTA] Odds API quota recovered: {remaining} remaining. Sports strategies resumed."
+            )
+            if notifier:
+                await notifier.send(
+                    f"✅ Odds API quota recovered: {remaining} remaining.\nSports strategies resumed.",
+                    msg_type="quota_recovery",
                 )
-                if notifier:
-                    await notifier.send(
-                        f"🚨 <b>Odds API quota at 2%</b>\nOnly {remaining} calls remaining. Quota nearly depleted.",
-                        msg_type="quota_critical",
-                    )
-        elif remaining >= QUOTA_WARN_THRESHOLD:
-            # Full recovery — clear all milestone flags
-            if om._quota_exhausted:
-                om._quota_exhausted = False
-                om._quota_critical_alerted = False
-                logger.info(
-                    f"[QUOTA] Odds API quota recovered: {remaining} remaining. Sports strategies resumed."
-                )
-                if notifier:
-                    await notifier.send(
-                        f"✅ Odds API quota recovered: {remaining} remaining.\nSports strategies resumed.",
-                        msg_type="quota_recovery",
-                    )
-        else:
-            # Middle band — flag untouched, warn once per day.
-            # Notifier only has a 60s rate-limit per msg_type, so we dedupe here
-            # by tracking the last warn date on OrderManager (shared across all
-            # sports_* strategies and their fetches).
-            import datetime
-            today = datetime.date.today().isoformat()
-            if om._quota_warn_date != today:
-                om._quota_warn_date = today
-                if notifier:
-                    await notifier.send(
-                        f"ℹ️ Odds API quota low: {remaining} remaining.",
-                        msg_type=f"quota_warn_{today}",
-                    )
 
     async def _dual_region_consensus(
         self, sport: str, game: dict
