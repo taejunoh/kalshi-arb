@@ -218,13 +218,19 @@ class Bot:
             # (-$13.63 net, 63% WR but expensive contracts). V3 comparison
             # continues with longshot/midshot/underdog. Instance still exists
             # for inheritance but scan_and_execute is not called.
-            # sports_longshot (v3) disabled 2026-04-17 — 127 settled trades at
-            # -11.0% ROI vs sports_longshot_v31 paper at +8.9% on same signal
-            # space. V31 is the better replacement; running both produces
-            # duplicate signals that compete for bankroll without adding edge.
+            # sports_longshot/midshot/underdog (v3) all disabled 2026-04-17
+            # based on overlap analysis: V31 is a strict subset of V3 (100%
+            # for midshot/underdog, 93% for longshot) with 100% direction
+            # agreement on the shared ticker set and ~0¢ entry-price diff.
+            # V3-only signals (50-58 per pair) are uniformly negative ROI:
+            #   longshot V3-only:  n=57, ROI -34.6%  (V3 total -12.6%, V31 +6.1%)
+            #   midshot  V3-only:  n=54, ROI -12.8%  (V3 total +10.1%, V31 +21.4%)
+            #   underdog V3-only:  n=51, ROI -13.7%  (V3 total +13.0%, V31 +30.8%)
+            # V31 covers the V3 signal space with no alpha loss. Kill V3 to
+            # reclaim bankroll and eliminate duplicate fires.
             # ("sports_longshot", self.sports_longshot),
-            ("sports_midshot", self.sports_midshot),
-            ("sports_underdog", self.sports_underdog),
+            # ("sports_midshot", self.sports_midshot),
+            # ("sports_underdog", self.sports_underdog),
             ("sports_longshot_v31", self.sports_longshot_v31),
             ("sports_midshot_v31", self.sports_midshot_v31),
             ("sports_underdog_v31", self.sports_underdog_v31),

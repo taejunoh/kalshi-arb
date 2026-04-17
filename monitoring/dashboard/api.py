@@ -399,7 +399,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         # e901f2b (maker_preorder).
         loop_disabled = {"sports_trader", "maker_preorder", "shutdown_fade",
                          "sports_liquidity_filtered", "sports_consolidated",
-                         "sports_longshot", "sports_pinnacle_edge"}
+                         "sports_longshot", "sports_midshot", "sports_underdog",
+                         "sports_pinnacle_edge"}
         # env-flag mapping: which config attribute gates each strategy
         flag_map = {
             "market_maker": "MM_ENABLED",
@@ -442,9 +443,16 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "Disabled: 봇 시작 시 ~400 limit orders 를 4초 내 발사해 bankroll 드레인. "
                 "env flag 없이 scan loop 에서만 제거. 재설계 필요.",
             "sports_longshot":
-                "Disabled (2026-04-17): V3 longshot. 127 settled -11.0% ROI 대비 "
-                "sports_longshot_v31 paper 은 동일 signal 공간에서 +8.9%. 같이 돌면 "
-                "bankroll 만 양분되고 추가 edge 없음 → V31 에 일원화.",
+                "Disabled (2026-04-17): V3 longshot. Overlap 분석 결과 V31 이 V3 의 "
+                "93% 부분집합. V3-only 57건 ROI -34.6% 로 drag. V31 에 일원화.",
+            "sports_midshot":
+                "Disabled (2026-04-17): V3 midshot. V31 이 V3 의 100% 부분집합 (방향 "
+                "100% 일치, entry price 동일). V3-only 54건 ROI -12.8% 로 drag. "
+                "V31 paper +21.4% vs V3 +10.1% → V31 로 일원화.",
+            "sports_underdog":
+                "Disabled (2026-04-17): V3 underdog. V31 이 V3 의 100% 부분집합 "
+                "(방향 100% 일치). V3-only 51건 ROI -13.7% 로 drag. V31 paper "
+                "+30.8% vs V3 +13.0% → V31 로 일원화.",
             "sports_pinnacle_edge":
                 "Disabled (2026-04-17): 37 settled -37.5% ROI. 4/16 (80ad42e) "
                 "freshness gate 추가됐지만 post-gate 표본 부족. gate 이후 충분한 "
