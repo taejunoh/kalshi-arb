@@ -218,13 +218,22 @@ class Bot:
             # (-$13.63 net, 63% WR but expensive contracts). V3 comparison
             # continues with longshot/midshot/underdog. Instance still exists
             # for inheritance but scan_and_execute is not called.
-            ("sports_longshot", self.sports_longshot),
+            # sports_longshot (v3) disabled 2026-04-17 — 127 settled trades at
+            # -11.0% ROI vs sports_longshot_v31 paper at +8.9% on same signal
+            # space. V31 is the better replacement; running both produces
+            # duplicate signals that compete for bankroll without adding edge.
+            # ("sports_longshot", self.sports_longshot),
             ("sports_midshot", self.sports_midshot),
             ("sports_underdog", self.sports_underdog),
             ("sports_longshot_v31", self.sports_longshot_v31),
             ("sports_midshot_v31", self.sports_midshot_v31),
             ("sports_underdog_v31", self.sports_underdog_v31),
-            ("sports_pinnacle_edge", self.sports_pinnacle_edge),
+            # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
+            # -37.5% ROI. Freshness gate was added 2026-04-16 (80ad42e) but
+            # only a handful of post-gate entries accumulated before shutdown;
+            # re-enable only after a fresh evaluation window if signal quality
+            # materially changes.
+            # ("sports_pinnacle_edge", self.sports_pinnacle_edge),
             ("sports_v4_edge", self.sports_v4_edge),
             # sports_liquidity_filtered removed 2026-04-15 — $3 trade size made
             # depth filter inert, 100% trade overlap with sports_midshot_v31
