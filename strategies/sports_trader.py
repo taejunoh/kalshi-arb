@@ -677,16 +677,22 @@ class SportsTraderStrategy:
         max_trades_per_cycle = 3
         hit_limit = False
 
-        # Check total exposure ONCE per cycle (not per market).
-        # Floor the cap at $10 so a temporarily weird bankroll (e.g., paper
-        # mode drained by stale settlements) doesn't silently block all sports
-        # trading. Sports per-trade size is ~$1-$3 so $10 still allows 3-4
-        # fresh trades in the worst case.
-        total_exposure = self._get_live_sports_exposure()
-        max_exposure = max(self._order_manager.bankroll * 0.30, 10.0)
-        if total_exposure > max_exposure:
-            logger.info(f"[SPORTS] Exposure ${total_exposure:.2f} > limit ${max_exposure:.2f}, skipping")
-            return
+        # Check total Kalshi sports exposure against cap — LIVE strategies
+        # only. Paper strategies (v31 paper twin is handled elsewhere; v32/
+        # v33 variants and v4_edge scan as paper) don't create real
+        # exposure, so blocking them on live-exposure limits just starves
+        # the A/B sample without reducing real risk. Also skip the Kalshi
+        # API call in that case. Floor the cap at $10 so a temporarily
+        # weird bankroll doesn't silently block all sports trading.
+        if self._order_manager._is_live(self.STRATEGY_NAME):
+            total_exposure = self._get_live_sports_exposure()
+            max_exposure = max(self._order_manager.bankroll * 0.30, 10.0)
+            if total_exposure > max_exposure:
+                logger.info(
+                    f"[SPORTS] {self.STRATEGY_NAME}: Exposure "
+                    f"${total_exposure:.2f} > limit ${max_exposure:.2f}, skipping"
+                )
+                return
 
         # Track game IDs already traded this cycle to avoid betting both sides
         traded_games: set[str] = set()
