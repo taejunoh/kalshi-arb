@@ -120,3 +120,68 @@ async def test_live_order_fallback_when_fill_fields_missing(tmp_path):
         row = await cur.fetchone()
     # No fill info → NULL
     assert row["realized_fill_price"] is None
+
+
+@pytest.mark.asyncio
+async def test_ttl_limit_prices_aggressive_on_yes_side(tmp_path):
+    """YES-side v31 entry posts limit at signal + AGG cents to cross the spread."""
+    from core.order_manager import LIMIT_AGGRESSION_CENTS
+    db = Database(str(tmp_path / "t.db"))
+    await db.initialize()
+    config = MagicMock()
+    config.INITIAL_BANKROLL = 2000.0
+    config.LIVE_STRATEGIES = set()
+    config.estimate_fee = MagicMock(return_value=0.07)
+    config.KALSHI_FEE_PER_CONTRACT = 0.07
+    config.MAX_DAILY_LOSS = 200
+    config.MAX_DAILY_LOSS_LIVE = 200
+    config.MAX_CONSECUTIVE_LOSSES = 1000
+    client = MagicMock()
+    client.get_balance = MagicMock(return_value=100.0)
+    client.invalidate_balance_cache = MagicMock()
+    client.place_limit_order = MagicMock(return_value={"order_id": "ord-yes"})
+    # Order completes immediately, unfilled, so we can snapshot the placed price.
+    client.get_order = MagicMock(return_value={
+        "fill_count_fp": 0, "remaining_count_fp": 10,
+        "status": "canceled", "taker_fill_cost_dollars": 0,
+        "maker_fill_cost_dollars": 0,
+    })
+    client.cancel_order = MagicMock(return_value=True)
+    om = OrderManager(config, kalshi_client=client, database=db, notifier=None)
+    await om.hydrate_bankroll()
+    await om._live_limit_ttl_order("KX-T1", "yes", 3.0, 0.40, "sports_longshot_v31", "KX-T1")
+    # Signal 40¢ YES → place at 40 + AGG (willing to pay more).
+    args = client.place_limit_order.call_args[0]
+    assert args[2] == 40 + LIMIT_AGGRESSION_CENTS
+
+
+@pytest.mark.asyncio
+async def test_ttl_limit_prices_aggressive_on_no_side(tmp_path):
+    """NO-side entry bumps yes_price DOWN so cost cap rises by AGG cents."""
+    from core.order_manager import LIMIT_AGGRESSION_CENTS
+    db = Database(str(tmp_path / "t.db"))
+    await db.initialize()
+    config = MagicMock()
+    config.INITIAL_BANKROLL = 2000.0
+    config.LIVE_STRATEGIES = set()
+    config.estimate_fee = MagicMock(return_value=0.07)
+    config.KALSHI_FEE_PER_CONTRACT = 0.07
+    config.MAX_DAILY_LOSS = 200
+    config.MAX_DAILY_LOSS_LIVE = 200
+    config.MAX_CONSECUTIVE_LOSSES = 1000
+    client = MagicMock()
+    client.get_balance = MagicMock(return_value=100.0)
+    client.invalidate_balance_cache = MagicMock()
+    client.place_limit_order = MagicMock(return_value={"order_id": "ord-no"})
+    client.get_order = MagicMock(return_value={
+        "fill_count_fp": 0, "remaining_count_fp": 10,
+        "status": "canceled", "taker_fill_cost_dollars": 0,
+        "maker_fill_cost_dollars": 0,
+    })
+    client.cancel_order = MagicMock(return_value=True)
+    om = OrderManager(config, kalshi_client=client, database=db, notifier=None)
+    await om.hydrate_bankroll()
+    await om._live_limit_ttl_order("KX-T1", "no", 3.0, 0.40, "sports_longshot_v31", "KX-T1")
+    # NO 40¢ signal → yes_price = (100 - 40) - AGG = 58 (paying up to 42¢).
+    args = client.place_limit_order.call_args[0]
+    assert args[2] == (100 - 40) - LIMIT_AGGRESSION_CENTS

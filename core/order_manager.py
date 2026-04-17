@@ -21,6 +21,18 @@ LIMIT_TTL_STRATEGIES = {
 LIMIT_TTL_SECONDS = 60
 LIMIT_TTL_POLL_INTERVAL = 5
 
+# Cents of aggression over signal price for v31 marketable limits.
+# Why: a limit posted AT signal price only fills when the market drifts
+# against our signal first (classic adverse selection). Observed
+# 2026-04-16: paper twins of live-filled signals won 17-38%, while
+# paper twins of the unfilled signals won 33-55% — a ~17pp gap across
+# all 3 v31 strategies. Crossing the spread by 2¢ turns the order into
+# a taker that hits any resting ask at-or-below (signal + 2¢), capturing
+# the "market was at or better than signal" pool that adverse selection
+# was filtering out. Kalshi limits support partial fills so the FOK
+# issue that market orders had at thin strikes doesn't reappear.
+LIMIT_AGGRESSION_CENTS = 2
+
 # Strategies that should record a paper twin alongside every live entry.
 # Rationale: keep generating paper_filled rows under the same strategy name
 # so paper and live stats accumulate in parallel from the same signal. The
@@ -397,15 +409,28 @@ class OrderManager:
         """
         count = max(1, int(size_usdc / price))
         price_cents = int(round(price * 100))
-        yes_price_cents = price_cents if side == "yes" else (100 - price_cents)
+        # Aggression: push yes_price so we're willing to pay up to
+        # LIMIT_AGGRESSION_CENTS more per contract than signal. For YES buys
+        # the yes_price IS our cost → bump up. For NO buys cost = 100 -
+        # yes_price → bump yes_price DOWN to raise our NO cost cap.
+        if side == "yes":
+            yes_price_cents = price_cents + LIMIT_AGGRESSION_CENTS
+        else:
+            yes_price_cents = (100 - price_cents) - LIMIT_AGGRESSION_CENTS
         yes_price_cents = max(1, min(99, yes_price_cents))
-        expected_fee = self.config.estimate_fee(count, int(price * 100))
+        # Worst-case per-contract cost; used for fee/balance reservation.
+        max_cost_cents = price_cents + LIMIT_AGGRESSION_CENTS
+        max_cost_cents = max(1, min(99, max_cost_cents))
+        expected_fee = self.config.estimate_fee(count, max_cost_cents)
 
         balance = self._client.get_balance(max_age_s=60)
         if balance is None:
             logger.warning(f"LIVE limit {strategy} {ticker}: balance check failed, skipping")
             return {"status": "failed", "reason": "balance_check_failed"}
-        required = size_usdc + expected_fee
+        # Reserve worst-case cost (signal + aggression), not signal size, so a
+        # 1-2¢ taker fill near the margin doesn't overdraft Kalshi.
+        max_size_usdc = count * max_cost_cents / 100.0
+        required = max_size_usdc + expected_fee
         if balance < required:
             logger.warning(
                 f"LIVE limit {strategy} {ticker}: balance ${balance:.2f} < required ${required:.2f}, skipping"
@@ -486,9 +511,10 @@ class OrderManager:
             )
             return {"status": "skipped", "reason": "limit_ttl_unfilled", "order_id": order_id}
 
-        # Actual filled size in USDC. Use signal price so bankroll and paper
-        # comparison stay in the same reference frame; realized_fill_price
-        # captures any favorable slippage in CLV tracking.
+        # Size recorded in DB uses signal price so CLV and paper/live
+        # comparison share the same reference frame; realized_fill_price
+        # captures the real entry. Fees also use signal price for the same
+        # reason (paper twin uses signal-based estimate).
         actual_size = filled_count * price
         actual_fee = self.config.estimate_fee(filled_count, price_cents)
         trade_id = await self._db.record_trade(
@@ -497,8 +523,11 @@ class OrderManager:
             minutes_to_start=minutes_to_start,
             realized_fill_price=realized,
         )
-        # Deduct cost + fee (Kalshi's real balance already reflects both).
-        self.bankroll -= (actual_size + actual_fee)
+        # Bankroll mirrors Kalshi's real debit. With marketable-limit
+        # aggression, realized can exceed signal by up to LIMIT_AGGRESSION_CENTS;
+        # deducting signal-based size here would drift bankroll above Kalshi.
+        kalshi_debit = filled_count * realized if realized is not None else actual_size
+        self.bankroll -= (kalshi_debit + actual_fee)
         await self._persist_bankroll()
         slip_note = f" realized={realized:.3f}" if realized is not None else ""
         partial_note = f" (partial {filled_count}/{count})" if filled_count < count else ""
