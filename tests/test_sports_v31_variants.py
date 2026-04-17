@@ -68,3 +68,81 @@ def test_longshot_v31_has_entry_price_floor_and_siblings_do_not():
     assert SportsLongshotV31Strategy.MIN_ENTRY_PRICE == 0.20
     assert SportsMidshotV31Strategy.MIN_ENTRY_PRICE is None
     assert SportsUnderdogV31Strategy.MIN_ENTRY_PRICE is None
+
+
+# ---------- V3.2 (edge-scaled sizing) ----------
+
+def test_v32_scales_size_by_payoff():
+    """v32 multiplies base by clamp(payoff/threshold, 0.5, 2.0)."""
+    from strategies.sports_longshot_v32 import SportsLongshotV32Strategy
+    from strategies.sports_midshot_v32 import SportsMidshotV32Strategy
+    from strategies.sports_underdog_v32 import SportsUnderdogV32Strategy
+
+    ls = _make(SportsLongshotV32Strategy)
+    ls._order_manager.bankroll = 1000.0
+    # At threshold (3.0x), multiplier == 1.0 → base $3
+    assert ls._get_trade_size({"edge": 3.0}) == 3.0
+    # 2× threshold → 2.0×
+    assert ls._get_trade_size({"edge": 6.0}) == 6.0
+    # 10× threshold → clamped to 2.0×
+    assert ls._get_trade_size({"edge": 30.0}) == 6.0
+    # 0.5× threshold → clamped to 0.5×
+    assert ls._get_trade_size({"edge": 0.1}) == 1.5
+
+    ms = _make(SportsMidshotV32Strategy)
+    ms._order_manager.bankroll = 1000.0
+    # Midshot threshold 2.5, at threshold → 1.0×
+    assert ms._get_trade_size({"edge": 2.5}) == 3.0
+    assert ms._get_trade_size({"edge": 5.0}) == 6.0
+
+    ud = _make(SportsUnderdogV32Strategy)
+    ud._order_manager.bankroll = 1000.0
+    # Underdog threshold 2.0
+    assert ud._get_trade_size({"edge": 2.0}) == 3.0
+    assert ud._get_trade_size({"edge": 4.0}) == 6.0
+
+
+def test_v32_inherits_v31_entry_price_floor():
+    """v32 longshot must keep v31's 20¢ dead-zone filter."""
+    from strategies.sports_longshot_v32 import SportsLongshotV32Strategy
+    from strategies.sports_midshot_v32 import SportsMidshotV32Strategy
+    assert SportsLongshotV32Strategy.MIN_ENTRY_PRICE == 0.20
+    assert SportsMidshotV32Strategy.MIN_ENTRY_PRICE is None
+    # v32 has no per-game cap
+    assert SportsLongshotV32Strategy.PER_GAME_CAP_USDC is None
+
+
+# ---------- V3.3 (per-game cap) ----------
+
+def test_v33_sets_per_game_cap_and_keeps_v31_price_floor():
+    from strategies.sports_longshot_v33 import SportsLongshotV33Strategy
+    from strategies.sports_midshot_v33 import SportsMidshotV33Strategy
+    from strategies.sports_underdog_v33 import SportsUnderdogV33Strategy
+    for cls in (SportsLongshotV33Strategy, SportsMidshotV33Strategy,
+                SportsUnderdogV33Strategy):
+        assert cls.PER_GAME_CAP_USDC == 9.0, cls.__name__
+    # Longshot v33 also keeps the 20¢ floor via V31 inheritance
+    assert SportsLongshotV33Strategy.MIN_ENTRY_PRICE == 0.20
+    assert SportsMidshotV33Strategy.MIN_ENTRY_PRICE is None
+
+
+def test_v33_cap_state_is_shared_via_order_manager():
+    """All v33 siblings must read/write the same dict so cross-strategy
+    game exposure accumulates correctly."""
+    from strategies.sports_longshot_v33 import SportsLongshotV33Strategy
+    from strategies.sports_midshot_v33 import SportsMidshotV33Strategy
+    from unittest.mock import MagicMock
+
+    om = MagicMock()
+    om._v33_game_spend = {}
+
+    config = MagicMock()
+    config.KALSHI_FEE_PER_CONTRACT = 0.07
+    config.ODDS_API_KEY = ""
+    config.ODDS_API_REGION = "eu"
+
+    ls = SportsLongshotV33Strategy(config, om, MagicMock())
+    ms = SportsMidshotV33Strategy(config, om, MagicMock())
+    # Mutating via one sibling is visible to the other (same dict reference).
+    ls._order_manager._v33_game_spend["GAME-X"] = 3.0
+    assert ms._order_manager._v33_game_spend["GAME-X"] == 3.0

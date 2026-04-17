@@ -155,6 +155,14 @@ class SportsTraderStrategy:
     # signals are positive-EV; below it they are systematically bad
     # regardless of fee drag. Subclasses set to e.g. 0.20; None = no filter.
     MIN_ENTRY_PRICE: Optional[float] = None
+    # Per-game aggregate stake cap (USDC). 2026-04-17 paper analysis found
+    # v31 fires median 6 trades per game with 75% intra-game outcome
+    # correlation — capping aggregate per-game stake at $9 kept +23.1% ROI
+    # on kept trades vs +19.7% on the uncapped pool, a capital-efficiency
+    # win. v33 variants set this; state is shared across v33 siblings via
+    # OrderManager._v33_game_spend so the cap applies to the aggregate, not
+    # per-strategy. None = no cap.
+    PER_GAME_CAP_USDC: Optional[float] = None
 
     def __init__(self, config, order_manager, kalshi_client):
         self.config = config
@@ -825,6 +833,24 @@ class SportsTraderStrategy:
                         f"{limit_price:.3f} < floor {self.MIN_ENTRY_PRICE:.2f}, skip"
                     )
                     continue
+
+                # Per-game aggregate-stake cap (v33 variants). Shared across
+                # all strategies that set PER_GAME_CAP_USDC via OrderManager._
+                # v33_game_spend so longshot/midshot/underdog siblings see
+                # each other's exposure on the same game. Update tracker
+                # BEFORE dispatch so near-simultaneous scans don't double-
+                # count; on a paper fire the dispatch always records the
+                # entry so the reservation matches reality.
+                if self.PER_GAME_CAP_USDC is not None:
+                    spend = self._order_manager._v33_game_spend
+                    current = spend.get(game_id, 0.0)
+                    if current + size > self.PER_GAME_CAP_USDC + 0.01:
+                        logger.debug(
+                            f"[{self.STRATEGY_NAME}] {ticker}: v33 game cap "
+                            f"${current:.2f}+${size:.2f} > ${self.PER_GAME_CAP_USDC:.2f}, skip"
+                        )
+                        continue
+                    spend[game_id] = current + size
 
                 log_msg = self._format_log(
                     ticker=ticker, title=title, signal=signal,

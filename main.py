@@ -20,6 +20,12 @@ from strategies.sports_underdog import SportsUnderdogStrategy
 from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
 from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
 from strategies.sports_underdog_v31 import SportsUnderdogV31Strategy
+from strategies.sports_longshot_v32 import SportsLongshotV32Strategy
+from strategies.sports_midshot_v32 import SportsMidshotV32Strategy
+from strategies.sports_underdog_v32 import SportsUnderdogV32Strategy
+from strategies.sports_longshot_v33 import SportsLongshotV33Strategy
+from strategies.sports_midshot_v33 import SportsMidshotV33Strategy
+from strategies.sports_underdog_v33 import SportsUnderdogV33Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.econ_trader import EconTraderStrategy
@@ -82,6 +88,26 @@ class Bot:
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_underdog_v31 = SportsUnderdogV31Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # V3.2 variants — V3.1 + edge-scaled sizing (paper-only A/B).
+        self.sports_longshot_v32 = SportsLongshotV32Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_midshot_v32 = SportsMidshotV32Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_underdog_v32 = SportsUnderdogV32Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # V3.3 variants — V3.1 + per-game stake cap (paper-only A/B).
+        self.sports_longshot_v33 = SportsLongshotV33Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_midshot_v33 = SportsMidshotV33Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_underdog_v33 = SportsUnderdogV33Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
@@ -234,6 +260,18 @@ class Bot:
             ("sports_longshot_v31", self.sports_longshot_v31),
             ("sports_midshot_v31", self.sports_midshot_v31),
             ("sports_underdog_v31", self.sports_underdog_v31),
+            # V3.2 + V3.3 paper-only A/B variants (added 2026-04-17).
+            # V3.2: edge-scaled sizing (size = base × clamp(payoff/threshold, 0.5, 2.0)).
+            # V3.3: per-game aggregate stake cap at $9, shared across siblings via
+            # OrderManager._v33_game_spend. Both inherit V3.1 (longshot gets its
+            # 20¢ entry floor for free). NOT in LIVE_STRATEGIES — paper only
+            # until 2-week evaluation window closes and one variant wins.
+            ("sports_longshot_v32", self.sports_longshot_v32),
+            ("sports_midshot_v32", self.sports_midshot_v32),
+            ("sports_underdog_v32", self.sports_underdog_v32),
+            ("sports_longshot_v33", self.sports_longshot_v33),
+            ("sports_midshot_v33", self.sports_midshot_v33),
+            ("sports_underdog_v33", self.sports_underdog_v33),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
             # -37.5% ROI. Freshness gate was added 2026-04-16 (80ad42e) but
             # only a handful of post-gate entries accumulated before shutdown;

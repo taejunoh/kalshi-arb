@@ -61,6 +61,12 @@ class OrderManager:
         self._quota_exhausted = False  # Set when Odds API remaining < QUOTA_HALT_THRESHOLD (5%)
         self._quota_critical_alerted = False  # Set when <QUOTA_CRITICAL_THRESHOLD (2%)
         self._quota_warn_date: str | None = None  # YYYY-MM-DD of last middle-band warn (once/day)
+        # Shared per-game stake accounting for v33 variants. v33 caps aggregate
+        # exposure across longshot/midshot/underdog on the same game (paper
+        # analysis 2026-04-17 showed 75% intra-game outcome correlation). Key
+        # is the market_id prefix without -TEAM suffix. Grows monotonically
+        # since game_ids are date-scoped and we simply never rewind past entries.
+        self._v33_game_spend: dict[str, float] = {}
 
     def calculate_position_size(self, net_edge: float) -> float:
         kelly_size = self.bankroll * self.config.KELLY_FRACTION * net_edge
