@@ -196,13 +196,14 @@ class OrderManager:
 
     async def market_order(self, ticker, side, size_usdc, price, strategy, market_id,
                            minutes_to_start: Optional[float] = None):
-        if self.bankroll < size_usdc:
-            logger.warning(f"Insufficient bankroll: ${self.bankroll:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
-            return {"status": "skipped", "reason": "insufficient_bankroll"}
         if self._is_live(strategy):
             logger.info(f"[LIVE] {strategy} {side} {ticker} ${size_usdc:.2f} @ {price:.3f}")
             # Paper twin: same signal, same strategy name, idealized fill.
             # Runs as a background task so it doesn't block the live path.
+            # Paper bankroll may be too low for the twin — that's fine, the
+            # live path continues and the twin simply skips. We do NOT gate
+            # the live order on paper bankroll: real Kalshi balance is
+            # verified inside _live_market_order and _live_limit_ttl_order.
             if strategy in PAPER_TWIN_STRATEGIES:
                 asyncio.create_task(self._paper_market_order(
                     ticker, side, size_usdc, price, strategy, market_id,
@@ -243,6 +244,12 @@ class OrderManager:
                     msg_type="trade",
                 )
             return result
+        # Paper path: gate on paper bankroll. Mirrors limit_order's pattern
+        # so paper bankroll can't constrain live orders (live uses real
+        # Kalshi balance inside the live dispatchers).
+        if self.bankroll < size_usdc:
+            logger.warning(f"Insufficient bankroll: ${self.bankroll:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
+            return {"status": "skipped", "reason": "insufficient_bankroll"}
         return await self._paper_market_order(ticker, side, size_usdc, price, strategy, market_id,
                                               minutes_to_start=minutes_to_start)
 
