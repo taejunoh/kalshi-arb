@@ -290,8 +290,12 @@ async def test_strategy_status_mode_live_for_live_strategies(db):
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         resp = await ac.get("/api/strategy-status")
     data = resp.json()
+    # mentions_trader retired 2026-04-17 — sports v31 became the main live
+    # focus; mentions stays in LIVE_STRATEGIES env for legacy consistency
+    # but is removed from the scan loop, so active=False here.
     assert data["mentions_trader"]["mode"] == "LIVE"
-    assert data["mentions_trader"]["active"] is True
+    assert data["mentions_trader"]["active"] is False
+    assert data["mentions_trader"]["reason"] == "removed_from_loop"
     assert data["sports_midshot"]["mode"] == "PAPER"
 
 

@@ -239,7 +239,15 @@ class Bot:
             # shutdown_fade deprecated — see docs/future-work/shutdown-fade-redesign.md
             ("spread_scanner", self.spread_scanner),
             ("market_maker", self.market_maker),
-            ("mentions_trader", self.mentions_trader),
+            # mentions_trader disabled 2026-04-17 — sports v31 trio is now the
+            # main live strategy. Mentions accumulated 110 Kalshi positions
+            # (~$200 tied capital) in KXFEDMENTION-* markets settling end of
+            # April; those will self-resolve at the FOMC event. Also has a
+            # known silent-drift bug (live limit fills don't record_trade, so
+            # DB shows 0 mentions_trader rows despite real Kalshi positions).
+            # Disabling prevents further capital commitment; revisit post-
+            # settlement if sports hits its own cap.
+            # ("mentions_trader", self.mentions_trader),
             # sports_trader (consensus) disabled — 50 trades confirmed no edge
             # (-$13.63 net, 63% WR but expensive contracts). V3 comparison
             # continues with longshot/midshot/underdog. Instance still exists

@@ -404,7 +404,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         loop_disabled = {"sports_trader", "maker_preorder", "shutdown_fade",
                          "sports_liquidity_filtered", "sports_consolidated",
                          "sports_longshot", "sports_midshot", "sports_underdog",
-                         "sports_pinnacle_edge"}
+                         "sports_pinnacle_edge", "mentions_trader"}
         # env-flag mapping: which config attribute gates each strategy
         flag_map = {
             "market_maker": "MM_ENABLED",
@@ -463,6 +463,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "Disabled (2026-04-17): V3 underdog. V31 이 V3 의 100% 부분집합 "
                 "(방향 100% 일치). V3-only 51건 ROI -13.7% 로 drag. V31 paper "
                 "+30.8% vs V3 +13.0% → V31 로 일원화.",
+            "mentions_trader":
+                "Disabled (2026-04-17): Sports v31 이 메인 live 전략으로 승격되어 "
+                "mentions 쪽 capital 추가 투입 중단. 기존 Kalshi 포지션 110개 "
+                "(~$200 tied) 는 4월 FOMC settle 때 자동 해소. Silent drift 버그 "
+                "(limit fill → record_trade 누락으로 DB trades 0행) 있음. "
+                "재개 고려 시 버그 fix 우선.",
             "sports_pinnacle_edge":
                 "Disabled (2026-04-17): 37 settled -37.5% ROI. 4/16 (80ad42e) "
                 "freshness gate 추가됐지만 post-gate 표본 부족. gate 이후 충분한 "
