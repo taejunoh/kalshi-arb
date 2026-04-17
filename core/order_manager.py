@@ -58,7 +58,9 @@ class OrderManager:
         self._consecutive_losses = 0
         self._pause_until = 0.0
         self._positions: dict[tuple[str, str], dict] = {}  # (strategy, ticker) -> position
-        self._quota_exhausted = False  # Set when Odds API remaining < QUOTA_HALT_THRESHOLD
+        self._quota_exhausted = False  # Set when Odds API remaining < QUOTA_HALT_THRESHOLD (5%)
+        self._quota_critical_alerted = False  # Set when <QUOTA_CRITICAL_THRESHOLD (2%)
+        self._quota_warn_date: str | None = None  # YYYY-MM-DD of last middle-band warn (once/day)
 
     def calculate_position_size(self, net_edge: float) -> float:
         kelly_size = self.bankroll * self.config.KELLY_FRACTION * net_edge
