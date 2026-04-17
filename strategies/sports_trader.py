@@ -667,15 +667,38 @@ class SportsTraderStrategy:
         max_trades_per_cycle = 3
         hit_limit = False
 
-        # Check total exposure ONCE per cycle (not per market).
-        # Floor the cap at $10 so a temporarily weird bankroll (e.g., paper
-        # mode drained by stale settlements) doesn't silently block all sports
-        # trading. Sports per-trade size is ~$1-$3 so $10 still allows 3-4
-        # fresh trades in the worst case.
-        total_exposure = self._get_live_sports_exposure()
-        max_exposure = max(self._order_manager.bankroll * 0.30, 10.0)
-        if total_exposure > max_exposure:
-            logger.info(f"[SPORTS] Exposure ${total_exposure:.2f} > limit ${max_exposure:.2f}, skipping")
+        # Check total exposure ONCE per cycle (not per market). Cap is 30% of
+        # REAL Kalshi total capital (free cash + ALL open position value,
+        # incl. mentions positions), not paper bankroll. Paper bankroll drifts
+        # from Kalshi reality — today v32/v33 paper variants drained paper
+        # bankroll $692→$244 in minutes, tightening the sports cap from $207
+        # to $73 and blocking live scans for hours even though real Kalshi
+        # exposure hadn't moved. Kalshi total is the correct denominator for
+        # a cap gating Kalshi exposure. Floor at $10 so a Kalshi read failure
+        # doesn't silently stop all sports trading.
+        try:
+            all_positions = self._client.get_positions() or []
+        except Exception:
+            all_positions = []
+        all_exp = sum(
+            float(p.get("market_exposure_dollars", 0))
+            for p in all_positions
+            if float(p.get("position_fp", 0)) != 0
+        )
+        sports_exp = sum(
+            float(p.get("market_exposure_dollars", 0))
+            for p in all_positions
+            if any(s in p.get("ticker", "") for s in ["NBAGAME", "MLBGAME", "NHLGAME"])
+            and float(p.get("position_fp", 0)) != 0
+        )
+        kalshi_balance = self._client.get_balance(max_age_s=60)
+        kalshi_total = (kalshi_balance or 0.0) + all_exp
+        max_sports_exposure = max(kalshi_total * 0.30, 10.0)
+        if sports_exp > max_sports_exposure:
+            logger.info(
+                f"[SPORTS] Exposure ${sports_exp:.2f} > limit ${max_sports_exposure:.2f} "
+                f"(Kalshi total ${kalshi_total:.2f}), skipping"
+            )
             return
 
         # Track game IDs already traded this cycle to avoid betting both sides
