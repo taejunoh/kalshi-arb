@@ -87,6 +87,67 @@ async def test_middle_band_does_not_clear_halt_flag():
 
 
 @pytest.mark.asyncio
+async def test_critical_2pct_threshold_sends_extra_alert():
+    """<2% (400) triggers a second one-time alert on top of halt."""
+    strat, om, notifier = _make_strategy()
+    await strat._check_quota(300)  # 1.5%, below both halt and critical
+    assert om._quota_exhausted is True
+    assert om._quota_critical_alerted is True
+    msg_types = [c.kwargs.get("msg_type") for c in notifier.send.call_args_list]
+    assert "quota_halt" in msg_types
+    assert "quota_critical" in msg_types
+
+
+@pytest.mark.asyncio
+async def test_critical_alert_fires_once_per_crossing():
+    """Repeated <2% scans don't re-spam the critical alert."""
+    strat, om, notifier = _make_strategy()
+    await strat._check_quota(300)
+    await strat._check_quota(200)
+    await strat._check_quota(100)
+    msg_types = [c.kwargs.get("msg_type") for c in notifier.send.call_args_list]
+    assert msg_types.count("quota_critical") == 1
+    assert msg_types.count("quota_halt") == 1
+
+
+@pytest.mark.asyncio
+async def test_halt_without_critical_when_between_5pct_and_2pct():
+    """500 remaining (2.5%) halts but does NOT trip the 2% critical alert."""
+    strat, om, notifier = _make_strategy()
+    await strat._check_quota(500)
+    assert om._quota_exhausted is True
+    assert om._quota_critical_alerted is False
+    msg_types = [c.kwargs.get("msg_type") for c in notifier.send.call_args_list]
+    assert "quota_halt" in msg_types
+    assert "quota_critical" not in msg_types
+
+
+@pytest.mark.asyncio
+async def test_recovery_clears_critical_flag():
+    """Full recovery clears both halt and critical flags."""
+    strat, om, notifier = _make_strategy()
+    om._quota_exhausted = True
+    om._quota_critical_alerted = True
+    await strat._check_quota(12000)
+    assert om._quota_exhausted is False
+    assert om._quota_critical_alerted is False
+
+
+@pytest.mark.asyncio
+async def test_middle_band_warns_once_per_day():
+    """Repeated middle-band scans within the same day must not re-alert.
+
+    Notifier has a 60s rate-limit per msg_type, so dedup must happen on our
+    side via _quota_warn_date. Multiple strategies + fetches would otherwise
+    spam the user every ~60s once quota drops below WARN."""
+    strat, om, notifier = _make_strategy()
+    await strat._check_quota(3000)
+    await strat._check_quota(2500)
+    await strat._check_quota(2000)
+    assert notifier.send.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_full_recovery_sends_recovery_alert():
     strat, om, notifier = _make_strategy()
     om._quota_exhausted = True
