@@ -553,6 +553,17 @@
       </div>
     </section>
 
+    <!-- ── Performance Cards (Archived) ── -->
+    <section id="perf-archived-section">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div class="section-title" style="margin-bottom:0">Strategy Performance (Archived)</div>
+        <span style="color:var(--text-dim);font-size:11px;">Retired strategies — historical data only, no new entries</span>
+      </div>
+      <div class="perf-grid" id="perf-archived-grid">
+        <div class="perf-card" style="color:var(--text-dim);font-size:12px;">Loading…</div>
+      </div>
+    </section>
+
     <!-- ── Settlement History ── -->
     <section id="settlement-history-section">
       <div class="section-title">Settlement History (Kalshi)</div>
@@ -856,7 +867,7 @@ let perfCache = {};
 let stratStatusCache = {};
 const perfMode = 'paper';
 
-function renderPerfCardsByMode(mode, gridId) {
+function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
   const grid = document.getElementById(gridId);
   const strategies = Object.keys(perfCache);
   if (strategies.length === 0) {
@@ -865,11 +876,14 @@ function renderPerfCardsByMode(mode, gridId) {
   }
 
   const modeKey = mode.toLowerCase();  // 'paper' | 'live'
+  const isArchived = (strat) =>
+    !!(stratStatusCache[strat] || {}).archived || !!(perfCache[strat] || {}).archived;
   // Show a strategy in this mode's section if it has activity in that bucket
   // OR if the strategy is currently configured in this mode. This ensures
   // legacy Live positions (e.g., econ_trader disabled but still has Kalshi
   // positions) show up in the Live section even when not in LIVE_STRATEGIES.
   const filtered = strategies.filter(strat => {
+    if (archivedOnly !== isArchived(strat)) return false;
     const data = (perfCache[strat] || {})[modeKey] || {};
     const hasActivity = (data.trade_count || 0) > 0;
     const stratMode = (stratStatusCache[strat] || {}).mode || 'PAPER';
@@ -998,6 +1012,7 @@ function renderPerfCardsByMode(mode, gridId) {
 function renderPerfCards() {
   renderPerfCardsByMode('LIVE', 'perf-live-grid');
   renderPerfCardsByMode('PAPER', 'perf-grid');
+  renderPerfCardsByMode('PAPER', 'perf-archived-grid', true);
 }
 
 async function refreshPerf() {

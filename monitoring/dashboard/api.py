@@ -83,6 +83,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v32", "sports_midshot_v32", "sports_underdog_v32",
             "sports_longshot_v33", "sports_midshot_v33", "sports_underdog_v33",
             "sports_pinnacle_edge", "sports_v4_edge",
+            # Archived — historical data surfaced in dashboard's Archived section.
+            "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
+            "econ_trader",
         ]
 
         today_cutoff = _today_cutoff_utc()
@@ -98,7 +101,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             return {"trade_count": 0, "total_pnl": 0.0, "wins": 0, "losses": 0}
 
         SPORTS_PREFIX = "sports_"
-        # Removed strategies — keep historical DB rows but hide from dashboard.
+        # Retired strategies — still rendered but flagged via `archived: true`
+        # so the frontend can show them in a separate Archived section.
         RETIRED = {"sports_liquidity_filtered", "sports_consolidated",
                    "sports_trader", "econ_trader"}
 
@@ -112,7 +116,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
 
         strategies = {}
         for s in all_strategy_names:
-            strategies[s] = {"live": _stats_with_split(s), "paper": _stats_with_split(s)}
+            strategies[s] = {"live": _stats_with_split(s), "paper": _stats_with_split(s),
+                             "archived": s in RETIRED}
 
         # Paper bucket — from local DB trades (only paper_* statuses)
         for trade in all_trades:
@@ -120,10 +125,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             if not status.startswith("paper"):
                 continue
             strat = trade["strategy"]
-            if strat in RETIRED:
-                continue
             if strat not in strategies:
-                strategies[strat] = {"live": _stats_with_split(strat), "paper": _stats_with_split(strat)}
+                strategies[strat] = {"live": _stats_with_split(strat), "paper": _stats_with_split(strat),
+                                     "archived": strat in RETIRED}
             bucket = strategies[strat]["paper"]
             pnl = trade.get("pnl", 0) or 0
             size = trade.get("size", 0) or 0
@@ -170,7 +174,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 # These rows predate Live activation; already counted in paper bucket.
                 continue
             if strat not in strategies:
-                strategies[strat] = {"live": _stats_with_split(strat), "paper": _stats_with_split(strat)}
+                strategies[strat] = {"live": _stats_with_split(strat), "paper": _stats_with_split(strat),
+                                     "archived": strat in RETIRED}
             bucket = strategies[strat]["live"]
             if "pre" not in bucket:  # bucket was init'd before strat was known — augment now
                 bucket["pre"] = empty_split()
@@ -337,12 +342,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     live_fees += float(p.get("fees_paid_dollars", 0))
 
         by_strategy = {}
-        RETIRED = {"sports_liquidity_filtered", "sports_consolidated",
-                   "sports_trader", "econ_trader"}
         for t in paper_settled:
             strat = t["strategy"]
-            if strat in RETIRED:
-                continue
             if strat not in by_strategy:
                 by_strategy[strat] = {"settled": 0, "pnl": 0.0, "wins": 0, "losses": 0}
             by_strategy[strat]["settled"] += 1
@@ -397,7 +398,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v32", "sports_midshot_v32", "sports_underdog_v32",
             "sports_longshot_v33", "sports_midshot_v33", "sports_underdog_v33",
             "sports_pinnacle_edge", "sports_v4_edge",
+            # Archived — surfaced in dashboard Archived section with reason.
+            "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
+            "econ_trader",
         ]
+        archived_set = {"sports_trader", "sports_liquidity_filtered",
+                        "sports_consolidated", "econ_trader"}
         # Strategies removed from main.py _strategy_loop (no env flag to toggle).
         # Keep in sync with main.py; see commits 59f7e44 (sports_trader) and
         # e901f2b (maker_preorder).
@@ -473,6 +479,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "Disabled (2026-04-17): 37 settled -37.5% ROI. 4/16 (80ad42e) "
                 "freshness gate 추가됐지만 post-gate 표본 부족. gate 이후 충분한 "
                 "데이터 쌓이면 재평가 후 부활 검토.",
+            "econ_trader":
+                "Archived: CPI/GDP/FED 계열 live 포지션 남아있지만 loop 에서 제거된 "
+                "상태. 새 entry 없음, 기존 포지션 settle 대기.",
         }
         result = {}
         for s in all_strategies:
@@ -493,7 +502,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             else:
                 reason = f"{flag_attr}=false"
                 reason_detail = retirement_detail.get(s, f"Disabled via env flag {flag_attr}=false.")
-            result[s] = {"mode": mode, "active": active, "reason": reason, "reason_detail": reason_detail}
+            result[s] = {"mode": mode, "active": active, "reason": reason,
+                         "reason_detail": reason_detail, "archived": s in archived_set}
         return result
 
     @app.get("/api/settlement-history")
