@@ -17,6 +17,7 @@ LIMIT_TTL_STRATEGIES = {
     "sports_longshot_v31",
     "sports_midshot_v31",
     "sports_underdog_v31",
+    "sports_v4_edge",  # 2026-04-20 live-promoted; same $3 / 5-35¢ profile as v31
 }
 LIMIT_TTL_SECONDS = 60
 LIMIT_TTL_POLL_INTERVAL = 5
@@ -43,6 +44,7 @@ PAPER_TWIN_STRATEGIES = {
     "sports_longshot_v31",
     "sports_midshot_v31",
     "sports_underdog_v31",
+    "sports_v4_edge",  # 2026-04-20 live-promoted — keep paper stream for live/paper A/B
 }
 
 
