@@ -671,7 +671,7 @@ class SportsTraderStrategy:
         max_trades_per_cycle = 3
         hit_limit = False
 
-        # Check total exposure ONCE per cycle (not per market). Cap is 30% of
+        # Check total exposure ONCE per cycle (not per market). Cap is 70% of
         # REAL Kalshi total capital (free cash + ALL open position value,
         # incl. mentions positions), not paper bankroll. Paper bankroll drifts
         # from Kalshi reality — today v32/v33 paper variants drained paper
@@ -680,6 +680,9 @@ class SportsTraderStrategy:
         # exposure hadn't moved. Kalshi total is the correct denominator for
         # a cap gating Kalshi exposure. Floor at $10 so a Kalshi read failure
         # doesn't silently stop all sports trading.
+        # 2026-04-17: 30% → 50% (30% × $739 was at the edge of live exposure).
+        # 2026-04-20: 50% → 70% (v4_edge added to live; 50% was limiting room
+        # for the full v31+v4 quartet to fire concurrent signals).
         try:
             all_positions = self._client.get_positions() or []
         except Exception:
@@ -697,7 +700,7 @@ class SportsTraderStrategy:
         )
         kalshi_balance = self._client.get_balance(max_age_s=60)
         kalshi_total = (kalshi_balance or 0.0) + all_exp
-        max_sports_exposure = max(kalshi_total * 0.50, 10.0)
+        max_sports_exposure = max(kalshi_total * 0.70, 10.0)
         if sports_exp > max_sports_exposure:
             logger.info(
                 f"[SPORTS] Exposure ${sports_exp:.2f} > limit ${max_sports_exposure:.2f} "
