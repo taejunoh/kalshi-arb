@@ -13,3 +13,10 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     STRATEGY_NAME = "sports_midshot_v31"
     REGION_OVERRIDE = "eu"
     MIN_DEPTH_USDC = 5.0
+    # Price bucket ROI (2026-04-20, settled paper+live):
+    #   <10¢:    n=9,  0% win, ROI −100%
+    #   10–15¢:  n=9,  0% win, ROI −100%
+    #   15–20¢:  n=18, ROI −11%
+    #   ≥20¢:    ROI positive (+27% at 20-25¢, +27% at 30-35¢)
+    # 20¢ simple floor — sub-20¢ loses systematically, no sub-band exception.
+    MIN_ENTRY_PRICE = 0.20

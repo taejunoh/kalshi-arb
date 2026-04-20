@@ -149,12 +149,16 @@ class SportsTraderStrategy:
     REGION_OVERRIDE: Optional[str] = None  # subclass can pin a specific Odds API region
     SCAN_INTERVAL_OVERRIDE: Optional[float] = None  # subclass can override scan cadence (us retail books tick faster)
     MIN_DEPTH_USDC = 0.0  # Subclasses override to enforce orderbook depth before market order
-    # Minimum entry price (0–1). Used by longshot variants whose paper-
-    # settled data shows a structural dead zone in the 10–20¢ bucket
-    # (ROI −40% to −63% in paper, even worse in live). Above the floor
-    # signals are positive-EV; below it they are systematically bad
-    # regardless of fee drag. Subclasses set to e.g. 0.20; None = no filter.
+    # Minimum entry price (0–1). Used by variants whose paper-settled data
+    # shows a structural dead zone below some floor (e.g. underdog/midshot
+    # v31 at sub-20¢: 0% win on 27/36 trades). Subclasses set to e.g. 0.20;
+    # None = no filter.
     MIN_ENTRY_PRICE: Optional[float] = None
+    # Dead-zone gate (lo, hi): skip limit_price in [lo, hi). Used when the
+    # dead zone has a lower bound above strategy's overall min price, e.g.
+    # longshot_v31 and v4_edge show <10¢ winning but 10–20¢ zero-win.
+    # Independent of MIN_ENTRY_PRICE; both gates can compose.
+    ENTRY_PRICE_DEAD_ZONE: Optional[tuple[float, float]] = None
     # Per-game aggregate stake cap (USDC). 2026-04-17 paper analysis found
     # v31 fires median 6 trades per game with 75% intra-game outcome
     # correlation — capping aggregate per-game stake at $9 kept +23.1% ROI
@@ -836,16 +840,26 @@ class SportsTraderStrategy:
                 limit_price = self._get_limit_price(signal, fair_prob)
                 limit_price = max(0.01, min(0.99, limit_price))
 
-                # Entry price floor. For longshot the paper data carves out
-                # a dead zone below ~20¢ (n=29 settled at −46% ROI) where
-                # signals lose even under idealized execution. Above the
-                # floor longshot paper ROI is solidly positive (+24–25%).
+                # Entry price floor. Paper data shows a structural dead zone
+                # below 20¢ for midshot/underdog v31 (0% win on 27–36 trades).
                 if self.MIN_ENTRY_PRICE is not None and limit_price < self.MIN_ENTRY_PRICE:
                     logger.debug(
                         f"[{self.STRATEGY_NAME}] {ticker}: limit_price "
                         f"{limit_price:.3f} < floor {self.MIN_ENTRY_PRICE:.2f}, skip"
                     )
                     continue
+
+                # Dead-zone gate (independent of floor). longshot_v31 and
+                # v4_edge show <10¢ winning but 10–20¢ zero-win — skip the
+                # [lo, hi) band only, keep <lo entries.
+                if self.ENTRY_PRICE_DEAD_ZONE is not None:
+                    lo, hi = self.ENTRY_PRICE_DEAD_ZONE
+                    if lo <= limit_price < hi:
+                        logger.debug(
+                            f"[{self.STRATEGY_NAME}] {ticker}: limit_price "
+                            f"{limit_price:.3f} in dead zone [{lo:.2f},{hi:.2f}), skip"
+                        )
+                        continue
 
                 # Per-game aggregate-stake cap (v33 variants). Shared across
                 # all strategies that set PER_GAME_CAP_USDC via OrderManager._

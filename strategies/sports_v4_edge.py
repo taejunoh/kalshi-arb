@@ -18,6 +18,13 @@ class SportsV4EdgeStrategy(SportsTraderStrategy):
     PRICE_MIN = 0.05
     PRICE_MAX = 0.35
     PAYOFF_MIN = 2.5
+    # Price bucket ROI (2026-04-20, paper only):
+    #   <10¢:   n=7, ROI +280%   ← keep
+    #   10–15¢: n=6, 0% win, ROI −100%
+    #   15–20¢: n=6, 0% win, ROI −100%
+    #   ≥20¢:   ROI positive (+16%/+83%/+59%)
+    # Dead-zone (not floor) to preserve the <10¢ band.
+    ENTRY_PRICE_DEAD_ZONE = (0.10, 0.20)
 
     def __init__(self, config, order_manager, kalshi_client):
         super().__init__(config, order_manager, kalshi_client)

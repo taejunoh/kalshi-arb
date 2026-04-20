@@ -61,13 +61,15 @@ def test_v31_inherits_evaluate_logic():
     assert v3.evaluate(**args) == v31.evaluate(**args)
 
 
-def test_longshot_v31_has_entry_price_floor_and_siblings_do_not():
-    """Longshot v31 is the only v31 variant with a 20¢ entry-price floor
-    because its <20¢ bucket lost money in paper (−46% ROI over n=29) even
-    with idealized fills. Siblings have no such structural dead zone."""
-    assert SportsLongshotV31Strategy.MIN_ENTRY_PRICE == 0.20
-    assert SportsMidshotV31Strategy.MIN_ENTRY_PRICE is None
-    assert SportsUnderdogV31Strategy.MIN_ENTRY_PRICE is None
+def test_v31_entry_price_gates():
+    """2026-04-20 paper+live re-segmentation:
+      - longshot_v31: <10¢ +166% (n=6), 10–20¢ −35~−78% → dead-zone (0.10, 0.20)
+      - midshot_v31 / underdog_v31: <20¢ 전부 0% win → simple 20¢ floor
+    """
+    assert SportsLongshotV31Strategy.ENTRY_PRICE_DEAD_ZONE == (0.10, 0.20)
+    assert SportsLongshotV31Strategy.MIN_ENTRY_PRICE is None
+    assert SportsMidshotV31Strategy.MIN_ENTRY_PRICE == 0.20
+    assert SportsUnderdogV31Strategy.MIN_ENTRY_PRICE == 0.20
 
 
 # ---------- V3.2 (edge-scaled sizing) ----------
@@ -102,28 +104,32 @@ def test_v32_scales_size_by_payoff():
     assert ud._get_trade_size({"edge": 4.0}) == 6.0
 
 
-def test_v32_inherits_v31_entry_price_floor():
-    """v32 longshot must keep v31's 20¢ dead-zone filter."""
+def test_v32_inherits_v31_entry_price_gates():
+    """v32 inherits parent v31's price gates (dead-zone or floor)."""
     from strategies.sports_longshot_v32 import SportsLongshotV32Strategy
     from strategies.sports_midshot_v32 import SportsMidshotV32Strategy
-    assert SportsLongshotV32Strategy.MIN_ENTRY_PRICE == 0.20
-    assert SportsMidshotV32Strategy.MIN_ENTRY_PRICE is None
+    from strategies.sports_underdog_v32 import SportsUnderdogV32Strategy
+    assert SportsLongshotV32Strategy.ENTRY_PRICE_DEAD_ZONE == (0.10, 0.20)
+    assert SportsLongshotV32Strategy.MIN_ENTRY_PRICE is None
+    assert SportsMidshotV32Strategy.MIN_ENTRY_PRICE == 0.20
+    assert SportsUnderdogV32Strategy.MIN_ENTRY_PRICE == 0.20
     # v32 has no per-game cap
     assert SportsLongshotV32Strategy.PER_GAME_CAP_USDC is None
 
 
 # ---------- V3.3 (per-game cap) ----------
 
-def test_v33_sets_per_game_cap_and_keeps_v31_price_floor():
+def test_v33_sets_per_game_cap_and_inherits_v31_price_gates():
     from strategies.sports_longshot_v33 import SportsLongshotV33Strategy
     from strategies.sports_midshot_v33 import SportsMidshotV33Strategy
     from strategies.sports_underdog_v33 import SportsUnderdogV33Strategy
     for cls in (SportsLongshotV33Strategy, SportsMidshotV33Strategy,
                 SportsUnderdogV33Strategy):
         assert cls.PER_GAME_CAP_USDC == 9.0, cls.__name__
-    # Longshot v33 also keeps the 20¢ floor via V31 inheritance
-    assert SportsLongshotV33Strategy.MIN_ENTRY_PRICE == 0.20
-    assert SportsMidshotV33Strategy.MIN_ENTRY_PRICE is None
+    # v33 inherits v31 price gates: longshot dead-zone, siblings 20¢ floor.
+    assert SportsLongshotV33Strategy.ENTRY_PRICE_DEAD_ZONE == (0.10, 0.20)
+    assert SportsMidshotV33Strategy.MIN_ENTRY_PRICE == 0.20
+    assert SportsUnderdogV33Strategy.MIN_ENTRY_PRICE == 0.20
 
 
 def test_v33_cap_state_is_shared_via_order_manager():

@@ -16,12 +16,11 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
     STRATEGY_NAME = "sports_longshot_v31"
     REGION_OVERRIDE = "eu"
     MIN_DEPTH_USDC = 5.0
-    # Paper-settled segmentation by entry price (2026-04-17, n=78 total):
-    #   0.10–0.15: n=12, ROI −40.4%    ← dead zone
-    #   0.15–0.20: n=17, ROI −63.5%    ← dead zone
-    #   0.20–0.25: n=33, ROI +24.9%    ← good
-    #   ≥ 0.25:    n=12, ROI +24.0%    ← good
-    # The ≤ 20¢ dead zone loses under idealized paper fills — it is a
-    # signal-quality problem, not a fee drag. Live is even worse
-    # (15-20¢ live ROI −100% over n=10). Gate entries at a 20¢ floor.
-    MIN_ENTRY_PRICE = 0.20
+    # Price bucket ROI (2026-04-20, settled paper+live):
+    #   <10¢:    n=6,  ROI +166%  ← lucky-shot band, keep
+    #   10–15¢:  n=22, ROI  −35%  ← dead zone
+    #   15–20¢:  n=29, ROI  −78%  ← dead zone
+    #   ≥20¢:    n=178, ROI +1.5% ← neutral/positive
+    # Originally used MIN_ENTRY_PRICE=0.20 which also blocked <10¢ wins.
+    # Dead-zone gate preserves the <10¢ band while still filtering 10–20¢.
+    ENTRY_PRICE_DEAD_ZONE = (0.10, 0.20)
