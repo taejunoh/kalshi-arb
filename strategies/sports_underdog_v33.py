@@ -9,4 +9,4 @@ logger = logging.getLogger("sports_underdog_v33")
 class SportsUnderdogV33Strategy(SportsUnderdogV31Strategy):
     TRADED_TICKERS_FILE = "data/sports_underdog_v33_tickers.json"
     STRATEGY_NAME = "sports_underdog_v33"
-    PER_GAME_CAP_USDC = 9.0
+    PER_GAME_CAP_USDC = 12.0  # scaled with base size 3→4 on 2026-04-20

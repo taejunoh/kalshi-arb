@@ -82,26 +82,26 @@ def test_v32_scales_size_by_payoff():
 
     ls = _make(SportsLongshotV32Strategy)
     ls._order_manager.bankroll = 1000.0
-    # At threshold (3.0x), multiplier == 1.0 → base $3
-    assert ls._get_trade_size({"edge": 3.0}) == 3.0
+    # At threshold (3.0x), multiplier == 1.0 → base $4
+    assert ls._get_trade_size({"edge": 3.0}) == 4.0
     # 2× threshold → 2.0×
-    assert ls._get_trade_size({"edge": 6.0}) == 6.0
+    assert ls._get_trade_size({"edge": 6.0}) == 8.0
     # 10× threshold → clamped to 2.0×
-    assert ls._get_trade_size({"edge": 30.0}) == 6.0
+    assert ls._get_trade_size({"edge": 30.0}) == 8.0
     # 0.5× threshold → clamped to 0.5×
-    assert ls._get_trade_size({"edge": 0.1}) == 1.5
+    assert ls._get_trade_size({"edge": 0.1}) == 2.0
 
     ms = _make(SportsMidshotV32Strategy)
     ms._order_manager.bankroll = 1000.0
     # Midshot threshold 2.5, at threshold → 1.0×
-    assert ms._get_trade_size({"edge": 2.5}) == 3.0
-    assert ms._get_trade_size({"edge": 5.0}) == 6.0
+    assert ms._get_trade_size({"edge": 2.5}) == 4.0
+    assert ms._get_trade_size({"edge": 5.0}) == 8.0
 
     ud = _make(SportsUnderdogV32Strategy)
     ud._order_manager.bankroll = 1000.0
     # Underdog threshold 2.0
-    assert ud._get_trade_size({"edge": 2.0}) == 3.0
-    assert ud._get_trade_size({"edge": 4.0}) == 6.0
+    assert ud._get_trade_size({"edge": 2.0}) == 4.0
+    assert ud._get_trade_size({"edge": 4.0}) == 8.0
 
 
 def test_v32_inherits_v31_entry_price_gates():
@@ -125,7 +125,7 @@ def test_v33_sets_per_game_cap_and_inherits_v31_price_gates():
     from strategies.sports_underdog_v33 import SportsUnderdogV33Strategy
     for cls in (SportsLongshotV33Strategy, SportsMidshotV33Strategy,
                 SportsUnderdogV33Strategy):
-        assert cls.PER_GAME_CAP_USDC == 9.0, cls.__name__
+        assert cls.PER_GAME_CAP_USDC == 12.0, cls.__name__
     # v33 inherits v31 price gates: longshot dead-zone, siblings 20¢ floor.
     assert SportsLongshotV33Strategy.ENTRY_PRICE_DEAD_ZONE == (0.10, 0.20)
     assert SportsMidshotV33Strategy.MIN_ENTRY_PRICE == 0.20

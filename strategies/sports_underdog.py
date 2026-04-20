@@ -50,8 +50,9 @@ class SportsUnderdogStrategy(SportsTraderStrategy):
         return None
 
     def _get_trade_size(self, signal: dict) -> float:
-        """Small fixed size for portfolio approach."""
-        return min(3.0, self._order_manager.bankroll * 0.02)
+        """Small fixed size for portfolio approach.
+        Raised 3→4 on 2026-04-20 post dead-zone rollout."""
+        return min(4.0, self._order_manager.bankroll * 0.02)
 
     def _get_limit_price(self, signal: dict, fair_prob: float) -> float:
         """Buy at ask price."""
