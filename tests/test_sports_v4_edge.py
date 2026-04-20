@@ -69,3 +69,10 @@ def test_strategy_name():
     strat = _make_strategy(pinnacle_yes_prob=0.5)
     assert strat.STRATEGY_NAME == "sports_v4_edge"
     assert strat.TRADED_TICKERS_FILE == "data/sports_v4_edge_tickers.json"
+
+
+def test_v4_edge_has_depth_and_dead_zone_gates():
+    """Live-promotion safety rails: 5 USDC depth + 10–20¢ dead zone."""
+    assert SportsV4EdgeStrategy.MIN_DEPTH_USDC == 5.0
+    assert SportsV4EdgeStrategy.ENTRY_PRICE_DEAD_ZONE == (0.10, 0.20)
+    assert SportsV4EdgeStrategy.MIN_ENTRY_PRICE is None

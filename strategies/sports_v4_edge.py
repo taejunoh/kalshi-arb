@@ -18,6 +18,10 @@ class SportsV4EdgeStrategy(SportsTraderStrategy):
     PRICE_MIN = 0.05
     PRICE_MAX = 0.35
     PAYOFF_MIN = 2.5
+    # Live safety rail (matches v31). 5¢–35¢ range + 87.5% live-game entry
+    # → thin books + volatile pricing. Reject signals with <$5 resting
+    # liquidity on the signal side to bound slippage and partial-fill risk.
+    MIN_DEPTH_USDC = 5.0
     # Price bucket ROI (2026-04-20, paper only):
     #   <10¢:   n=7, ROI +280%   ← keep
     #   10–15¢: n=6, 0% win, ROI −100%
