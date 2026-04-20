@@ -920,6 +920,16 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     const statusCls = isActive ? 'active' : 'disabled';
     const statusLabel = isActive ? 'ACTIVE' : 'DISABLED';
     const cardCls = isActive ? 'perf-card' : 'perf-card disabled';
+
+    // Entry-price gate — render a compact label when set (sports only)
+    const gate = status.price_gate;
+    let gateLabel = '';
+    if (gate && gate.type === 'floor') {
+      gateLabel = `≥${(gate.floor * 100).toFixed(0)}¢`;
+    } else if (gate && gate.type === 'dead_zone') {
+      const [lo, hi] = gate.dead_zone;
+      gateLabel = `skip ${(lo * 100).toFixed(0)}–${(hi * 100).toFixed(0)}¢`;
+    }
     // Info icon shown only on disabled cards; tooltip text prefers reason_detail (human) over reason (machine).
     const tooltipText = status.reason_detail || status.reason || '';
     const escapedTooltip = tooltipText
@@ -977,6 +987,12 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
           <span class="perf-key">Volume</span>
           <span class="perf-val">${fmtMoney(d.total_size)}</span>
         </div>
+        ${gateLabel ? `
+        <div class="perf-row">
+          <span class="perf-key">Price gate</span>
+          <span class="perf-val" style="font-variant-numeric:tabular-nums;">${gateLabel}</span>
+        </div>
+        ` : ''}
         ${d.today ? `
         <div class="perf-row" style="border-top:1px solid var(--text-dim);padding-top:6px;margin-top:4px;">
           <span class="perf-key">Today</span>

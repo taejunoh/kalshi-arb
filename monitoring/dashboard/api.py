@@ -483,6 +483,42 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "Archived: CPI/GDP/FED 계열 live 포지션 남아있지만 loop 에서 제거된 "
                 "상태. 새 entry 없음, 기존 포지션 settle 대기.",
         }
+        # Per-strategy entry-price gate config. Read class-level attributes
+        # so frontend renders what's actually in effect without drift risk.
+        price_gates: dict = {}
+        try:
+            from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
+            from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
+            from strategies.sports_underdog_v31 import SportsUnderdogV31Strategy
+            from strategies.sports_longshot_v32 import SportsLongshotV32Strategy
+            from strategies.sports_midshot_v32 import SportsMidshotV32Strategy
+            from strategies.sports_underdog_v32 import SportsUnderdogV32Strategy
+            from strategies.sports_longshot_v33 import SportsLongshotV33Strategy
+            from strategies.sports_midshot_v33 import SportsMidshotV33Strategy
+            from strategies.sports_underdog_v33 import SportsUnderdogV33Strategy
+            from strategies.sports_v4_edge import SportsV4EdgeStrategy
+            _gate_classes = {
+                "sports_longshot_v31": SportsLongshotV31Strategy,
+                "sports_midshot_v31":  SportsMidshotV31Strategy,
+                "sports_underdog_v31": SportsUnderdogV31Strategy,
+                "sports_longshot_v32": SportsLongshotV32Strategy,
+                "sports_midshot_v32":  SportsMidshotV32Strategy,
+                "sports_underdog_v32": SportsUnderdogV32Strategy,
+                "sports_longshot_v33": SportsLongshotV33Strategy,
+                "sports_midshot_v33":  SportsMidshotV33Strategy,
+                "sports_underdog_v33": SportsUnderdogV33Strategy,
+                "sports_v4_edge":      SportsV4EdgeStrategy,
+            }
+            for name, cls in _gate_classes.items():
+                floor = getattr(cls, "MIN_ENTRY_PRICE", None)
+                dz = getattr(cls, "ENTRY_PRICE_DEAD_ZONE", None)
+                if floor is not None:
+                    price_gates[name] = {"type": "floor", "floor": floor}
+                elif dz is not None:
+                    price_gates[name] = {"type": "dead_zone", "dead_zone": list(dz)}
+        except Exception:
+            pass  # best-effort — missing gate info shouldn't break the endpoint
+
         result = {}
         for s in all_strategies:
             mode = "LIVE" if s in live_strategies else "PAPER"
@@ -503,7 +539,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 reason = f"{flag_attr}=false"
                 reason_detail = retirement_detail.get(s, f"Disabled via env flag {flag_attr}=false.")
             result[s] = {"mode": mode, "active": active, "reason": reason,
-                         "reason_detail": reason_detail, "archived": s in archived_set}
+                         "reason_detail": reason_detail, "archived": s in archived_set,
+                         "price_gate": price_gates.get(s)}
         return result
 
     @app.get("/api/settlement-history")
