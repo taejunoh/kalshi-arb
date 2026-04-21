@@ -495,6 +495,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         phase_gates: dict = {}
         regions: dict = {}
         sport_blocks: dict = {}
+        allowed_cells: dict = {}
         try:
             from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
             from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
@@ -540,6 +541,13 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 blocklist = getattr(cls, "SPORT_BLOCKLIST", frozenset())
                 if blocklist:
                     sport_blocks[name] = sorted(blocklist)
+                # Allowed cells matrix (V3.4+). Sorted for stable rendering.
+                cells = getattr(cls, "ALLOWED_CELLS", None)
+                if cells is not None:
+                    allowed_cells[name] = sorted(
+                        [list(c) for c in cells],
+                        key=lambda p: (p[0], p[1]),
+                    )
         except Exception:
             pass  # best-effort — missing gate info shouldn't break the endpoint
 
@@ -567,7 +575,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                          "price_gate": price_gates.get(s),
                          "phase_gate": phase_gates.get(s),
                          "region": regions.get(s),
-                         "sport_blocklist": sport_blocks.get(s)}
+                         "sport_blocklist": sport_blocks.get(s),
+                         "allowed_cells": allowed_cells.get(s)}
         return result
 
     @app.get("/api/settlement-history")

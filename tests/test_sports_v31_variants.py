@@ -95,12 +95,38 @@ def test_v34_trio_uses_us_region():
     assert ls._get_odds_region() == "us"
     assert ms._get_odds_region() == "us"
     assert ud._get_odds_region() == "us"
-    # All v31 gates inherited
+    # Price gates inherited from v31
     assert ls.ENTRY_PRICE_DEAD_ZONE == (0.10, 0.20)
     assert ms.MIN_ENTRY_PRICE == 0.20
     assert ud.MIN_ENTRY_PRICE == 0.20
-    assert ls.PRE_GAME_ONLY is True
     assert ls.MIN_DEPTH_USDC == 5.0
+
+
+def test_v34_trio_has_cell_matrix_allow_lists():
+    """V3.4 uses ALLOWED_CELLS rather than legacy PRE_GAME_ONLY/SPORT_BLOCKLIST.
+    Matrix picks reflect the 2026-04-21 4D analysis per-cell region winners."""
+    from strategies.sports_longshot_v34 import SportsLongshotV34Strategy
+    from strategies.sports_midshot_v34 import SportsMidshotV34Strategy
+    from strategies.sports_underdog_v34 import SportsUnderdogV34Strategy
+    # Longshot: MLB pre only (us +148% n=3, tiny but positive).
+    assert SportsLongshotV34Strategy.ALLOWED_CELLS == frozenset({("MLB", "pre")})
+    # Midshot: NBA pre (us +46% vs eu +13%) + MLB live (us +20% vs eu +9%).
+    assert SportsMidshotV34Strategy.ALLOWED_CELLS == frozenset({
+        ("NBA", "pre"), ("MLB", "live"),
+    })
+    # Underdog: the hidden-alpha MLB live cell, plus tied NBA pre / NHL pre.
+    assert SportsUnderdogV34Strategy.ALLOWED_CELLS == frozenset({
+        ("MLB", "live"), ("NBA", "pre"), ("NHL", "pre"),
+    })
+
+
+def test_allowed_cells_base_default_is_none():
+    """Base class default leaves ALLOWED_CELLS unset so legacy V3.1 uses
+    PRE_GAME_ONLY + SPORT_BLOCKLIST unchanged."""
+    from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
+    from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
+    assert SportsLongshotV31Strategy.ALLOWED_CELLS is None
+    assert SportsMidshotV31Strategy.ALLOWED_CELLS is None
 
 
 def test_v31_entry_price_gates():

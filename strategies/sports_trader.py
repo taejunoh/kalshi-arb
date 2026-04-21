@@ -178,6 +178,14 @@ class SportsTraderStrategy:
     # × sport combo shows no edge in either region. Sport codes match the
     # 3-letter ticker prefix: NBA, MLB, NHL.
     SPORT_BLOCKLIST: set[str] = frozenset()
+    # Fine-grained cell matrix. When set, only (sport, phase) tuples in
+    # ALLOWED_CELLS are entered. Sport ∈ {"NBA","MLB","NHL"}, phase ∈
+    # {"pre","live"}. Takes precedence over PRE_GAME_ONLY and
+    # SPORT_BLOCKLIST — when ALLOWED_CELLS is not None those two attrs
+    # are ignored. Built 2026-04-21 to capture the matrix's asymmetric
+    # cells (e.g. us region wins MLB underdog live but loses MLB under
+    # pre; both V3.1 and V3.4 coexist with complementary cell sets).
+    ALLOWED_CELLS: Optional[frozenset] = None
 
     def __init__(self, config, order_manager, kalshi_client):
         self.config = config
@@ -749,9 +757,10 @@ class SportsTraderStrategy:
                 if ticker in self._traded_tickers:
                     continue  # permanent block — sports games are one-time events
 
-                # Sport-blocklist. Reject tickers for sports where this
+                # Sport-blocklist (legacy — superseded by ALLOWED_CELLS
+                # when that's set). Reject tickers for sports where this
                 # strategy has no edge in either region (e.g. NHL midshot).
-                if self.SPORT_BLOCKLIST:
+                if self.SPORT_BLOCKLIST and self.ALLOWED_CELLS is None:
                     sport_code = next(
                         (s for s in ("NBAGAME", "MLBGAME", "NHLGAME") if s in ticker),
                         None,
@@ -845,11 +854,31 @@ class SportsTraderStrategy:
                 if not signal:
                     continue
 
-                # Pre-game-only gate. Subclasses with PRE_GAME_ONLY=True (e.g.
-                # longshot_v31) reject entries once the game has started —
-                # consensus goes stale during live play and chasing Kalshi
-                # moves with stale odds is systematically loss-making.
-                if self.PRE_GAME_ONLY:
+                # Cell-matrix gate (ALLOWED_CELLS). When set, subsumes
+                # PRE_GAME_ONLY and SPORT_BLOCKLIST — only (sport, phase)
+                # tuples in the allow-set pass. Used by V3.4 to express
+                # asymmetric per-cell region preferences from the matrix
+                # (e.g. MLB underdog live us +38% but MLB underdog pre eu
+                # +14% — two cells need different regions).
+                if self.ALLOWED_CELLS is not None:
+                    sport_code = next(
+                        (s[:3] for s in ("NBAGAME", "MLBGAME", "NHLGAME") if s in ticker),
+                        None,
+                    )
+                    mts = _commence_time_to_minutes(matched_game.get("commence_time"))
+                    phase = "pre" if (mts is not None and mts > 0) else "live"
+                    if sport_code is None or (sport_code, phase) not in self.ALLOWED_CELLS:
+                        logger.debug(
+                            f"[{self.STRATEGY_NAME}] {ticker}: cell "
+                            f"({sport_code},{phase}) not in ALLOWED_CELLS, skip"
+                        )
+                        continue
+                elif self.PRE_GAME_ONLY:
+                    # Legacy gate — only applies when ALLOWED_CELLS not set.
+                    # Subclasses with PRE_GAME_ONLY=True (e.g. longshot_v31)
+                    # reject entries once the game has started — consensus
+                    # goes stale during live play and chasing Kalshi moves
+                    # with stale odds is systematically loss-making.
                     minutes_to_start = _commence_time_to_minutes(matched_game.get("commence_time"))
                     if minutes_to_start is None or minutes_to_start <= 0:
                         logger.debug(

@@ -104,12 +104,16 @@ longshot live + NHL underdog pre (tied) + MLB midshot pre (small n for us).
 | pre-game | 3 | −6% |
 | **live-game** | **52** | **+37%** |
 
-## Applied changes (2026-04-21, commit `4580a9c`)
+## Applied changes (2026-04-21)
 
-1. `PRE_GAME_ONLY=True` on full V3.1 trio (was longshot only).
-2. `SPORT_BLOCKLIST={"NHL"}` on midshot base → applies to midshot v31/v34.
-3. V3.4 trio created: V3.1 logic + `REGION_OVERRIDE="us"` (paper-only).
-4. V3.2 + V3.3 trios disabled from scan loop.
+1. `PRE_GAME_ONLY=True` on full V3.1 trio (was longshot only). — commit `4580a9c`
+2. `SPORT_BLOCKLIST={"NHL"}` on midshot base → applies to midshot v31/v34 (legacy gate path). — commit `4580a9c`
+3. V3.4 trio created: V3.1 logic + `REGION_OVERRIDE="us"` (paper-only). — commit `4580a9c`
+4. V3.2 + V3.3 trios briefly disabled, then reverted same day: paper is costless, and early termination after two mid-flight parameter changes would compound "don't touch mid-flight" violations. Experiment resumed to 2026-05-01 eval. — commit `752d8c4`
+5. `ALLOWED_CELLS` attribute added to base (sport, phase) allow-matrix. Takes precedence over PRE_GAME_ONLY and SPORT_BLOCKLIST when set. V3.4 trio configured with matrix-derived cells:
+   - `longshot_v34`: `{("MLB","pre")}` — us +148% cell (tiny but positive)
+   - `midshot_v34`:  `{("NBA","pre"), ("MLB","live")}` — us-winning cells
+   - `underdog_v34`: `{("MLB","live"), ("NBA","pre"), ("NHL","pre")}` — includes the +38% MLB live hidden-alpha cell
 
 ## Pending experiments
 
