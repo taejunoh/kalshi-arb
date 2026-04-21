@@ -31,6 +31,7 @@ from strategies.sports_midshot_v34 import SportsMidshotV34Strategy
 from strategies.sports_underdog_v34 import SportsUnderdogV34Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
+from strategies.sports_scan_observer import SportsScanObserver
 from strategies.econ_trader import EconTraderStrategy
 from core.settlement import SettlementChecker
 from core.clv_tracker import CLVTracker
@@ -130,6 +131,13 @@ class Bot:
         self.sports_v4_edge = SportsV4EdgeStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
+        # Read-only consensus snapshotter — no trades, no gates. Runs as a
+        # dedicated 60s-cadence task (aligned with us-region cache TTL), not
+        # in the main strategy loop. Feeds the odds_observations table for
+        # 4D (region × sport × phase × ticker-price) analyses.
+        self.sports_scan_observer = SportsScanObserver(
+            self.config, self.order_manager, self.kalshi_client
+        )
         self.econ_trader = EconTraderStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
@@ -194,6 +202,7 @@ class Bot:
             asyncio.create_task(self._clv_tracker_task()),
             asyncio.create_task(self._daily_reset_task()),
             asyncio.create_task(self._freshness_sample_loop()),
+            asyncio.create_task(self._scan_observer_task()),
         ]
 
         try:
@@ -410,6 +419,22 @@ class Bot:
             # Reset daily counters
             self.order_manager.reset_daily()
             logger.info(f"Daily reset complete. Yesterday PnL: ${daily_pnl:.2f}")
+
+    async def _scan_observer_task(self):
+        """Snapshot consensus + Kalshi prices for every open sports market
+        every 60s. Reuses the shared (region, sport) odds cache so this
+        adds zero Odds API calls beyond what strategies already trigger."""
+        while self._running:
+            try:
+                await self.sports_scan_observer.scan_and_execute()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning(f"scan observer error: {e}")
+            for _ in range(12):
+                if not self._running:
+                    return
+                await asyncio.sleep(5)
 
     async def _freshness_sample_loop(self):
         """Capture one Odds API freshness sample every 5 minutes."""

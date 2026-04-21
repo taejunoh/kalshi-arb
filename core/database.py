@@ -60,9 +60,34 @@ class Database:
                     updated_at TEXT NOT NULL
                 )
             """)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS odds_observations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    kalshi_ticker TEXT NOT NULL,
+                    series TEXT NOT NULL,
+                    sport TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    minutes_to_start REAL,
+                    home_team TEXT,
+                    away_team TEXT,
+                    yes_sub_title TEXT,
+                    is_yes_home INTEGER,
+                    kalshi_yes_ask REAL,
+                    kalshi_no_ask REAL,
+                    us_yes_prob REAL,
+                    eu_yes_prob REAL,
+                    pinnacle_yes_prob REAL,
+                    pinnacle_age_s INTEGER,
+                    is_playoff INTEGER
+                )
+            """)
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_status_pnl ON trades(status, pnl)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_trade ON clv_snapshots(trade_id)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_time ON odds_observations(timestamp)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_ticker_time ON odds_observations(kalshi_ticker, timestamp)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_sport_phase ON odds_observations(sport, phase)")
             await self._add_column_if_missing(conn, "clv_snapshots", "us_consensus_prob", "REAL")
             await self._add_column_if_missing(conn, "trades", "realized_fill_price", "REAL")
             await self._add_column_if_missing(conn, "clv_snapshots", "eu_consensus_prob", "REAL")
@@ -279,6 +304,45 @@ class Database:
             cursor = await conn.execute("SELECT value FROM bot_state WHERE key = ?", (key,))
             row = await cursor.fetchone()
         return row[0] if row else None
+
+    async def record_odds_observation(
+        self,
+        kalshi_ticker: str,
+        series: str,
+        sport: str,
+        phase: str,
+        minutes_to_start: Optional[float],
+        home_team: Optional[str],
+        away_team: Optional[str],
+        yes_sub_title: Optional[str],
+        is_yes_home: Optional[bool],
+        kalshi_yes_ask: Optional[float],
+        kalshi_no_ask: Optional[float],
+        us_yes_prob: Optional[float],
+        eu_yes_prob: Optional[float],
+        pinnacle_yes_prob: Optional[float],
+        pinnacle_age_s: Optional[int],
+    ):
+        now = datetime.now(timezone.utc).isoformat()
+        playoff = is_playoff(kalshi_ticker, now)
+        playoff_int = None if playoff is None else (1 if playoff else 0)
+        is_yes_home_int = None if is_yes_home is None else (1 if is_yes_home else 0)
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                """INSERT INTO odds_observations
+                   (timestamp, kalshi_ticker, series, sport, phase, minutes_to_start,
+                    home_team, away_team, yes_sub_title, is_yes_home,
+                    kalshi_yes_ask, kalshi_no_ask,
+                    us_yes_prob, eu_yes_prob, pinnacle_yes_prob, pinnacle_age_s,
+                    is_playoff)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (now, kalshi_ticker, series, sport, phase, minutes_to_start,
+                 home_team, away_team, yes_sub_title, is_yes_home_int,
+                 kalshi_yes_ask, kalshi_no_ask,
+                 us_yes_prob, eu_yes_prob, pinnacle_yes_prob, pinnacle_age_s,
+                 playoff_int),
+            )
+            await conn.commit()
 
     async def get_daily_pnl(self):
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
