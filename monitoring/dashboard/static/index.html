@@ -937,25 +937,23 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     }
     // Phase gate (e.g., longshot_v31 pre-game only)
     const phaseLabel = status.phase_gate || '';
-    // Region (sports strategies only)
+    // Region (sports strategies only) + per-sport phase view
     const region = status.region || '';
-    // Sports coverage — default all 3, minus any blocklist entries.
-    // If ALLOWED_CELLS is set (V3.4+), render that compact list instead.
-    const ALL_SPORTS = ['NBA', 'MLB', 'NHL'];
-    const blocked = new Set(status.sport_blocklist || []);
-    const coveredSports = status.region
-      ? ALL_SPORTS.filter(s => !blocked.has(s))
-      : [];
-    const sportsLabel = coveredSports.length > 0
-      ? (blocked.size > 0
-          ? `${coveredSports.join(', ')} (no ${[...blocked].join('/')})`
-          : coveredSports.join(', '))
-      : '';
-    // Allowed cells — V3.4 style, e.g. "MLB live, NBA pre, NHL pre".
-    // When present, this takes precedence over sportsLabel + phaseLabel.
-    const cells = status.allowed_cells || null;
-    const cellsLabel = cells && cells.length > 0
-      ? cells.map(([sp, ph]) => `${sp} ${ph}`).join(', ')
+    const regionTag = region ? region.toUpperCase() : '';
+    const sportPhases = status.sport_phases || null;  // {NBA:'pre', MLB:'live', NHL:null}
+    // Renders a per-sport line like "NBA  pre  · US" (or "—" when blocked).
+    // Only shown when the strategy has sport_phases (i.e. a sports strategy).
+    const sportRows = sportPhases
+      ? ['NBA', 'MLB', 'NHL'].map(sport => {
+          const phase = sportPhases[sport];
+          const phaseStr = phase === null
+            ? '<span style="color:var(--text-dim);">—</span>'
+            : phase;
+          return `<div class="perf-row" style="font-size:11px;">
+            <span class="perf-key">${sport}</span>
+            <span class="perf-val">${phaseStr}${regionTag ? ` <span style="color:var(--text-dim);font-size:10px;">· ${regionTag}</span>` : ''}</span>
+          </div>`;
+        }).join('')
       : '';
     // Info icon shown only on disabled cards; tooltip text prefers reason_detail (human) over reason (machine).
     const tooltipText = status.reason_detail || status.reason || '';
@@ -1022,29 +1020,13 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
           <span class="perf-val" style="font-variant-numeric:tabular-nums;">${gateLabel}</span>
         </div>
         ` : ''}
-        ${(phaseLabel && !cellsLabel) ? `
-        <div class="perf-row">
-          <span class="perf-key">Phase</span>
-          <span class="perf-val">${phaseLabel}</span>
+        ${sportRows ? `
+        <div class="perf-row" style="border-top:1px solid var(--text-dim);padding-top:6px;margin-top:4px;">
+          <span class="perf-key" style="font-weight:600;">Trading</span>
+          <span class="perf-val" style="font-size:11px;"></span>
         </div>
+        ${sportRows}
         ` : ''}
-        ${region ? `
-        <div class="perf-row">
-          <span class="perf-key">Region</span>
-          <span class="perf-val">${region.toUpperCase()}</span>
-        </div>
-        ` : ''}
-        ${cellsLabel ? `
-        <div class="perf-row">
-          <span class="perf-key">Cells</span>
-          <span class="perf-val" style="font-size:11px;">${cellsLabel}</span>
-        </div>
-        ` : (sportsLabel ? `
-        <div class="perf-row">
-          <span class="perf-key">Sports</span>
-          <span class="perf-val" style="font-size:11px;">${sportsLabel}</span>
-        </div>
-        ` : '')}
         ${d.today ? `
         <div class="perf-row" style="border-top:1px solid var(--text-dim);padding-top:6px;margin-top:4px;">
           <span class="perf-key">Today</span>

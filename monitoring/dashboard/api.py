@@ -496,6 +496,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         regions: dict = {}
         sport_blocks: dict = {}
         allowed_cells: dict = {}
+        sport_phases_map: dict = {}
         try:
             from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
             from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
@@ -526,6 +527,29 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "sports_v4_edge":      SportsV4EdgeStrategy,
             }
             default_region = getattr(config, "ODDS_API_REGION", "eu") if config else "eu"
+            # Derive a unified per-sport "NBA: pre, MLB: live" view from
+            # whichever gate system the strategy uses. Sports ordered NBA,
+            # MLB, NHL for consistent display. None = blocked/not traded.
+            def _sport_phases(cls) -> dict[str, Optional[str]]:
+                cells = getattr(cls, "ALLOWED_CELLS", None)
+                if cells is not None:
+                    out: dict[str, Optional[str]] = {"NBA": None, "MLB": None, "NHL": None}
+                    for sport, phase in cells:
+                        out[sport] = phase if out[sport] is None else "pre+live"
+                    return out
+                # Legacy path: PRE_GAME_ONLY + SPORT_BLOCKLIST
+                block = getattr(cls, "SPORT_BLOCKLIST", frozenset())
+                pre_only = getattr(cls, "PRE_GAME_ONLY", False)
+                legacy: dict[str, Optional[str]] = {}
+                for s in ("NBA", "MLB", "NHL"):
+                    if s in block:
+                        legacy[s] = None
+                    elif pre_only:
+                        legacy[s] = "pre"
+                    else:
+                        legacy[s] = "pre+live"
+                return legacy
+
             for name, cls in _gate_classes.items():
                 floor = getattr(cls, "MIN_ENTRY_PRICE", None)
                 dz = getattr(cls, "ENTRY_PRICE_DEAD_ZONE", None)
@@ -548,6 +572,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                         [list(c) for c in cells],
                         key=lambda p: (p[0], p[1]),
                     )
+                # Unified per-sport phase view for the dashboard.
+                sport_phases_map[name] = _sport_phases(cls)
         except Exception:
             pass  # best-effort — missing gate info shouldn't break the endpoint
 
@@ -576,7 +602,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                          "phase_gate": phase_gates.get(s),
                          "region": regions.get(s),
                          "sport_blocklist": sport_blocks.get(s),
-                         "allowed_cells": allowed_cells.get(s)}
+                         "allowed_cells": allowed_cells.get(s),
+                         "sport_phases": sport_phases_map.get(s)}
         return result
 
     @app.get("/api/settlement-history")
