@@ -61,12 +61,46 @@ def test_v31_inherits_evaluate_logic():
     assert v3.evaluate(**args) == v31.evaluate(**args)
 
 
-def test_longshot_v31_pre_game_only_siblings_unchanged():
-    """2026-04-20: longshot_v31 gates live-game entries (n=226 → -18% ROI
-    paper+live), siblings keep both phases pending more data."""
+def test_v31_trio_all_pre_game_only():
+    """2026-04-21: Extended PRE_GAME_ONLY to the entire v31 trio after the
+    4D (region×base×sport×phase) matrix confirmed live-game drag across all
+    three bases (-6% to -14% paper, -13% to -30% live)."""
     assert SportsLongshotV31Strategy.PRE_GAME_ONLY is True
-    assert SportsMidshotV31Strategy.PRE_GAME_ONLY is False
-    assert SportsUnderdogV31Strategy.PRE_GAME_ONLY is False
+    assert SportsMidshotV31Strategy.PRE_GAME_ONLY is True
+    assert SportsUnderdogV31Strategy.PRE_GAME_ONLY is True
+
+
+def test_midshot_blocks_nhl_in_both_regions():
+    """NHL midshot loses in both regions and both phases (-34% to -43% ROI).
+    Blocklist prevents new entries; v31/v34 variants inherit via class."""
+    from strategies.sports_midshot import SportsMidshotStrategy
+    from strategies.sports_midshot_v34 import SportsMidshotV34Strategy
+    assert "NHL" in SportsMidshotStrategy.SPORT_BLOCKLIST
+    assert "NHL" in SportsMidshotV31Strategy.SPORT_BLOCKLIST  # inherited
+    assert "NHL" in SportsMidshotV34Strategy.SPORT_BLOCKLIST  # inherited
+    # Longshot/underdog have no blocklist — different NHL profile
+    from strategies.sports_longshot_v31 import SportsLongshotV31Strategy as LL
+    assert "NHL" not in LL.SPORT_BLOCKLIST
+
+
+def test_v34_trio_uses_us_region():
+    """V3.4 = V3.1 logic + region=us, built from 2026-04-21 sport×region matrix
+    finding us outperformed eu on 8 of 9 sport×base splits."""
+    from strategies.sports_longshot_v34 import SportsLongshotV34Strategy
+    from strategies.sports_midshot_v34 import SportsMidshotV34Strategy
+    from strategies.sports_underdog_v34 import SportsUnderdogV34Strategy
+    ls = _make(SportsLongshotV34Strategy)
+    ms = _make(SportsMidshotV34Strategy)
+    ud = _make(SportsUnderdogV34Strategy)
+    assert ls._get_odds_region() == "us"
+    assert ms._get_odds_region() == "us"
+    assert ud._get_odds_region() == "us"
+    # All v31 gates inherited
+    assert ls.ENTRY_PRICE_DEAD_ZONE == (0.10, 0.20)
+    assert ms.MIN_ENTRY_PRICE == 0.20
+    assert ud.MIN_ENTRY_PRICE == 0.20
+    assert ls.PRE_GAME_ONLY is True
+    assert ls.MIN_DEPTH_USDC == 5.0
 
 
 def test_v31_entry_price_gates():

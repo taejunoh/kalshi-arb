@@ -20,3 +20,8 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     #   ≥20¢:    ROI positive (+27% at 20-25¢, +27% at 30-35¢)
     # 20¢ simple floor — sub-20¢ loses systematically, no sub-band exception.
     MIN_ENTRY_PRICE = 0.20
+    # Pre-game-only (2026-04-21). Phase split shows live-game v31 entries
+    # systematically lose (-6% ROI live, paper+live n=252) while pre-game
+    # wins (+25% ROI, n=57). Same pattern confirmed on longshot (2026-04-20)
+    # and underdog; extending across v31 trio.
+    PRE_GAME_ONLY = True

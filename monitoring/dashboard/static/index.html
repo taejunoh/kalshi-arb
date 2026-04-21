@@ -314,6 +314,11 @@
       color: #f59e0b;
       border: 1px solid rgba(245, 158, 11, 0.35);
     }
+    .version-badge.v34 {
+      background: rgba(20, 184, 166, 0.12);
+      color: #14b8a6;
+      border: 1px solid rgba(20, 184, 166, 0.35);
+    }
     .perf-card.disabled {
       /* Opacity removed from the card itself because CSS opacity inherits
          to all descendants including the ::after tooltip pseudo-element,
@@ -948,12 +953,14 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     const v31Strats = new Set(['sports_longshot_v31', 'sports_midshot_v31', 'sports_underdog_v31']);
     const v32Strats = new Set(['sports_longshot_v32', 'sports_midshot_v32', 'sports_underdog_v32']);
     const v33Strats = new Set(['sports_longshot_v33', 'sports_midshot_v33', 'sports_underdog_v33']);
+    const v34Strats = new Set(['sports_longshot_v34', 'sports_midshot_v34', 'sports_underdog_v34']);
     const v4Strats = new Set(['sports_pinnacle_edge', 'sports_v4_edge', 'sports_consolidated']);
     let versionBadge = '';
     if (v3Strats.has(strat)) versionBadge = '<span class="version-badge v3">V3</span>';
     else if (v31Strats.has(strat)) versionBadge = '<span class="version-badge v31">V3.1</span>';
     else if (v32Strats.has(strat)) versionBadge = '<span class="version-badge v32">V3.2</span>';
     else if (v33Strats.has(strat)) versionBadge = '<span class="version-badge v33">V3.3</span>';
+    else if (v34Strats.has(strat)) versionBadge = '<span class="version-badge v34">V3.4</span>';
     else if (v4Strats.has(strat)) versionBadge = '<span class="version-badge v4">V4</span>';
 
     return `

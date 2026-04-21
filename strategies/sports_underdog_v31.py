@@ -20,3 +20,7 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     #   ≥20¢:   ROI positive (+95% at 20-25¢, +46% at 30-35¢)
     # Largest sub-20¢ drain of any v31 variant (−$80). 20¢ simple floor.
     MIN_ENTRY_PRICE = 0.20
+    # Pre-game-only (2026-04-21). Phase split shows live-game v31 entries
+    # systematically lose (-13% ROI live, paper+live n=176) while pre-game
+    # wins (+20% ROI, n=116 — strongest sample among v31 trio).
+    PRE_GAME_ONLY = True

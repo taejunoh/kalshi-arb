@@ -26,6 +26,9 @@ from strategies.sports_underdog_v32 import SportsUnderdogV32Strategy
 from strategies.sports_longshot_v33 import SportsLongshotV33Strategy
 from strategies.sports_midshot_v33 import SportsMidshotV33Strategy
 from strategies.sports_underdog_v33 import SportsUnderdogV33Strategy
+from strategies.sports_longshot_v34 import SportsLongshotV34Strategy
+from strategies.sports_midshot_v34 import SportsMidshotV34Strategy
+from strategies.sports_underdog_v34 import SportsUnderdogV34Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.econ_trader import EconTraderStrategy
@@ -108,6 +111,17 @@ class Bot:
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_underdog_v33 = SportsUnderdogV33Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # V3.4 variants — V3.1 logic with region=us (paper-only). 2026-04-21
+        # sport×region matrix showed us outperforming eu on 8/9 splits.
+        self.sports_longshot_v34 = SportsLongshotV34Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_midshot_v34 = SportsMidshotV34Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_underdog_v34 = SportsUnderdogV34Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
@@ -268,18 +282,25 @@ class Bot:
             ("sports_longshot_v31", self.sports_longshot_v31),
             ("sports_midshot_v31", self.sports_midshot_v31),
             ("sports_underdog_v31", self.sports_underdog_v31),
-            # V3.2 + V3.3 paper-only A/B variants (added 2026-04-17).
-            # V3.2: edge-scaled sizing (size = base × clamp(payoff/threshold, 0.5, 2.0)).
-            # V3.3: per-game aggregate stake cap at $9, shared across siblings via
-            # OrderManager._v33_game_spend. Both inherit V3.1 (longshot gets its
-            # 20¢ entry floor for free). NOT in LIVE_STRATEGIES — paper only
-            # until 2-week evaluation window closes and one variant wins.
-            ("sports_longshot_v32", self.sports_longshot_v32),
-            ("sports_midshot_v32", self.sports_midshot_v32),
-            ("sports_underdog_v32", self.sports_underdog_v32),
-            ("sports_longshot_v33", self.sports_longshot_v33),
-            ("sports_midshot_v33", self.sports_midshot_v33),
-            ("sports_underdog_v33", self.sports_underdog_v33),
+            # V3.2 + V3.3 paper variants DISABLED 2026-04-21 — 4-day interim
+            # eval showed both failing net: V3.2 trio -$237, V3.3 trio -$103.
+            # Only V3.2 longshot showed marginal +6pp vs V3.1 and V3.3 longshot
+            # was the only post-seed-positive variant (+2.8%); both too thin to
+            # promote. A/B experiment terminated early to reclaim the paper
+            # slot for V3.4 (sport-aware regional).
+            # ("sports_longshot_v32", self.sports_longshot_v32),
+            # ("sports_midshot_v32", self.sports_midshot_v32),
+            # ("sports_underdog_v32", self.sports_underdog_v32),
+            # ("sports_longshot_v33", self.sports_longshot_v33),
+            # ("sports_midshot_v33", self.sports_midshot_v33),
+            # ("sports_underdog_v33", self.sports_underdog_v33),
+            # V3.4 — V3.1 logic + region=us (paper-only). 2026-04-21 matrix
+            # found us outperforming eu on 8 of 9 sport × base splits. Runs
+            # in parallel with V3.1 (eu) to confirm the region finding on a
+            # fresh sample post dead-zone + pre-game-only gate rollout.
+            ("sports_longshot_v34", self.sports_longshot_v34),
+            ("sports_midshot_v34", self.sports_midshot_v34),
+            ("sports_underdog_v34", self.sports_underdog_v34),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
             # -37.5% ROI. Freshness gate was added 2026-04-16 (80ad42e) but
             # only a handful of post-gate entries accumulated before shutdown;

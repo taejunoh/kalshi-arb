@@ -173,6 +173,11 @@ class SportsTraderStrategy:
     # OrderManager._v33_game_spend so the cap applies to the aggregate, not
     # per-strategy. None = no cap.
     PER_GAME_CAP_USDC: Optional[float] = None
+    # Sport-blocklist. Skip entries for tickers in specified Kalshi series
+    # (e.g. {"NHL"} to block all NHLGAME-* tickers). Used when a strategy
+    # × sport combo shows no edge in either region. Sport codes match the
+    # 3-letter ticker prefix: NBA, MLB, NHL.
+    SPORT_BLOCKLIST: set[str] = frozenset()
 
     def __init__(self, config, order_manager, kalshi_client):
         self.config = config
@@ -743,6 +748,17 @@ class SportsTraderStrategy:
                 markets_scanned += 1
                 if ticker in self._traded_tickers:
                     continue  # permanent block — sports games are one-time events
+
+                # Sport-blocklist. Reject tickers for sports where this
+                # strategy has no edge in either region (e.g. NHL midshot).
+                if self.SPORT_BLOCKLIST:
+                    sport_code = next(
+                        (s for s in ("NBAGAME", "MLBGAME", "NHLGAME") if s in ticker),
+                        None,
+                    )
+                    short = sport_code[:3] if sport_code else None
+                    if short and short in self.SPORT_BLOCKLIST:
+                        continue
 
                 # Skip if we already traded the other side of this game
                 # Game ID = ticker minus the team suffix (e.g., KXNBAGAME-26APR01DENUTA)

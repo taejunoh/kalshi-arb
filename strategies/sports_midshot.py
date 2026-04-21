@@ -20,6 +20,9 @@ class SportsMidshotStrategy(SportsTraderStrategy):
     STRATEGY_NAME = "sports_midshot"
     REGION_OVERRIDE = "us"  # V3 baseline stays on US retail books for continuity
     SCAN_INTERVAL_OVERRIDE = 120.0  # us retail books tick 60-90s; 120s scan captures movement
+    # NHL midshot fails in both regions AND both phases — blocklist entirely.
+    # 2026-04-21 matrix: NHL midshot pre-game us -38%/eu -43%, live us -34%/eu -39%.
+    SPORT_BLOCKLIST = frozenset({"NHL"})
 
     def __init__(self, config, order_manager, kalshi_client):
         super().__init__(config, order_manager, kalshi_client)
