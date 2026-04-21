@@ -2,6 +2,8 @@ import aiosqlite
 from datetime import datetime, timezone
 from typing import Optional
 
+from core.season import is_playoff
+
 
 class Database:
     def __init__(self, db_path: str = "data/bot.db"):
@@ -67,6 +69,10 @@ class Database:
             await self._add_column_if_missing(conn, "clv_snapshots", "pinnacle_age_s", "INTEGER")
             await self._add_column_if_missing(conn, "clv_snapshots", "kalshi_yes_bid", "REAL")
             await self._add_column_if_missing(conn, "clv_snapshots", "kalshi_yes_ask", "REAL")
+            # Season classification (playoff vs regular). Computed on insert
+            # going forward; backfill below populates historical NULL rows.
+            await self._add_column_if_missing(conn, "trades", "is_playoff", "INTEGER")
+            await self._backfill_is_playoff(conn)
             await conn.commit()
 
     async def close(self):
@@ -79,18 +85,38 @@ class Database:
         if column not in existing:
             await conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
 
+    @staticmethod
+    async def _backfill_is_playoff(conn):
+        """One-shot backfill of is_playoff for trades that pre-date the
+        column. Idempotent — only updates rows where the value is NULL."""
+        cursor = await conn.execute(
+            "SELECT id, market_id, timestamp FROM trades WHERE is_playoff IS NULL"
+        )
+        rows = await cursor.fetchall()
+        if not rows:
+            return
+        for trade_id, market_id, ts in rows:
+            flag = is_playoff(market_id, ts)
+            # Store None as NULL (unknown sport / parse failure), True/False as 1/0.
+            value = None if flag is None else (1 if flag else 0)
+            await conn.execute(
+                "UPDATE trades SET is_playoff = ? WHERE id = ?", (value, trade_id),
+            )
+
     async def record_trade(self, strategy, market_id, direction, price, size, fee, status,
                            pnl=0.0, minutes_to_start: Optional[float] = None,
                            realized_fill_price: Optional[float] = None) -> int:
         now = datetime.now(timezone.utc).isoformat()
+        playoff = is_playoff(market_id, now)
+        playoff_int = None if playoff is None else (1 if playoff else 0)
         async with aiosqlite.connect(self.db_path) as conn:
             cursor = await conn.execute(
                 """INSERT INTO trades
                    (timestamp, strategy, market_id, direction, price, size, fee, pnl, status,
-                    minutes_to_start, realized_fill_price)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    minutes_to_start, realized_fill_price, is_playoff)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (now, strategy, market_id, direction, price, size, fee, pnl, status,
-                 minutes_to_start, realized_fill_price),
+                 minutes_to_start, realized_fill_price, playoff_int),
             )
             await conn.commit()
             return cursor.lastrowid
