@@ -937,6 +937,19 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     }
     // Phase gate (e.g., longshot_v31 pre-game only)
     const phaseLabel = status.phase_gate || '';
+    // Region (sports strategies only)
+    const region = status.region || '';
+    // Sports coverage — default all 3, minus any blocklist entries
+    const ALL_SPORTS = ['NBA', 'MLB', 'NHL'];
+    const blocked = new Set(status.sport_blocklist || []);
+    const coveredSports = status.region
+      ? ALL_SPORTS.filter(s => !blocked.has(s))
+      : [];
+    const sportsLabel = coveredSports.length > 0
+      ? (blocked.size > 0
+          ? `${coveredSports.join(', ')} (no ${[...blocked].join('/')})`
+          : coveredSports.join(', '))
+      : '';
     // Info icon shown only on disabled cards; tooltip text prefers reason_detail (human) over reason (machine).
     const tooltipText = status.reason_detail || status.reason || '';
     const escapedTooltip = tooltipText
@@ -1006,6 +1019,18 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
         <div class="perf-row">
           <span class="perf-key">Phase</span>
           <span class="perf-val">${phaseLabel}</span>
+        </div>
+        ` : ''}
+        ${region ? `
+        <div class="perf-row">
+          <span class="perf-key">Region</span>
+          <span class="perf-val">${region.toUpperCase()}</span>
+        </div>
+        ` : ''}
+        ${sportsLabel ? `
+        <div class="perf-row">
+          <span class="perf-key">Sports</span>
+          <span class="perf-val" style="font-size:11px;">${sportsLabel}</span>
         </div>
         ` : ''}
         ${d.today ? `

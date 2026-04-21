@@ -412,11 +412,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         loop_disabled = {"sports_trader", "maker_preorder", "shutdown_fade",
                          "sports_liquidity_filtered", "sports_consolidated",
                          "sports_longshot", "sports_midshot", "sports_underdog",
-                         "sports_pinnacle_edge", "mentions_trader",
-                         # V32/V33 A/B terminated early 2026-04-21 — both
-                         # trios failed net; slot reclaimed for V34.
-                         "sports_longshot_v32", "sports_midshot_v32", "sports_underdog_v32",
-                         "sports_longshot_v33", "sports_midshot_v33", "sports_underdog_v33"}
+                         "sports_pinnacle_edge", "mentions_trader"}
         # env-flag mapping: which config attribute gates each strategy
         flag_map = {
             "market_maker": "MM_ENABLED",
@@ -491,27 +487,14 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "econ_trader":
                 "Archived: CPI/GDP/FED 계열 live 포지션 남아있지만 loop 에서 제거된 "
                 "상태. 새 entry 없음, 기존 포지션 settle 대기.",
-            "sports_longshot_v32":
-                "Disabled (2026-04-21): 4일 중간 eval 결과 V3.2 trio 합산 −$52 (longshot), "
-                "−$71 (midshot), −$114 (underdog). Edge-scaled sizing은 longshot에서만 +6pp "
-                "미미한 우위. V3.4 paper 슬롯으로 이관.",
-            "sports_midshot_v32":
-                "Disabled (2026-04-21): V3.2 실험 조기 종료. 상세는 longshot_v32 tooltip 참조.",
-            "sports_underdog_v32":
-                "Disabled (2026-04-21): V3.2 실험 조기 종료. 상세는 longshot_v32 tooltip 참조.",
-            "sports_longshot_v33":
-                "Disabled (2026-04-21): V3.3 per-game cap 실험 조기 종료. trio 합산 −$103. "
-                "Post-seed로 longshot만 +2.8% 양수였으나 샘플 얇아 promotion 근거 부족.",
-            "sports_midshot_v33":
-                "Disabled (2026-04-21): V3.3 실험 조기 종료. 상세는 longshot_v33 tooltip 참조.",
-            "sports_underdog_v33":
-                "Disabled (2026-04-21): V3.3 실험 조기 종료. 상세는 longshot_v33 tooltip 참조.",
         }
-        # Per-strategy gate config (entry-price + game phase). Read class-
-        # level attributes so frontend renders what's actually in effect
-        # without drift risk.
+        # Per-strategy gate config (entry-price + game phase + region +
+        # sport blocklist). Read class-level attributes so frontend renders
+        # what's actually in effect without drift risk.
         price_gates: dict = {}
         phase_gates: dict = {}
+        regions: dict = {}
+        sport_blocks: dict = {}
         try:
             from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
             from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
@@ -541,6 +524,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "sports_underdog_v34": SportsUnderdogV34Strategy,
                 "sports_v4_edge":      SportsV4EdgeStrategy,
             }
+            default_region = getattr(config, "ODDS_API_REGION", "eu") if config else "eu"
             for name, cls in _gate_classes.items():
                 floor = getattr(cls, "MIN_ENTRY_PRICE", None)
                 dz = getattr(cls, "ENTRY_PRICE_DEAD_ZONE", None)
@@ -550,6 +534,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     price_gates[name] = {"type": "dead_zone", "dead_zone": list(dz)}
                 if getattr(cls, "PRE_GAME_ONLY", False):
                     phase_gates[name] = "pre-game only"
+                # Region: explicit override wins, else the config default.
+                regions[name] = getattr(cls, "REGION_OVERRIDE", None) or default_region
+                # Sport blocklist: convert the frozenset to a sorted list for JSON.
+                blocklist = getattr(cls, "SPORT_BLOCKLIST", frozenset())
+                if blocklist:
+                    sport_blocks[name] = sorted(blocklist)
         except Exception:
             pass  # best-effort — missing gate info shouldn't break the endpoint
 
@@ -575,7 +565,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             result[s] = {"mode": mode, "active": active, "reason": reason,
                          "reason_detail": reason_detail, "archived": s in archived_set,
                          "price_gate": price_gates.get(s),
-                         "phase_gate": phase_gates.get(s)}
+                         "phase_gate": phase_gates.get(s),
+                         "region": regions.get(s),
+                         "sport_blocklist": sport_blocks.get(s)}
         return result
 
     @app.get("/api/settlement-history")

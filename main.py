@@ -282,18 +282,19 @@ class Bot:
             ("sports_longshot_v31", self.sports_longshot_v31),
             ("sports_midshot_v31", self.sports_midshot_v31),
             ("sports_underdog_v31", self.sports_underdog_v31),
-            # V3.2 + V3.3 paper variants DISABLED 2026-04-21 — 4-day interim
-            # eval showed both failing net: V3.2 trio -$237, V3.3 trio -$103.
-            # Only V3.2 longshot showed marginal +6pp vs V3.1 and V3.3 longshot
-            # was the only post-seed-positive variant (+2.8%); both too thin to
-            # promote. A/B experiment terminated early to reclaim the paper
-            # slot for V3.4 (sport-aware regional).
-            # ("sports_longshot_v32", self.sports_longshot_v32),
-            # ("sports_midshot_v32", self.sports_midshot_v32),
-            # ("sports_underdog_v32", self.sports_underdog_v32),
-            # ("sports_longshot_v33", self.sports_longshot_v33),
-            # ("sports_midshot_v33", self.sports_midshot_v33),
-            # ("sports_underdog_v33", self.sports_underdog_v33),
+            # V3.2 + V3.3 paper variants — continued to 2026-05-01 eval.
+            # 4-day interim (2026-04-21) showed V3.2 trio -$237, V3.3 trio -$103,
+            # but paper has zero real-money cost and ending the experiment
+            # early after two mid-flight parameter changes (dead_zone, $4 base)
+            # would compound the "don't touch mid-flight" violation. Running
+            # in parallel with V3.4 adds negligible scan overhead; evaluate all
+            # three families together at the scheduled window close.
+            ("sports_longshot_v32", self.sports_longshot_v32),
+            ("sports_midshot_v32", self.sports_midshot_v32),
+            ("sports_underdog_v32", self.sports_underdog_v32),
+            ("sports_longshot_v33", self.sports_longshot_v33),
+            ("sports_midshot_v33", self.sports_midshot_v33),
+            ("sports_underdog_v33", self.sports_underdog_v33),
             # V3.4 — V3.1 logic + region=us (paper-only). 2026-04-21 matrix
             # found us outperforming eu on 8 of 9 sport × base splits. Runs
             # in parallel with V3.1 (eu) to confirm the region finding on a
