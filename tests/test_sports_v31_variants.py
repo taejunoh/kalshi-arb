@@ -108,11 +108,15 @@ def test_v34_trio_has_cell_matrix_allow_lists():
     from strategies.sports_longshot_v34 import SportsLongshotV34Strategy
     from strategies.sports_midshot_v34 import SportsMidshotV34Strategy
     from strategies.sports_underdog_v34 import SportsUnderdogV34Strategy
-    # Longshot: MLB pre only (us +148% n=3, tiny but positive).
-    assert SportsLongshotV34Strategy.ALLOWED_CELLS == frozenset({("MLB", "pre")})
-    # Midshot: NBA pre (us +46% vs eu +13%) + MLB live (us +20% vs eu +9%).
+    # Longshot: MLB pre (us +148% n=3) + NBA pre (us +20.5% n=23, expanded
+    # 2026-04-21 to cover the second-best uncovered + cell).
+    assert SportsLongshotV34Strategy.ALLOWED_CELLS == frozenset({
+        ("MLB", "pre"), ("NBA", "pre"),
+    })
+    # Midshot: NBA pre (us +46% vs eu +13%) + MLB live (us +20% vs eu +9%)
+    # + MLB pre (us +65% n=11, expanded 2026-04-21 though eu +94% is higher).
     assert SportsMidshotV34Strategy.ALLOWED_CELLS == frozenset({
-        ("NBA", "pre"), ("MLB", "live"),
+        ("NBA", "pre"), ("MLB", "live"), ("MLB", "pre"),
     })
     # Underdog: the hidden-alpha MLB live cell, plus tied NBA pre / NHL pre.
     assert SportsUnderdogV34Strategy.ALLOWED_CELLS == frozenset({
