@@ -24,3 +24,10 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
     # Originally used MIN_ENTRY_PRICE=0.20 which also blocked <10¢ wins.
     # Dead-zone gate preserves the <10¢ band while still filtering 10–20¢.
     ENTRY_PRICE_DEAD_ZONE = (0.10, 0.20)
+    # Pre-game-only gate (2026-04-20). Phase split (paper+live combined):
+    #   pre-game:  n=17, ROI +81% (live n=7 +134%, paper n=10 +54%)
+    #   live-game: n=226, ROI -18% (live n=101 -30%, paper n=125 -9%)
+    # Live-game entries chase Kalshi moves with stale consensus → systematic
+    # loss. Mid/underdog v31 show same direction but smaller magnitude — gate
+    # restricted to longshot for now (1-week eval before extending).
+    PRE_GAME_ONLY = True

@@ -61,6 +61,14 @@ def test_v31_inherits_evaluate_logic():
     assert v3.evaluate(**args) == v31.evaluate(**args)
 
 
+def test_longshot_v31_pre_game_only_siblings_unchanged():
+    """2026-04-20: longshot_v31 gates live-game entries (n=226 → -18% ROI
+    paper+live), siblings keep both phases pending more data."""
+    assert SportsLongshotV31Strategy.PRE_GAME_ONLY is True
+    assert SportsMidshotV31Strategy.PRE_GAME_ONLY is False
+    assert SportsUnderdogV31Strategy.PRE_GAME_ONLY is False
+
+
 def test_v31_entry_price_gates():
     """2026-04-20 paper+live re-segmentation:
       - longshot_v31: <10¢ +166% (n=6), 10–20¢ −35~−78% → dead-zone (0.10, 0.20)

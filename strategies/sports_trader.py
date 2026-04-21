@@ -159,6 +159,12 @@ class SportsTraderStrategy:
     # longshot_v31 and v4_edge show <10¢ winning but 10–20¢ zero-win.
     # Independent of MIN_ENTRY_PRICE; both gates can compose.
     ENTRY_PRICE_DEAD_ZONE: Optional[tuple[float, float]] = None
+    # Pre-game-only gate. Block entries when minutes_to_start <= 0 (live game).
+    # 2026-04-20 segmentation found longshot_v31 pre-game ROI +134% (live, n=7)
+    # / +54% (paper, n=10) vs live-game ROI −30% / −9% — same direction across
+    # all 3 v31 variants but most pronounced on longshot. Strategies that gain
+    # alpha during live volatility (v4_edge: +59% live-game) leave this None.
+    PRE_GAME_ONLY: bool = False
     # Per-game aggregate stake cap (USDC). 2026-04-17 paper analysis found
     # v31 fires median 6 trades per game with 75% intra-game outcome
     # correlation — capping aggregate per-game stake at $9 kept +23.1% ROI
@@ -822,6 +828,19 @@ class SportsTraderStrategy:
                                        ticker=ticker)
                 if not signal:
                     continue
+
+                # Pre-game-only gate. Subclasses with PRE_GAME_ONLY=True (e.g.
+                # longshot_v31) reject entries once the game has started —
+                # consensus goes stale during live play and chasing Kalshi
+                # moves with stale odds is systematically loss-making.
+                if self.PRE_GAME_ONLY:
+                    minutes_to_start = _commence_time_to_minutes(matched_game.get("commence_time"))
+                    if minutes_to_start is None or minutes_to_start <= 0:
+                        logger.debug(
+                            f"[{self.STRATEGY_NAME}] {ticker}: live-game entry "
+                            f"(mts={minutes_to_start}), pre-game only, skip"
+                        )
+                        continue
 
                 size = self._get_trade_size(signal)
                 if size < 1.0:
