@@ -76,6 +76,44 @@ def _commence_time_to_minutes(commence_time: Optional[str]) -> Optional[float]:
     return (dt - _now_utc()).total_seconds() / 60.0
 
 
+_MONTH_MAP = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
+
+
+def _parse_kalshi_ticker_datetime(ticker: str) -> Optional[datetime]:
+    """Extract scheduled UTC datetime from a Kalshi sports ticker.
+    Examples:
+      KXNBAGAME-26APR21BOSBUF-BOS    → 2026-04-21 12:00 UTC (date-only, anchor noon)
+      KXMLBGAME-26APR221940PHICHC-CHC → 2026-04-22 19:40 UTC (date+time)
+      KXNHLGAME-26APR26COLLA-LA      → 2026-04-26 12:00 UTC
+
+    Used by _match_kalshi_to_odds to disambiguate same-team multi-game
+    series (NHL/NBA playoff best-of-7, MLB 3-game home stands) where
+    the odds API returns multiple commence_times for the same matchup."""
+    import re
+    m = re.match(r"^KX[A-Z]+GAME-(\d{2})([A-Z]{3})(\d{2})(\d{4})?", ticker or "")
+    if not m:
+        return None
+    yy, mmm, dd, hhmm = m.groups()
+    month = _MONTH_MAP.get(mmm)
+    if not month:
+        return None
+    try:
+        year = 2000 + int(yy)
+        day = int(dd)
+        if hhmm and len(hhmm) == 4:
+            hour, minute = int(hhmm[:2]), int(hhmm[2:])
+        else:
+            # Date-only ticker: anchor at noon UTC so closest-time matching
+            # tolerates games that play in the afternoon or evening UTC.
+            hour, minute = 12, 0
+        return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+    except (ValueError, KeyError):
+        return None
+
+
 def _odds_cache_ttl(region: str) -> float:
     return _ODDS_CACHE_TTL_BY_REGION.get(region, _ODDS_CACHE_TTL_DEFAULT)
 
@@ -600,7 +638,8 @@ class SportsTraderStrategy:
             "away_prob": avg_away / total,
         }
 
-    def _match_kalshi_to_odds(self, kalshi_title: str, odds_games: list[dict]) -> Optional[dict]:
+    def _match_kalshi_to_odds(self, kalshi_title: str, odds_games: list[dict],
+                              kalshi_ticker: Optional[str] = None) -> Optional[dict]:
         """Match a Kalshi market title to odds API game data.
 
         Kalshi uses city names ("Phoenix at Charlotte"), while Odds API uses
@@ -608,8 +647,15 @@ class SportsTraderStrategy:
         checking if FULL city name of BOTH teams appears in the title.
         Single-word fallback only for single-word cities to avoid
         "San" matching both "San Diego" and "San Francisco".
+
+        When the same matchup appears multiple times (NHL/NBA playoff
+        best-of-7, MLB 3-game home stands), `kalshi_ticker` enables
+        date-aware disambiguation: of the matching games, the one whose
+        commence_time is closest to the ticker's scheduled datetime wins.
+        Without `kalshi_ticker` the legacy first-match behaviour is used.
         """
         title_lower = kalshi_title.lower()
+        candidates: list[dict] = []
         for game in odds_games:
             home = game.get("home_team", "").lower()
             away = game.get("away_team", "").lower()
@@ -617,8 +663,24 @@ class SportsTraderStrategy:
             home_city = " ".join(home.split()[:-1]) if len(home.split()) > 1 else home
             away_city = " ".join(away.split()[:-1]) if len(away.split()) > 1 else away
             if home_city in title_lower and away_city in title_lower:
-                return game
-        return None
+                candidates.append(game)
+        if not candidates:
+            return None
+        if len(candidates) == 1 or not kalshi_ticker:
+            return candidates[0]
+        ticker_dt = _parse_kalshi_ticker_datetime(kalshi_ticker)
+        if not ticker_dt:
+            return candidates[0]
+        def _delta_seconds(g: dict) -> float:
+            ct = g.get("commence_time")
+            if not ct:
+                return float("inf")
+            try:
+                game_dt = datetime.fromisoformat(ct.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                return float("inf")
+            return abs((game_dt - ticker_dt).total_seconds())
+        return min(candidates, key=_delta_seconds)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
@@ -782,7 +844,7 @@ class SportsTraderStrategy:
                     continue
 
                 # Match to odds data
-                matched_game = self._match_kalshi_to_odds(title, odds_games)
+                matched_game = self._match_kalshi_to_odds(title, odds_games, kalshi_ticker=ticker)
                 if not matched_game:
                     continue
 
