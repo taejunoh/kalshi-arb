@@ -930,6 +930,8 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
       const [lo, hi] = gate.dead_zone;
       gateLabel = `skip ${(lo * 100).toFixed(0)}–${(hi * 100).toFixed(0)}¢`;
     }
+    // Phase gate (e.g., longshot_v31 pre-game only)
+    const phaseLabel = status.phase_gate || '';
     // Info icon shown only on disabled cards; tooltip text prefers reason_detail (human) over reason (machine).
     const tooltipText = status.reason_detail || status.reason || '';
     const escapedTooltip = tooltipText
@@ -991,6 +993,12 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
         <div class="perf-row">
           <span class="perf-key">Price gate</span>
           <span class="perf-val" style="font-variant-numeric:tabular-nums;">${gateLabel}</span>
+        </div>
+        ` : ''}
+        ${phaseLabel ? `
+        <div class="perf-row">
+          <span class="perf-key">Phase</span>
+          <span class="perf-val">${phaseLabel}</span>
         </div>
         ` : ''}
         ${d.today ? `

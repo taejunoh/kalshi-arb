@@ -483,9 +483,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "Archived: CPI/GDP/FED 계열 live 포지션 남아있지만 loop 에서 제거된 "
                 "상태. 새 entry 없음, 기존 포지션 settle 대기.",
         }
-        # Per-strategy entry-price gate config. Read class-level attributes
-        # so frontend renders what's actually in effect without drift risk.
+        # Per-strategy gate config (entry-price + game phase). Read class-
+        # level attributes so frontend renders what's actually in effect
+        # without drift risk.
         price_gates: dict = {}
+        phase_gates: dict = {}
         try:
             from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
             from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
@@ -516,6 +518,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     price_gates[name] = {"type": "floor", "floor": floor}
                 elif dz is not None:
                     price_gates[name] = {"type": "dead_zone", "dead_zone": list(dz)}
+                if getattr(cls, "PRE_GAME_ONLY", False):
+                    phase_gates[name] = "pre-game only"
         except Exception:
             pass  # best-effort — missing gate info shouldn't break the endpoint
 
@@ -540,7 +544,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 reason_detail = retirement_detail.get(s, f"Disabled via env flag {flag_attr}=false.")
             result[s] = {"mode": mode, "active": active, "reason": reason,
                          "reason_detail": reason_detail, "archived": s in archived_set,
-                         "price_gate": price_gates.get(s)}
+                         "price_gate": price_gates.get(s),
+                         "phase_gate": phase_gates.get(s)}
         return result
 
     @app.get("/api/settlement-history")
