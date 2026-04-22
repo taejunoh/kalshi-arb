@@ -90,8 +90,7 @@ class SportsScanObserver(SportsTraderStrategy):
                     ya, na = 0.0, 0.0
 
                 matched_game = self._match_kalshi_to_odds(
-                    title, odds_games, kalshi_ticker=ticker,
-                    kalshi_market=market,
+                    title, odds_games, kalshi_ticker=ticker
                 )
                 if not matched_game:
                     continue

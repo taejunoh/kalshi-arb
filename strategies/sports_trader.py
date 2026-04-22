@@ -638,68 +638,39 @@ class SportsTraderStrategy:
             "away_prob": avg_away / total,
         }
 
-    # Upper bound on commence_time vs market close_time delta when picking
-    # from multiple same-matchup candidates. Tolerates intra-day schedule
-    # slop and MLB doubleheaders (2nd game typically within ~6h of 1st) but
-    # rejects playoff-series placeholders where Odds API only has the next
-    # scheduled game, multiple days from the Kalshi ticker's actual game.
-    _MATCH_MAX_DELTA_SECONDS = 48 * 3600
-
     def _match_kalshi_to_odds(self, kalshi_title: str, odds_games: list[dict],
-                              kalshi_ticker: Optional[str] = None,
-                              kalshi_market: Optional[dict] = None) -> Optional[dict]:
+                              kalshi_ticker: Optional[str] = None) -> Optional[dict]:
         """Match a Kalshi market title to odds API game data.
 
         Kalshi uses city names ("Phoenix at Charlotte"), while Odds API uses
         full team names ("Phoenix Suns" vs "Charlotte Hornets"). Match by
         checking if FULL city name of BOTH teams appears in the title.
+        Single-word fallback only for single-word cities to avoid
+        "San" matching both "San Diego" and "San Francisco".
 
         When the same matchup appears multiple times (NHL/NBA playoff
-        best-of-7, MLB 3-game home stands), the Kalshi market's
-        `close_time` disambiguates: pick the Odds API game whose
-        commence_time is closest to `close_time`, and reject the match
-        entirely if the closest candidate is still >48h away (likely a
-        playoff placeholder ticker whose actual game isn't on Odds API
-        yet — see bug investigation 2026-04-22 where KXNBAGAME-26APR27
-        tickers matched 4/22-4/24 games up to 5 days off).
-
-        `kalshi_market` is the full market dict from `/markets`; pass it
-        from scan_and_execute. `kalshi_ticker` is kept for backward compat
-        (tests) but is ignored when `kalshi_market` is provided.
+        best-of-7, MLB 3-game home stands), `kalshi_ticker` enables
+        date-aware disambiguation: of the matching games, the one whose
+        commence_time is closest to the ticker's scheduled datetime wins.
+        Without `kalshi_ticker` the legacy first-match behaviour is used.
         """
         title_lower = kalshi_title.lower()
         candidates: list[dict] = []
         for game in odds_games:
             home = game.get("home_team", "").lower()
             away = game.get("away_team", "").lower()
+            # Full city name (all words except mascot)
             home_city = " ".join(home.split()[:-1]) if len(home.split()) > 1 else home
             away_city = " ".join(away.split()[:-1]) if len(away.split()) > 1 else away
             if home_city in title_lower and away_city in title_lower:
                 candidates.append(game)
         if not candidates:
             return None
-
-        # Resolve a reference time to validate candidates against. Prefer
-        # Kalshi close_time (ground truth for this market's resolution),
-        # fall back to regex-parsed ticker date for legacy callers.
-        reference_dt: Optional[datetime] = None
-        if kalshi_market:
-            ct = kalshi_market.get("close_time")
-            if ct:
-                try:
-                    reference_dt = datetime.fromisoformat(ct.replace("Z", "+00:00"))
-                except (ValueError, TypeError):
-                    reference_dt = None
-        if reference_dt is None and kalshi_ticker:
-            reference_dt = _parse_kalshi_ticker_datetime(kalshi_ticker)
-
-        if reference_dt is None:
-            # No way to validate. Legacy behaviour: single candidate OK
-            # (most days each matchup has one scheduled game); reject
-            # multi-candidate since a silent first-pick is the original
-            # 2026-04-21 bug.
-            return candidates[0] if len(candidates) == 1 else None
-
+        if len(candidates) == 1 or not kalshi_ticker:
+            return candidates[0]
+        ticker_dt = _parse_kalshi_ticker_datetime(kalshi_ticker)
+        if not ticker_dt:
+            return candidates[0]
         def _delta_seconds(g: dict) -> float:
             ct = g.get("commence_time")
             if not ct:
@@ -708,17 +679,8 @@ class SportsTraderStrategy:
                 game_dt = datetime.fromisoformat(ct.replace("Z", "+00:00"))
             except (ValueError, TypeError):
                 return float("inf")
-            return abs((game_dt - reference_dt).total_seconds())
-
-        best = min(candidates, key=_delta_seconds)
-        if _delta_seconds(best) > self._MATCH_MAX_DELTA_SECONDS:
-            # Closest candidate still too far — likely wrong series/game
-            # (e.g. NBA playoff placeholder ticker 5 days before Odds API
-            # publishes the specific game). Applies even to single-
-            # candidate matches, which is the main bug case: Odds API
-            # only has Game 1, but Kalshi ticker is for a later game.
-            return None
-        return best
+            return abs((game_dt - ticker_dt).total_seconds())
+        return min(candidates, key=_delta_seconds)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
@@ -882,9 +844,7 @@ class SportsTraderStrategy:
                     continue
 
                 # Match to odds data
-                matched_game = self._match_kalshi_to_odds(title, odds_games,
-                                                          kalshi_ticker=ticker,
-                                                          kalshi_market=market)
+                matched_game = self._match_kalshi_to_odds(title, odds_games, kalshi_ticker=ticker)
                 if not matched_game:
                     continue
 
