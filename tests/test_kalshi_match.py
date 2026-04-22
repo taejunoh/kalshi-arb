@@ -98,9 +98,11 @@ def test_multi_match_picks_nearest_to_ticker_date():
     assert chosen is games[2]
 
 
-def test_multi_match_no_ticker_falls_back_to_first():
-    """Legacy behaviour preserved when ticker not provided (e.g. tests
-    that call _match_kalshi_to_odds without the new arg)."""
+def test_multi_match_no_reference_returns_none():
+    """Without a disambiguation reference (no ticker + no market), picking
+    among multiple candidates is unsafe — reject the match rather than
+    guessing. 2026-04-22: silent fallback-to-first removed after
+    KXNBAGAME-26APR27 entries matched wrong-series games up to 5 days off."""
     strat = _make_strategy()
     games = [
         {"home_team": "LA Kings", "away_team": "Colorado Avalanche",
@@ -108,19 +110,94 @@ def test_multi_match_no_ticker_falls_back_to_first():
         {"home_team": "LA Kings", "away_team": "Colorado Avalanche",
          "commence_time": "2026-04-22T02:00:00Z"},
     ]
-    chosen = strat._match_kalshi_to_odds("Colorado at LA", games)
-    assert chosen is games[0]  # first match wins (legacy)
+    assert strat._match_kalshi_to_odds("Colorado at LA", games) is None
 
 
-def test_multi_match_unparseable_ticker_falls_back_to_first():
+def test_multi_match_unparseable_ticker_returns_none():
+    """Unparseable ticker and no market → no way to judge — skip."""
     strat = _make_strategy()
     games = [
         {"home_team": "Phoenix Suns", "away_team": "Boston Celtics",
          "commence_time": "2026-04-19T01:00:00Z"},
         {"home_team": "Phoenix Suns", "away_team": "Boston Celtics",
+         "commence_time": "2026-04-22T02:00:00Z"},
+    ]
+    assert strat._match_kalshi_to_odds(
+        "Boston at Phoenix", games, kalshi_ticker="GARBAGE",
+    ) is None
+
+
+def test_multi_match_kalshi_market_close_time_wins():
+    """When kalshi_market is provided, its close_time is authoritative
+    over ticker regex parsing (handles playoff series placeholder dates)."""
+    strat = _make_strategy()
+    games = [
+        {"home_team": "Phoenix Suns", "away_team": "Oklahoma City Thunder",
+         "commence_time": "2026-04-23T01:39:00Z"},  # Game 1 in Odds API
+        {"home_team": "Phoenix Suns", "away_team": "Oklahoma City Thunder",
+         "commence_time": "2026-04-27T01:30:00Z"},  # Game 3 — closer to ticker parse
+    ]
+    # Ticker regex says 4/27 (the placeholder), but market close_time says
+    # 4/23 — pick Game 1 based on close_time, not ticker.
+    market = {"close_time": "2026-04-23T04:00:00Z"}
+    chosen = strat._match_kalshi_to_odds(
+        "Oklahoma City at Phoenix", games,
+        kalshi_ticker="KXNBAGAME-26APR27OKCPHX-OKC",
+        kalshi_market=market,
+    )
+    assert chosen is games[0]  # close_time wins over regex
+
+
+def test_multi_match_all_candidates_beyond_threshold_returns_none():
+    """When the nearest candidate is >48h from close_time, return None
+    (e.g. Odds API only has Game 1 scheduled, but Kalshi ticker is for
+    later series game — avoid trading on wrong-game consensus)."""
+    strat = _make_strategy()
+    games = [
+        {"home_team": "Phoenix Suns", "away_team": "Oklahoma City Thunder",
+         "commence_time": "2026-04-23T01:39:00Z"},
+    ]
+    market = {"close_time": "2026-04-27T04:00:00Z"}  # 4 days away
+    chosen = strat._match_kalshi_to_odds(
+        "Oklahoma City at Phoenix", games,
+        kalshi_ticker="KXNBAGAME-26APR27OKCPHX-OKC",
+        kalshi_market=market,
+    )
+    assert chosen is None
+
+
+def test_multi_match_close_time_within_threshold_picks_nearest():
+    """Two candidates both within 48h — pick the nearest to close_time."""
+    strat = _make_strategy()
+    games = [
+        {"home_team": "Los Angeles Kings", "away_team": "Colorado Avalanche",
+         "commence_time": "2026-04-22T02:00:00Z"},
+        {"home_team": "Los Angeles Kings", "away_team": "Colorado Avalanche",
+         "commence_time": "2026-04-24T02:00:00Z"},
+    ]
+    # close_time 4/24 afternoon → 2nd game (4/24 02:00) closer
+    market = {"close_time": "2026-04-24T14:00:00Z"}
+    chosen = strat._match_kalshi_to_odds(
+        "Colorado at Los Angeles", games,
+        kalshi_ticker="KXNHLGAME-26APR24COLLA-LA",
+        kalshi_market=market,
+    )
+    assert chosen is games[1]
+
+
+def test_multi_match_market_with_missing_close_time_falls_back_to_ticker():
+    """If kalshi_market is passed but close_time is missing, fall back
+    to ticker regex for backward compat."""
+    strat = _make_strategy()
+    games = [
+        {"home_team": "LA Kings", "away_team": "Colorado Avalanche",
+         "commence_time": "2026-04-19T01:00:00Z"},
+        {"home_team": "LA Kings", "away_team": "Colorado Avalanche",
          "commence_time": "2026-04-22T02:00:00Z"},
     ]
     chosen = strat._match_kalshi_to_odds(
-        "Boston at Phoenix", games, kalshi_ticker="GARBAGE",
+        "Colorado at LA", games,
+        kalshi_ticker="KXNHLGAME-26APR22COLLA-LA",
+        kalshi_market={"status": "open"},  # no close_time
     )
-    assert chosen is games[0]
+    assert chosen is games[1]  # 4/22 ticker → 4/22 game
