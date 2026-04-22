@@ -1027,18 +1027,17 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
         </div>
         ${sportRows}
         ` : ''}
-        ${d.today ? `
-        <div class="perf-row" style="border-top:1px solid var(--text-dim);padding-top:6px;margin-top:4px;">
-          <span class="perf-key">Today</span>
-          <span class="perf-val">
-            n=${d.today.trade_count}
-            ${((d.today.trade_count || 0) - (d.today.settled_count || 0)) > 0
-              ? `<span style="color:var(--text-dim);">· ${(d.today.trade_count || 0) - (d.today.settled_count || 0)} pending</span>` : ''}
-            ${d.today.total_pnl !== 0 ? `<span class="${d.today.total_pnl >= 0 ? 'positive' : 'negative'}">${fmtMoney(d.today.total_pnl)}</span>` : ''}
-            ${d.today.wins + d.today.losses > 0 ? `(${((d.today.wins / (d.today.wins + d.today.losses)) * 100).toFixed(0)}%)` : ''}
-          </span>
-        </div>
-        ` : ''}
+        ${d.today ? (() => {
+          const total = d.today.trade_count || 0;
+          const open = total - (d.today.settled_count || 0);
+          const pnl = d.today.total_pnl || 0;
+          const wl = (d.today.wins || 0) + (d.today.losses || 0);
+          const parts = [`${total}`];
+          if (open > 0) parts.push(`<span style="color:var(--text-dim);">${open} open</span>`);
+          if (pnl !== 0) parts.push(`<span class="${pnl >= 0 ? 'positive' : 'negative'}">${fmtMoney(pnl)}</span>`);
+          if (wl > 0) parts.push(`<span style="color:var(--text-dim);">${Math.round((d.today.wins / wl) * 100)}% WR</span>`);
+          return `<div class="perf-row" style="border-top:1px solid var(--text-dim);padding-top:6px;margin-top:4px;"><span class="perf-key">Today</span><span class="perf-val">${parts.join(' · ')}</span></div>`;
+        })() : ''}
         ${d.pre ? `
         <div class="perf-row" style="border-top:1px solid var(--text-dim);padding-top:6px;margin-top:4px;">
           <span class="perf-key">Pre-game</span>
