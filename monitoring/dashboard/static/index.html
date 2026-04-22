@@ -1032,6 +1032,8 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
           <span class="perf-key">Today</span>
           <span class="perf-val">
             n=${d.today.trade_count}
+            ${((d.today.trade_count || 0) - (d.today.settled_count || 0)) > 0
+              ? `<span style="color:var(--text-dim);">· ${(d.today.trade_count || 0) - (d.today.settled_count || 0)} pending</span>` : ''}
             ${d.today.total_pnl !== 0 ? `<span class="${d.today.total_pnl >= 0 ? 'positive' : 'negative'}">${fmtMoney(d.today.total_pnl)}</span>` : ''}
             ${d.today.wins + d.today.losses > 0 ? `(${((d.today.wins / (d.today.wins + d.today.losses)) * 100).toFixed(0)}%)` : ''}
           </span>

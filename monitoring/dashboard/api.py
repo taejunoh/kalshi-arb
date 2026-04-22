@@ -92,7 +92,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         today_cutoff = _today_cutoff_utc()
 
         def empty_today():
-            return {"trade_count": 0, "total_pnl": 0.0, "wins": 0, "losses": 0}
+            # trade_count = total entries in window (settled + pending).
+            # settled_count = subset with realized pnl (paper_settled / settled).
+            # pending = trade_count - settled_count, derived in the frontend.
+            return {"trade_count": 0, "settled_count": 0,
+                    "total_pnl": 0.0, "wins": 0, "losses": 0}
 
         def empty_stats():
             return {"trade_count": 0, "total_pnl": 0.0, "total_size": 0.0, "wins": 0, "losses": 0,
@@ -144,6 +148,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 t = bucket["today"]
                 t["trade_count"] += 1
                 t["total_pnl"] += pnl
+                if status == "paper_settled":
+                    t["settled_count"] += 1
                 if pnl > 0:
                     t["wins"] += 1
                 elif pnl < 0:
@@ -255,6 +261,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     t = bucket["today"]
                     t["trade_count"] += 1
                     t["total_pnl"] += pnl
+                    t["settled_count"] += 1  # reached this branch only on settled rows
                     if pnl > 0:
                         t["wins"] += 1
                     elif pnl < 0:
