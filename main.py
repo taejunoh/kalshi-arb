@@ -313,19 +313,23 @@ class Bot:
             ("sports_longshot_v31", self.sports_longshot_v31),
             ("sports_midshot_v31", self.sports_midshot_v31),
             ("sports_underdog_v31", self.sports_underdog_v31),
-            # V3.2 + V3.3 paper variants — continued to 2026-05-01 eval.
-            # 4-day interim (2026-04-21) showed V3.2 trio -$237, V3.3 trio -$103,
-            # but paper has zero real-money cost and ending the experiment
-            # early after two mid-flight parameter changes (dead_zone, $4 base)
-            # would compound the "don't touch mid-flight" violation. Running
-            # in parallel with V3.4 adds negligible scan overhead; evaluate all
-            # three families together at the scheduled window close.
-            ("sports_longshot_v32", self.sports_longshot_v32),
-            ("sports_midshot_v32", self.sports_midshot_v32),
+            # V3.2 + V3.3 paper variants — pre-game-only re-analysis 2026-04-24
+            # (filtering out pre-2026-04-21 live entries that PRE_GAME_ONLY now
+            # blocks anyway). 5 of 6 underperform v31 baseline:
+            #   v32 longshot pre-only: -13.9% (n=24)  → retire
+            #   v32 midshot  pre-only:  +2.1% (n=56)  → retire (v31 +18.9%)
+            #   v33 longshot pre-only: -23.8% (n=23)  → retire (cap cuts winners)
+            #   v33 midshot  pre-only:  -2.8% (n=55)  → retire
+            #   v33 underdog pre-only: +21.5% (n=91)  → retire (v31 +19.7% — no edge over baseline)
+            # Only winner: v32 underdog +27.1% (n=91) vs v31 underdog +19.7%.
+            # Edge-scaled sizing genuinely helps for underdog (high-payoff
+            # underdog signals = real high-EV). Keep as live-promotion candidate.
+            # ("sports_longshot_v32", self.sports_longshot_v32),
+            # ("sports_midshot_v32", self.sports_midshot_v32),
             ("sports_underdog_v32", self.sports_underdog_v32),
-            ("sports_longshot_v33", self.sports_longshot_v33),
-            ("sports_midshot_v33", self.sports_midshot_v33),
-            ("sports_underdog_v33", self.sports_underdog_v33),
+            # ("sports_longshot_v33", self.sports_longshot_v33),
+            # ("sports_midshot_v33", self.sports_midshot_v33),
+            # ("sports_underdog_v33", self.sports_underdog_v33),
             # V3.4 — V3.1 logic + region=us (paper-only). 2026-04-21 matrix
             # found us outperforming eu on 8 of 9 sport × base splits. Runs
             # in parallel with V3.1 (eu) to confirm the region finding on a
