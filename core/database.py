@@ -61,6 +61,16 @@ class Database:
                 )
             """)
             await conn.execute("""
+                CREATE TABLE IF NOT EXISTS ticker_settlements (
+                    kalshi_ticker TEXT PRIMARY KEY,
+                    result TEXT NOT NULL,
+                    close_yes_ask REAL,
+                    close_no_ask REAL,
+                    settled_at TEXT,
+                    fetched_at TEXT NOT NULL
+                )
+            """)
+            await conn.execute("""
                 CREATE TABLE IF NOT EXISTS odds_observations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp TEXT NOT NULL,
