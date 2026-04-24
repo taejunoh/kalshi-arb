@@ -526,6 +526,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             from strategies.sports_midshot_v35 import SportsMidshotV35Strategy
             from strategies.sports_underdog_v35 import SportsUnderdogV35Strategy
             from strategies.sports_v4_edge import SportsV4EdgeStrategy
+            from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
             _gate_classes = {
                 "sports_longshot_v31": SportsLongshotV31Strategy,
                 "sports_midshot_v31":  SportsMidshotV31Strategy,
@@ -543,6 +544,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "sports_midshot_v35":  SportsMidshotV35Strategy,
                 "sports_underdog_v35": SportsUnderdogV35Strategy,
                 "sports_v4_edge":      SportsV4EdgeStrategy,
+                "sports_chalk_shadow": SportsChalkShadowStrategy,
             }
             default_region = getattr(config, "ODDS_API_REGION", "eu") if config else "eu"
             # Derive a unified per-sport "NBA: pre, MLB: live" view from
@@ -571,10 +573,18 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             for name, cls in _gate_classes.items():
                 floor = getattr(cls, "MIN_ENTRY_PRICE", None)
                 dz = getattr(cls, "ENTRY_PRICE_DEAD_ZONE", None)
+                # Window gate (chalk_shadow): PRICE_MIN + PRICE_MAX pair
+                # that restricts entry to a price band. Only render when
+                # BOTH are set to non-default values (sports_trader base
+                # has neither).
+                p_min = getattr(cls, "PRICE_MIN", None)
+                p_max = getattr(cls, "PRICE_MAX", None)
                 if floor is not None:
                     price_gates[name] = {"type": "floor", "floor": floor}
                 elif dz is not None:
                     price_gates[name] = {"type": "dead_zone", "dead_zone": list(dz)}
+                elif p_min is not None and p_max is not None:
+                    price_gates[name] = {"type": "window", "window": [p_min, p_max]}
                 if getattr(cls, "PRE_GAME_ONLY", False):
                     phase_gates[name] = "pre-game only"
                 # Region: explicit override wins, else the config default.

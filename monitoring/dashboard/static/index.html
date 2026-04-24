@@ -934,6 +934,9 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     } else if (gate && gate.type === 'dead_zone') {
       const [lo, hi] = gate.dead_zone;
       gateLabel = `skip ${(lo * 100).toFixed(0)}–${(hi * 100).toFixed(0)}¢`;
+    } else if (gate && gate.type === 'window') {
+      const [lo, hi] = gate.window;
+      gateLabel = `${(lo * 100).toFixed(0)}–${(hi * 100).toFixed(0)}¢`;
     }
     // Phase gate (e.g., longshot_v31 pre-game only)
     const phaseLabel = status.phase_gate || '';
