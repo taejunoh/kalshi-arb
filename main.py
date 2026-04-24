@@ -29,6 +29,9 @@ from strategies.sports_underdog_v33 import SportsUnderdogV33Strategy
 from strategies.sports_longshot_v34 import SportsLongshotV34Strategy
 from strategies.sports_midshot_v34 import SportsMidshotV34Strategy
 from strategies.sports_underdog_v34 import SportsUnderdogV34Strategy
+from strategies.sports_longshot_v35 import SportsLongshotV35Strategy
+from strategies.sports_midshot_v35 import SportsMidshotV35Strategy
+from strategies.sports_underdog_v35 import SportsUnderdogV35Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_scan_observer import SportsScanObserver
@@ -123,6 +126,17 @@ class Bot:
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_underdog_v34 = SportsUnderdogV34Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # V3.5 — V3.4's (NBA, pre) us cell promoted to live trading 2026-04-23.
+        # Coexists with V3.4 paper on same cell; V3.5 fires live + paper-twin.
+        self.sports_longshot_v35 = SportsLongshotV35Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_midshot_v35 = SportsMidshotV35Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_underdog_v35 = SportsUnderdogV35Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
@@ -311,6 +325,13 @@ class Bot:
             ("sports_longshot_v34", self.sports_longshot_v34),
             ("sports_midshot_v34", self.sports_midshot_v34),
             ("sports_underdog_v34", self.sports_underdog_v34),
+            # V3.5 — V3.4's (NBA, pre) us cell promoted to live trading
+            # 2026-04-23. Coexists with V3.4 paper on same cell (V3.4 keeps
+            # recording paper for matrix continuity; V3.5 fires live + paper
+            # twin). Add v35 names to LIVE_STRATEGIES env on EC2 to activate.
+            ("sports_longshot_v35", self.sports_longshot_v35),
+            ("sports_midshot_v35", self.sports_midshot_v35),
+            ("sports_underdog_v35", self.sports_underdog_v35),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
             # -37.5% ROI. Freshness gate was added 2026-04-16 (80ad42e) but
             # only a handful of post-gate entries accumulated before shutdown;
@@ -318,6 +339,11 @@ class Bot:
             # materially changes.
             # ("sports_pinnacle_edge", self.sports_pinnacle_edge),
             ("sports_v4_edge", self.sports_v4_edge),
+            # Chalk shadow — paper-only experiment (2026-04-24). Tests buy-
+            # the-chalk-at-60-95¢ during live play based on observer-derived
+            # hypothesis. Not in LIVE_STRATEGIES; records paper entries
+            # only. ALLOWED_CELLS restricts to live phase on all three sports.
+            ("sports_chalk_shadow", self.sports_chalk_shadow),
             # sports_liquidity_filtered removed 2026-04-15 — $3 trade size made
             # depth filter inert, 100% trade overlap with sports_midshot_v31
             # (identical PnL $65.99/n=26). Experiment meaningless until live

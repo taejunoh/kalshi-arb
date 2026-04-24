@@ -83,7 +83,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v32", "sports_midshot_v32", "sports_underdog_v32",
             "sports_longshot_v33", "sports_midshot_v33", "sports_underdog_v33",
             "sports_longshot_v34", "sports_midshot_v34", "sports_underdog_v34",
-            "sports_pinnacle_edge", "sports_v4_edge",
+            "sports_longshot_v35", "sports_midshot_v35", "sports_underdog_v35",
+            "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Archived — historical data surfaced in dashboard's Archived section.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
@@ -406,7 +407,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v32", "sports_midshot_v32", "sports_underdog_v32",
             "sports_longshot_v33", "sports_midshot_v33", "sports_underdog_v33",
             "sports_longshot_v34", "sports_midshot_v34", "sports_underdog_v34",
-            "sports_pinnacle_edge", "sports_v4_edge",
+            "sports_longshot_v35", "sports_midshot_v35", "sports_underdog_v35",
+            "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Archived — surfaced in dashboard Archived section with reason.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
@@ -442,6 +444,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v34": "SPORTS_ENABLED",
             "sports_midshot_v34": "SPORTS_ENABLED",
             "sports_underdog_v34": "SPORTS_ENABLED",
+            "sports_longshot_v35": "SPORTS_ENABLED",
+            "sports_midshot_v35": "SPORTS_ENABLED",
+            "sports_underdog_v35": "SPORTS_ENABLED",
             "sports_pinnacle_edge": "SPORTS_ENABLED",
             "sports_v4_edge": "SPORTS_ENABLED",
             "sports_consolidated": "SPORTS_ENABLED",
@@ -517,6 +522,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             from strategies.sports_longshot_v34 import SportsLongshotV34Strategy
             from strategies.sports_midshot_v34 import SportsMidshotV34Strategy
             from strategies.sports_underdog_v34 import SportsUnderdogV34Strategy
+            from strategies.sports_longshot_v35 import SportsLongshotV35Strategy
+            from strategies.sports_midshot_v35 import SportsMidshotV35Strategy
+            from strategies.sports_underdog_v35 import SportsUnderdogV35Strategy
             from strategies.sports_v4_edge import SportsV4EdgeStrategy
             _gate_classes = {
                 "sports_longshot_v31": SportsLongshotV31Strategy,
@@ -531,6 +539,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "sports_longshot_v34": SportsLongshotV34Strategy,
                 "sports_midshot_v34":  SportsMidshotV34Strategy,
                 "sports_underdog_v34": SportsUnderdogV34Strategy,
+                "sports_longshot_v35": SportsLongshotV35Strategy,
+                "sports_midshot_v35":  SportsMidshotV35Strategy,
+                "sports_underdog_v35": SportsUnderdogV35Strategy,
                 "sports_v4_edge":      SportsV4EdgeStrategy,
             }
             default_region = getattr(config, "ODDS_API_REGION", "eu") if config else "eu"
