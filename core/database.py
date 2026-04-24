@@ -104,6 +104,11 @@ class Database:
             await self._add_column_if_missing(conn, "clv_snapshots", "pinnacle_age_s", "INTEGER")
             await self._add_column_if_missing(conn, "clv_snapshots", "kalshi_yes_bid", "REAL")
             await self._add_column_if_missing(conn, "clv_snapshots", "kalshi_yes_ask", "REAL")
+            # Book depth at entry time (2026-04-24). Useful for chalk_shadow
+            # hypothesis testing with MIN_DEPTH_USDC=0 — we record depth but
+            # don't gate on it, enabling post-hoc "what if depth≥$5?" filters.
+            await self._add_column_if_missing(conn, "clv_snapshots", "kalshi_yes_depth", "REAL")
+            await self._add_column_if_missing(conn, "clv_snapshots", "kalshi_no_depth", "REAL")
             # Season classification (playoff vs regular). Computed on insert
             # going forward; backfill below populates historical NULL rows.
             await self._add_column_if_missing(conn, "trades", "is_playoff", "INTEGER")
@@ -229,6 +234,8 @@ class Database:
         pinnacle_age_s: Optional[int] = None,
         kalshi_yes_bid: Optional[float] = None,
         kalshi_yes_ask: Optional[float] = None,
+        kalshi_yes_depth: Optional[float] = None,
+        kalshi_no_depth: Optional[float] = None,
     ):
         now = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.db_path) as conn:
@@ -236,11 +243,13 @@ class Database:
                 """INSERT INTO clv_snapshots
                    (trade_id, snapshot_at, snapshot_time, yes_ask, no_ask, pinnacle_prob,
                     us_consensus_prob, eu_consensus_prob, pinnacle_age_s,
-                    kalshi_yes_bid, kalshi_yes_ask)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    kalshi_yes_bid, kalshi_yes_ask,
+                    kalshi_yes_depth, kalshi_no_depth)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (trade_id, snapshot_at, now, yes_ask, no_ask, pinnacle_prob,
                  us_consensus_prob, eu_consensus_prob, pinnacle_age_s,
-                 kalshi_yes_bid, kalshi_yes_ask),
+                 kalshi_yes_bid, kalshi_yes_ask,
+                 kalshi_yes_depth, kalshi_no_depth),
             )
             await conn.commit()
 

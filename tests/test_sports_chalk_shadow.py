@@ -20,7 +20,9 @@ def test_identifiers_and_gates():
     assert s.TRADED_TICKERS_FILE == "data/sports_chalk_shadow_tickers.json"
     assert s.PRICE_MIN == 0.60
     assert s.PRICE_MAX == 0.95
-    assert s.MIN_DEPTH_USDC == 5.0
+    # Depth gate intentionally disabled for hypothesis testing — depth is
+    # still recorded via clv_snapshots for post-hoc filtering.
+    assert s.MIN_DEPTH_USDC == 0.0
     # Live-only across all three sports
     assert s.ALLOWED_CELLS == frozenset({
         ("MLB", "live"), ("NBA", "live"), ("NHL", "live"),

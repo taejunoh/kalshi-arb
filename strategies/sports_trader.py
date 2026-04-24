@@ -540,6 +540,14 @@ class SportsTraderStrategy:
                 pass
         if kalshi_yes_ask is None:
             kalshi_yes_ask = yes_ask
+        # Snapshot book depth at entry (2026-04-24). Recorded regardless of
+        # the strategy's MIN_DEPTH_USDC gate so post-hoc analysis can filter
+        # by depth (e.g., chalk_shadow has gate=0 for hypothesis testing).
+        kalshi_yes_depth, kalshi_no_depth = None, None
+        try:
+            kalshi_yes_depth, kalshi_no_depth = self._client.get_order_book_depth(ticker)
+        except Exception:
+            pass
         us_prob, eu_prob, _pin_dual, age_s = await self._dual_region_consensus(sport, game)
         try:
             await self._order_manager._db.record_clv_snapshot(
@@ -553,6 +561,8 @@ class SportsTraderStrategy:
                 pinnacle_age_s=age_s,
                 kalshi_yes_bid=kalshi_yes_bid,
                 kalshi_yes_ask=kalshi_yes_ask,
+                kalshi_yes_depth=kalshi_yes_depth,
+                kalshi_no_depth=kalshi_no_depth,
             )
         except Exception as e:
             logger.warning(f"[SPORTS] CLV entry snapshot failed for trade {trade_id}: {e}")

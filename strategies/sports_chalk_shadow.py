@@ -50,10 +50,16 @@ class SportsChalkShadowStrategy(SportsTraderStrategy):
         ("MLB", "live"), ("NBA", "live"), ("NHL", "live"),
     })
 
-    # Safety rail matches v31/v4_edge. Chalk in live-game often has thin
-    # opposite-side liquidity as the decided team pulls away; require some
-    # depth so paper fills approximate real book conditions.
-    MIN_DEPTH_USDC = 5.0
+    # Depth gate disabled (2026-04-24) so we can test the observer-derived
+    # hypothesis on the FULL candidate set without a liquidity filter. Chalk
+    # 75¢+ markets often have thin opposite-side depth (few want to sell a
+    # near-sure winner), which would silently drop most signals if we gated
+    # at 5 USDC. Post-hoc analysis can still filter by depth because the
+    # base class _record_entry_clv snapshots kalshi_yes_depth/kalshi_no_depth
+    # into clv_snapshots at every entry. Before any live promotion, switch
+    # MIN_DEPTH_USDC to >=5 and measure what fraction of paper entries
+    # would have been gated out.
+    MIN_DEPTH_USDC = 0.0
 
     def __init__(self, config, order_manager, kalshi_client):
         super().__init__(config, order_manager, kalshi_client)
