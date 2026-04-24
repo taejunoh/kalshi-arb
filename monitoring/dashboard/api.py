@@ -421,7 +421,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         loop_disabled = {"sports_trader", "maker_preorder", "shutdown_fade",
                          "sports_liquidity_filtered", "sports_consolidated",
                          "sports_longshot", "sports_midshot", "sports_underdog",
-                         "sports_pinnacle_edge", "mentions_trader"}
+                         "sports_pinnacle_edge", "mentions_trader",
+                         # Retired 2026-04-24 — pre-game-only re-eval (commit 67f1f99)
+                         "sports_longshot_v32", "sports_midshot_v32",
+                         "sports_longshot_v33", "sports_midshot_v33",
+                         "sports_underdog_v33"}
         # env-flag mapping: which config attribute gates each strategy
         flag_map = {
             "market_maker": "MM_ENABLED",
@@ -499,6 +503,24 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "econ_trader":
                 "Archived: CPI/GDP/FED 계열 live 포지션 남아있지만 loop 에서 제거된 "
                 "상태. 새 entry 없음, 기존 포지션 settle 대기.",
+            "sports_longshot_v32":
+                "Retired (2026-04-24): pre-game-only 재분석 결과 -13.9% (n=24) — "
+                "v31 longshot +29.3% 대비 한참 열위. Edge-scaled sizing 이 "
+                "lucky-shot 패턴에 안 맞음 (적은 winners 를 사이즈로 키우면 noise 증폭).",
+            "sports_midshot_v32":
+                "Retired (2026-04-24): pre-game-only +2.1% (n=56) → v31 midshot "
+                "+18.9% 대비 명백한 열위. Edge-scaling 이 midshot 에서는 effect 없음.",
+            "sports_longshot_v33":
+                "Retired (2026-04-24): pre-game-only -23.8% (n=23) — 최악. "
+                "$12 per-game cap 이 longshot 의 적은 winners 를 우선적으로 차단 "
+                "(FIFO 순서 → 좋은 신호도 무차별 cut). v31 +29.3% 와 비교 불가.",
+            "sports_midshot_v33":
+                "Retired (2026-04-24): pre-game-only -2.8% (n=55). v31 +18.9% 대비 "
+                "cap 이 net 손해 — entry 수 줄었는데 나간 것들이 평균 winner 였음.",
+            "sports_underdog_v33":
+                "Retired (2026-04-24): pre-game-only +21.5% (n=91) → v31 underdog "
+                "+19.7% 와 거의 동률. 추가 mechanism (cap) 정당화 안 됨, 단순 v31 유지가 "
+                "더 깔끔. v32 underdog (+27.1%) 가 동일 슬롯에서 명백히 우월하므로 거기 집중.",
         }
         # Per-strategy gate config (entry-price + game phase + region +
         # sport blocklist). Read class-level attributes so frontend renders
