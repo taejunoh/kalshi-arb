@@ -78,9 +78,13 @@ def test_midshot_blocks_nhl_in_both_regions():
     assert "NHL" in SportsMidshotStrategy.SPORT_BLOCKLIST
     assert "NHL" in SportsMidshotV31Strategy.SPORT_BLOCKLIST  # inherited
     assert "NHL" in SportsMidshotV34Strategy.SPORT_BLOCKLIST  # inherited
-    # Longshot/underdog have no blocklist — different NHL profile
+    # Longshot v31 also blocks NHL (added 2026-04-23 — NHL long pre eu was the
+    # active losing cell per matrix snapshot 2026-04-22).
     from strategies.sports_longshot_v31 import SportsLongshotV31Strategy as LL
-    assert "NHL" not in LL.SPORT_BLOCKLIST
+    assert "NHL" in LL.SPORT_BLOCKLIST
+    # Underdog v31 has no NHL block — NHL underdog profile differs
+    from strategies.sports_underdog_v31 import SportsUnderdogV31Strategy as UU
+    assert "NHL" not in UU.SPORT_BLOCKLIST
 
 
 def test_v34_trio_uses_us_region():

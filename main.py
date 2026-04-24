@@ -34,6 +34,7 @@ from strategies.sports_midshot_v35 import SportsMidshotV35Strategy
 from strategies.sports_underdog_v35 import SportsUnderdogV35Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
+from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
 from strategies.sports_scan_observer import SportsScanObserver
 from strategies.econ_trader import EconTraderStrategy
 from core.settlement import SettlementChecker
@@ -143,6 +144,13 @@ class Bot:
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_v4_edge = SportsV4EdgeStrategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # Chalk shadow — paper-only experimental strategy testing the
+        # 2026-04-24 observer hypothesis that live-game 60-95¢ chalk YES
+        # underprices residual uncertainty. ALLOWED_CELLS restricts to live
+        # phase. Paper for 2-4 weeks before any live-promotion call.
+        self.sports_chalk_shadow = SportsChalkShadowStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
         # Read-only consensus snapshotter — no trades, no gates. Runs as a

@@ -31,3 +31,8 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
     # loss. Mid/underdog v31 show same direction but smaller magnitude — gate
     # restricted to longshot for now (1-week eval before extending).
     PRE_GAME_ONLY = True
+    # NHL longshot blocked 2026-04-23 — matrix snapshot 2026-04-22 flagged
+    # NHL long pre eu as the active losing cell for v31. With PRE_GAME_ONLY=True
+    # the only NHL signals v31 fires on are (NHL, pre eu); blocking the sport
+    # fully stops both live trades and the paper twin on NHL.
+    SPORT_BLOCKLIST = frozenset({"NHL"})

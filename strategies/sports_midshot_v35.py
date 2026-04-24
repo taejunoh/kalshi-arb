@@ -1,0 +1,21 @@
+"""Sports Midshot V3.5 — V3.4's (NBA, pre) cell promoted to live trading.
+
+Coexists with V3.4 paper on the same cell — V3.4 keeps recording paper for the
+matrix evaluation, V3.5 places live + paper-twin entries on every same signal.
+
+Live promotion rationale (2026-04-21 4D matrix, snapshot 2026-04-22):
+  (NBA, pre) us: +46% ROI vs eu +13% (n=36 vs 28) — headline region gap.
+"""
+import logging
+
+from strategies.sports_midshot_v34 import SportsMidshotV34Strategy
+
+logger = logging.getLogger("sports_midshot_v35")
+
+
+class SportsMidshotV35Strategy(SportsMidshotV34Strategy):
+    """Live-promoted subset of V3.4 midshot — only (NBA, pre) us."""
+
+    TRADED_TICKERS_FILE = "data/sports_midshot_v35_tickers.json"
+    STRATEGY_NAME = "sports_midshot_v35"
+    ALLOWED_CELLS = frozenset({("NBA", "pre")})
