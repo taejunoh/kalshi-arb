@@ -50,6 +50,26 @@ journalctl -u kalshi-bot -f
 http://<public-ip>:8080
 ```
 
+## 5b. Install daily ticker-settlement backfill (optional)
+
+Runs once a day at 10:15 UTC to query Kalshi for settlement results of
+observed sports markets. Fills `ticker_settlements` for universe-wide ROI
+analysis (independent of which tickers the bot traded).
+
+```bash
+sudo cp deploy/kalshi-ticker-backfill.service /etc/systemd/system/
+sudo cp deploy/kalshi-ticker-backfill.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now kalshi-ticker-backfill.timer
+
+# Verify next fire time
+systemctl list-timers kalshi-ticker-backfill.timer
+
+# Manual run (for initial backfill after observer accumulates data)
+sudo systemctl start kalshi-ticker-backfill.service
+journalctl -u kalshi-ticker-backfill.service -n 50
+```
+
 ## 6. Common Commands
 
 ```bash
