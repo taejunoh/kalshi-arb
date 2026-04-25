@@ -23,4 +23,10 @@ class SportsLongshotV34Strategy(SportsLongshotV31Strategy):
     TRADED_TICKERS_FILE = "data/sports_longshot_v34_tickers.json"
     STRATEGY_NAME = "sports_longshot_v34"
     REGION_OVERRIDE = "us"
+    # Defensive override — v31 raised to base 12 / depth 15 on 2026-04-25;
+    # v34/v35 stay at base 4 / depth 5 until their own paper alpha justifies.
+    MIN_DEPTH_USDC = 5.0
     ALLOWED_CELLS = frozenset({("MLB", "pre"), ("NBA", "pre")})
+
+    def _get_trade_size(self, signal: dict) -> float:
+        return min(4.0, self._order_manager.bankroll * 0.02)

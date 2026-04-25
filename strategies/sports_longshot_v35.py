@@ -18,4 +18,11 @@ class SportsLongshotV35Strategy(SportsLongshotV34Strategy):
 
     TRADED_TICKERS_FILE = "data/sports_longshot_v35_tickers.json"
     STRATEGY_NAME = "sports_longshot_v35"
+    # Depth gate scaled to base 8: peak stake ~$3.40 → 3× buffer = $10.
+    MIN_DEPTH_USDC = 10.0
     ALLOWED_CELLS = frozenset({("NBA", "pre")})
+
+    def _get_trade_size(self, signal: dict) -> float:
+        # Raised 4→8 on 2026-04-25. Live sample still small (n=4); modest
+        # raise for faster data accrual on the (NBA, pre) us cell.
+        return min(8.0, self._order_manager.bankroll * 0.02)

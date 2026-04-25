@@ -12,7 +12,8 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     TRADED_TICKERS_FILE = "data/sports_midshot_v31_tickers.json"
     STRATEGY_NAME = "sports_midshot_v31"
     REGION_OVERRIDE = "eu"
-    MIN_DEPTH_USDC = 5.0
+    # Depth gate scaled to base 16: peak stake ~$6.80 → 3× buffer = $20.
+    MIN_DEPTH_USDC = 20.0
     # Price bucket ROI (2026-04-20, settled paper+live):
     #   <10¢:    n=9,  0% win, ROI −100%
     #   10–15¢:  n=9,  0% win, ROI −100%
@@ -25,3 +26,9 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     # wins (+25% ROI, n=57). Same pattern confirmed on longshot (2026-04-20)
     # and underdog; extending across v31 trio.
     PRE_GAME_ONLY = True
+
+    def _get_trade_size(self, signal: dict) -> float:
+        # Raised 4→16 on 2026-04-25. SOLO_PAPER post-promo ROI +384% (n=19)
+        # vs LIVE TWIN −5% — strongest size-raise case in v31 trio. v34/v35
+        # midshot use their own overrides (no inheritance leak).
+        return min(16.0, self._order_manager.bankroll * 0.02)

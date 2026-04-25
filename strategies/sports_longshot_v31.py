@@ -15,7 +15,8 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
     TRADED_TICKERS_FILE = "data/sports_longshot_v31_tickers.json"
     STRATEGY_NAME = "sports_longshot_v31"
     REGION_OVERRIDE = "eu"
-    MIN_DEPTH_USDC = 5.0
+    # Depth gate scaled to base 12: peak stake ~$5.10 → 3× buffer = $15.
+    MIN_DEPTH_USDC = 15.0
     # Price bucket ROI (2026-04-20, settled paper+live):
     #   <10¢:    n=6,  ROI +166%  ← lucky-shot band, keep
     #   10–15¢:  n=22, ROI  −35%  ← dead zone
@@ -36,3 +37,11 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
     # the only NHL signals v31 fires on are (NHL, pre eu); blocking the sport
     # fully stops both live trades and the paper twin on NHL.
     SPORT_BLOCKLIST = frozenset({"NHL"})
+
+    def _get_trade_size(self, signal: dict) -> float:
+        # Raised 4→12 on 2026-04-25. LIVE −53% (n=140) was the biggest
+        # selection-bias victim; SOLO_PAPER post-promo +71% (n=17) suggests
+        # the aggression fix should recover most of the gap. Smaller raise
+        # than midshot/underdog because the LIVE gap is largest, so fix
+        # uncertainty is highest. v34/v35 longshot use their own overrides.
+        return min(12.0, self._order_manager.bankroll * 0.02)
