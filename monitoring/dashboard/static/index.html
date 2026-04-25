@@ -940,6 +940,14 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     }
     // Phase gate (e.g., longshot_v31 pre-game only)
     const phaseLabel = status.phase_gate || '';
+    // Sizing — base contracts + MIN_DEPTH_USDC. v32 underdog applies a
+    // 0.5x-2.0x multiplier on top of base via edge-scaling, so we annotate.
+    const baseSize = status.base_size;
+    const minDepth = status.min_depth;
+    const isV32Underdog = strat === 'sports_underdog_v32';
+    const sizingLabel = (baseSize !== null && baseSize !== undefined)
+      ? `${Math.round(baseSize)}${isV32Underdog ? ' ×0.5-2.0' : ''} · depth $${Math.round(minDepth || 0)}`
+      : '';
     // Region (sports strategies only) + per-sport phase view
     const region = status.region || '';
     const regionTag = region ? region.toUpperCase() : '';
@@ -1021,6 +1029,12 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
         <div class="perf-row">
           <span class="perf-key">Price gate</span>
           <span class="perf-val" style="font-variant-numeric:tabular-nums;">${gateLabel}</span>
+        </div>
+        ` : ''}
+        ${sizingLabel ? `
+        <div class="perf-row">
+          <span class="perf-key">Sizing</span>
+          <span class="perf-val" style="font-variant-numeric:tabular-nums;">${sizingLabel}</span>
         </div>
         ` : ''}
         ${sportRows ? `

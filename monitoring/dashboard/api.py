@@ -531,6 +531,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         sport_blocks: dict = {}
         allowed_cells: dict = {}
         sport_phases_map: dict = {}
+        base_sizes: dict = {}
+        min_depths: dict = {}
         try:
             from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
             from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
@@ -624,6 +626,19 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     )
                 # Unified per-sport phase view for the dashboard.
                 sport_phases_map[name] = _sport_phases(cls)
+                # Sizing introspection — base contracts (unscaled) + depth gate.
+                # _get_trade_size needs an instance + a fake order_manager. Use
+                # signal edge=2.0 so v32's payoff multiplier is exactly 1.0,
+                # giving the unscaled base. v32 displays ×0.5-2.0 separately
+                # via class.__name__ check on the frontend.
+                try:
+                    inst = object.__new__(cls)
+                    inst._order_manager = type("MockOM", (), {"bankroll": 1e9})()
+                    base = cls._get_trade_size(inst, {"edge": 2.0})
+                    base_sizes[name] = float(base)
+                except Exception:
+                    base_sizes[name] = None
+                min_depths[name] = float(getattr(cls, "MIN_DEPTH_USDC", 0) or 0)
         except Exception:
             pass  # best-effort — missing gate info shouldn't break the endpoint
 
@@ -653,7 +668,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                          "region": regions.get(s),
                          "sport_blocklist": sport_blocks.get(s),
                          "allowed_cells": allowed_cells.get(s),
-                         "sport_phases": sport_phases_map.get(s)}
+                         "sport_phases": sport_phases_map.get(s),
+                         "base_size": base_sizes.get(s),
+                         "min_depth": min_depths.get(s)}
         return result
 
     @app.get("/api/settlement-history")
