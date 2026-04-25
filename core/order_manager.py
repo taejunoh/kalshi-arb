@@ -17,6 +17,7 @@ LIMIT_TTL_STRATEGIES = {
     "sports_longshot_v31",
     "sports_midshot_v31",
     "sports_underdog_v31",
+    "sports_underdog_v32",  # 2026-04-25 live-promoted; paper +168% ROI (n=67 pre) vs v31 +88%
     "sports_v4_edge",  # 2026-04-20 live-promoted; same $3 / 5-35¢ profile as v31
     "sports_longshot_v35",  # 2026-04-23 live-promoted (NBA, pre) us cell from v34
     "sports_midshot_v35",
@@ -47,6 +48,7 @@ PAPER_TWIN_STRATEGIES = {
     "sports_longshot_v31",
     "sports_midshot_v31",
     "sports_underdog_v31",
+    "sports_underdog_v32",  # 2026-04-25 live-promoted — keep paper twin for sizing A/B
     "sports_v4_edge",  # 2026-04-20 live-promoted — keep paper stream for live/paper A/B
     "sports_longshot_v35",  # 2026-04-23 live-promoted — keep paper twin alongside live
     "sports_midshot_v35",
