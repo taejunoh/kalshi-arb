@@ -19,8 +19,14 @@ class SportsUnderdogV34Strategy(SportsUnderdogV31Strategy):
     TRADED_TICKERS_FILE = "data/sports_underdog_v34_tickers.json"
     STRATEGY_NAME = "sports_underdog_v34"
     REGION_OVERRIDE = "us"
+    # Restore base-4 sizing (v31 raised to 20 on 2026-04-25 for v31/v32 only;
+    # v34/v35 stay at 4 until their own live track record justifies a raise).
+    MIN_DEPTH_USDC = 5.0
     ALLOWED_CELLS = frozenset({
         ("MLB", "live"),  # hidden alpha cell (+38% us vs +3% eu)
         ("NBA", "pre"),
         ("NHL", "pre"),
     })
+
+    def _get_trade_size(self, signal: dict) -> float:
+        return min(4.0, self._order_manager.bankroll * 0.02)

@@ -12,7 +12,9 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     TRADED_TICKERS_FILE = "data/sports_underdog_v31_tickers.json"
     STRATEGY_NAME = "sports_underdog_v31"
     REGION_OVERRIDE = "eu"
-    MIN_DEPTH_USDC = 5.0
+    # Depth gate scaled to base 20: peak stake ≈ $8.50 (price=0.40 × v32 mult 1.065)
+    # → 3× buffer = $25. Same buffer ratio that the previous $5 gate had at base 4.
+    MIN_DEPTH_USDC = 25.0
     # Price bucket ROI (2026-04-20, settled paper+live):
     #   <10¢:   n=8,  0% win, ROI −100%
     #   10–15¢: n=8,  0% win, ROI −100%
@@ -24,3 +26,9 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     # systematically lose (-13% ROI live, paper+live n=176) while pre-game
     # wins (+20% ROI, n=116 — strongest sample among v31 trio).
     PRE_GAME_ONLY = True
+
+    def _get_trade_size(self, signal: dict) -> float:
+        # Raised 4→20 on 2026-04-25. Underdog v31 LIVE near break-even (n=153,
+        # ROI -2.5%) and v32 paper +143% over 7d window justify capital scale-up
+        # on this base only. Other underdog variants (v34/v35) still on 4.
+        return min(20.0, self._order_manager.bankroll * 0.02)
