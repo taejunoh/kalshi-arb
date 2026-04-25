@@ -36,7 +36,17 @@ LIMIT_TTL_POLL_INTERVAL = 5
 # the "market was at or better than signal" pool that adverse selection
 # was filtering out. Kalshi limits support partial fills so the FOK
 # issue that market orders had at thin strikes doesn't reappear.
-LIMIT_AGGRESSION_CENTS = 2
+#
+# Raised 2→15 on 2026-04-25. Diagnostic showed adverse-selection gap had
+# grown to 124-1931pp (LIVE/TWIN ROI vs SOLO_PAPER post-promo): live-filled
+# signals lose −3% to −276%, while signals where the live limit didn't
+# fill within TTL settled at +71% to +1665%. The 2¢ cross was no longer
+# enough to capture the alpha that escaped before fill. 15¢ acts as a
+# safety-capped market order — fill price is still best ask at execution
+# time, but the ceiling lets us take through 15 ticks of book if the
+# market has moved during signal generation latency. Above 15 the marginal
+# benefit plateaus (60s price moves rarely exceed 15¢ on Kalshi sports).
+LIMIT_AGGRESSION_CENTS = 15
 
 # Strategies that should record a paper twin alongside every live entry.
 # Rationale: keep generating paper_filled rows under the same strategy name
