@@ -4,7 +4,12 @@ Cell selection (from 2026-04-21 4D matrix):
   (MLB, live): us +38% vs eu +3%   (n=43 vs 136) 🔥 HIDDEN ALPHA — the big one
   (NBA, pre):  us +34% vs eu +38%  (n=33 each) — essentially tied, capture both
   (NHL, pre):  us +11% vs eu +11%  (n=30 vs 27) — tied, capture both
-MLB underdog pre: eu +14% beats us +0.4% → leave to V3.1.
+  (MLB, pre):  added 2026-04-25 from observer 4-day forward replay — us +40.5%
+    (n=15 resolved) vs eu +17.5% on identical observer window. The original
+    matrix said us +0.4% but that was V3 baseline retired data; observer
+    forward measurement shows us is actually 23pp ahead of eu. Paper-only
+    here for table-stakes accumulation; live-promote via v35-style only after
+    n≥30 paper sample at sustained +ROI.
 """
 import logging
 
@@ -24,6 +29,7 @@ class SportsUnderdogV34Strategy(SportsUnderdogV31Strategy):
     MIN_DEPTH_USDC = 5.0
     ALLOWED_CELLS = frozenset({
         ("MLB", "live"),  # hidden alpha cell (+38% us vs +3% eu)
+        ("MLB", "pre"),   # 2026-04-25: observer forward replay +40.5% n=15
         ("NBA", "pre"),
         ("NHL", "pre"),
     })
