@@ -109,9 +109,22 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         SPORTS_PREFIX = "sports_"
         # Retired strategies — still rendered but flagged via `archived: true`
         # so the frontend can show them in a separate Archived section.
-        RETIRED = {"sports_liquidity_filtered", "sports_consolidated",
-                   "sports_trader", "econ_trader", "sports_chalk_shadow",
-                   "sports_longshot_v34"}
+        RETIRED = {
+            # Older infra retirements
+            "maker_preorder", "shutdown_fade",
+            # V3 baseline (replaced by V3.1 trio 2026-04-17)
+            "sports_longshot", "sports_midshot", "sports_underdog",
+            # Sports experiments closed
+            "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
+            "sports_pinnacle_edge", "sports_chalk_shadow",
+            # V3.2 / V3.3 retired 2026-04-24 (5/6 underperform v31)
+            "sports_longshot_v32", "sports_midshot_v32",
+            "sports_longshot_v33", "sports_midshot_v33", "sports_underdog_v33",
+            # V3.4 longshot retired 2026-04-26 (duplicate of v35 paper twin)
+            "sports_longshot_v34",
+            # Non-sports retired
+            "econ_trader",
+        }
 
         def _stats_with_split(strat_name: str) -> dict:
             """Sports strategies get pre/live sub-buckets for minutes_to_start split."""
@@ -414,9 +427,22 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
         ]
-        archived_set = {"sports_trader", "sports_liquidity_filtered",
-                        "sports_consolidated", "econ_trader",
-                        "sports_chalk_shadow", "sports_longshot_v34"}
+        archived_set = {
+            # Older infra retirements
+            "maker_preorder", "shutdown_fade",
+            # V3 baseline (replaced by V3.1 trio 2026-04-17)
+            "sports_longshot", "sports_midshot", "sports_underdog",
+            # Sports experiments closed
+            "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
+            "sports_pinnacle_edge", "sports_chalk_shadow",
+            # V3.2 / V3.3 retired 2026-04-24 (5/6 underperform v31)
+            "sports_longshot_v32", "sports_midshot_v32",
+            "sports_longshot_v33", "sports_midshot_v33", "sports_underdog_v33",
+            # V3.4 longshot retired 2026-04-26 (duplicate of v35 paper twin)
+            "sports_longshot_v34",
+            # Non-sports retired
+            "econ_trader",
+        }
         # Strategies removed from main.py _strategy_loop (no env flag to toggle).
         # Keep in sync with main.py; see commits 59f7e44 (sports_trader) and
         # e901f2b (maker_preorder).
