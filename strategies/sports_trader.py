@@ -781,6 +781,13 @@ class SportsTraderStrategy:
         # (mentions/econ live but not in scan loop), so the "reserve for other
         # domains" rationale doesn't apply. The remaining ~10% reserve covers
         # free cash needed for the next 1-2 fills against Kalshi balance check.
+        # 2026-04-26 (later again): 90% → 100%. Cap is now tautological
+        # (sports_exp ≤ kalshi_total always when sports_exp ⊆ all_exp). Per-order
+        # Kalshi balance check (free cash ≥ count × max_price + fee) is the
+        # natural floor; cap added no value beyond that. Observed 4 PHIATL
+        # entries blocked by balance check at 06:57-06:59 UTC with cap at 90%
+        # confirmed cap is not the binding constraint — cash deposit is the
+        # remedy, not cap further raises.
         try:
             all_positions = self._client.get_positions() or []
         except Exception:
@@ -798,7 +805,7 @@ class SportsTraderStrategy:
         )
         kalshi_balance = self._client.get_balance(max_age_s=60)
         kalshi_total = (kalshi_balance or 0.0) + all_exp
-        max_sports_exposure = max(kalshi_total * 0.90, 10.0)
+        max_sports_exposure = max(kalshi_total * 1.0, 10.0)
         if sports_exp > max_sports_exposure:
             logger.info(
                 f"[SPORTS] Exposure ${sports_exp:.2f} > limit ${max_sports_exposure:.2f} "
