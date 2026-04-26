@@ -224,6 +224,14 @@ class SportsTraderStrategy:
     # cells (e.g. us region wins MLB underdog live but loses MLB under
     # pre; both V3.1 and V3.4 coexist with complementary cell sets).
     ALLOWED_CELLS: Optional[frozenset] = None
+    # Per-cell price band whitelist. Maps (sport, phase) -> list of allowed
+    # [low, high] price intervals. Signal price must fall inside at least one
+    # interval for the cell. When set, subsumes PRICE_MIN/PRICE_MAX/DEAD_ZONE
+    # for the cells that appear here. Cells absent from this dict but present
+    # in ALLOWED_CELLS use the legacy gates. Built 2026-04-26 for v4_edge's
+    # asymmetric per-cell band findings (e.g. MLB live wins at 20-30¢ but
+    # NHL live wins at 30-35¢).
+    CELL_PRICE_BANDS: Optional[dict[tuple[str, str], list[tuple[float, float]]]] = None
 
     def __init__(self, config, order_manager, kalshi_client):
         self.config = config
@@ -959,6 +967,21 @@ class SportsTraderStrategy:
                             f"({sport_code},{phase}) not in ALLOWED_CELLS, skip"
                         )
                         continue
+                    # Per-cell price band whitelist. When CELL_PRICE_BANDS lists
+                    # bands for this cell, the signal price must fall inside
+                    # one of them (subsumes PRICE_MIN/MAX/DEAD_ZONE for listed
+                    # cells). Cells with no entry fall through to legacy gates.
+                    if self.CELL_PRICE_BANDS is not None:
+                        bands = self.CELL_PRICE_BANDS.get((sport_code, phase))
+                        if bands is not None:
+                            sp = signal["price"]
+                            if not any(lo <= sp <= hi for lo, hi in bands):
+                                logger.debug(
+                                    f"[{self.STRATEGY_NAME}] {ticker}: price "
+                                    f"{sp:.3f} not in cell ({sport_code},{phase}) "
+                                    f"bands {bands}, skip"
+                                )
+                                continue
                 elif self.PRE_GAME_ONLY:
                     # Legacy gate — only applies when ALLOWED_CELLS not set.
                     # Subclasses with PRE_GAME_ONLY=True (e.g. longshot_v31)

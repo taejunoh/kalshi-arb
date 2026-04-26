@@ -1,4 +1,15 @@
-"""Sports V4 Edge — V3 midshot price filter AND Pinnacle/consensus edge gate."""
+"""Sports V4 Edge — V3 midshot price filter AND Pinnacle/consensus edge gate.
+
+Cell + price band gates revised 2026-04-26 (live promotion 1-week eval):
+  - Pre-fix global gate (PRICE_MIN/MAX/DEAD_ZONE) hid one alpha cell
+    (MLB live 20-30¢ +25.2% n=30) under 4 losing cells, net -39.7% n=84.
+  - Switched to per-cell ALLOWED_CELLS + CELL_PRICE_BANDS whitelist below.
+  - NBA live blocked entirely (uniformly negative across all bands).
+  - NHL live narrowed to small +ROI bands only (<10¢ and 30-35¢, both n=4).
+  - <10¢ bands kept under observation (MLB pre-fix +280% n=7 → live -100%
+    n=26; user opted to keep both NHL and MLB <10¢ for sample accumulation).
+  - All pre-game cells kept broad (5-35¢) — fires <2/week, +131% n=6 paper.
+"""
 import logging
 from typing import Optional
 
@@ -22,13 +33,22 @@ class SportsV4EdgeStrategy(SportsTraderStrategy):
     # → thin books + volatile pricing. Reject signals with <$5 resting
     # liquidity on the signal side to bound slippage and partial-fill risk.
     MIN_DEPTH_USDC = 5.0
-    # Price bucket ROI (2026-04-20, paper only):
-    #   <10¢:   n=7, ROI +280%   ← keep
-    #   10–15¢: n=6, 0% win, ROI −100%
-    #   15–20¢: n=6, 0% win, ROI −100%
-    #   ≥20¢:   ROI positive (+16%/+83%/+59%)
-    # Dead-zone (not floor) to preserve the <10¢ band.
-    ENTRY_PRICE_DEAD_ZONE = (0.10, 0.20)
+
+    # Per-cell sport/phase + price band gates — supersedes the prior
+    # global ENTRY_PRICE_DEAD_ZONE = (0.10, 0.20). PRICE_MIN/MAX above are
+    # kept as a wide initial filter inside evaluate(); CELL_PRICE_BANDS
+    # narrows per cell after ALLOWED_CELLS passes (in base scan_and_execute).
+    ALLOWED_CELLS = frozenset({
+        ("MLB", "live"), ("NHL", "live"),
+        ("MLB", "pre"), ("NBA", "pre"), ("NHL", "pre"),
+    })
+    CELL_PRICE_BANDS = {
+        ("MLB", "live"): [(0.05, 0.10), (0.20, 0.30)],
+        ("NHL", "live"): [(0.05, 0.10), (0.30, 0.35)],
+        ("MLB", "pre"):  [(0.05, 0.35)],
+        ("NBA", "pre"):  [(0.05, 0.35)],
+        ("NHL", "pre"):  [(0.05, 0.35)],
+    }
 
     def __init__(self, config, order_manager, kalshi_client):
         super().__init__(config, order_manager, kalshi_client)
