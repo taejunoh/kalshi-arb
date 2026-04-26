@@ -774,6 +774,9 @@ class SportsTraderStrategy:
         # 2026-04-17: 30% → 50% (30% × $739 was at the edge of live exposure).
         # 2026-04-20: 50% → 70% (v4_edge added to live; 50% was limiting room
         # for the full v31+v4 quartet to fire concurrent signals).
+        # 2026-04-26: 70% → 80% (post 4→20 v31/v32 underdog raise + LIMIT_AGGRESSION
+        # 2→15 increased single-signal-group exposure to ~$50-80; 70% binding
+        # was projected for evening NBA activity windows).
         try:
             all_positions = self._client.get_positions() or []
         except Exception:
@@ -791,7 +794,7 @@ class SportsTraderStrategy:
         )
         kalshi_balance = self._client.get_balance(max_age_s=60)
         kalshi_total = (kalshi_balance or 0.0) + all_exp
-        max_sports_exposure = max(kalshi_total * 0.70, 10.0)
+        max_sports_exposure = max(kalshi_total * 0.80, 10.0)
         if sports_exp > max_sports_exposure:
             logger.info(
                 f"[SPORTS] Exposure ${sports_exp:.2f} > limit ${max_sports_exposure:.2f} "
