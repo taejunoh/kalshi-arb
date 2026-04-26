@@ -110,7 +110,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         # Retired strategies — still rendered but flagged via `archived: true`
         # so the frontend can show them in a separate Archived section.
         RETIRED = {"sports_liquidity_filtered", "sports_consolidated",
-                   "sports_trader", "econ_trader", "sports_chalk_shadow"}
+                   "sports_trader", "econ_trader", "sports_chalk_shadow",
+                   "sports_longshot_v34"}
 
         def _stats_with_split(strat_name: str) -> dict:
             """Sports strategies get pre/live sub-buckets for minutes_to_start split."""
@@ -415,7 +416,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         ]
         archived_set = {"sports_trader", "sports_liquidity_filtered",
                         "sports_consolidated", "econ_trader",
-                        "sports_chalk_shadow"}
+                        "sports_chalk_shadow", "sports_longshot_v34"}
         # Strategies removed from main.py _strategy_loop (no env flag to toggle).
         # Keep in sync with main.py; see commits 59f7e44 (sports_trader) and
         # e901f2b (maker_preorder).
@@ -428,7 +429,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                          "sports_longshot_v33", "sports_midshot_v33",
                          "sports_underdog_v33",
                          # Retired 2026-04-26 — n=45 / -18.5% ROI paper close
-                         "sports_chalk_shadow"}
+                         "sports_chalk_shadow",
+                         # Retired 2026-04-26 — duplicate of v35's paper twin
+                         # after (MLB,pre) cell removal
+                         "sports_longshot_v34"}
         # env-flag mapping: which config attribute gates each strategy
         flag_map = {
             "market_maker": "MM_ENABLED",

@@ -334,7 +334,11 @@ class Bot:
             # found us outperforming eu on 8 of 9 sport × base splits. Runs
             # in parallel with V3.1 (eu) to confirm the region finding on a
             # fresh sample post dead-zone + pre-game-only gate rollout.
-            ("sports_longshot_v34", self.sports_longshot_v34),
+            # sports_longshot_v34 retired 2026-04-26 — after removing the
+            # structurally-dry (MLB,pre) cell, v34 longshot was identical to
+            # v35 longshot's paper twin (both NBA pre us). v35's PAPER_TWIN
+            # already covers paper observation; v34 was duplicate work.
+            # ("sports_longshot_v34", self.sports_longshot_v34),
             ("sports_midshot_v34", self.sports_midshot_v34),
             ("sports_underdog_v34", self.sports_underdog_v34),
             # V3.5 — V3.4's (NBA, pre) us cell promoted to live trading
