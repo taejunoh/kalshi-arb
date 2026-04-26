@@ -351,11 +351,12 @@ class Bot:
             # materially changes.
             # ("sports_pinnacle_edge", self.sports_pinnacle_edge),
             ("sports_v4_edge", self.sports_v4_edge),
-            # Chalk shadow — paper-only experiment (2026-04-24). Tests buy-
-            # the-chalk-at-60-95¢ during live play based on observer-derived
-            # hypothesis. Not in LIVE_STRATEGIES; records paper entries
-            # only. ALLOWED_CELLS restricts to live phase on all three sports.
-            ("sports_chalk_shadow", self.sports_chalk_shadow),
+            # sports_chalk_shadow retired 2026-04-26 — paper experiment
+            # (launched 2026-04-24) closed at n=45 settled / -18.5% ROI.
+            # Both price buckets lost: 60-75¢ at 50% win (need 65%), 75¢+ at
+            # 80% win (need 84%). Observer-derived 100%-win signal was
+            # selection-biased; Kalshi prices live chalk correctly.
+            # ("sports_chalk_shadow", self.sports_chalk_shadow),
             # sports_liquidity_filtered removed 2026-04-15 — $3 trade size made
             # depth filter inert, 100% trade overlap with sports_midshot_v31
             # (identical PnL $65.99/n=26). Experiment meaningless until live
