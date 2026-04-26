@@ -45,9 +45,13 @@ class SportsV4EdgeStrategy(SportsTraderStrategy):
     CELL_PRICE_BANDS = {
         ("MLB", "live"): [(0.05, 0.10), (0.20, 0.30)],
         ("NHL", "live"): [(0.05, 0.10), (0.30, 0.35)],
-        ("MLB", "pre"):  [(0.05, 0.35)],
-        ("NBA", "pre"):  [(0.05, 0.35)],
-        ("NHL", "pre"):  [(0.05, 0.35)],
+        # Pre-game cells: preserve the historic dead_zone (10-20¢ skip) that
+        # came from the global ENTRY_PRICE_DEAD_ZONE = (0.10, 0.20). No pre
+        # 10-20¢ data exists either way (n=0 historic), so this is the
+        # conservative restoration of pre-refactor behavior.
+        ("MLB", "pre"):  [(0.05, 0.10), (0.20, 0.35)],
+        ("NBA", "pre"):  [(0.05, 0.10), (0.20, 0.35)],
+        ("NHL", "pre"):  [(0.05, 0.10), (0.20, 0.35)],
     }
 
     def __init__(self, config, order_manager, kalshi_client):
