@@ -110,7 +110,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         # Retired strategies — still rendered but flagged via `archived: true`
         # so the frontend can show them in a separate Archived section.
         RETIRED = {"sports_liquidity_filtered", "sports_consolidated",
-                   "sports_trader", "econ_trader"}
+                   "sports_trader", "econ_trader", "sports_chalk_shadow"}
 
         def _stats_with_split(strat_name: str) -> dict:
             """Sports strategies get pre/live sub-buckets for minutes_to_start split."""
