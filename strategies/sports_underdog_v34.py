@@ -1,15 +1,19 @@
 """Sports Underdog V3.4 — V3.1 logic + sport-aware US region cells (paper-only).
 
-Cell selection (from 2026-04-21 4D matrix):
-  (MLB, live): us +38% vs eu +3%   (n=43 vs 136) 🔥 HIDDEN ALPHA — the big one
-  (NBA, pre):  us +34% vs eu +38%  (n=33 each) — essentially tied, capture both
-  (NHL, pre):  us +11% vs eu +11%  (n=30 vs 27) — tied, capture both
-  (MLB, pre):  added 2026-04-25 from observer 4-day forward replay — us +40.5%
-    (n=15 resolved) vs eu +17.5% on identical observer window. The original
-    matrix said us +0.4% but that was V3 baseline retired data; observer
-    forward measurement shows us is actually 23pp ahead of eu. Paper-only
-    here for table-stakes accumulation; live-promote via v35-style only after
-    n≥30 paper sample at sustained +ROI.
+Cell selection (revised 2026-04-26):
+  (MLB, pre):  observer forward replay 2026-04-25 showed us +40.5% (n=15) vs
+    eu +17.5%. Post-fix observed n=7 +116.6% — strongly positive but is a
+    single 4-min backlog burst (3 distinct games), not 7 independent shots.
+    Treat n as effectively 4. Kept for accumulation; n>=20 before any
+    promotion discussion.
+  (NBA, pre):  matrix tied us +34% / eu +38% n=33. Post-fix n=10 +21.5%
+    (playoff only). Kept; watch for playoff→regular-season regime shift.
+  (NHL, pre):  matrix tied us +11% / eu +11% n=30. Post-fix n=6 -18.1%.
+    Watch.
+  (MLB, live): REMOVED 2026-04-26. Matrix said +38% n=43 ("hidden alpha");
+    post-fix n=85 = -35.5%. Largest cell, decisive disproof of the matrix
+    claim. Midshot v34 same cell -23.8% n=85 — consistent failure across
+    bases. The "MLB live us alpha" was small-sample artifact, not real.
 """
 import logging
 
@@ -28,7 +32,6 @@ class SportsUnderdogV34Strategy(SportsUnderdogV31Strategy):
     # v34/v35 stay at 4 until their own live track record justifies a raise).
     MIN_DEPTH_USDC = 5.0
     ALLOWED_CELLS = frozenset({
-        ("MLB", "live"),  # hidden alpha cell (+38% us vs +3% eu)
         ("MLB", "pre"),   # 2026-04-25: observer forward replay +40.5% n=15
         ("NBA", "pre"),
         ("NHL", "pre"),

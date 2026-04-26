@@ -1,13 +1,14 @@
 """Sports Midshot V3.4 — V3.1 logic + sport-aware US region cells (paper-only).
 
-Cell selection (from 2026-04-21 4D matrix):
-  (NBA, pre):  us +46% vs eu +13% (n=36 vs 28) — headline region gap
-  (MLB, live): us +20% vs eu +9%  (n=68 vs 186) — us-preferred live cell
-  (MLB, pre):  us +65% (n=11, expected Live ROI ~+56% after fee+slip) — eu
-    still higher (+94%) so V3.1 takes the eu side, but the uncovered us cell
-    is too positive to leave empty. Coexists with V3.1 on the same Kalshi
-    tickers; fires only when us consensus produces a midshot signal V3.1's
-    eu consensus doesn't.
+Cell selection (revised 2026-04-26):
+  (NBA, pre):  matrix +46% vs eu +13%. Post-fix observed n=10 +26.8% (playoff
+    only). Kept; watch for regime shift after NBA playoffs end (~2026-06).
+  (MLB, pre):  matrix +65% n=11. Post-fix observed n=4 +41% — too small but
+    consistent. Kept; redundant with v31_eu MLB pre live (which is also +41%).
+  (MLB, live): REMOVED 2026-04-26. Matrix +20% n=68 did not reproduce —
+    post-fix n=85 = -23.8%. Underdog v34 (MLB,live) showed same failure
+    (-35.5% n=85). The "MLB live us alpha" matrix finding was small-sample
+    luck; large post-fix sample disproves it.
 NHL midshot fails in both regions — excluded entirely.
 """
 import logging
@@ -27,7 +28,7 @@ class SportsMidshotV34Strategy(SportsMidshotV31Strategy):
     # v34/v35 stay at base 4 / depth 5 until their own paper alpha justifies.
     MIN_DEPTH_USDC = 5.0
     ALLOWED_CELLS = frozenset({
-        ("NBA", "pre"), ("MLB", "live"), ("MLB", "pre"),
+        ("NBA", "pre"), ("MLB", "pre"),
     })
 
     def _get_trade_size(self, signal: dict) -> float:
