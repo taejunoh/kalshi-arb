@@ -42,16 +42,19 @@ class SportsV4EdgeStrategy(SportsTraderStrategy):
         ("MLB", "live"), ("NHL", "live"),
         ("MLB", "pre"), ("NBA", "pre"), ("NHL", "pre"),
     })
+    # Bands are inclusive on both ends. Kalshi prices come in integer-cent
+    # ticks, so each band edge maps to specific cents:
+    #   (0.05, 0.09) = cents 5,6,7,8,9 — the "<10¢" historic bucket
+    #   (0.20, 0.29) = cents 20-29     — MLB live alpha bucket (30¢ is in losing 30-35¢ bucket)
+    #   (0.30, 0.35) = cents 30-35     — NHL live small +ROI bucket
+    #   (0.20, 0.35) = cents 20-35     — pre-game broad allow
+    # 0.10 is intentionally NOT in any band (preserves original DEAD_ZONE).
     CELL_PRICE_BANDS = {
-        ("MLB", "live"): [(0.05, 0.10), (0.20, 0.30)],
-        ("NHL", "live"): [(0.05, 0.10), (0.30, 0.35)],
-        # Pre-game cells: preserve the historic dead_zone (10-20¢ skip) that
-        # came from the global ENTRY_PRICE_DEAD_ZONE = (0.10, 0.20). No pre
-        # 10-20¢ data exists either way (n=0 historic), so this is the
-        # conservative restoration of pre-refactor behavior.
-        ("MLB", "pre"):  [(0.05, 0.10), (0.20, 0.35)],
-        ("NBA", "pre"):  [(0.05, 0.10), (0.20, 0.35)],
-        ("NHL", "pre"):  [(0.05, 0.10), (0.20, 0.35)],
+        ("MLB", "live"): [(0.05, 0.09), (0.20, 0.29)],
+        ("NHL", "live"): [(0.05, 0.09), (0.30, 0.35)],
+        ("MLB", "pre"):  [(0.05, 0.09), (0.20, 0.35)],
+        ("NBA", "pre"):  [(0.05, 0.09), (0.20, 0.35)],
+        ("NHL", "pre"):  [(0.05, 0.09), (0.20, 0.35)],
     }
 
     def __init__(self, config, order_manager, kalshi_client):
