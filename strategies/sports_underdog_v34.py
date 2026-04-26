@@ -36,6 +36,9 @@ class SportsUnderdogV34Strategy(SportsUnderdogV31Strategy):
         ("NBA", "pre"),
         ("NHL", "pre"),
     })
+    # Explicit override of v31-inherited legacy gates (see longshot_v35 note).
+    PRE_GAME_ONLY = False
+    SPORT_BLOCKLIST = frozenset()
 
     def _get_trade_size(self, signal: dict) -> float:
         return min(4.0, self._order_manager.bankroll * 0.02)

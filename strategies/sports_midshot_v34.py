@@ -30,6 +30,12 @@ class SportsMidshotV34Strategy(SportsMidshotV31Strategy):
     ALLOWED_CELLS = frozenset({
         ("NBA", "pre"), ("MLB", "pre"),
     })
+    # Explicit override of v31-inherited legacy gates. ALLOWED_CELLS
+    # supersedes both, but inheritance leaves them set on the class —
+    # making them explicit prevents silent reactivation if someone
+    # ever clears ALLOWED_CELLS without intending to revert to v31 logic.
+    PRE_GAME_ONLY = False
+    SPORT_BLOCKLIST = frozenset()
 
     def _get_trade_size(self, signal: dict) -> float:
         return min(4.0, self._order_manager.bankroll * 0.02)
