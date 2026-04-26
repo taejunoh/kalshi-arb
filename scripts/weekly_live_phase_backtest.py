@@ -193,12 +193,11 @@ async def main():
     report = run_backtest(db_path)
     logger.info("\n%s", report)
 
-    notifier = TelegramNotifier(
-        token=config.TELEGRAM_BOT_TOKEN,
-        chat_id=config.TELEGRAM_CHAT_ID,
-        enabled=bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID),
-    )
-    if notifier.enabled:
+    if config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID:
+        notifier = TelegramNotifier(
+            bot_token=config.TELEGRAM_BOT_TOKEN,
+            chat_id=config.TELEGRAM_CHAT_ID,
+        )
         await notifier.send(report, msg_type="weekly_backtest")
         logger.info("Sent to Telegram.")
     else:
