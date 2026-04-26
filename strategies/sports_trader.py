@@ -777,6 +777,10 @@ class SportsTraderStrategy:
         # 2026-04-26: 70% → 80% (post 4→20 v31/v32 underdog raise + LIMIT_AGGRESSION
         # 2→15 increased single-signal-group exposure to ~$50-80; 70% binding
         # was projected for evening NBA activity windows).
+        # 2026-04-26 (later same day): 80% → 90%. Sports-only operation
+        # (mentions/econ live but not in scan loop), so the "reserve for other
+        # domains" rationale doesn't apply. The remaining ~10% reserve covers
+        # free cash needed for the next 1-2 fills against Kalshi balance check.
         try:
             all_positions = self._client.get_positions() or []
         except Exception:
@@ -794,7 +798,7 @@ class SportsTraderStrategy:
         )
         kalshi_balance = self._client.get_balance(max_age_s=60)
         kalshi_total = (kalshi_balance or 0.0) + all_exp
-        max_sports_exposure = max(kalshi_total * 0.80, 10.0)
+        max_sports_exposure = max(kalshi_total * 0.90, 10.0)
         if sports_exp > max_sports_exposure:
             logger.info(
                 f"[SPORTS] Exposure ${sports_exp:.2f} > limit ${max_sports_exposure:.2f} "
