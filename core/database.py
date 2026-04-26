@@ -109,6 +109,19 @@ class Database:
             # don't gate on it, enabling post-hoc "what if depth≥$5?" filters.
             await self._add_column_if_missing(conn, "clv_snapshots", "kalshi_yes_depth", "REAL")
             await self._add_column_if_missing(conn, "clv_snapshots", "kalshi_no_depth", "REAL")
+            # Side-adjusted prob columns (2026-04-26). The legacy
+            # us_consensus_prob/eu_consensus_prob/pinnacle_prob columns store
+            # HOME-team probability per _dual_region_consensus docstring,
+            # which makes side_prob analysis cumbersome (need home↔YES
+            # mapping from observer). New *_yes_prob columns mirror the
+            # observer's convention — already side-adjusted to "prob YES side
+            # of this ticker wins". is_yes_home stored alongside for
+            # downstream verification. Forward-only fill; old rows stay NULL.
+            await self._add_column_if_missing(conn, "clv_snapshots", "is_yes_home", "INTEGER")
+            await self._add_column_if_missing(conn, "clv_snapshots", "us_yes_prob", "REAL")
+            await self._add_column_if_missing(conn, "clv_snapshots", "eu_yes_prob", "REAL")
+            await self._add_column_if_missing(conn, "clv_snapshots", "pinnacle_yes_prob", "REAL")
+            await self._backfill_clv_yes_side(conn)
             # Season classification (playoff vs regular). Computed on insert
             # going forward; backfill below populates historical NULL rows.
             await self._add_column_if_missing(conn, "trades", "is_playoff", "INTEGER")
@@ -124,6 +137,43 @@ class Database:
         existing = {row[1] for row in await cursor.fetchall()}
         if column not in existing:
             await conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+
+    @staticmethod
+    async def _backfill_clv_yes_side(conn):
+        """One-shot backfill of is_yes_home + yes_side_*_prob columns in
+        clv_snapshots from odds_observations (which has is_yes_home for every
+        captured ticker). Idempotent — only updates rows where is_yes_home
+        is currently NULL. Skips rows whose ticker isn't in odds_observations.
+        """
+        cursor = await conn.execute(
+            """SELECT c.id, t.market_id,
+                      c.us_consensus_prob, c.eu_consensus_prob, c.pinnacle_prob
+               FROM clv_snapshots c JOIN trades t ON c.trade_id = t.id
+               WHERE c.is_yes_home IS NULL AND c.snapshot_at = 'entry'"""
+        )
+        rows = await cursor.fetchall()
+        if not rows:
+            return
+        for clv_id, market_id, us_p, eu_p, pin_p in rows:
+            ih_cursor = await conn.execute(
+                "SELECT is_yes_home FROM odds_observations "
+                "WHERE kalshi_ticker = ? AND is_yes_home IS NOT NULL LIMIT 1",
+                (market_id,),
+            )
+            ih_row = await ih_cursor.fetchone()
+            if not ih_row:
+                continue
+            is_yes_home = bool(ih_row[0])
+            us_yes = (us_p if is_yes_home else 1 - us_p) if us_p is not None else None
+            eu_yes = (eu_p if is_yes_home else 1 - eu_p) if eu_p is not None else None
+            # pinnacle_prob in clv was already YES-side adjusted by caller; copy as-is
+            pin_yes = pin_p
+            await conn.execute(
+                """UPDATE clv_snapshots
+                   SET is_yes_home = ?, us_yes_prob = ?, eu_yes_prob = ?, pinnacle_yes_prob = ?
+                   WHERE id = ?""",
+                (1 if is_yes_home else 0, us_yes, eu_yes, pin_yes, clv_id),
+            )
 
     @staticmethod
     async def _backfill_is_playoff(conn):
@@ -236,20 +286,40 @@ class Database:
         kalshi_yes_ask: Optional[float] = None,
         kalshi_yes_depth: Optional[float] = None,
         kalshi_no_depth: Optional[float] = None,
+        is_yes_home: Optional[bool] = None,
     ):
         now = datetime.now(timezone.utc).isoformat()
+        # Compute side-adjusted YES-side probabilities. The us/eu/pinnacle prob
+        # arrives as HOME-team probability (per _dual_region_consensus). When
+        # is_yes_home is True the YES side IS the home side, so prob unchanged;
+        # else flip. Stays NULL when is_yes_home unknown.
+        def _yes_side(home_prob):
+            if home_prob is None or is_yes_home is None:
+                return None
+            return home_prob if is_yes_home else (1.0 - home_prob)
+        us_yes_prob = _yes_side(us_consensus_prob)
+        eu_yes_prob = _yes_side(eu_consensus_prob)
+        # NOTE: the legacy `pinnacle_prob` column was already YES-side adjusted
+        # by the caller (sports_trader._dispatch_entry computes pin_prob_for_side).
+        # The new pinnacle_yes_prob mirrors it for column consistency with
+        # us/eu_yes_prob, so analysis can pick from one set without checking
+        # which column is which orientation.
+        pin_yes_prob = pinnacle_prob
+        is_yes_home_int = None if is_yes_home is None else (1 if is_yes_home else 0)
         async with aiosqlite.connect(self.db_path) as conn:
             await conn.execute(
                 """INSERT INTO clv_snapshots
                    (trade_id, snapshot_at, snapshot_time, yes_ask, no_ask, pinnacle_prob,
                     us_consensus_prob, eu_consensus_prob, pinnacle_age_s,
                     kalshi_yes_bid, kalshi_yes_ask,
-                    kalshi_yes_depth, kalshi_no_depth)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    kalshi_yes_depth, kalshi_no_depth,
+                    is_yes_home, us_yes_prob, eu_yes_prob, pinnacle_yes_prob)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (trade_id, snapshot_at, now, yes_ask, no_ask, pinnacle_prob,
                  us_consensus_prob, eu_consensus_prob, pinnacle_age_s,
                  kalshi_yes_bid, kalshi_yes_ask,
-                 kalshi_yes_depth, kalshi_no_depth),
+                 kalshi_yes_depth, kalshi_no_depth,
+                 is_yes_home_int, us_yes_prob, eu_yes_prob, pin_yes_prob),
             )
             await conn.commit()
 

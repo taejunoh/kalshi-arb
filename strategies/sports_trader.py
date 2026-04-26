@@ -500,6 +500,7 @@ class SportsTraderStrategy:
         matched_game: dict,
         sport: str,
         pinnacle_prob: Optional[float],
+        is_yes_home: Optional[bool] = None,
     ):
         """Place the order and record CLV in the background so the scanner
         loop isn't blocked by a v31 limit+TTL poll (can be up to 60s)."""
@@ -518,6 +519,7 @@ class SportsTraderStrategy:
                     game=matched_game,
                     sport=sport,
                     pinnacle_prob=pinnacle_prob,
+                    is_yes_home=is_yes_home,
                 )
         except Exception as e:
             logger.exception(
@@ -531,6 +533,7 @@ class SportsTraderStrategy:
         game: dict,
         sport: str,
         pinnacle_prob: Optional[float],
+        is_yes_home: Optional[bool] = None,
     ):
         """Record entry snapshot with parallel us/eu consensus + freshness."""
         try:
@@ -571,6 +574,7 @@ class SportsTraderStrategy:
                 kalshi_yes_ask=kalshi_yes_ask,
                 kalshi_yes_depth=kalshi_yes_depth,
                 kalshi_no_depth=kalshi_no_depth,
+                is_yes_home=is_yes_home,
             )
         except Exception as e:
             logger.warning(f"[SPORTS] CLV entry snapshot failed for trade {trade_id}: {e}")
@@ -1073,6 +1077,7 @@ class SportsTraderStrategy:
                     limit_price=limit_price, minutes_to_start=minutes_to_start,
                     matched_game=matched_game, sport=sport_map.get(series, series),
                     pinnacle_prob=pin_prob_for_side,
+                    is_yes_home=is_yes_home,
                 ))
                 self._pending_entry_tasks.add(task)
                 task.add_done_callback(self._pending_entry_tasks.discard)
