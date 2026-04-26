@@ -29,6 +29,18 @@ class SportsV4EdgeStrategy(SportsTraderStrategy):
     PRICE_MIN = 0.05
     PRICE_MAX = 0.35
     PAYOFF_MIN = 2.5
+    # Probability floor on the side we're betting. Pinnacle (or consensus
+    # fallback) must give our chosen side >= 50% probability. Added 2026-04-26
+    # after observer sub-cell analysis on MLB live 20-29¢ found:
+    #   side_prob 0.30-0.40 → -44% ROI (n=18)
+    #   side_prob 0.40-0.50 → -62% ROI (n=55)
+    #   side_prob >= 0.50   → +14.8% ROI (n=35)  ← alpha concentrated here
+    # Mechanism: at 20-29¢ entry, edge is meaningful only when Pinnacle says
+    # our side is the favorite. Edge alone (3pp threshold) admits low-prob
+    # underdog signals where fees overwhelm the EV. User accepted single-trade
+    # dependency risk (top 3 winners drive the +14.8%) — eval at n>=70 in
+    # 1-2 weeks before keeping/reverting.
+    MIN_SIDE_PROB = 0.50
     # Live safety rail (matches v31). 5¢–35¢ range + 87.5% live-game entry
     # → thin books + volatile pricing. Reject signals with <$5 resting
     # liquidity on the signal side to bound slippage and partial-fill risk.
@@ -76,6 +88,8 @@ class SportsV4EdgeStrategy(SportsTraderStrategy):
             ("no", kalshi_no, 1 - prob_yes),
         ):
             if not (self.PRICE_MIN <= price <= self.PRICE_MAX):
+                continue
+            if side_prob < self.MIN_SIDE_PROB:
                 continue
             fee_pct = min(fee, price, 1 - price) / price if price > 0 else 0
             cost = price * (1 + fee_pct)
