@@ -43,6 +43,11 @@ from monitoring.logger import setup_logger, TradeLogger
 from monitoring.notifier import TelegramNotifier
 from monitoring.telegram_error_handler import TelegramErrorHandler
 from monitoring.dashboard.api import create_app
+from monitoring.balance_schedule import (
+    ET as BALANCE_CHECK_TZ,
+    format_check_message as format_balance_check_message,
+    next_check_time as next_balance_check_time,
+)
 
 logger = logging.getLogger("bot")
 
@@ -225,6 +230,7 @@ class Bot:
             asyncio.create_task(self._daily_reset_task()),
             asyncio.create_task(self._freshness_sample_loop()),
             asyncio.create_task(self._scan_observer_task()),
+            asyncio.create_task(self._balance_schedule_task()),
         ]
 
         try:
@@ -462,6 +468,49 @@ class Bot:
             # Reset daily counters
             self.order_manager.reset_daily()
             logger.info(f"Daily reset complete. Yesterday PnL: ${daily_pnl:.2f}")
+
+    async def _balance_schedule_task(self):
+        """Push a Telegram balance summary at 14:00 + 22:00 ET. Bracket the
+        primary trading peak: 14:00 lets the user top up before the 16:00 ET
+        cluster window; 22:00 lets the user verify the post-peak cushion
+        before the 02:00-08:00 ET residual-signal tail (the time-of-day
+        when the 2026-04-27 missed-entries incident happened)."""
+        import datetime
+        while self._running:
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            target_utc = next_balance_check_time(now_utc)
+            wait_s = max(1.0, (target_utc - now_utc).total_seconds())
+            try:
+                await asyncio.sleep(wait_s)
+            except asyncio.CancelledError:
+                break
+            if not self._running:
+                break
+            try:
+                positions = self.kalshi_client.get_positions() or []
+                positions = [
+                    p for p in positions
+                    if float(p.get("position_fp", 0)) != 0
+                ]
+                exposure = sum(
+                    float(p.get("market_exposure_dollars", 0)) for p in positions
+                )
+                balance = self.kalshi_client.get_balance(max_age_s=60) or 0.0
+                hour_et = target_utc.astimezone(BALANCE_CHECK_TZ).hour
+                msg = format_balance_check_message(
+                    hour_et=hour_et,
+                    balance=balance,
+                    total_kalshi=balance + exposure,
+                    open_positions=len(positions),
+                )
+                await self.notifier.send(msg, msg_type="balance_check")
+                logger.info(
+                    f"[BALANCE] {hour_et}:00 ET check sent: "
+                    f"free=${balance:.2f} pos={len(positions)} "
+                    f"total=${balance + exposure:.2f}"
+                )
+            except Exception as e:
+                logger.exception(f"[BALANCE] scheduled check failed: {e}")
 
     async def _scan_observer_task(self):
         """Snapshot consensus + Kalshi prices for every open sports market
