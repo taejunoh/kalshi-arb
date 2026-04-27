@@ -509,9 +509,27 @@ class SportsTraderStrategy:
                 ticker=ticker, side=side, size_usdc=size,
                 price=limit_price, strategy=self.STRATEGY_NAME, market_id=ticker,
                 minutes_to_start=minutes_to_start,
-            )
-            trade_id = (order_result or {}).get("trade_id")
-            status = (order_result or {}).get("status")
+            ) or {}
+            status = order_result.get("status")
+            reason = order_result.get("reason")
+            # Roll back the pre-dispatch dedup mark when the order never
+            # reached Kalshi's book due to a balance check. Lets the next
+            # scan re-attempt the same signal once cash is available, instead
+            # of permanently burning the ticker for this strategy. Other
+            # failure modes (TTL unfilled, Kalshi reject after place_order)
+            # keep the dedup so we don't churn the same signal repeatedly
+            # against the book.
+            if status == "failed" and reason in (
+                "insufficient_balance",
+                "balance_check_failed",
+            ):
+                if self._traded_tickers.pop(ticker, None) is not None:
+                    self._save_traded_tickers()
+                    logger.info(
+                        f"[{self.STRATEGY_NAME}] dedup rollback {ticker}: {reason}"
+                    )
+                return
+            trade_id = order_result.get("trade_id")
             if trade_id is not None and status in ("paper_filled", "filled"):
                 await self._record_entry_clv(
                     trade_id=trade_id,
