@@ -13,7 +13,7 @@ RATE_LIMIT_SECONDS = 60.0
 # to see. Rate-limiting these hides fills/settlements during active minutes,
 # which is the opposite of what we want. Repeatable/spammy types (errors,
 # status, summary) stay rate-limited to avoid flooding.
-UNTHROTTLED_MSG_TYPES = frozenset({"trade", "settlement"})
+UNTHROTTLED_MSG_TYPES = frozenset({"trade", "settlement", "balance_reject"})
 
 
 class TelegramNotifier:

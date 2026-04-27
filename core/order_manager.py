@@ -208,6 +208,41 @@ class OrderManager:
 
     # ── Order execution ────────────────────────────────────────────
 
+    def _alert_balance_reject(
+        self, *, strategy: str, ticker: str, reason: str,
+        balance: Optional[float] = None, required: Optional[float] = None,
+    ) -> None:
+        """Fire a Telegram alert when a live entry is rejected before reaching
+        Kalshi's book (balance check). Unthrottled so cluster rejections each
+        produce their own alert. The post-2026-04-27 dedup-rollback fix means
+        the bot will retry on the next scan; this alert tells the user to top
+        up cash so the retry succeeds at a price close to the original signal.
+        """
+        if not self._notifier:
+            return
+        if reason == "insufficient_balance" and balance is not None and required is not None:
+            short = required - balance
+            text = (
+                f"⚠️ <b>Live entry blocked: insufficient balance</b>\n"
+                f"Strategy: {strategy}\n"
+                f"Market: {ticker}\n"
+                f"Balance: ${balance:.2f} / Required: ${required:.2f} (short ${short:.2f})\n"
+                f"Dedup auto-rollback — bot will retry once cash recovers."
+            )
+        else:
+            text = (
+                f"⚠️ <b>Live entry blocked: balance check failed</b>\n"
+                f"Strategy: {strategy}\n"
+                f"Market: {ticker}\n"
+                f"Reason: {reason} (Kalshi API)\n"
+                f"Dedup auto-rollback — bot will retry next scan."
+            )
+        try:
+            asyncio.create_task(self._notifier.send(text, msg_type="balance_reject"))
+        except RuntimeError:
+            # No running event loop (sync test contexts) — skip silently.
+            pass
+
     def _is_live(self, strategy: str) -> bool:
         """Check if a strategy should trade live (real money)."""
         if not self.config.is_paper_mode:
@@ -384,11 +419,18 @@ class OrderManager:
         balance = self._client.get_balance(max_age_s=60)
         if balance is None:
             logger.warning(f"LIVE order {strategy} {ticker}: balance check failed (API error), skipping")
+            self._alert_balance_reject(
+                strategy=strategy, ticker=ticker, reason="balance_check_failed",
+            )
             return {"status": "failed", "reason": "balance_check_failed"}
         required = size_usdc + fee
         if balance < required:
             logger.warning(
                 f"LIVE order {strategy} {ticker}: balance ${balance:.2f} < required ${required:.2f}, skipping"
+            )
+            self._alert_balance_reject(
+                strategy=strategy, ticker=ticker, reason="insufficient_balance",
+                balance=balance, required=required,
             )
             return {"status": "failed", "reason": "insufficient_balance"}
         # Kalshi market order requires yes_price. We bake 2¢ slippage tolerance
@@ -462,6 +504,9 @@ class OrderManager:
         balance = self._client.get_balance(max_age_s=60)
         if balance is None:
             logger.warning(f"LIVE limit {strategy} {ticker}: balance check failed, skipping")
+            self._alert_balance_reject(
+                strategy=strategy, ticker=ticker, reason="balance_check_failed",
+            )
             return {"status": "failed", "reason": "balance_check_failed"}
         # Reserve worst-case cost (signal + aggression), not signal size, so a
         # 1-2¢ taker fill near the margin doesn't overdraft Kalshi.
@@ -470,6 +515,10 @@ class OrderManager:
         if balance < required:
             logger.warning(
                 f"LIVE limit {strategy} {ticker}: balance ${balance:.2f} < required ${required:.2f}, skipping"
+            )
+            self._alert_balance_reject(
+                strategy=strategy, ticker=ticker, reason="insufficient_balance",
+                balance=balance, required=required,
             )
             return {"status": "failed", "reason": "insufficient_balance"}
 
