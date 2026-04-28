@@ -103,31 +103,46 @@ async def test_report_includes_v32_v33_groups(db):
         assert short_name in text, f"{short_name} missing"
 
 
+async def _seed_settlement(db, ticker: str, settled_at: str, result: str = "yes"):
+    """Seed a ticker_settlements row so the realized-PnL join finds it."""
+    import aiosqlite
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            """INSERT OR REPLACE INTO ticker_settlements
+               (kalshi_ticker, result, close_yes_ask, close_no_ask,
+                settled_at, fetched_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (ticker, result, 1.0, 0.01, settled_at, settled_at),
+        )
+        await conn.commit()
+
+
 @pytest.mark.asyncio
 async def test_live_today_section_shown_when_strategies_passed(db):
-    """LIVE section appears only when caller passes live_strategies."""
+    """LIVE Activity + PnL sections appear when live strategies are configured."""
     no_live = await build_report(db, bankroll=2000.0)
-    assert "LIVE Today" not in no_live
+    assert "LIVE Activity Today" not in no_live
+    assert "LIVE Realized PnL Today" not in no_live
 
     with_live = await build_report(
         db, bankroll=2000.0,
         live_strategies=["sports_longshot_v31", "sports_v4_edge"],
     )
-    assert "LIVE Today" in with_live
+    assert "LIVE Activity Today" in with_live
+    assert "LIVE Realized PnL Today" in with_live
 
 
 @pytest.mark.asyncio
-async def test_live_today_counts_only_settled_status_and_excludes_paper(db, monkeypatch):
-    """Live row reports today-only PnL/trade-count/W-L from status='settled'.
-    Paper rows must be excluded even when timestamps overlap."""
-    # Make the today_cutoff far in the past so all just-recorded trades count.
+async def test_live_activity_counts_filled_and_settled_excludes_paper(db, monkeypatch):
+    """Activity row counts entries placed today (filled + settled, by entry
+    timestamp). Paper rows must be excluded since they're not real-money."""
     monkeypatch.setattr("scripts.daily_report._today_cutoff_utc_iso",
                         lambda: "2000-01-01T00:00:00+00:00")
-    # 2 live settled (1W/1L net +4) + 1 live filled (open) + 1 paper today.
-    await db.record_trade(strategy="sports_longshot_v31", market_id="m_today_w",
+    # 2 live settled + 1 live filled (open) + 1 paper twin all today.
+    await db.record_trade(strategy="sports_longshot_v31", market_id="m_w",
                           direction="yes", price=0.30, size=4.0, fee=0.07,
                           status="settled", pnl=8.0)
-    await db.record_trade(strategy="sports_longshot_v31", market_id="m_today_l",
+    await db.record_trade(strategy="sports_longshot_v31", market_id="m_l",
                           direction="yes", price=0.30, size=4.0, fee=0.07,
                           status="settled", pnl=-4.0)
     await db.record_trade(strategy="sports_longshot_v31", market_id="m_open",
@@ -139,27 +154,71 @@ async def test_live_today_counts_only_settled_status_and_excludes_paper(db, monk
     text = await build_report(
         db, bankroll=2000.0, live_strategies=["sports_longshot_v31"],
     )
-    # LIVE Today row: only 2 settled entries counted, net +4.00, 1W/1L.
-    longshot_live = next(
-        line for line in text.split("\n")
-        if "longshot_v31:" in line and "PnL +4.00" in line
+    # Find the Activity row for longshot_v31
+    activity_line = next(
+        l for l in text.split("\n")
+        if "longshot_v31:" in l and "entered" in l and "settled" in l
     )
-    assert "2 trades" in longshot_live
-    assert "1W / 1L" in longshot_live
+    assert "3 entered" in activity_line  # 2 settled + 1 filled, paper excluded
+    assert "open 1" in activity_line
+    assert "settled 2" in activity_line
 
 
 @pytest.mark.asyncio
-async def test_live_today_excludes_pre_cutoff_settlements(db, monkeypatch):
-    """Live row drops settled entries older than the today_cutoff timestamp."""
-    # Cutoff in the future → all freshly-recorded trades are pre-cutoff and excluded.
+async def test_live_pnl_uses_settlement_timestamp_not_entry(db, monkeypatch):
+    """Realized PnL section joins ticker_settlements.settled_at, so a trade
+    entered LAST WEEK but settled TODAY should appear in today's report."""
     monkeypatch.setattr("scripts.daily_report._today_cutoff_utc_iso",
-                        lambda: "2099-01-01T00:00:00+00:00")
-    await db.record_trade(strategy="sports_longshot_v31", market_id="m_old",
+                        lambda: "2026-04-27T10:00:00+00:00")
+    # Entry was a week ago — but settled today.
+    await db.record_trade(strategy="sports_longshot_v31", market_id="t_old_entry",
                           direction="yes", price=0.30, size=4.0, fee=0.07,
-                          status="settled", pnl=8.0)
+                          status="settled", pnl=8.0,
+                          )
+    # Manually set entry timestamp to last week to prove the entry filter
+    # would have excluded this row under the old logic.
+    import aiosqlite
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "UPDATE trades SET timestamp = '2026-04-20T12:00:00+00:00' WHERE market_id = ?",
+            ("t_old_entry",),
+        )
+        await conn.commit()
+    await _seed_settlement(db, "t_old_entry", "2026-04-27T15:00:00+00:00")
+
     text = await build_report(
         db, bankroll=2000.0, live_strategies=["sports_longshot_v31"],
     )
-    # Live row should show 0 trades / placeholder PnL.
-    longshot_live = next(line for line in text.split("\n") if "longshot_v31:" in line and "0 trades" in line)
-    assert "PnL —" in longshot_live
+    # PnL row should show this settled trade
+    pnl_line = next(
+        l for l in text.split("\n")
+        if "longshot_v31:" in l and "PnL +8.00" in l
+    )
+    assert "1 settled" in pnl_line
+    assert "1W / 0L" in pnl_line
+
+
+@pytest.mark.asyncio
+async def test_live_pnl_excludes_pre_cutoff_settlements(db, monkeypatch):
+    """A trade settled BEFORE the cutoff is excluded from the realized-PnL
+    section even if its entry was today."""
+    monkeypatch.setattr("scripts.daily_report._today_cutoff_utc_iso",
+                        lambda: "2026-04-27T10:00:00+00:00")
+    await db.record_trade(strategy="sports_longshot_v31", market_id="t_prev_settle",
+                          direction="yes", price=0.30, size=4.0, fee=0.07,
+                          status="settled", pnl=8.0)
+    # Settled yesterday — before today's cutoff
+    await _seed_settlement(db, "t_prev_settle", "2026-04-26T15:00:00+00:00")
+
+    text = await build_report(
+        db, bankroll=2000.0, live_strategies=["sports_longshot_v31"],
+    )
+    # PnL row should be the placeholder (—) — no settlement counted
+    pnl_section_idx = text.find("LIVE Realized PnL Today")
+    pnl_block = text[pnl_section_idx:]
+    pnl_line = next(
+        l for l in pnl_block.split("\n")
+        if "longshot_v31:" in l
+    )
+    assert "—" in pnl_line
+    assert "settled" not in pnl_line.lower() or "0 settled" in pnl_line

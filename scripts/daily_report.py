@@ -91,53 +91,98 @@ async def _strategy_row(db: Database, name: str) -> str:
             f"PnL {pnl_str} | WR {wr_str} | CLV+ {clv_str}")
 
 
-async def _live_daily_row(db: Database, name: str, today_cutoff: str) -> str:
-    """Live (real-money) row: today-only PnL / trade count / win-loss / WR.
-    Filters status='settled' (closed live positions) and entry timestamp
-    since the most recent 06:00 ET boundary."""
+async def _live_activity_row(db: Database, name: str, today_cutoff: str) -> tuple[str, dict]:
+    """Activity (entries placed today) — counts and exposure regardless of
+    settlement. For sports the entry-vs-settle gap is hours-to-days, so this
+    is the only view that meaningfully tracks daily activity in real time.
+    Returns (formatted_row, totals_dict)."""
     trades = await db.get_trades(strategy=name)
-    today_settled = [
+    today_entries = [
         t for t in trades
-        if t.get("status") == "settled"
+        if t.get("status") in ("filled", "settled")
         and t.get("timestamp", "") >= today_cutoff
     ]
-    n = len(today_settled)
-    pnl = sum(t.get("pnl", 0) or 0 for t in today_settled)
-    wins = sum(1 for t in today_settled if (t.get("pnl", 0) or 0) > 0)
-    losses = sum(1 for t in today_settled if (t.get("pnl", 0) or 0) < 0)
-    wr = (wins / (wins + losses) * 100) if (wins + losses) > 0 else None
-
+    n_total = len(today_entries)
+    n_open = sum(1 for t in today_entries if t.get("status") == "filled")
+    n_settled = n_total - n_open
+    exposure = sum(t.get("size", 0) or 0 for t in today_entries)
     short = name.replace("sports_", "")
-    pnl_str = f"{pnl:+.2f}" if n > 0 else "—"
-    wr_str = f"{wr:.0f}%" if wr is not None else "—"
-    return (f"  {short}: {n} trades | PnL {pnl_str} | "
-            f"{wins}W / {losses}L | WR {wr_str}")
+    if n_total == 0:
+        row = f"  {short}: —"
+    else:
+        row = (f"  {short}: {n_total} entered "
+               f"(open {n_open}, settled {n_settled}) | exposure ${exposure:,.2f}")
+    return row, {"n": n_total, "open": n_open, "settled": n_settled, "exposure": exposure}
 
 
-async def _live_section(db: Database, live_strategies: list[str], today_cutoff: str) -> Optional[str]:
-    """Compose the LIVE Today section. Returns None if no live strategies."""
+async def _live_pnl_row(db: Database, name: str, today_cutoff: str) -> tuple[str, dict]:
+    """Realized PnL today — trades whose Kalshi ticker SETTLED since cutoff,
+    regardless of entry date. Joins ticker_settlements.settled_at; shows the
+    realized-money view that complements the entry-based activity row."""
+    settled_today = await db.get_trades_settled_since(today_cutoff, strategy=name)
+    n = len(settled_today)
+    pnl = sum(t.get("pnl", 0) or 0 for t in settled_today)
+    wins = sum(1 for t in settled_today if (t.get("pnl", 0) or 0) > 0)
+    losses = sum(1 for t in settled_today if (t.get("pnl", 0) or 0) < 0)
+    wr = (wins / (wins + losses) * 100) if (wins + losses) > 0 else None
+    short = name.replace("sports_", "")
+    if n == 0:
+        row = f"  {short}: —"
+    else:
+        wr_str = f"{wr:.0f}%" if wr is not None else "—"
+        row = (f"  {short}: {n} settled | PnL {pnl:+.2f} | "
+               f"{wins}W / {losses}L | WR {wr_str}")
+    return row, {"n": n, "pnl": pnl, "wins": wins, "losses": losses}
+
+
+async def _live_sections(
+    db: Database, live_strategies: list[str], today_cutoff: str,
+) -> Optional[str]:
+    """Compose the two LIVE-Today sections (activity + realized PnL). Returns
+    None if no live strategies are configured."""
     if not live_strategies:
         return None
-    # Stable sort for readability — sports first, then everything else
     ordered = sorted(live_strategies, key=lambda s: (not s.startswith("sports_"), s))
-    rows = [await _live_daily_row(db, n, today_cutoff) for n in ordered]
-    # Aggregate totals across live strategies
-    all_today = []
-    for n in ordered:
-        trades = await db.get_trades(strategy=n)
-        all_today.extend(
-            t for t in trades
-            if t.get("status") == "settled" and t.get("timestamp", "") >= today_cutoff
-        )
-    total_n = len(all_today)
-    total_pnl = sum(t.get("pnl", 0) or 0 for t in all_today)
-    total_wins = sum(1 for t in all_today if (t.get("pnl", 0) or 0) > 0)
-    total_losses = sum(1 for t in all_today if (t.get("pnl", 0) or 0) < 0)
-    total_wr = (total_wins / (total_wins + total_losses) * 100) if (total_wins + total_losses) > 0 else None
-    summary = (f"  <b>TOTAL: {total_n} trades | PnL "
-               f"{total_pnl:+.2f} | {total_wins}W / {total_losses}L | "
-               f"WR {f'{total_wr:.0f}%' if total_wr is not None else '—'}</b>")
-    return "<b>🔴 LIVE Today (since 06:00 ET)</b>\n" + "\n".join(rows + [summary])
+
+    activity_rows = []
+    activity_totals = {"n": 0, "open": 0, "settled": 0, "exposure": 0.0}
+    pnl_rows = []
+    pnl_totals = {"n": 0, "pnl": 0.0, "wins": 0, "losses": 0}
+    for name in ordered:
+        a_row, a_tot = await _live_activity_row(db, name, today_cutoff)
+        activity_rows.append(a_row)
+        for k, v in a_tot.items():
+            activity_totals[k] += v
+        p_row, p_tot = await _live_pnl_row(db, name, today_cutoff)
+        pnl_rows.append(p_row)
+        for k, v in p_tot.items():
+            pnl_totals[k] += v
+
+    activity_summary = (
+        f"  <b>TOTAL: {activity_totals['n']} entered "
+        f"(open {activity_totals['open']}, settled {activity_totals['settled']}) | "
+        f"exposure ${activity_totals['exposure']:,.2f}</b>"
+    )
+    activity_block = (
+        "<b>🔴 LIVE Activity Today (entered since 06:00 ET)</b>\n"
+        + "\n".join(activity_rows + [activity_summary])
+    )
+
+    p_wr = None
+    if (pnl_totals["wins"] + pnl_totals["losses"]) > 0:
+        p_wr = pnl_totals["wins"] / (pnl_totals["wins"] + pnl_totals["losses"]) * 100
+    pnl_summary = (
+        f"  <b>TOTAL: {pnl_totals['n']} settled | "
+        f"PnL {pnl_totals['pnl']:+.2f} | "
+        f"{pnl_totals['wins']}W / {pnl_totals['losses']}L | "
+        f"WR {f'{p_wr:.0f}%' if p_wr is not None else '—'}</b>"
+    )
+    pnl_block = (
+        "<b>💰 LIVE Realized PnL Today (settled since 06:00 ET)</b>\n"
+        + "\n".join(pnl_rows + [pnl_summary])
+    )
+
+    return activity_block + "\n\n" + pnl_block
 
 
 async def build_report(db: Database, bankroll: float, live_strategies: Optional[list[str]] = None) -> str:
@@ -156,10 +201,12 @@ async def build_report(db: Database, bankroll: float, live_strategies: Optional[
         sections.append(reminder)
     sections.append(header)
 
-    # LIVE Today (real-money) — only if any live strategies configured
+    # LIVE Today (real-money) — split into Activity (entered today) and
+    # Realized PnL (settled today, via ticker_settlements join). Either or
+    # both may be empty depending on time-of-day; both are useful signals.
     if live_strategies:
         today_cutoff = _today_cutoff_utc_iso()
-        live_block = await _live_section(db, live_strategies, today_cutoff)
+        live_block = await _live_sections(db, live_strategies, today_cutoff)
         if live_block:
             sections.append("\n" + live_block)
 
