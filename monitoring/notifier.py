@@ -68,14 +68,6 @@ class TelegramNotifier:
             f"Expected Profit: ${expected_profit:.2f}"
         )
 
-    def format_daily_summary(self, total_trades, wins, losses, daily_pnl, bankroll) -> str:
-        return (
-            f"<b>Daily Summary</b>\n"
-            f"Trades: {total_trades} (W:{wins} / L:{losses})\n"
-            f"Daily PnL: ${daily_pnl:.2f}\n"
-            f"Bankroll: ${bankroll:.2f}"
-        )
-
     def format_error(self, error_msg: str) -> str:
         return f"<b>Error</b>\n{error_msg}"
 
@@ -89,10 +81,6 @@ class TelegramNotifier:
     async def notify_error(self, error_msg: str):
         msg = self.format_error(error_msg)
         await self.send(msg, msg_type="error")
-
-    async def notify_daily_summary(self, total_trades, wins, losses, daily_pnl, bankroll):
-        msg = self.format_daily_summary(total_trades, wins, losses, daily_pnl, bankroll)
-        await self.send(msg, msg_type="daily_summary")
 
     async def notify_bot_status(self, status: str, bankroll: float):
         msg = self.format_bot_status(status, bankroll)

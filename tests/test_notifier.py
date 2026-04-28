@@ -33,15 +33,6 @@ def test_format_trade_message():
     assert "$4.00" in msg or "4.0" in msg
 
 
-def test_format_daily_summary():
-    notifier = TelegramNotifier(bot_token="fake", chat_id="fake")
-    msg = notifier.format_daily_summary(
-        total_trades=15, wins=14, losses=1, daily_pnl=52.30, bankroll=1052.30,
-    )
-    assert "15" in msg
-    assert "52.30" in msg or "52.3" in msg
-
-
 def test_disabled_when_no_token():
     notifier = TelegramNotifier(bot_token="", chat_id="")
     assert notifier.is_enabled is False

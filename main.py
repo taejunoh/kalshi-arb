@@ -439,7 +439,12 @@ class Bot:
             await asyncio.sleep(60)
 
     async def _daily_reset_task(self):
-        """Reset daily counters and send summary at UTC midnight."""
+        """Reset circuit-breaker daily-loss counter at UTC midnight. The
+        notification arm of this task was removed 2026-04-27 — paper-bankroll
+        + entry-timestamp counts produced an effectively useless message
+        (W/L typically 0/0 because most same-day entries have pnl=0). The
+        09:00 + 22:00 UTC scripts/daily_report.py runs and the 14:00 +
+        22:00 ET balance_schedule alerts cover the same ground better."""
         while self._running:
             import datetime
             utc_now = datetime.datetime.now(datetime.timezone.utc)
@@ -451,23 +456,8 @@ class Bot:
             if not self._running:
                 break
 
-            # Send daily summary
-            daily_pnl = await self.db.get_daily_pnl()
-            trades = await self.db.get_trades()
-            today_trades = [t for t in trades if t["timestamp"].startswith(utc_now.strftime("%Y-%m-%d"))]
-            wins = sum(1 for t in today_trades if t.get("pnl", 0) > 0)
-            losses = sum(1 for t in today_trades if t.get("pnl", 0) < 0)
-
-            await self.notifier.notify_daily_summary(
-                total_trades=len(today_trades),
-                wins=wins, losses=losses,
-                daily_pnl=daily_pnl,
-                bankroll=self.order_manager.bankroll,
-            )
-
-            # Reset daily counters
             self.order_manager.reset_daily()
-            logger.info(f"Daily reset complete. Yesterday PnL: ${daily_pnl:.2f}")
+            logger.info("Daily reset complete (circuit-breaker counters cleared)")
 
     async def _balance_schedule_task(self):
         """Push a Telegram balance summary at 14:00 + 22:00 ET. Bracket the
