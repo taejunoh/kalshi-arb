@@ -300,6 +300,65 @@ async def test_strategy_status_mode_live_for_live_strategies(db):
 
 
 @pytest.mark.asyncio
+async def test_performance_live_pre_live_split_includes_demoted_strategy(tmp_path):
+    """Live bucket pre/live split must count settled trades from a strategy
+    even after it has been removed from LIVE_STRATEGIES (demoted to paper).
+    Otherwise the dashboard shows e.g. 8 cumulative live trades but 0/0 in
+    the pre/live breakdown — the case observed for sports_longshot_v35
+    after 2026-04-28 demote."""
+    database = Database(str(tmp_path / "t.db"))
+    await database.initialize()
+    # 2 settled live trades from when the strategy WAS live, both pre-game
+    await database.record_trade(
+        strategy="sports_longshot_v35", market_id="KXNBAGAME-pre1", direction="yes",
+        price=0.25, size=4.0, fee=0.07, status="settled", pnl=-4.0,
+        minutes_to_start=120.0,
+    )
+    await database.record_trade(
+        strategy="sports_longshot_v35", market_id="KXNBAGAME-pre2", direction="yes",
+        price=0.22, size=4.0, fee=0.07, status="settled", pnl=-4.0,
+        minutes_to_start=180.0,
+    )
+    # 1 settled live live-phase trade
+    await database.record_trade(
+        strategy="sports_longshot_v35", market_id="KXNBAGAME-live", direction="yes",
+        price=0.25, size=4.0, fee=0.07, status="settled", pnl=-4.0,
+        minutes_to_start=-30.0,
+    )
+
+    # Build a Config that does NOT have sports_longshot_v35 in LIVE_STRATEGIES
+    # (simulating post-demote state).
+    class FakeConfig:
+        LIVE_STRATEGIES = {"sports_longshot_v31"}  # demoted strategy NOT here
+
+    # Mock Kalshi to enable the cumulative-live aggregation block (currently
+    # gated on `if kalshi_client:`). The DB rows are what drive the assertion.
+    class MockKalshi:
+        def get_positions(self):
+            return []
+        def get_settlements(self, limit=200):
+            return []
+
+    app = create_app(
+        database, bankroll=1000.0, config=FakeConfig(), kalshi_client=MockKalshi(),
+    )
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.get("/api/performance")
+    data = resp.json()
+    live_bucket = data["sports_longshot_v35"]["live"]
+    # Cumulative count was already correct: 3 settled
+    assert live_bucket["trade_count"] == 3
+    # The fix: pre/live split must mirror the cumulative even after demote
+    assert live_bucket["pre"]["trade_count"] == 2
+    assert live_bucket["pre"]["total_pnl"] == pytest.approx(-8.0)
+    assert live_bucket["pre"]["losses"] == 2
+    assert live_bucket["live"]["trade_count"] == 1
+    assert live_bucket["live"]["total_pnl"] == pytest.approx(-4.0)
+    assert live_bucket["live"]["losses"] == 1
+
+
+@pytest.mark.asyncio
 async def test_performance_splits_sports_paper_pre_live(tmp_path):
     database = Database(str(tmp_path / "t.db"))
     await database.initialize()

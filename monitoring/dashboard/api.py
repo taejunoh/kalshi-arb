@@ -181,19 +181,20 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     elif pnl < 0:
                         sub["losses"] += 1
 
-        # Live pre/live split — from local DB rows where strategy is in LIVE_STRATEGIES.
-        # Main live totals still come from Kalshi API (authoritative for real money);
-        # this pass only populates the pre/live sub-buckets which need minutes_to_start
-        # metadata that the Kalshi settlements endpoint does not expose.
-        live_strategies_cfg = set(config.LIVE_STRATEGIES) if config else set()
+        # Live pre/live split — from local DB rows with non-paper status. Mirrors
+        # the cumulative live aggregation below (settled trades regardless of
+        # current LIVE_STRATEGIES membership), so demoted strategies (e.g.,
+        # 2026-04-28 sports_longshot_v35) keep their historical pre/live split
+        # consistent with the cumulative count instead of going to 0/0 while
+        # the top-line still shows the prior live trades.
         for trade in all_trades:
             strat = trade["strategy"]
-            if strat in RETIRED or strat not in live_strategies_cfg:
+            if strat in RETIRED:
                 continue
             if not strat.startswith(SPORTS_PREFIX):
                 continue
             if trade.get("status", "").startswith("paper"):
-                # These rows predate Live activation; already counted in paper bucket.
+                # Paper rows belong to the paper bucket above, not the live split.
                 continue
             if strat not in strategies:
                 strategies[strat] = {"live": _stats_with_split(strat), "paper": _stats_with_split(strat),
