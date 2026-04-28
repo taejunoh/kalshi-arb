@@ -211,6 +211,11 @@
       color: var(--text-dim);
       border: 1px solid var(--border);
     }
+    .status-badge.demoted {
+      background: rgba(245, 158, 11, 0.15);
+      color: #f59e0b;
+      border: 1px solid rgba(245, 158, 11, 0.35);
+    }
     .info-icon {
       position: relative;
       display: inline-flex;
@@ -930,6 +935,11 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     const statusCls = isActive ? 'active' : 'disabled';
     const statusLabel = isActive ? 'ACTIVE' : 'DISABLED';
     const cardCls = isActive ? 'perf-card' : 'perf-card disabled';
+    // Demoted: appearing in the LIVE section but the strategy's actual mode
+    // is PAPER (i.e., removed from LIVE_STRATEGIES env). Card stays visible
+    // because of historical settled trades / open positions; the badge tells
+    // the user no NEW live entries will be taken.
+    const isDemoted = mode === 'LIVE' && (status.mode || 'PAPER') === 'PAPER';
 
     // Entry-price gate — render a compact label when set (sports only)
     const gate = status.price_gate;
@@ -1004,7 +1014,7 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
         <div class="strategy-header">
           <div class="strategy-badges">
             ${versionBadge}
-            <span class="status-badge ${statusCls}">${statusLabel}</span>${infoIcon}
+            <span class="status-badge ${statusCls}">${statusLabel}</span>${isDemoted ? '<span class="status-badge demoted" title="Demoted to paper — historical live trades shown; no new live entries">DEMOTED</span>' : ''}${infoIcon}
           </div>
           <div class="strategy-name">${strat}</div>
         </div>
