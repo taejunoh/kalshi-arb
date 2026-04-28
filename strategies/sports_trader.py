@@ -835,6 +835,10 @@ class SportsTraderStrategy:
         )
         kalshi_balance = self._client.get_balance(max_age_s=60)
         kalshi_total = (kalshi_balance or 0.0) + all_exp
+        # Proactive low-balance alert (hysteresis: armed → fire → re-arm at
+        # recovery line). Sits alongside the post-reject alert and 14:00/22:00
+        # ET scheduled checks to catch evening-cluster cash drains in real time.
+        self._order_manager.check_low_balance(kalshi_balance)
         max_sports_exposure = max(kalshi_total * 1.0, 10.0)
         if sports_exp > max_sports_exposure:
             logger.info(

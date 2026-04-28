@@ -88,6 +88,49 @@ class OrderManager:
         # is the market_id prefix without -TEAM suffix. Grows monotonically
         # since game_ids are date-scoped and we simply never rewind past entries.
         self._v33_game_spend: dict[str, float] = {}
+        # Low-balance proactive alert state. Fires once when free cash crosses
+        # below LOW_BALANCE_THRESHOLD; re-arms once balance recovers above
+        # LOW_BALANCE_RECOVERY (hysteresis prevents oscillation spam). Pairs
+        # with the post-reject alerts and 14:00/22:00 ET scheduled checks to
+        # close the gap when an evening cluster drains cash between checks.
+        self._low_balance_armed: bool = True
+
+    LOW_BALANCE_THRESHOLD: float = 50.0
+    LOW_BALANCE_RECOVERY: float = 100.0
+
+    def check_low_balance(self, balance: Optional[float]) -> None:
+        """Hysteresis: alert when balance first dips below threshold; re-arm
+        only after it recovers above LOW_BALANCE_RECOVERY. Called once per
+        scan cycle from the strategy loop after the per-cycle balance fetch."""
+        if balance is None:
+            return
+        if self._low_balance_armed and balance < self.LOW_BALANCE_THRESHOLD:
+            self._low_balance_armed = False
+            if self._notifier:
+                text = (
+                    f"⚠️ <b>Free cash below ${self.LOW_BALANCE_THRESHOLD:.0f}</b>\n"
+                    f"Balance: ${balance:.2f}\n"
+                    f"Next signal cluster will likely reject — top up cash now "
+                    f"to keep entries flowing.\n"
+                    f"Alert re-arms once balance recovers above "
+                    f"${self.LOW_BALANCE_RECOVERY:.0f}."
+                )
+                try:
+                    asyncio.create_task(
+                        self._notifier.send(text, msg_type="balance_low")
+                    )
+                except RuntimeError:
+                    pass
+            logger.warning(
+                f"[BALANCE] Low-balance alert fired at ${balance:.2f} "
+                f"(threshold ${self.LOW_BALANCE_THRESHOLD:.0f})"
+            )
+        elif not self._low_balance_armed and balance >= self.LOW_BALANCE_RECOVERY:
+            self._low_balance_armed = True
+            logger.info(
+                f"[BALANCE] Low-balance alert re-armed at ${balance:.2f} "
+                f"(recovery ${self.LOW_BALANCE_RECOVERY:.0f})"
+            )
 
     def calculate_position_size(self, net_edge: float) -> float:
         kelly_size = self.bankroll * self.config.KELLY_FRACTION * net_edge
