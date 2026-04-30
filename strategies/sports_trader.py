@@ -218,6 +218,15 @@ class SportsTraderStrategy:
     # × sport combo shows no edge in either region. Sport codes match the
     # 3-letter ticker prefix: NBA, MLB, NHL.
     SPORT_BLOCKLIST: set[str] = frozenset()
+    # Playoff-blocklist. Skip entries when the ticker's sport is in this
+    # set AND falls within its playoff window per core.season calendar.
+    # Distinct from SPORT_BLOCKLIST in that it auto-deactivates when the
+    # sport returns to regular season — no manual cleanup needed when
+    # next regular season starts. Composes with ALLOWED_CELLS (both must
+    # pass). Built 2026-04-30 for the v3X NBA playoff regime-mismatch
+    # finding: midshot/underdog variants bleed -25 to -90% on NBA playoff
+    # cells but the same logic worked in NBA regular season per matrix.
+    PLAYOFF_BLOCKLIST: frozenset = frozenset()
     # Fine-grained cell matrix. When set, only (sport, phase) tuples in
     # ALLOWED_CELLS are entered. Sport ∈ {"NBA","MLB","NHL"}, phase ∈
     # {"pre","live"}. Takes precedence over PRE_GAME_ONLY and
@@ -895,6 +904,23 @@ class SportsTraderStrategy:
                     short = sport_code[:3] if sport_code else None
                     if short and short in self.SPORT_BLOCKLIST:
                         continue
+
+                # Playoff-blocklist (sport-specific suspend during playoff).
+                # Composes with ALLOWED_CELLS — applies independently. When
+                # ticker's sport is listed AND inside its playoff window,
+                # skip. Auto-resumes when sport returns to regular season.
+                if self.PLAYOFF_BLOCKLIST:
+                    pb_sport = next(
+                        (s[:3] for s in ("NBAGAME", "MLBGAME", "NHLGAME") if s in ticker),
+                        None,
+                    )
+                    if pb_sport and pb_sport in self.PLAYOFF_BLOCKLIST:
+                        if is_playoff(ticker, datetime.now(timezone.utc).isoformat()):
+                            logger.debug(
+                                f"[{self.STRATEGY_NAME}] {ticker}: sport "
+                                f"{pb_sport} in PLAYOFF_BLOCKLIST and is_playoff, skip"
+                            )
+                            continue
 
                 # Skip if we already traded the other side of this game
                 # Game ID = ticker minus the team suffix (e.g., KXNBAGAME-26APR01DENUTA)

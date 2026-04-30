@@ -12,6 +12,12 @@ _PAYOFF_THRESHOLD = 2.0
 class SportsUnderdogV32Strategy(SportsUnderdogV31Strategy):
     TRADED_TICKERS_FILE = "data/sports_underdog_v32_tickers.json"
     STRATEGY_NAME = "sports_underdog_v32"
+    # NBA playoff suspend (2026-04-30). Game-level: v32 NBA pre eu -87%
+    # n=28 (worse than v31 -36%) — edge-scaled sizing amplifies losses
+    # in NBA playoff regime. Same-game analysis shows v32 sizes up on
+    # losing games at ~1.1x v31 cost. Auto-resumes when NBA returns to
+    # regular season. v32 evaluation continues on MLB/NHL pre cells.
+    PLAYOFF_BLOCKLIST = frozenset({"NBA"})
 
     def _get_trade_size(self, signal: dict) -> float:
         base = super()._get_trade_size(signal)

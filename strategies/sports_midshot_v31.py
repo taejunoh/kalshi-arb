@@ -26,6 +26,12 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     # wins (+25% ROI, n=57). Same pattern confirmed on longshot (2026-04-20)
     # and underdog; extending across v31 trio.
     PRE_GAME_ONLY = True
+    # NBA playoff suspend (2026-04-30). Game-level analysis shows NBA
+    # playoff midshot bleeds across all v3X variants (-19% to -126% strategy
+    # ROI). All NBA data post-2026-04-21 is playoff (regular season ended
+    # ~2026-04-13). Auto-resumes when NBA regular season returns
+    # (~2026-10). Cascades to v34, v35 via inheritance.
+    PLAYOFF_BLOCKLIST = frozenset({"NBA"})
 
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 4→16 on 2026-04-25. SOLO_PAPER post-promo ROI +384% (n=19)
