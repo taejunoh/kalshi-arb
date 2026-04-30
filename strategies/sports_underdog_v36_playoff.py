@@ -40,9 +40,10 @@ class SportsUnderdogV36PlayoffStrategy(SportsUnderdogV31Strategy):
     # Override v31's PRE_GAME_ONLY/SPORT_BLOCKLIST since ALLOWED_CELLS subsumes.
     PRE_GAME_ONLY = False
     SPORT_BLOCKLIST = frozenset()
-    # Restore base-4 sizing (v31 raised to 20 for established alpha; this is
-    # a fresh paper experiment, gather samples at minimum-stake size first).
-    MIN_DEPTH_USDC = 5.0
+    # Live-promoted 2026-04-30 ahead of n>=25 paper gate (user accepted small
+    # sample risk on observer +135% / trades +153%). Base 8 / depth $10 — same
+    # tier as v35 trio. Smaller than v31 base 20 (limited live track record).
+    MIN_DEPTH_USDC = 10.0
 
     def _get_trade_size(self, signal: dict) -> float:
-        return min(4.0, self._order_manager.bankroll * 0.02)
+        return min(8.0, self._order_manager.bankroll * 0.02)
