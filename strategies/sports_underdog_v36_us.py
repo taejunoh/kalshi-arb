@@ -1,4 +1,4 @@
-"""Sports Underdog V3.6 Playoff (US region) — companion to v36_playoff (eu).
+"""Sports Underdog V3.6 US — us region companion to sports_underdog_v36_playoff (eu).
 
 Built 2026-04-30 alongside v36_playoff to cover the NBA playoff 35¢+ underdog
 alpha in both regions. Observer / trades evidence at 35¢+ floor:
@@ -12,20 +12,22 @@ Both regions show consistent positive ROI at 35¢+ — eu/us nearly identical.
 Two separate strategies (this + v36_playoff) avoid multi-region complexity
 in sports_trader's REGION_OVERRIDE design.
 
-Paper/Live: live-promoted at base 8 alongside v36_playoff (eu).
+Live-promoted at base 8 alongside v36_playoff (eu). PLAYOFF_ONLY=True so
+fires only during NBA playoff window per core.season calendar; auto-suspends
+for regular season (where v34/v35 paper handle us coverage with 0.20 floor).
 """
 import logging
 
 from strategies.sports_underdog_v31 import SportsUnderdogV31Strategy
 
-logger = logging.getLogger("sports_underdog_v36_playoff_us")
+logger = logging.getLogger("sports_underdog_v36_us")
 
 
-class SportsUnderdogV36PlayoffUSStrategy(SportsUnderdogV31Strategy):
+class SportsUnderdogV36USStrategy(SportsUnderdogV31Strategy):
     """V3.1 underdog logic restricted to NBA playoff pre-game with 35¢+ floor (us region)."""
 
-    TRADED_TICKERS_FILE = "data/sports_underdog_v36_playoff_us_tickers.json"
-    STRATEGY_NAME = "sports_underdog_v36_playoff_us"
+    TRADED_TICKERS_FILE = "data/sports_underdog_v36_us_tickers.json"
+    STRATEGY_NAME = "sports_underdog_v36_us"
     REGION_OVERRIDE = "us"
     ALLOWED_CELLS = frozenset({("NBA", "pre")})
     PLAYOFF_ONLY = True

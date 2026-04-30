@@ -27,7 +27,7 @@ class SportsUnderdogV35Strategy(SportsUnderdogV34Strategy):
     SPORT_BLOCKLIST = frozenset()
     # Floor reverted to inherited 0.20 (2026-04-30): v35 now NBA-regular-only
     # via PLAYOFF_BLOCKLIST cascade from v31. The 35¢+ alpha is a playoff
-    # regime finding; sports_underdog_v36_playoff_us captures it specifically.
+    # regime finding; sports_underdog_v36_us captures it specifically.
     # V3 baseline regular-season NBA pre us +236% n=12 used the full price
     # band, so 0.20 default is the right floor when NBA returns to regular.
 
