@@ -915,13 +915,15 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     return hasActivity || stratMode === mode;
   });
 
-  // Sort ACTIVE first, then DISABLED. Within each group keep insertion order.
-  filtered.sort((a, b) => {
-    const aActive = (stratStatusCache[a] || {}).active !== false;
-    const bActive = (stratStatusCache[b] || {}).active !== false;
-    if (aActive === bActive) return 0;
-    return aActive ? -1 : 1;
-  });
+  // Sort: TRULY-LIVE first, DEMOTED (mode=PAPER appearing in LIVE), DISABLED last.
+  // Within each tier keep insertion order (stable sort).
+  const tierOf = (s) => {
+    const st = stratStatusCache[s] || {};
+    if (st.active === false) return 2; // disabled
+    if (mode === 'LIVE' && (st.mode || 'PAPER') === 'PAPER') return 1; // demoted
+    return 0; // active matching mode
+  };
+  filtered.sort((a, b) => tierOf(a) - tierOf(b));
 
   if (filtered.length === 0) {
     grid.innerHTML = `<div class="perf-card" style="color:var(--text-dim);font-size:12px;">No ${modeKey} strategies.</div>`;
