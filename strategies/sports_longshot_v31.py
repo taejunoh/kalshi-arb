@@ -37,6 +37,13 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
     # the only NHL signals v31 fires on are (NHL, pre eu); blocking the sport
     # fully stops both live trades and the paper twin on NHL.
     SPORT_BLOCKLIST = frozenset({"NHL"})
+    # NBA playoff suspend (2026-04-30). NBA pre eu longshot -90% n=25 in
+    # playoff (game-level dedup). Same regime mismatch pattern as midshot
+    # and underdog families. Cascades to v32, v33, v34 (retired), v35
+    # (already paper-demoted) via inheritance. Auto-resumes when NBA
+    # returns to regular season ~2026-10. No v36 longshot variant — at
+    # 35¢+ floor longshot's price band (5-25¢) collapses to nothing.
+    PLAYOFF_BLOCKLIST = frozenset({"NBA"})
 
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 4→12 on 2026-04-25. LIVE −53% (n=140) was the biggest
