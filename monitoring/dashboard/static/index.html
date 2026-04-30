@@ -334,6 +334,11 @@
       color: #f472b6;
       border: 1px solid rgba(236, 72, 153, 0.35);
     }
+    .version-badge.sports {
+      background: rgba(132, 204, 22, 0.12);
+      color: #84cc16;
+      border: 1px solid rgba(132, 204, 22, 0.35);
+    }
     .perf-card.disabled {
       /* Opacity removed from the card itself because CSS opacity inherits
          to all descendants including the ::after tooltip pseudo-element,
@@ -996,6 +1001,13 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     const playoffOnlyBadge = playoffOnly
       ? `<span class="version-badge v36" title="Playoff-only strategy — fires only when ticker is in its sport playoff window">PLAYOFF</span>`
       : '';
+    // Sports badge — shown for any sports_* strategy. Pairs with display
+    // name that strips the sports_ prefix (badge conveys the family).
+    const isSports = strat.startsWith('sports_');
+    const sportsBadge = isSports
+      ? `<span class="version-badge sports">SPORTS</span>`
+      : '';
+    const displayName = isSports ? strat.replace(/^sports_/, '') : strat;
     // Info icon shown only on disabled cards; tooltip text prefers reason_detail (human) over reason (machine).
     const tooltipText = status.reason_detail || status.reason || '';
     const escapedTooltip = tooltipText
@@ -1030,10 +1042,10 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
       <div class="${cardCls}"${titleAttr}>
         <div class="strategy-header">
           <div class="strategy-badges">
-            ${versionBadge}${playoffOnlyBadge}
+            ${sportsBadge}${versionBadge}${playoffOnlyBadge}
             <span class="status-badge ${statusCls}">${statusLabel}</span>${isDemoted ? '<span class="status-badge demoted" title="Demoted to paper — historical live trades shown; no new live entries">DEMOTED</span>' : ''}${infoIcon}
           </div>
-          <div class="strategy-name">${strat}</div>
+          <div class="strategy-name">${displayName}</div>
         </div>
         <div class="perf-row">
           <span class="perf-key">Trades</span>
@@ -1171,7 +1183,7 @@ function updateStrategyFilter() {
     if (!existing.has(s)) {
       const opt = document.createElement('option');
       opt.value = s;
-      opt.textContent = s;
+      opt.textContent = s.replace(/^sports_/, '');
       sel.appendChild(opt);
     }
   });
@@ -1211,7 +1223,7 @@ function renderTrades() {
       <tr>
         <td class="td-mono">${fmtTs(t.timestamp)}</td>
         <td>${modeBadge(t.status)}</td>
-        <td><span class="badge badge-blue">${t.strategy || '—'}</span></td>
+        <td><span class="badge badge-blue" title="${t.strategy || ''}">${(t.strategy || '—').replace(/^sports_/, '')}</span></td>
         <td class="td-mono" title="${t.market_id || ''}">${shortMarket(t.market_id)}</td>
         <td>${directionBadge(t.direction)}</td>
         <td class="td-mono">${fmtPrice(t.price)}</td>
@@ -1240,7 +1252,7 @@ async function refreshOrders() {
       <tr>
         <td class="td-mono" title="${o.order_id || ''}">${shortId(o.order_id)}</td>
         <td class="td-mono" title="${o.market_id || ''}">${shortMarket(o.market_id)}</td>
-        <td><span class="badge badge-blue">${o.strategy || '—'}</span></td>
+        <td><span class="badge badge-blue" title="${o.strategy || ''}">${(o.strategy || '—').replace(/^sports_/, '')}</span></td>
         <td>${sideBadge(o.side)}</td>
         <td class="td-mono">${fmtPrice(o.price)}</td>
         <td class="td-mono">${fmtSize(o.size)}</td>
