@@ -26,6 +26,15 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     # systematically lose (-13% ROI live, paper+live n=176) while pre-game
     # wins (+20% ROI, n=116 — strongest sample among v31 trio).
     PRE_GAME_ONLY = True
+    # NBA playoff suspend (2026-04-30). Game-level analysis: NBA pre eu
+    # underdog -36% n=32 in playoff regime; V3 baseline pre-playoff was
+    # +236% n=12 (regime mismatch confirmed). The 35¢+ alpha sub-cell of
+    # NBA playoff is captured by sports_underdog_v36_playoff (eu) and
+    # sports_underdog_v36_playoff_us (us), both override this to empty.
+    # Cascades to v33, v34, v35 — all show same NBA playoff bleed pattern.
+    # v32 already has its own explicit PLAYOFF_BLOCKLIST. Auto-resumes when
+    # NBA returns to regular season (~2026-10).
+    PLAYOFF_BLOCKLIST = frozenset({"NBA"})
 
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 4→20 on 2026-04-25. Underdog v31 LIVE near break-even (n=153,

@@ -23,6 +23,7 @@ LIMIT_TTL_STRATEGIES = {
     "sports_midshot_v35",
     "sports_underdog_v35",
     "sports_underdog_v36_playoff",  # 2026-04-30 live-promoted on observer +135% n=10 + trades +153% n=9
+    "sports_underdog_v36_playoff_us",  # 2026-04-30 us companion to v36_playoff
 }
 LIMIT_TTL_SECONDS = 60
 LIMIT_TTL_POLL_INTERVAL = 5
@@ -65,6 +66,7 @@ PAPER_TWIN_STRATEGIES = {
     "sports_midshot_v35",
     "sports_underdog_v35",
     "sports_underdog_v36_playoff",  # 2026-04-30 live-promoted — keep paper twin for slippage A/B
+    "sports_underdog_v36_playoff_us",  # 2026-04-30 us companion
 }
 
 

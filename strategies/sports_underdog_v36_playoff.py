@@ -40,6 +40,8 @@ class SportsUnderdogV36PlayoffStrategy(SportsUnderdogV31Strategy):
     # Override v31's PRE_GAME_ONLY/SPORT_BLOCKLIST since ALLOWED_CELLS subsumes.
     PRE_GAME_ONLY = False
     SPORT_BLOCKLIST = frozenset()
+    # Override v31's PLAYOFF_BLOCKLIST — v36 IS the playoff strategy.
+    PLAYOFF_BLOCKLIST = frozenset()
     # Live-promoted 2026-04-30 ahead of n>=25 paper gate (user accepted small
     # sample risk on observer +135% / trades +153%). Base 8 / depth $10 — same
     # tier as v35 trio. Smaller than v31 base 20 (limited live track record).
