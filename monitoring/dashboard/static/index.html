@@ -1007,7 +1007,8 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     const sportsBadge = isSports
       ? `<span class="version-badge sports">SPORTS</span>`
       : '';
-    const displayName = isSports ? strat.replace(/^sports_/, '') : strat;
+    // Strip sports_ prefix and _playoff suffix from display (badges convey both).
+    const displayName = strat.replace(/^sports_/, '').replace(/_playoff$/, '');
     // Info icon shown only on disabled cards; tooltip text prefers reason_detail (human) over reason (machine).
     const tooltipText = status.reason_detail || status.reason || '';
     const escapedTooltip = tooltipText
@@ -1183,7 +1184,7 @@ function updateStrategyFilter() {
     if (!existing.has(s)) {
       const opt = document.createElement('option');
       opt.value = s;
-      opt.textContent = s.replace(/^sports_/, '');
+      opt.textContent = s.replace(/^sports_/, '').replace(/_playoff$/, '');
       sel.appendChild(opt);
     }
   });
@@ -1223,7 +1224,7 @@ function renderTrades() {
       <tr>
         <td class="td-mono">${fmtTs(t.timestamp)}</td>
         <td>${modeBadge(t.status)}</td>
-        <td><span class="badge badge-blue" title="${t.strategy || ''}">${(t.strategy || '—').replace(/^sports_/, '')}</span></td>
+        <td><span class="badge badge-blue" title="${t.strategy || ''}">${(t.strategy || '—').replace(/^sports_/, '').replace(/_playoff$/, '')}</span></td>
         <td class="td-mono" title="${t.market_id || ''}">${shortMarket(t.market_id)}</td>
         <td>${directionBadge(t.direction)}</td>
         <td class="td-mono">${fmtPrice(t.price)}</td>
@@ -1252,7 +1253,7 @@ async function refreshOrders() {
       <tr>
         <td class="td-mono" title="${o.order_id || ''}">${shortId(o.order_id)}</td>
         <td class="td-mono" title="${o.market_id || ''}">${shortMarket(o.market_id)}</td>
-        <td><span class="badge badge-blue" title="${o.strategy || ''}">${(o.strategy || '—').replace(/^sports_/, '')}</span></td>
+        <td><span class="badge badge-blue" title="${o.strategy || ''}">${(o.strategy || '—').replace(/^sports_/, '').replace(/_playoff$/, '')}</span></td>
         <td>${sideBadge(o.side)}</td>
         <td class="td-mono">${fmtPrice(o.price)}</td>
         <td class="td-mono">${fmtSize(o.size)}</td>
