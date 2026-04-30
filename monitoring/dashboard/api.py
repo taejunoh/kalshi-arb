@@ -84,6 +84,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v33", "sports_midshot_v33", "sports_underdog_v33",
             "sports_longshot_v34", "sports_midshot_v34", "sports_underdog_v34",
             "sports_longshot_v35", "sports_midshot_v35", "sports_underdog_v35",
+            "sports_underdog_v36_playoff",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Archived — historical data surfaced in dashboard's Archived section.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
@@ -423,6 +424,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v33", "sports_midshot_v33", "sports_underdog_v33",
             "sports_longshot_v34", "sports_midshot_v34", "sports_underdog_v34",
             "sports_longshot_v35", "sports_midshot_v35", "sports_underdog_v35",
+            "sports_underdog_v36_playoff",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Archived — surfaced in dashboard Archived section with reason.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
@@ -485,6 +487,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v35": "SPORTS_ENABLED",
             "sports_midshot_v35": "SPORTS_ENABLED",
             "sports_underdog_v35": "SPORTS_ENABLED",
+            "sports_underdog_v36_playoff": "SPORTS_ENABLED",
             "sports_pinnacle_edge": "SPORTS_ENABLED",
             "sports_v4_edge": "SPORTS_ENABLED",
             "sports_consolidated": "SPORTS_ENABLED",
@@ -563,6 +566,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         phase_gates: dict = {}
         regions: dict = {}
         sport_blocks: dict = {}
+        playoff_blocks: dict = {}  # PLAYOFF_BLOCKLIST per strategy (NBA suspend etc.)
+        playoff_only_set: dict = {}  # PLAYOFF_ONLY=True markers
         allowed_cells: dict = {}
         sport_phases_map: dict = {}
         base_sizes: dict = {}
@@ -583,6 +588,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             from strategies.sports_longshot_v35 import SportsLongshotV35Strategy
             from strategies.sports_midshot_v35 import SportsMidshotV35Strategy
             from strategies.sports_underdog_v35 import SportsUnderdogV35Strategy
+            from strategies.sports_underdog_v36_playoff import SportsUnderdogV36PlayoffStrategy
             from strategies.sports_v4_edge import SportsV4EdgeStrategy
             from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
             _gate_classes = {
@@ -601,6 +607,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "sports_longshot_v35": SportsLongshotV35Strategy,
                 "sports_midshot_v35":  SportsMidshotV35Strategy,
                 "sports_underdog_v35": SportsUnderdogV35Strategy,
+                "sports_underdog_v36_playoff": SportsUnderdogV36PlayoffStrategy,
                 "sports_v4_edge":      SportsV4EdgeStrategy,
                 "sports_chalk_shadow": SportsChalkShadowStrategy,
             }
@@ -651,6 +658,14 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 blocklist = getattr(cls, "SPORT_BLOCKLIST", frozenset())
                 if blocklist:
                     sport_blocks[name] = sorted(blocklist)
+                # Playoff blocklist: sport-specific suspend during their playoff
+                # window. Auto-deactivates when sport returns to regular season.
+                pb_list = getattr(cls, "PLAYOFF_BLOCKLIST", frozenset())
+                if pb_list:
+                    playoff_blocks[name] = sorted(pb_list)
+                # Playoff-only marker (e.g., sports_underdog_v36_playoff).
+                if getattr(cls, "PLAYOFF_ONLY", False):
+                    playoff_only_set[name] = True
                 # Allowed cells matrix (V3.4+). Sorted for stable rendering.
                 cells = getattr(cls, "ALLOWED_CELLS", None)
                 if cells is not None:
@@ -701,6 +716,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                          "phase_gate": phase_gates.get(s),
                          "region": regions.get(s),
                          "sport_blocklist": sport_blocks.get(s),
+                         "playoff_blocklist": playoff_blocks.get(s),
+                         "playoff_only": playoff_only_set.get(s, False),
                          "allowed_cells": allowed_cells.get(s),
                          "sport_phases": sport_phases_map.get(s),
                          "base_size": base_sizes.get(s),

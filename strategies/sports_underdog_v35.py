@@ -15,7 +15,7 @@ logger = logging.getLogger("sports_underdog_v35")
 
 
 class SportsUnderdogV35Strategy(SportsUnderdogV34Strategy):
-    """Live-promoted subset of V3.4 underdog — only (NBA, pre) us."""
+    """Live-promoted subset of V3.4 underdog — only (NBA, pre) us, 35¢+ floor."""
 
     TRADED_TICKERS_FILE = "data/sports_underdog_v35_tickers.json"
     STRATEGY_NAME = "sports_underdog_v35"
@@ -25,6 +25,14 @@ class SportsUnderdogV35Strategy(SportsUnderdogV34Strategy):
     # Explicit override of v31-inherited legacy gates (see longshot_v35 note).
     PRE_GAME_ONLY = False
     SPORT_BLOCKLIST = frozenset()
+    # 35¢ floor (2026-04-30). Game-level analysis showed underdog_v35 NBA pre
+    # us bleeds in <35¢ buckets (n=8 games at -180% to -430%) but retains
+    # alpha at 35¢+ (3 games -14%, 2 games +331%). Same finding that drove
+    # sports_underdog_v36_playoff (eu region, +135% observer at 35¢ floor).
+    # Effectively the us-region twin of v36; v35 still gates by ALLOWED_CELLS
+    # and runs without PLAYOFF_ONLY (would also fire NBA regular season when
+    # that returns, with the alpha presumed regime-independent at this band).
+    MIN_ENTRY_PRICE = 0.35
 
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 4→8 on 2026-04-25. Live n=6 with +48% ROI; modest raise.

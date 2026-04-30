@@ -329,6 +329,11 @@
       color: #818cf8;
       border: 1px solid rgba(99, 102, 241, 0.35);
     }
+    .version-badge.v36 {
+      background: rgba(236, 72, 153, 0.12);
+      color: #f472b6;
+      border: 1px solid rgba(236, 72, 153, 0.35);
+    }
     .perf-card.disabled {
       /* Opacity removed from the card itself because CSS opacity inherits
          to all descendants including the ::after tooltip pseudo-element,
@@ -967,7 +972,10 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     const region = status.region || '';
     const regionTag = region ? region.toUpperCase() : '';
     const sportPhases = status.sport_phases || null;  // {NBA:'pre', MLB:'live', NHL:null}
+    const playoffBlocklist = new Set(status.playoff_blocklist || []);
+    const playoffOnly = !!status.playoff_only;
     // Renders a per-sport line like "NBA  pre  · US" (or "—" when blocked).
+    // Adds [PO suspend] tag when sport is in PLAYOFF_BLOCKLIST.
     // Only shown when the strategy has sport_phases (i.e. a sports strategy).
     const sportRows = sportPhases
       ? ['NBA', 'MLB', 'NHL'].map(sport => {
@@ -975,11 +983,18 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
           const phaseStr = phase === null
             ? '<span style="color:var(--text-dim);">—</span>'
             : phase;
+          const poTag = playoffBlocklist.has(sport)
+            ? ' <span style="color:#fbbf24;font-size:9px;letter-spacing:0.5px;" title="Suspended during this sport's playoff window (auto-resumes in regular season)">PO-SUSPEND</span>'
+            : '';
           return `<div class="perf-row" style="font-size:11px;">
             <span class="perf-key">${sport}</span>
-            <span class="perf-val">${phaseStr}${regionTag ? ` <span style="color:var(--text-dim);font-size:10px;">· ${regionTag}</span>` : ''}</span>
+            <span class="perf-val">${phaseStr}${regionTag ? ` <span style="color:var(--text-dim);font-size:10px;">· ${regionTag}</span>` : ''}${poTag}</span>
           </div>`;
         }).join('')
+      : '';
+    // Playoff-only badge (e.g., v36_playoff): show in header alongside version.
+    const playoffOnlyBadge = playoffOnly
+      ? '<span class="version-badge v36" title="Playoff-only strategy — fires only when ticker is in its sport's playoff window">PLAYOFF-ONLY</span>'
       : '';
     // Info icon shown only on disabled cards; tooltip text prefers reason_detail (human) over reason (machine).
     const tooltipText = status.reason_detail || status.reason || '';
@@ -999,6 +1014,7 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     const v33Strats = new Set(['sports_longshot_v33', 'sports_midshot_v33', 'sports_underdog_v33']);
     const v34Strats = new Set(['sports_longshot_v34', 'sports_midshot_v34', 'sports_underdog_v34']);
     const v35Strats = new Set(['sports_longshot_v35', 'sports_midshot_v35', 'sports_underdog_v35']);
+    const v36Strats = new Set(['sports_underdog_v36_playoff']);
     const v4Strats = new Set(['sports_pinnacle_edge', 'sports_v4_edge', 'sports_consolidated']);
     let versionBadge = '';
     if (v3Strats.has(strat)) versionBadge = '<span class="version-badge v3">V3</span>';
@@ -1007,13 +1023,14 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     else if (v33Strats.has(strat)) versionBadge = '<span class="version-badge v33">V3.3</span>';
     else if (v34Strats.has(strat)) versionBadge = '<span class="version-badge v34">V3.4</span>';
     else if (v35Strats.has(strat)) versionBadge = '<span class="version-badge v35">V3.5</span>';
+    else if (v36Strats.has(strat)) versionBadge = '<span class="version-badge v36">V3.6 PLAYOFF</span>';
     else if (v4Strats.has(strat)) versionBadge = '<span class="version-badge v4">V4</span>';
 
     return `
       <div class="${cardCls}"${titleAttr}>
         <div class="strategy-header">
           <div class="strategy-badges">
-            ${versionBadge}
+            ${versionBadge}${playoffOnlyBadge}
             <span class="status-badge ${statusCls}">${statusLabel}</span>${isDemoted ? '<span class="status-badge demoted" title="Demoted to paper — historical live trades shown; no new live entries">DEMOTED</span>' : ''}${infoIcon}
           </div>
           <div class="strategy-name">${strat}</div>
