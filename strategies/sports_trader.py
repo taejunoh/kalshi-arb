@@ -9,6 +9,8 @@ from typing import Optional
 
 import httpx
 
+from core.season import is_playoff
+
 logger = logging.getLogger("sports_trader")
 
 # Shared Odds API cache across all sports strategies to avoid blowing the
@@ -232,6 +234,11 @@ class SportsTraderStrategy:
     # asymmetric per-cell band findings (e.g. MLB live wins at 20-30¢ but
     # NHL live wins at 30-35¢).
     CELL_PRICE_BANDS: Optional[dict[tuple[str, str], list[tuple[float, float]]]] = None
+    # Playoff-only gate. When True, skip entries on regular-season tickers
+    # (using core.season.is_playoff classifier). Additive with ALLOWED_CELLS —
+    # both must pass. Built 2026-04-30 for sports_underdog_v36_playoff which
+    # targets NBA playoff-specific underdog mispricing (35¢+ floor cell).
+    PLAYOFF_ONLY: bool = False
 
     def __init__(self, config, order_manager, kalshi_client):
         self.config = config
@@ -1019,6 +1026,18 @@ class SportsTraderStrategy:
                         logger.debug(
                             f"[{self.STRATEGY_NAME}] {ticker}: live-game entry "
                             f"(mts={minutes_to_start}), pre-game only, skip"
+                        )
+                        continue
+
+                # Playoff-only gate (additive — combines with ALLOWED_CELLS).
+                # Uses core.season calendar windows to classify ticker as
+                # playoff vs regular. None = unknown sport / parse failure;
+                # treat as not-playoff to be safe.
+                if self.PLAYOFF_ONLY:
+                    now_ts = datetime.now(timezone.utc).isoformat()
+                    if not is_playoff(ticker, now_ts):
+                        logger.debug(
+                            f"[{self.STRATEGY_NAME}] {ticker}: not playoff, skip"
                         )
                         continue
 

@@ -32,6 +32,7 @@ from strategies.sports_underdog_v34 import SportsUnderdogV34Strategy
 from strategies.sports_longshot_v35 import SportsLongshotV35Strategy
 from strategies.sports_midshot_v35 import SportsMidshotV35Strategy
 from strategies.sports_underdog_v35 import SportsUnderdogV35Strategy
+from strategies.sports_underdog_v36_playoff import SportsUnderdogV36PlayoffStrategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
@@ -143,6 +144,13 @@ class Bot:
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_underdog_v35 = SportsUnderdogV35Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # V3.6 Playoff — paper-only. NBA-playoff-only underdog with 35¢ floor.
+        # Built 2026-04-30 from sub-bucket analysis showing 35-45¢ band has
+        # +135% observer ROI while 20-30¢ band loses -178%/-102% in NBA
+        # playoffs. See strategy file docstring for the band-by-band data.
+        self.sports_underdog_v36_playoff = SportsUnderdogV36PlayoffStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
@@ -354,6 +362,11 @@ class Bot:
             ("sports_longshot_v35", self.sports_longshot_v35),
             ("sports_midshot_v35", self.sports_midshot_v35),
             ("sports_underdog_v35", self.sports_underdog_v35),
+            # V3.6 playoff — paper-only NBA-playoff underdog with 35¢ floor.
+            # Targets the 35-45¢ band where observer + trades both showed
+            # +135% / +153% ROI while 20-30¢ loses catastrophically. Promotion
+            # gate: n_games ≥ 25 with ROI ≥ +30%.
+            ("sports_underdog_v36_playoff", self.sports_underdog_v36_playoff),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
             # -37.5% ROI. Freshness gate was added 2026-04-16 (80ad42e) but
             # only a handful of post-gate entries accumulated before shutdown;
