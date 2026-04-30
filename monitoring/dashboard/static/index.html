@@ -984,7 +984,7 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
             ? '<span style="color:var(--text-dim);">—</span>'
             : phase;
           const poTag = playoffBlocklist.has(sport)
-            ? ' <span style="color:#fbbf24;font-size:9px;letter-spacing:0.5px;" title="Suspended during this sport's playoff window (auto-resumes in regular season)">PO-SUSPEND</span>'
+            ? ` <span style="color:#fbbf24;font-size:9px;letter-spacing:0.5px;" title="Suspended during this sport playoff window (auto-resumes in regular season)">PO-SUSPEND</span>`
             : '';
           return `<div class="perf-row" style="font-size:11px;">
             <span class="perf-key">${sport}</span>
@@ -994,7 +994,7 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
       : '';
     // Playoff-only badge (e.g., v36_playoff): show in header alongside version.
     const playoffOnlyBadge = playoffOnly
-      ? '<span class="version-badge v36" title="Playoff-only strategy — fires only when ticker is in its sport's playoff window">PLAYOFF-ONLY</span>'
+      ? `<span class="version-badge v36" title="Playoff-only strategy — fires only when ticker is in its sport playoff window">PLAYOFF-ONLY</span>`
       : '';
     // Info icon shown only on disabled cards; tooltip text prefers reason_detail (human) over reason (machine).
     const tooltipText = status.reason_detail || status.reason || '';
