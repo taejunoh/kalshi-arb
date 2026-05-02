@@ -12,8 +12,12 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     TRADED_TICKERS_FILE = "data/sports_midshot_v31_tickers.json"
     STRATEGY_NAME = "sports_midshot_v31"
     REGION_OVERRIDE = "eu"
-    # Depth gate scaled to base 16: peak stake ~$6.80 → 3× buffer = $20.
-    MIN_DEPTH_USDC = 20.0
+    # Depth gate scaled to size 24 (2026-05-02). At max midshot entry price
+    # ~80¢, peak stake = 24 × $0.80 = $19.20 → $30 gives ~1.5× cushion to
+    # protect against adverse-selection on thin books (cf. 2026-04-25
+    # LIMIT_AGGRESSION fix). Underdog stays at $25 because its price band
+    # caps near 60¢ (already 1.67× cushion).
+    MIN_DEPTH_USDC = 30.0
     # Price bucket ROI (2026-04-20, settled paper+live):
     #   <10¢:    n=9,  0% win, ROI −100%
     #   10–15¢:  n=9,  0% win, ROI −100%
