@@ -70,7 +70,7 @@ KILL_CRITERIA = {
 MIN_N_BOOKS_FOR_SIM = 8
 PRE_WINDOW_MIN_MINS = 60
 PRE_WINDOW_MAX_MINS = 1440  # T-24h
-TARGET_SPORTS = ["MLS", "EPL", "LAL", "UCL", "BUN"]
+TARGET_SPORTS = ["MLS", "EPL", "LAL", "UCL"]
 LIVE_BASELINE_SPORTS = ["NBA", "MLB", "NHL"]
 EDGE_BUCKETS = [(-1.0, 0.0), (0.0, 0.05), (0.05, 0.10), (0.10, 0.20), (0.20, 1.0)]
 
@@ -414,7 +414,7 @@ def _section_strategy_matrix(results: dict) -> list[str]:
 
 
 def _section_legs(results: dict) -> list[str]:
-    soccer_sports = ["MLS", "EPL", "LAL", "UCL", "BUN"]
+    soccer_sports = ["MLS", "EPL", "LAL", "UCL"]
     has_data = any(results.get(s, {}).get("legs") for s in soccer_sports)
     if not has_data:
         return []

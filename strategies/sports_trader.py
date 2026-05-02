@@ -130,21 +130,24 @@ def _odds_cache_reset() -> None:
 # Kalshi sports series
 SPORTS_SERIES = [
     "KXNBAGAME", "KXMLBGAME", "KXNHLGAME",
-    "KXMLSGAME", "KXEPLGAME", "KXLALIGAGAME", "KXUCLGAME", "KXBUNDESLIGAGAME",
+    "KXMLSGAME", "KXEPLGAME", "KXLALIGAGAME", "KXUCLGAME",
 ]
 
 # Game-suffix tokens used to extract a 3-letter sport short code from a ticker.
 # Order matters when one suffix is a substring of another (none currently).
-# NPB/KBO removed 2026-05-02: data quality was good (n_books 12-15, Pinnacle
-# 100%) but Kalshi OI median $2-30 made live promotion impossible.
+# Removed 2026-05-02:
+#   - NPB/KBO: Kalshi OI $2-30 (untradeable)
+#   - BUN: OI median $639 (28% above gate) but p25 $354 (below gate); 25% of
+#     entry-window observations would have thin liquidity. Same-day decision
+#     to drop borderline coverage rather than maintain per-ticker OI gating.
 SPORT_GAME_TOKENS = (
     "NBAGAME", "MLBGAME", "NHLGAME",
-    "MLSGAME", "EPLGAME", "LALIGAGAME", "UCLGAME", "BUNDESLIGAGAME",
+    "MLSGAME", "EPLGAME", "LALIGAGAME", "UCLGAME",
 )
 
 # Sports whose Pinnacle h2h market includes a "Draw" outcome. Probability
 # helpers normalize home + away + draw to sum=1 for these.
-THREE_WAY_SPORTS_SHORT = frozenset({"MLS", "EPL", "LAL", "UCL", "BUN"})
+THREE_WAY_SPORTS_SHORT = frozenset({"MLS", "EPL", "LAL", "UCL"})
 
 
 # Odds API full name → Kalshi yes_sub_title for disambiguation
@@ -211,23 +214,6 @@ ODDS_TO_KALSHI_SHORT = {
     "ca osasuna": "osasuna",
     "elche cf": "elche",
     "rayo vallecano": "vallecano",
-
-    # Bundesliga
-    "1. fc heidenheim": "heidenheim",
-    "1. fc köln": "fc köln",
-    "bayer leverkusen": "leverkusen",
-    "borussia dortmund": "dortmund",
-    "borussia monchengladbach": "m´gladbach",
-    "eintracht frankfurt": "frankfurt",
-    "fc st. pauli": "st. pauli",
-    "fsv mainz 05": "mainz",
-    "hamburger sv": "hamburg",
-    "rb leipzig": "leipzig",
-    "sc freiburg": "freiburg",
-    "tsg hoffenheim": "hoffenheim",
-    "vfb stuttgart": "stuttgart",
-    "vfl wolfsburg": "wolfsburg",
-    "werder bremen": "bremen",
 
     # UCL (overlaps with EPL/La Liga; same alias rules apply)
     "paris saint germain": "psg",
@@ -337,7 +323,7 @@ class SportsTraderStrategy:
     # this set in the subclass with the entry removed. Soccer leagues require
     # 3-way (draw) handling before any live promotion can be considered.
     OBSERVATION_ONLY_SPORTS: frozenset = frozenset({
-        "MLS", "EPL", "LAL", "UCL", "BUN",
+        "MLS", "EPL", "LAL", "UCL",
     })
     # Minimum bookmaker count required in the consensus before evaluating a
     # signal. None = no gate (legacy behavior). Recommended for newly-added
@@ -588,7 +574,6 @@ class SportsTraderStrategy:
         "soccer_epl": 0.0,
         "soccer_spain_la_liga": 0.0,
         "soccer_uefa_champs_league": 0.0,
-        "soccer_germany_bundesliga": 0.0,
     }
 
     def _detect_line_movement(self, game_id: str, home_prob: float, away_prob: float) -> float:
@@ -970,7 +955,6 @@ class SportsTraderStrategy:
             "KXEPLGAME": "soccer_epl",
             "KXLALIGAGAME": "soccer_spain_la_liga",
             "KXUCLGAME": "soccer_uefa_champs_league",
-            "KXBUNDESLIGAGAME": "soccer_germany_bundesliga",
         }
 
         all_odds = {}
