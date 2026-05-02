@@ -751,19 +751,18 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             else:
                 reason = f"{flag_attr}=false"
                 reason_detail = retirement_detail.get(s, f"Disabled via env flag {flag_attr}=false.")
-            # Demoted classification: not retired, but no longer producing
-            # new live entries. Two paths:
-            #   (a) mode=PAPER + in main.py loop (e.g. v35 trio — removed
-            #       from LIVE_STRATEGIES env, still scans paper)
-            #   (b) mentions_trader special case — in env (mode=LIVE) but
-            #       removed from main.py loop via silent-drift bug; behaves
-            #       same as demoted from a UX perspective (no new entries)
-            #   Plus econ_trader: removed from loop entirely with historical
-            #   live trades — reuse demoted bucket so users see the context.
-            is_demoted = s not in archived_set and (
-                (mode == "PAPER" and in_loop and s != "shutdown_fade")
-                or s in {"mentions_trader", "econ_trader"}
-            )
+            # Demoted classification: explicit allowlist of strategies that
+            # WERE producing live trades but no longer do (removed from
+            # LIVE_STRATEGIES env or scan loop). Excludes paper-only experiments
+            # that never went live (e.g. market_maker, v34 paper trio).
+            DEMOTED_FROM_LIVE = {
+                "sports_longshot_v35",
+                "sports_midshot_v35",
+                "sports_underdog_v35",
+                "mentions_trader",
+                "econ_trader",
+            }
+            is_demoted = s in DEMOTED_FROM_LIVE
             sleeping_msg = sleeping_detail.get(s)
             result[s] = {"mode": mode, "active": active, "reason": reason,
                          "reason_detail": reason_detail, "archived": s in archived_set,
