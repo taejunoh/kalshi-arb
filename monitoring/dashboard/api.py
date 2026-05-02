@@ -20,6 +20,13 @@ def _today_cutoff_utc() -> str:
     return start.astimezone(timezone.utc).isoformat()
 
 
+_DASHBOARD_HIDDEN_SPORTS = ("KBO", "NPB")
+"""Sports excluded from Regime card + Observer signals panel.
+Data still collected by the observer (don't touch); just hidden from
+the dashboard UI per user request — these leagues are scanned but no
+strategy currently trades them, so they were diluting the views."""
+
+
 def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None, sports_trader=None) -> FastAPI:
     app = FastAPI(title="Kalshi Arb Bot Dashboard")
 
@@ -955,10 +962,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         within ±10min on the same ticker."""
         import aiosqlite
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+        hidden_ph = ",".join("?" * len(_DASHBOARD_HIDDEN_SPORTS))
         async with aiosqlite.connect(database.db_path) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
-                """SELECT timestamp, kalshi_ticker, sport, phase,
+                f"""SELECT timestamp, kalshi_ticker, sport, phase,
                           minutes_to_start,
                           kalshi_yes_ask, kalshi_no_ask,
                           us_yes_prob, eu_yes_prob, pinnacle_yes_prob,
@@ -968,9 +976,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                      AND pinnacle_yes_prob IS NOT NULL
                      AND kalshi_yes_ask IS NOT NULL
                      AND ABS(pinnacle_yes_prob - kalshi_yes_ask) >= ?
+                     AND (sport IS NULL OR sport NOT IN ({hidden_ph}))
                    ORDER BY ABS(pinnacle_yes_prob - kalshi_yes_ask) DESC
                    LIMIT ?""",
-                (cutoff, min_edge, limit),
+                (cutoff, min_edge, *_DASHBOARD_HIDDEN_SPORTS, limit),
             )
             rows = [dict(r) for r in await cursor.fetchall()]
             # Annotate "fired" — any trade on same ticker within ±10 min.
@@ -1004,18 +1013,20 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         SQLite picked the wrong index and the query took ~10s."""
         import aiosqlite
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
+        hidden_ph = ",".join("?" * len(_DASHBOARD_HIDDEN_SPORTS))
         async with aiosqlite.connect(database.db_path) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
-                """SELECT sport,
+                f"""SELECT sport,
                           phase,
                           MAX(is_playoff) AS any_playoff,
                           COUNT(DISTINCT kalshi_ticker) AS tickers
                    FROM odds_observations INDEXED BY idx_obs_time
                    WHERE timestamp >= ?
+                     AND (sport IS NULL OR sport NOT IN ({hidden_ph}))
                    GROUP BY sport, phase
                    ORDER BY sport, phase""",
-                (cutoff,),
+                (cutoff, *_DASHBOARD_HIDDEN_SPORTS),
             )
             rows = [dict(r) for r in await cursor.fetchall()]
         # Aggregate per sport
