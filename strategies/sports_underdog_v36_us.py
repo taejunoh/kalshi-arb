@@ -42,9 +42,10 @@ class SportsUnderdogV36USStrategy(SportsUnderdogV31Strategy):
     PLAYOFF_BLOCKLIST = frozenset()  # this IS the playoff strategy
     # Sizing 8→16 (2x) on 2026-05-02 — symmetric with v36_playoff. Live n=12 /
     # 67% WR / 57% ROI mirrors the EU twin; both regions confirm playoff
-    # underdog mispricing. Depth 10→15 keeps 1.88x cushion at top of underdog
-    # price range. Re-eval at n=15 checkpoint (already scheduled 2026-05-05).
-    MIN_DEPTH_USDC = 15.0
+    # underdog mispricing. Depth 10→20 keeps 1.92× cushion at top of underdog
+    # band (16 × $0.65 = $10.40 stake) — matches underdog_v31's cushion ratio.
+    # Re-eval at n=15 checkpoint (already scheduled 2026-05-05).
+    MIN_DEPTH_USDC = 20.0
 
     def _get_trade_size(self, signal: dict) -> float:
         return min(16.0, self._order_manager.bankroll * 0.02)

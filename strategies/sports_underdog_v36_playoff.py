@@ -50,9 +50,11 @@ class SportsUnderdogV36PlayoffStrategy(SportsUnderdogV31Strategy):
     # window finite (~3-4 weeks left) and live n=6 / 67% WR / 57% ROI is
     # consistent with the playoff-mispricing thesis. Aggressive bump to capture
     # more of the time-limited opportunity; if next n=15 checkpoint shows
-    # post-change ROI < 50% of pre-change, revert. Depth 10→15 keeps cushion at
-    # top of underdog price range (16 × $0.50 = $8 stake, $15 = 1.88x).
-    MIN_DEPTH_USDC = 15.0
+    # post-change ROI < 50% of pre-change, revert. Depth 10→20 (1.5× the
+    # contract bump) keeps 1.92× cushion at top of underdog band (16 × $0.65
+    # = $10.40 stake) — matches the underdog_v31 cushion ratio. The earlier
+    # $15 left only 1.44× cushion which was too tight on a small-n strategy.
+    MIN_DEPTH_USDC = 20.0
 
     def _get_trade_size(self, signal: dict) -> float:
         return min(16.0, self._order_manager.bankroll * 0.02)
