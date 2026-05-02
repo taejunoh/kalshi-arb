@@ -20,7 +20,7 @@ def _today_cutoff_utc() -> str:
     return start.astimezone(timezone.utc).isoformat()
 
 
-_DASHBOARD_HIDDEN_SPORTS = ("KBO", "NPB")
+_DASHBOARD_HIDDEN_SPORTS = ("KBO", "NPB", "BUN")
 """Sports excluded from Regime card + Observer signals panel.
 Data still collected by the observer (don't touch); just hidden from
 the dashboard UI per user request — these leagues are scanned but no
