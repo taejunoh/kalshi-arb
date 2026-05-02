@@ -765,11 +765,13 @@
 
     <!-- ── Performance Cards (Archived) ── -->
     <section id="perf-archived-section">
-      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+      <div id="perf-archived-toggle"
+           style="display:flex;align-items:center;gap:10px;margin-bottom:12px;cursor:pointer;user-select:none;">
+        <span id="perf-archived-chevron" style="color:var(--text-dim);font-size:10px;width:10px;display:inline-block;">▶</span>
         <div class="section-title" style="margin-bottom:0">Strategy Performance (Archived)</div>
         <span style="color:var(--text-dim);font-size:11px;">Retired strategies — historical data only, no new entries</span>
       </div>
-      <div class="perf-grid" id="perf-archived-grid">
+      <div class="perf-grid" id="perf-archived-grid" style="display:none;">
         <div class="perf-card" style="color:var(--text-dim);font-size:12px;">Loading…</div>
       </div>
     </section>
@@ -1863,6 +1865,26 @@ document.querySelectorAll('.view-toggle button').forEach(btn => {
   btn.addEventListener('click', () => applyViewMode(btn.dataset.view));
 });
 applyViewMode(viewMode);
+
+// ─────────────────────────────────────────────
+//  Archived perf section — collapsed by default
+// ─────────────────────────────────────────────
+//  Retired strategies are reference-only. Hide them by default; users
+//  who want to see historical data click the chevron. State persists
+//  in localStorage so it sticks across reloads.
+const ARCHIVED_OPEN_KEY = 'arb_dashboard_archived_open';
+function applyArchivedCollapse(open) {
+  const grid = document.getElementById('perf-archived-grid');
+  const chev = document.getElementById('perf-archived-chevron');
+  grid.style.display = open ? '' : 'none';
+  chev.textContent = open ? '▼' : '▶';
+  localStorage.setItem(ARCHIVED_OPEN_KEY, open ? '1' : '0');
+}
+document.getElementById('perf-archived-toggle').addEventListener('click', () => {
+  const cur = localStorage.getItem(ARCHIVED_OPEN_KEY) === '1';
+  applyArchivedCollapse(!cur);
+});
+applyArchivedCollapse(localStorage.getItem(ARCHIVED_OPEN_KEY) === '1');
 
 // ─────────────────────────────────────────────
 //  Initialise & schedule
