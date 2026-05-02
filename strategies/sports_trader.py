@@ -130,15 +130,15 @@ def _odds_cache_reset() -> None:
 # Kalshi sports series
 SPORTS_SERIES = [
     "KXNBAGAME", "KXMLBGAME", "KXNHLGAME",
-    "KXNPBGAME", "KXKBOGAME",
     "KXMLSGAME", "KXEPLGAME", "KXLALIGAGAME", "KXUCLGAME", "KXBUNDESLIGAGAME",
 ]
 
 # Game-suffix tokens used to extract a 3-letter sport short code from a ticker.
 # Order matters when one suffix is a substring of another (none currently).
+# NPB/KBO removed 2026-05-02: data quality was good (n_books 12-15, Pinnacle
+# 100%) but Kalshi OI median $2-30 made live promotion impossible.
 SPORT_GAME_TOKENS = (
     "NBAGAME", "MLBGAME", "NHLGAME",
-    "NPBGAME", "KBOGAME",
     "MLSGAME", "EPLGAME", "LALIGAGAME", "UCLGAME", "BUNDESLIGAGAME",
 )
 
@@ -195,10 +195,6 @@ ODDS_TO_KALSHI_SHORT = {
     "washington capitals": "wsh capitals",
     "boston bruins": "bos bruins",
     "new jersey devils": "nj devils",
-    # NPB — only the team where Kalshi drops the corporate sponsor needs disambig.
-    # Other 11 NPB teams' city portion already matches Kalshi yes_sub_title.
-    "fukuoka softbank hawks": "fukuoka hawks",
-    # KBO — Kalshi uses identical "City Mascot" form; no overrides needed.
 
     # EPL (Odds API name → Kalshi yes_sub_title, both lowercased).
     "brighton and hove albion": "brighton",
@@ -341,7 +337,6 @@ class SportsTraderStrategy:
     # this set in the subclass with the entry removed. Soccer leagues require
     # 3-way (draw) handling before any live promotion can be considered.
     OBSERVATION_ONLY_SPORTS: frozenset = frozenset({
-        "NPB", "KBO",
         "MLS", "EPL", "LAL", "UCL", "BUN",
     })
     # Minimum bookmaker count required in the consensus before evaluating a
@@ -589,8 +584,6 @@ class SportsTraderStrategy:
         "basketball_nba": 0.0,
         "baseball_mlb": 0.0,
         "icehockey_nhl": 0.0,
-        "baseball_npb": 0.0,
-        "baseball_kbo": 0.0,
         "soccer_usa_mls": 0.0,
         "soccer_epl": 0.0,
         "soccer_spain_la_liga": 0.0,
@@ -973,8 +966,6 @@ class SportsTraderStrategy:
             "KXNBAGAME": "basketball_nba",
             "KXMLBGAME": "baseball_mlb",
             "KXNHLGAME": "icehockey_nhl",
-            "KXNPBGAME": "baseball_npb",
-            "KXKBOGAME": "baseball_kbo",
             "KXMLSGAME": "soccer_usa_mls",
             "KXEPLGAME": "soccer_epl",
             "KXLALIGAGAME": "soccer_spain_la_liga",
