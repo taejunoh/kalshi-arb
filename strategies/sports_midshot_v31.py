@@ -12,12 +12,11 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     TRADED_TICKERS_FILE = "data/sports_midshot_v31_tickers.json"
     STRATEGY_NAME = "sports_midshot_v31"
     REGION_OVERRIDE = "eu"
-    # Depth gate scaled to size 24 (2026-05-02). At max midshot entry price
-    # ~80¢, peak stake = 24 × $0.80 = $19.20 → $30 gives ~1.5× cushion to
-    # protect against adverse-selection on thin books (cf. 2026-04-25
-    # LIMIT_AGGRESSION fix). Underdog stays at $25 because its price band
-    # caps near 60¢ (already 1.67× cushion).
-    MIN_DEPTH_USDC = 30.0
+    # Depth gate scaled to size 36 (2026-05-02 second pass). At max midshot
+    # entry price ~80¢, peak stake = 36 × $0.80 = $28.80 → $45 keeps the
+    # ~1.5× cushion. Sized up because last-7d data showed $10.13/trade and
+    # 69.8% ROI (well above 25.8% all-time baseline) — ride the winner.
+    MIN_DEPTH_USDC = 45.0
     # Price bucket ROI (2026-04-20, settled paper+live):
     #   <10¢:    n=9,  0% win, ROI −100%
     #   10–15¢:  n=9,  0% win, ROI −100%
@@ -38,7 +37,9 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     PLAYOFF_BLOCKLIST = frozenset({"NBA"})
 
     def _get_trade_size(self, signal: dict) -> float:
-        # Raised 16→24 on 2026-05-02 (1.5x). Live n=193, ROI 25.8% on $832
-        # volume — best capital efficiency in the v31 trio. Bigger relative
-        # bump than underdog (1.25x) because $/$ return is 1.47x higher.
-        return min(24.0, self._order_manager.bankroll * 0.02)
+        # Raised 24→36 on 2026-05-02 (second pass, 1.5x more, total 2.25x
+        # vs original 16). Last-7d $10.13/trade and 69.8% ROI made this the
+        # clearest winner across the live ladder; user opted to ride it
+        # rather than wait for the 5/5 checkpoint. If the 5/5 fill-quality
+        # check FLAGS slippage, revert to 24.
+        return min(36.0, self._order_manager.bankroll * 0.02)

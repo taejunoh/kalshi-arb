@@ -12,9 +12,10 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     TRADED_TICKERS_FILE = "data/sports_underdog_v31_tickers.json"
     STRATEGY_NAME = "sports_underdog_v31"
     REGION_OVERRIDE = "eu"
-    # Depth gate scaled to base 20: peak stake ≈ $8.50 (price=0.40 × v32 mult 1.065)
-    # → 3× buffer = $25. Same buffer ratio that the previous $5 gate had at base 4.
-    MIN_DEPTH_USDC = 25.0
+    # Depth gate scaled to size 30 (2026-05-02 second pass). At max underdog
+    # entry price ~60¢, peak stake = 30 × $0.60 = $18 → $30 keeps ~1.67×
+    # cushion (matches the prior buffer ratio).
+    MIN_DEPTH_USDC = 30.0
     # Price bucket ROI (2026-04-20, settled paper+live):
     #   <10¢:   n=8,  0% win, ROI −100%
     #   10–15¢: n=8,  0% win, ROI −100%
@@ -37,6 +38,9 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     PLAYOFF_BLOCKLIST = frozenset({"NBA"})
 
     def _get_trade_size(self, signal: dict) -> float:
-        # Raised 20→25 on 2026-05-02 (1.25x). Live n=224, ROI 17.6% on $1,526
-        # volume — solid but lower $/$ return than midshot, hence smaller bump.
-        return min(25.0, self._order_manager.bankroll * 0.02)
+        # Raised 25→30 on 2026-05-02 (second pass, 1.2x more, total 1.5x vs
+        # original 20). Live n=224, ROI 17.6% all-time and 14.7% last-7d are
+        # consistent — alpha is mature and the prior 1.25x bump didn't
+        # destabilize anything. Modest extra bump to harvest the larger
+        # capital base before bankroll constrains us further.
+        return min(30.0, self._order_manager.bankroll * 0.02)
