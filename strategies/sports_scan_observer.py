@@ -10,6 +10,11 @@ candidate universe (including below-edge candidates that never enter).
 Cost: zero additional Odds API calls. Reuses the shared (region, sport) cache
 via SportsTraderStrategy helpers. Cadence is bounded by the scan_and_execute
 loop; DB writes are ~N_open_markets per cycle (tens of rows), trivial.
+
+3-way support (soccer): each game has 3 binary Kalshi legs (HOME/AWAY/TIE).
+The TIE leg has yes_sub_title='Tie' and stores draw_prob (3-way-normalized)
+as pinnacle_yes_prob; HOME stores home_prob; AWAY stores away_prob. The
+is_yes_draw flag distinguishes TIE rows from AWAY rows (both have is_yes_home=0).
 """
 from __future__ import annotations
 
@@ -25,6 +30,32 @@ from strategies.sports_trader import (
 )
 
 logger = logging.getLogger("sports_scan_observer")
+
+
+SPORT_MAP = {
+    "KXNBAGAME": "basketball_nba",
+    "KXMLBGAME": "baseball_mlb",
+    "KXNHLGAME": "icehockey_nhl",
+    "KXNPBGAME": "baseball_npb",
+    "KXKBOGAME": "baseball_kbo",
+    "KXMLSGAME": "soccer_usa_mls",
+    "KXEPLGAME": "soccer_epl",
+    "KXLALIGAGAME": "soccer_spain_la_liga",
+    "KXUCLGAME": "soccer_uefa_champs_league",
+    "KXBUNDESLIGAGAME": "soccer_germany_bundesliga",
+}
+SPORT_SHORT = {
+    "KXNBAGAME": "NBA",
+    "KXMLBGAME": "MLB",
+    "KXNHLGAME": "NHL",
+    "KXNPBGAME": "NPB",
+    "KXKBOGAME": "KBO",
+    "KXMLSGAME": "MLS",
+    "KXEPLGAME": "EPL",
+    "KXLALIGAGAME": "LAL",
+    "KXUCLGAME": "UCL",
+    "KXBUNDESLIGAGAME": "BUN",
+}
 
 
 class SportsScanObserver(SportsTraderStrategy):
@@ -46,21 +77,16 @@ class SportsScanObserver(SportsTraderStrategy):
         if db is None or not hasattr(db, "record_odds_observation"):
             return
 
-        sport_map = {
-            "KXNBAGAME": "basketball_nba",
-            "KXMLBGAME": "baseball_mlb",
-            "KXNHLGAME": "icehockey_nhl",
-        }
-        short_map = {"KXNBAGAME": "NBA", "KXMLBGAME": "MLB", "KXNHLGAME": "NHL"}
-
         # Prefetch odds per sport once per cycle so repeated matches within
         # this cycle are cache hits; same pattern as scan_and_execute.
         all_odds: dict[str, list[dict]] = {}
-        for series, sport_key in sport_map.items():
+        for series, sport_key in SPORT_MAP.items():
             all_odds[series] = await self._fetch_odds(sport_key)
 
         loop = asyncio.get_event_loop()
         for series in SPORTS_SERIES:
+            if series not in SPORT_MAP:
+                continue
             try:
                 data = await loop.run_in_executor(
                     None,
@@ -74,8 +100,8 @@ class SportsScanObserver(SportsTraderStrategy):
                 continue
 
             odds_games = all_odds.get(series, [])
-            sport_key = sport_map[series]
-            sport_short = short_map[series]
+            sport_key = SPORT_MAP[series]
+            sport_short = SPORT_SHORT[series]
 
             for market in markets:
                 ticker = market.get("ticker") or ""
@@ -83,11 +109,26 @@ class SportsScanObserver(SportsTraderStrategy):
                     continue
 
                 title = market.get("title", "")
-                try:
-                    ya = float(market.get("yes_ask_dollars", "0") or 0)
-                    na = float(market.get("no_ask_dollars", "0") or 0)
-                except (TypeError, ValueError):
-                    ya, na = 0.0, 0.0
+
+                def _f(key):
+                    v = market.get(key)
+                    if v is None or v == "":
+                        return None
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        return None
+
+                ya = _f("yes_ask_dollars") or 0.0
+                na = _f("no_ask_dollars") or 0.0
+                yb = _f("yes_bid_dollars")
+                nb = _f("no_bid_dollars")
+                yas = _f("yes_ask_size_fp")
+                ybs = _f("yes_bid_size_fp")
+                nas = _f("no_ask_size_fp")
+                nbs = _f("no_bid_size_fp")
+                vol24 = _f("volume_24h_fp")
+                oi = _f("open_interest_fp")
 
                 matched_game = self._match_kalshi_to_odds(
                     title, odds_games, kalshi_ticker=ticker
@@ -95,20 +136,23 @@ class SportsScanObserver(SportsTraderStrategy):
                 if not matched_game:
                     continue
 
-                # Dual-region consensus returns HOME-team-referenced probs.
-                us_home, eu_home, pin_home, pin_age_s = (
-                    await self._dual_region_consensus(sport_key, matched_game)
+                # Probability dicts (with draw_prob populated for 3-way soccer).
+                us_dict, eu_dict, pin_dict, pin_age_s = (
+                    await self._dual_region_consensus_dicts(sport_key, matched_game)
                 )
 
                 home_team = matched_game.get("home_team")
                 away_team = matched_game.get("away_team")
                 yes_sub_title = (market.get("yes_sub_title") or "").lower()
 
-                # Reuse the same team-matching logic as scan_and_execute so
-                # is_yes_home and the YES-referenced prob flip are consistent
-                # with how trades are recorded.
+                # Three-way leg detection. TIE leg appears in soccer with
+                # yes_sub_title='tie'; otherwise standard home/away.
                 is_yes_home: Optional[bool] = None
-                if home_team and away_team:
+                is_yes_draw: Optional[bool] = None
+                if yes_sub_title == "tie":
+                    is_yes_home = False
+                    is_yes_draw = True
+                elif home_team and away_team:
                     home_lc = home_team.lower()
                     away_lc = away_team.lower()
                     home_short = ODDS_TO_KALSHI_SHORT.get(home_lc, "")
@@ -124,15 +168,45 @@ class SportsScanObserver(SportsTraderStrategy):
                             is_yes_home = True
                         elif away_city and (away_city in yes_sub_title or yes_sub_title in away_city):
                             is_yes_home = False
+                    # 3-way sport but neither home/away nor tie matched —
+                    # mark as draw if any draw_prob present so downstream
+                    # never falsely attributes draw_prob to the away leg.
+                    if is_yes_home is None and (eu_dict and "draw_prob" in eu_dict):
+                        # Unknown leg — leave both flags None so the row
+                        # records yes_sub_title for manual inspection but
+                        # does not corrupt the home/away/draw partition.
+                        pass
 
-                def _yes_side(home_prob: Optional[float]) -> Optional[float]:
-                    if home_prob is None or is_yes_home is None:
+                def _yes_side(probs: Optional[dict]) -> Optional[float]:
+                    """Select YES-side probability based on detected leg.
+
+                    Returns None when leg unknown or probs missing. For 3-way
+                    sports, TIE leg uses draw_prob; HOME uses home_prob; AWAY
+                    uses (1 - home_prob - draw_prob) where draw_prob exists,
+                    else (1 - home_prob).
+                    """
+                    if probs is None:
                         return None
-                    return home_prob if is_yes_home else (1.0 - home_prob)
+                    if is_yes_draw:
+                        return probs.get("draw_prob")
+                    if is_yes_home is True:
+                        return probs.get("home_prob")
+                    if is_yes_home is False:
+                        return probs.get("away_prob")
+                    return None
 
-                us_yes = _yes_side(us_home)
-                eu_yes = _yes_side(eu_home)
-                pin_yes = _yes_side(pin_home)
+                us_yes = _yes_side(us_dict)
+                eu_yes = _yes_side(eu_dict)
+                pin_yes = _yes_side(pin_dict)
+
+                # Coverage signal — same eu_yes_prob means very different things
+                # at n_books=2 (NHL afternoon games) vs 23 (UCL).
+                n_books_eu = eu_dict.get("n_books") if eu_dict else None
+                n_books_us = us_dict.get("n_books") if us_dict else None
+                # has_pinnacle: True iff Pinnacle was present in this game's
+                # eu response. Distinguishes "Pinnacle absent for this game"
+                # from "leg-detection failed" (both leave pinnacle_yes_prob NULL).
+                has_pinnacle = pin_dict is not None
 
                 mts = _commence_time_to_minutes(matched_game.get("commence_time"))
                 phase = "pre" if (mts is not None and mts > 0) else "live"
@@ -148,12 +222,24 @@ class SportsScanObserver(SportsTraderStrategy):
                         away_team=away_team,
                         yes_sub_title=yes_sub_title or None,
                         is_yes_home=is_yes_home,
+                        is_yes_draw=is_yes_draw,
                         kalshi_yes_ask=ya if ya > 0 else None,
                         kalshi_no_ask=na if na > 0 else None,
                         us_yes_prob=us_yes,
                         eu_yes_prob=eu_yes,
                         pinnacle_yes_prob=pin_yes,
                         pinnacle_age_s=pin_age_s,
+                        n_books_eu=n_books_eu,
+                        n_books_us=n_books_us,
+                        has_pinnacle=has_pinnacle,
+                        kalshi_yes_bid=yb,
+                        kalshi_no_bid=nb,
+                        kalshi_yes_bid_size=ybs,
+                        kalshi_yes_ask_size=yas,
+                        kalshi_no_bid_size=nbs,
+                        kalshi_no_ask_size=nas,
+                        kalshi_volume_24h=vol24,
+                        kalshi_open_interest=oi,
                     )
                 except Exception as e:
                     logger.warning(

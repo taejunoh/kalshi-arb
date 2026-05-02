@@ -128,7 +128,24 @@ def _odds_cache_reset() -> None:
     _ODDS_CACHE.clear()
 
 # Kalshi sports series
-SPORTS_SERIES = ["KXNBAGAME", "KXMLBGAME", "KXNHLGAME"]
+SPORTS_SERIES = [
+    "KXNBAGAME", "KXMLBGAME", "KXNHLGAME",
+    "KXNPBGAME", "KXKBOGAME",
+    "KXMLSGAME", "KXEPLGAME", "KXLALIGAGAME", "KXUCLGAME", "KXBUNDESLIGAGAME",
+]
+
+# Game-suffix tokens used to extract a 3-letter sport short code from a ticker.
+# Order matters when one suffix is a substring of another (none currently).
+SPORT_GAME_TOKENS = (
+    "NBAGAME", "MLBGAME", "NHLGAME",
+    "NPBGAME", "KBOGAME",
+    "MLSGAME", "EPLGAME", "LALIGAGAME", "UCLGAME", "BUNDESLIGAGAME",
+)
+
+# Sports whose Pinnacle h2h market includes a "Draw" outcome. Probability
+# helpers normalize home + away + draw to sum=1 for these.
+THREE_WAY_SPORTS_SHORT = frozenset({"MLS", "EPL", "LAL", "UCL", "BUN"})
+
 
 # Odds API full name → Kalshi yes_sub_title for disambiguation
 # Covers: ambiguous cities (NY, LA, Chicago) + NHL abbreviated format
@@ -178,6 +195,76 @@ ODDS_TO_KALSHI_SHORT = {
     "washington capitals": "wsh capitals",
     "boston bruins": "bos bruins",
     "new jersey devils": "nj devils",
+    # NPB — only the team where Kalshi drops the corporate sponsor needs disambig.
+    # Other 11 NPB teams' city portion already matches Kalshi yes_sub_title.
+    "fukuoka softbank hawks": "fukuoka hawks",
+    # KBO — Kalshi uses identical "City Mascot" form; no overrides needed.
+
+    # EPL (Odds API name → Kalshi yes_sub_title, both lowercased).
+    "brighton and hove albion": "brighton",
+    "newcastle united": "newcastle",
+    "nottingham forest": "nottingham",
+    "tottenham hotspur": "tottenham",
+    "west ham united": "west ham",
+    "wolverhampton wanderers": "wolverhampton",
+
+    # La Liga
+    "alavés": "alaves",
+    "athletic bilbao": "bilbao",
+    "atlético madrid": "atletico",
+    "ca osasuna": "osasuna",
+    "elche cf": "elche",
+    "rayo vallecano": "vallecano",
+
+    # Bundesliga
+    "1. fc heidenheim": "heidenheim",
+    "1. fc köln": "fc köln",
+    "bayer leverkusen": "leverkusen",
+    "borussia dortmund": "dortmund",
+    "borussia monchengladbach": "m´gladbach",
+    "eintracht frankfurt": "frankfurt",
+    "fc st. pauli": "st. pauli",
+    "fsv mainz 05": "mainz",
+    "hamburger sv": "hamburg",
+    "rb leipzig": "leipzig",
+    "sc freiburg": "freiburg",
+    "tsg hoffenheim": "hoffenheim",
+    "vfb stuttgart": "stuttgart",
+    "vfl wolfsburg": "wolfsburg",
+    "werder bremen": "bremen",
+
+    # UCL (overlaps with EPL/La Liga; same alias rules apply)
+    "paris saint germain": "psg",
+
+    # MLS
+    "atlanta united fc": "atlanta",
+    "austin fc": "austin",
+    "cf montreal": "montreal",
+    "charlotte fc": "charlotte",
+    "colorado rapids": "colorado",
+    "columbus crew sc": "columbus",
+    "d.c. united": "dc united",
+    "fc cincinnati": "cincinnati",
+    "fc dallas": "dallas",
+    "houston dynamo": "houston",
+    "inter miami cf": "miami",
+    "la galaxy": "los angeles g",
+    "los angeles fc": "los angeles f",
+    "minnesota united fc": "minnesota",
+    "nashville sc": "nashville",
+    "new england revolution": "new england",
+    "new york city fc": "new york city",
+    "new york red bulls": "new york rb",
+    "orlando city sc": "orlando",
+    "philadelphia union": "philadelphia",
+    "portland timbers": "portland",
+    "real salt lake": "salt lake",
+    "san jose earthquakes": "san jose",
+    "seattle sounders fc": "seattle",
+    "sporting kansas city": "kansas city",
+    "st. louis city sc": "saint louis",
+    "toronto fc": "toronto",
+    "vancouver whitecaps fc": "vancouver",
 }
 
 
@@ -248,6 +335,22 @@ class SportsTraderStrategy:
     # both must pass. Built 2026-04-30 for sports_underdog_v36_playoff which
     # targets NBA playoff-specific underdog mispricing (35¢+ floor cell).
     PLAYOFF_ONLY: bool = False
+    # Sports added to sport_map for data collection (observer + odds_observations)
+    # but not yet promoted to live trading. Subclasses skip these in
+    # scan_and_execute regardless of other gates. To promote a sport, override
+    # this set in the subclass with the entry removed. Soccer leagues require
+    # 3-way (draw) handling before any live promotion can be considered.
+    OBSERVATION_ONLY_SPORTS: frozenset = frozenset({
+        "NPB", "KBO",
+        "MLS", "EPL", "LAL", "UCL", "BUN",
+    })
+    # Minimum bookmaker count required in the consensus before evaluating a
+    # signal. None = no gate (legacy behavior). Recommended for newly-added
+    # sports where coverage is thin: 5 for 2-way, 8 for soccer (3-way splits
+    # signal across legs). 2026-05-02: NHL min n_books=2, MLS min=3, MLB min=5
+    # in observed scans — without this gate a 2-book "consensus" could trigger
+    # a trade with sub-noise alpha.
+    MIN_N_BOOKS: Optional[int] = None
 
     def __init__(self, config, order_manager, kalshi_client):
         self.config = config
@@ -377,19 +480,15 @@ class SportsTraderStrategy:
                     msg_type="quota_recovery",
                 )
 
-    async def _dual_region_consensus(
+    async def _dual_region_consensus_dicts(
         self, sport: str, game: dict
-    ) -> tuple[Optional[float], Optional[float], Optional[float], Optional[int]]:
-        """Return (us_consensus, eu_consensus, pinnacle_prob, pinnacle_age_s).
+    ) -> tuple[Optional[dict], Optional[dict], Optional[dict], Optional[int]]:
+        """Return (us_consensus_dict, eu_consensus_dict, pinnacle_dict, pinnacle_age_s).
 
-        Pulls both regions (cached when possible). Pinnacle data is pulled
-        from the eu response (eu regions include Pinnacle).
-
-        NOTE: all three probabilities returned here are HOME-team referenced
-        (scalar extracted from the home_prob field). The legacy
-        `clv_snapshots.pinnacle_prob` column written by the caller is
-        YES-side-adjusted. Analysis code must join with trades to resolve
-        home↔YES/NO orientation before comparing columns.
+        Each dict has {home_team, away_team, home_prob, away_prob} for 2-way
+        sports plus `draw_prob` for 3-way (soccer). Pulls both regions (cached
+        when possible). Pinnacle data is pulled from the eu response (eu
+        regions include Pinnacle).
         """
         current_region = self._get_odds_region()
         other_region = "eu" if current_region == "us" else "us"
@@ -411,15 +510,31 @@ class SportsTraderStrategy:
         _eu_cons = self._consensus_probability(eu_game) if eu_game else None
         _pin = self._pinnacle_probability(eu_game) if eu_game else None
 
-        # Extract home_prob float for DB storage (single reference point).
-        us_prob: Optional[float] = _us_cons["home_prob"] if _us_cons else None
-        eu_prob: Optional[float] = _eu_cons["home_prob"] if _eu_cons else None
-        pinnacle_prob: Optional[float] = _pin["home_prob"] if _pin else None
-
         eu_hash = _compute_pinnacle_payload_hash(eu_data) if eu_data else None
         pinnacle_age_s = _PINNACLE_AGE.observe("eu", sport, eu_hash)
 
-        return us_prob, eu_prob, pinnacle_prob, pinnacle_age_s
+        return _us_cons, _eu_cons, _pin, pinnacle_age_s
+
+    async def _dual_region_consensus(
+        self, sport: str, game: dict
+    ) -> tuple[Optional[float], Optional[float], Optional[float], Optional[int]]:
+        """Return (us_consensus, eu_consensus, pinnacle_prob, pinnacle_age_s).
+
+        Backward-compat 4-tuple of HOME-team referenced floats. New callers
+        should prefer `_dual_region_consensus_dicts` which preserves the full
+        probability dict (including draw_prob for soccer).
+
+        NOTE: all three probabilities returned here are HOME-team referenced
+        (scalar extracted from the home_prob field). The legacy
+        `clv_snapshots.pinnacle_prob` column written by the caller is
+        YES-side-adjusted. Analysis code must join with trades to resolve
+        home↔YES/NO orientation before comparing columns.
+        """
+        us_cons, eu_cons, pin, age_s = await self._dual_region_consensus_dicts(sport, game)
+        us_prob: Optional[float] = us_cons["home_prob"] if us_cons else None
+        eu_prob: Optional[float] = eu_cons["home_prob"] if eu_cons else None
+        pin_prob: Optional[float] = pin["home_prob"] if pin else None
+        return us_prob, eu_prob, pin_prob, age_s
 
     async def _fetch_odds(self, sport: str) -> list[dict]:
         """Fetch odds from The Odds API, shared-cached by (region, sport)."""
@@ -474,6 +589,13 @@ class SportsTraderStrategy:
         "basketball_nba": 0.0,
         "baseball_mlb": 0.0,
         "icehockey_nhl": 0.0,
+        "baseball_npb": 0.0,
+        "baseball_kbo": 0.0,
+        "soccer_usa_mls": 0.0,
+        "soccer_epl": 0.0,
+        "soccer_spain_la_liga": 0.0,
+        "soccer_uefa_champs_league": 0.0,
+        "soccer_germany_bundesliga": 0.0,
     }
 
     def _detect_line_movement(self, game_id: str, home_prob: float, away_prob: float) -> float:
@@ -620,7 +742,14 @@ class SportsTraderStrategy:
         return available >= size_usdc
 
     def _pinnacle_probability(self, game: dict) -> Optional[dict]:
-        """Pinnacle-only implied probability (vig removed). Returns None if Pinnacle absent."""
+        """Pinnacle-only implied probability (vig removed). Returns None if Pinnacle absent.
+
+        For 2-way h2h sports (baseball/basketball/hockey) returns
+        {home_prob, away_prob} normalized to sum=1.
+        For 3-way h2h sports (soccer) the Pinnacle outcome list includes a
+        "Draw" entry; the result also contains `draw_prob`, with all three
+        probabilities normalized to sum=1.
+        """
         home_team = game.get("home_team", "")
         away_team = game.get("away_team", "")
         for bm in game.get("bookmakers", []):
@@ -628,6 +757,7 @@ class SportsTraderStrategy:
                 continue
             home_prob = None
             away_prob = None
+            draw_prob = None
             for market in bm.get("markets", []):
                 if market.get("key") != "h2h":
                     continue
@@ -635,12 +765,24 @@ class SportsTraderStrategy:
                     prob = self._decimal_to_prob(outcome.get("price", 0))
                     if prob is None:
                         continue
-                    if outcome.get("name") == home_team:
+                    name = outcome.get("name") or ""
+                    if name == home_team:
                         home_prob = prob
-                    elif outcome.get("name") == away_team:
+                    elif name == away_team:
                         away_prob = prob
+                    elif name.lower() == "draw":
+                        draw_prob = prob
             if home_prob is None or away_prob is None:
                 return None
+            if draw_prob is not None:
+                total = home_prob + away_prob + draw_prob
+                return {
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "home_prob": home_prob / total,
+                    "away_prob": away_prob / total,
+                    "draw_prob": draw_prob / total,
+                }
             total = home_prob + away_prob
             return {
                 "home_team": home_team,
@@ -668,6 +810,7 @@ class SportsTraderStrategy:
         away_team = game.get("away_team", "")
         home_probs = []
         away_probs = []
+        draw_probs = []
         for bm in bookmakers:
             for market in bm.get("markets", []):
                 if market.get("key") != "h2h":
@@ -677,14 +820,33 @@ class SportsTraderStrategy:
                     prob = self._decimal_to_prob(odds)
                     if prob is None:
                         continue
-                    if outcome.get("name") == home_team:
+                    name = outcome.get("name") or ""
+                    if name == home_team:
                         home_probs.append(prob)
-                    elif outcome.get("name") == away_team:
+                    elif name == away_team:
                         away_probs.append(prob)
+                    elif name.lower() == "draw":
+                        draw_probs.append(prob)
         if not home_probs or not away_probs:
             return None
         avg_home = sum(home_probs) / len(home_probs)
         avg_away = sum(away_probs) / len(away_probs)
+        # n_books = books that contributed BOTH home and away outcomes. Used
+        # downstream as a coverage signal (NHL min 2, MLS min 3, NPB always 9
+        # vs MLB/UCL 22+); thin coverage means consensus is noisier than its
+        # numeric value implies.
+        n_books = min(len(home_probs), len(away_probs))
+        if draw_probs:
+            avg_draw = sum(draw_probs) / len(draw_probs)
+            total = avg_home + avg_away + avg_draw
+            return {
+                "home_team": home_team,
+                "away_team": away_team,
+                "home_prob": avg_home / total,
+                "away_prob": avg_away / total,
+                "draw_prob": avg_draw / total,
+                "n_books": n_books,
+            }
         # Normalize to sum to 1.0 (remove vig)
         total = avg_home + avg_away
         return {
@@ -692,6 +854,7 @@ class SportsTraderStrategy:
             "away_team": away_team,
             "home_prob": avg_home / total,
             "away_prob": avg_away / total,
+            "n_books": n_books,
         }
 
     def _match_kalshi_to_odds(self, kalshi_title: str, odds_games: list[dict],
@@ -711,14 +874,28 @@ class SportsTraderStrategy:
         Without `kalshi_ticker` the legacy first-match behaviour is used.
         """
         title_lower = kalshi_title.lower()
+
+        def _city_in_title(name: str) -> bool:
+            """True iff any city-prefix variant of `name` appears in the title.
+            Tries the raw name AND its ODDS_TO_KALSHI_SHORT alias (when set);
+            this covers both NHL (raw "los angeles kings" matches title's
+            "Los Angeles") and soccer (alias "newcastle" matches title's
+            "Newcastle" when raw is "Newcastle United").
+            """
+            for variant in (name, ODDS_TO_KALSHI_SHORT.get(name)):
+                if not variant:
+                    continue
+                parts = variant.split()
+                city = " ".join(parts[:-1]) if len(parts) > 1 else variant
+                if city and city in title_lower:
+                    return True
+            return False
+
         candidates: list[dict] = []
         for game in odds_games:
-            home = game.get("home_team", "").lower()
-            away = game.get("away_team", "").lower()
-            # Full city name (all words except mascot)
-            home_city = " ".join(home.split()[:-1]) if len(home.split()) > 1 else home
-            away_city = " ".join(away.split()[:-1]) if len(away.split()) > 1 else away
-            if home_city in title_lower and away_city in title_lower:
+            home_raw = (game.get("home_team") or "").lower()
+            away_raw = (game.get("away_team") or "").lower()
+            if _city_in_title(home_raw) and _city_in_title(away_raw):
                 candidates.append(game)
         if not candidates:
             return None
@@ -796,6 +973,13 @@ class SportsTraderStrategy:
             "KXNBAGAME": "basketball_nba",
             "KXMLBGAME": "baseball_mlb",
             "KXNHLGAME": "icehockey_nhl",
+            "KXNPBGAME": "baseball_npb",
+            "KXKBOGAME": "baseball_kbo",
+            "KXMLSGAME": "soccer_usa_mls",
+            "KXEPLGAME": "soccer_epl",
+            "KXLALIGAGAME": "soccer_spain_la_liga",
+            "KXUCLGAME": "soccer_uefa_champs_league",
+            "KXBUNDESLIGAGAME": "soccer_germany_bundesliga",
         }
 
         all_odds = {}
@@ -893,12 +1077,24 @@ class SportsTraderStrategy:
                 if ticker in self._traded_tickers:
                     continue  # permanent block — sports games are one-time events
 
+                # Observation-only sports (data collection without live trading).
+                # Added to sport_map so the observer records them, but live
+                # trading strategies must explicitly promote a sport before
+                # entering trades on it.
+                if self.OBSERVATION_ONLY_SPORTS:
+                    obs_sport = next(
+                        (s[:3] for s in SPORT_GAME_TOKENS if s in ticker),
+                        None,
+                    )
+                    if obs_sport and obs_sport in self.OBSERVATION_ONLY_SPORTS:
+                        continue
+
                 # Sport-blocklist (legacy — superseded by ALLOWED_CELLS
                 # when that's set). Reject tickers for sports where this
                 # strategy has no edge in either region (e.g. NHL midshot).
                 if self.SPORT_BLOCKLIST and self.ALLOWED_CELLS is None:
                     sport_code = next(
-                        (s for s in ("NBAGAME", "MLBGAME", "NHLGAME") if s in ticker),
+                        (s for s in SPORT_GAME_TOKENS if s in ticker),
                         None,
                     )
                     short = sport_code[:3] if sport_code else None
@@ -911,7 +1107,7 @@ class SportsTraderStrategy:
                 # skip. Auto-resumes when sport returns to regular season.
                 if self.PLAYOFF_BLOCKLIST:
                     pb_sport = next(
-                        (s[:3] for s in ("NBAGAME", "MLBGAME", "NHLGAME") if s in ticker),
+                        (s[:3] for s in SPORT_GAME_TOKENS if s in ticker),
                         None,
                     )
                     if pb_sport and pb_sport in self.PLAYOFF_BLOCKLIST:
@@ -941,6 +1137,15 @@ class SportsTraderStrategy:
 
                 consensus = self._consensus_probability(matched_game)
                 if not consensus:
+                    continue
+                # Coverage gate: thin consensus (e.g., 2-3 books) is noisier
+                # than its numeric value implies. Skip when below the
+                # subclass-set minimum. None = legacy behaviour (no gate).
+                if self.MIN_N_BOOKS is not None and consensus.get("n_books", 0) < self.MIN_N_BOOKS:
+                    logger.debug(
+                        f"[{self.STRATEGY_NAME}] {ticker}: n_books="
+                        f"{consensus.get('n_books', 0)} < MIN_N_BOOKS={self.MIN_N_BOOKS}, skip"
+                    )
                     continue
                 pinnacle = self._pinnacle_probability(matched_game)
 
@@ -1015,7 +1220,7 @@ class SportsTraderStrategy:
                 # +14% — two cells need different regions).
                 if self.ALLOWED_CELLS is not None:
                     sport_code = next(
-                        (s[:3] for s in ("NBAGAME", "MLBGAME", "NHLGAME") if s in ticker),
+                        (s[:3] for s in SPORT_GAME_TOKENS if s in ticker),
                         None,
                     )
                     mts = _commence_time_to_minutes(matched_game.get("commence_time"))

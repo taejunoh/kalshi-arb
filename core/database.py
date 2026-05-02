@@ -98,6 +98,33 @@ class Database:
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_time ON odds_observations(timestamp)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_ticker_time ON odds_observations(kalshi_ticker, timestamp)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_sport_phase ON odds_observations(sport, phase)")
+            # 3-way market support (soccer): TIE leg gets is_yes_draw=1 with
+            # is_yes_home=0; pinnacle_yes_prob stores draw_prob for those rows.
+            # 2-way sports (baseball/basketball/hockey) leave is_yes_draw NULL.
+            await self._add_column_if_missing(conn, "odds_observations", "is_yes_draw", "INTEGER")
+            # Bookmaker coverage signal — same eu_yes_prob means very different
+            # things at n_books=2 (NHL afternoon games, MLS minor) vs n_books=23
+            # (EPL, UCL). NPB always ~9 books (Pinnacle covers Asian baseball
+            # but other sharps don't). has_pinnacle flag distinguishes "Pinnacle
+            # absent for this game" from "leg-detection failed".
+            await self._add_column_if_missing(conn, "odds_observations", "n_books_eu", "INTEGER")
+            await self._add_column_if_missing(conn, "odds_observations", "n_books_us", "INTEGER")
+            await self._add_column_if_missing(conn, "odds_observations", "has_pinnacle", "INTEGER")
+            # Kalshi liquidity / activity (free from market response — no extra
+            # API calls). Lets analyses filter by depth/activity post-hoc.
+            # Note: Kalshi only exposes YES-side top-of-book sizing; NO-side
+            # depth is the inverted complement (NO ask price = 1 - YES bid,
+            # sits at yes_bid_size). The kalshi_no_*_size columns stay NULL
+            # for now — kept in schema so future server-side NO sizing won't
+            # need a migration.
+            await self._add_column_if_missing(conn, "odds_observations", "kalshi_yes_bid", "REAL")
+            await self._add_column_if_missing(conn, "odds_observations", "kalshi_no_bid", "REAL")
+            await self._add_column_if_missing(conn, "odds_observations", "kalshi_yes_bid_size", "REAL")
+            await self._add_column_if_missing(conn, "odds_observations", "kalshi_yes_ask_size", "REAL")
+            await self._add_column_if_missing(conn, "odds_observations", "kalshi_no_bid_size", "REAL")
+            await self._add_column_if_missing(conn, "odds_observations", "kalshi_no_ask_size", "REAL")
+            await self._add_column_if_missing(conn, "odds_observations", "kalshi_volume_24h", "REAL")
+            await self._add_column_if_missing(conn, "odds_observations", "kalshi_open_interest", "REAL")
             await self._add_column_if_missing(conn, "clv_snapshots", "us_consensus_prob", "REAL")
             await self._add_column_if_missing(conn, "trades", "realized_fill_price", "REAL")
             await self._add_column_if_missing(conn, "clv_snapshots", "eu_consensus_prob", "REAL")
@@ -434,25 +461,50 @@ class Database:
         eu_yes_prob: Optional[float],
         pinnacle_yes_prob: Optional[float],
         pinnacle_age_s: Optional[int],
+        is_yes_draw: Optional[bool] = None,
+        n_books_eu: Optional[int] = None,
+        n_books_us: Optional[int] = None,
+        has_pinnacle: Optional[bool] = None,
+        kalshi_yes_bid: Optional[float] = None,
+        kalshi_no_bid: Optional[float] = None,
+        kalshi_yes_bid_size: Optional[float] = None,
+        kalshi_yes_ask_size: Optional[float] = None,
+        kalshi_no_bid_size: Optional[float] = None,
+        kalshi_no_ask_size: Optional[float] = None,
+        kalshi_volume_24h: Optional[float] = None,
+        kalshi_open_interest: Optional[float] = None,
     ):
         now = datetime.now(timezone.utc).isoformat()
         playoff = is_playoff(kalshi_ticker, now)
         playoff_int = None if playoff is None else (1 if playoff else 0)
         is_yes_home_int = None if is_yes_home is None else (1 if is_yes_home else 0)
+        is_yes_draw_int = None if is_yes_draw is None else (1 if is_yes_draw else 0)
+        has_pinnacle_int = None if has_pinnacle is None else (1 if has_pinnacle else 0)
         async with aiosqlite.connect(self.db_path) as conn:
             await conn.execute(
                 """INSERT INTO odds_observations
                    (timestamp, kalshi_ticker, series, sport, phase, minutes_to_start,
-                    home_team, away_team, yes_sub_title, is_yes_home,
+                    home_team, away_team, yes_sub_title, is_yes_home, is_yes_draw,
                     kalshi_yes_ask, kalshi_no_ask,
                     us_yes_prob, eu_yes_prob, pinnacle_yes_prob, pinnacle_age_s,
-                    is_playoff)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    is_playoff,
+                    n_books_eu, n_books_us, has_pinnacle,
+                    kalshi_yes_bid, kalshi_no_bid,
+                    kalshi_yes_bid_size, kalshi_yes_ask_size,
+                    kalshi_no_bid_size, kalshi_no_ask_size,
+                    kalshi_volume_24h, kalshi_open_interest)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (now, kalshi_ticker, series, sport, phase, minutes_to_start,
-                 home_team, away_team, yes_sub_title, is_yes_home_int,
+                 home_team, away_team, yes_sub_title, is_yes_home_int, is_yes_draw_int,
                  kalshi_yes_ask, kalshi_no_ask,
                  us_yes_prob, eu_yes_prob, pinnacle_yes_prob, pinnacle_age_s,
-                 playoff_int),
+                 playoff_int,
+                 n_books_eu, n_books_us, has_pinnacle_int,
+                 kalshi_yes_bid, kalshi_no_bid,
+                 kalshi_yes_bid_size, kalshi_yes_ask_size,
+                 kalshi_no_bid_size, kalshi_no_ask_size,
+                 kalshi_volume_24h, kalshi_open_interest),
             )
             await conn.commit()
 

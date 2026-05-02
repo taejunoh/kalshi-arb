@@ -42,8 +42,9 @@ def _make_observer(db, yes_ask="0.42", no_ask="0.59", yes_sub_title="Los Angeles
 
 def _patch_helpers(obs, commence_time="2099-01-01T00:00:00Z",
                    us_home=0.55, eu_home=0.52, pin_home=0.54, age_s=90,
-                   home="Los Angeles Lakers", away="Boston Celtics"):
-    """Stub _fetch_odds and _dual_region_consensus — avoid real network."""
+                   home="Los Angeles Lakers", away="Boston Celtics",
+                   draw_home=None, draw_eu=None, draw_pin=None):
+    """Stub _fetch_odds and _dual_region_consensus_dicts — avoid real network."""
     matched = {
         "id": "g1", "home_team": home, "away_team": away,
         "commence_time": commence_time, "bookmakers": [],
@@ -52,11 +53,21 @@ def _patch_helpers(obs, commence_time="2099-01-01T00:00:00Z",
     async def _fake_fetch(sport_key):
         return [matched]
 
-    async def _fake_dual(sport_key, game):
-        return us_home, eu_home, pin_home, age_s
+    def _build_dict(home_p, draw_p):
+        d = {"home_team": home, "away_team": away,
+             "home_prob": home_p, "away_prob": 1.0 - home_p - (draw_p or 0)}
+        if draw_p is not None:
+            d["draw_prob"] = draw_p
+        return d
+
+    async def _fake_dual_dicts(sport_key, game):
+        return (_build_dict(us_home, draw_home),
+                _build_dict(eu_home, draw_eu),
+                _build_dict(pin_home, draw_pin),
+                age_s)
 
     obs._fetch_odds = _fake_fetch
-    obs._dual_region_consensus = _fake_dual
+    obs._dual_region_consensus_dicts = _fake_dual_dicts
     obs._match_kalshi_to_odds = MagicMock(return_value=matched)
 
 
