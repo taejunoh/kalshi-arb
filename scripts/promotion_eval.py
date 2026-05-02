@@ -164,7 +164,14 @@ def _load_entries(conn: sqlite3.Connection, sport: str, window_days: int) -> lis
 
 
 def _load_quality_stats(conn: sqlite3.Connection, sport: str, window_days: int) -> dict:
-    """Health stats — n_books p50, Pinnacle %, OI median, leg balance."""
+    """Health stats — n_books p50, Pinnacle %, OI median, leg balance.
+
+    OI median uses ENTRY-WINDOW rows only (T-1h to T-24h pre-game). Why:
+    Kalshi seeds OI as games approach — far-future rows have OI ~$0-10
+    which is irrelevant to "would we have liquidity at the point we'd
+    enter?" Without this filter, MLS/EPL OI median collapses from $1k+
+    to <$10 as the far-future long-tail dominates.
+    """
     cursor = conn.execute(
         f"""
         SELECT n_books_eu, has_pinnacle, kalshi_open_interest,
@@ -183,12 +190,18 @@ def _load_quality_stats(conn: sqlite3.Connection, sport: str, window_days: int) 
     # Pinnacle % only for T-12h pre-game (where Pinnacle is reliably present)
     pin_pre12h = [r[1] for r in rows if r[5] is not None and 0 < r[5] <= 720]
     pin_pct = (sum(pin_pre12h) / len(pin_pre12h) * 100) if pin_pre12h else 0
-    oi_vals = [r[2] for r in rows if r[2] is not None]
+    # OI median only for entry-window rows (T-1h to T-24h pre-game)
+    entry_rows = [
+        r for r in rows
+        if r[5] is not None and PRE_WINDOW_MIN_MINS <= r[5] <= PRE_WINDOW_MAX_MINS
+    ]
+    oi_vals = [r[2] for r in entry_rows if r[2] is not None]
     home_legs = sum(1 for r in rows if r[3] == 1)
     away_legs = sum(1 for r in rows if r[3] == 0 and r[4] != 1)
     tie_legs = sum(1 for r in rows if r[4] == 1)
     return {
         "n_rows": len(rows),
+        "n_rows_entry_window": len(entry_rows),
         "n_books_p10": _percentile(n_books, 0.10),
         "n_books_p50": _percentile(n_books, 0.50),
         "pin_pct_pre12h": pin_pct,
