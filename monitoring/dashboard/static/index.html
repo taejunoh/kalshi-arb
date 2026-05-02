@@ -538,6 +538,111 @@
       display: none;
     }
 
+    /* ── Sparkline (per-strategy equity curve) ── */
+    .sparkline {
+      display: block;
+      width: 100%;
+      height: 32px;
+      margin-top: 10px;
+    }
+    .sparkline path.area    { fill-opacity: 0.18; stroke: none; }
+    .sparkline path.line    { fill: none; stroke-width: 1.5; }
+    .sparkline .axis        { stroke: var(--text-dim); stroke-width: 0.5; stroke-dasharray: 2,2; opacity: 0.4; }
+    .sparkline.positive path.line { stroke: var(--green); }
+    .sparkline.positive path.area { fill: var(--green); }
+    .sparkline.negative path.line { stroke: var(--red); }
+    .sparkline.negative path.area { fill: var(--red); }
+    .sparkline.flat path.line     { stroke: var(--text-dim); }
+    .sparkline.flat path.area     { fill: var(--text-dim); }
+
+    /* ── Range buttons (table toolbar) ── */
+    .range-group {
+      display: inline-flex;
+      gap: 1px;
+      padding: 2px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .range-group button {
+      background: transparent;
+      color: var(--text-dim);
+      border: none;
+      padding: 4px 10px;
+      border-radius: 3px;
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+    }
+    .range-group button.active {
+      background: var(--accent);
+      color: #fff;
+    }
+    .range-group button:hover:not(.active) {
+      color: var(--text);
+    }
+
+    /* ── Sortable table headers ── */
+    th.sortable {
+      cursor: pointer;
+      user-select: none;
+    }
+    th.sortable:hover { color: var(--text); }
+    th.sortable .sort-arrow {
+      display: inline-block;
+      width: 8px;
+      margin-left: 3px;
+      color: var(--accent);
+      font-size: 9px;
+    }
+
+    /* ── Regime card ── */
+    .regime-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 14px;
+    }
+    .regime-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+    .regime-card .sport-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+    .regime-card .phase-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      padding: 2px 0;
+      color: var(--text);
+    }
+    .regime-card .phase-row .key { color: var(--text-dim); }
+    .regime-card .playoff-flag {
+      display: inline-block;
+      font-size: 9px;
+      padding: 1px 5px;
+      margin-left: 4px;
+      border-radius: 3px;
+      background: rgba(245, 158, 11, 0.15);
+      color: #f59e0b;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      letter-spacing: 0.06em;
+      font-weight: 700;
+    }
+
+    /* ── Edge column ── */
+    td .edge-pos { color: var(--green); font-weight: 600; }
+    td .edge-neg { color: var(--red);   font-weight: 600; }
+    td .edge-stale { opacity: 0.45; }
+
     /* ── Responsive ── */
     @media (max-width: 640px) {
       header { padding: 12px 16px; gap: 16px; }
@@ -599,6 +704,17 @@
   </header>
 
   <main>
+
+    <!-- ── Regime / scanner state ── -->
+    <section id="regime-section">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div class="section-title" style="margin-bottom:0">Regime — last 60 min</div>
+        <span style="color:var(--text-dim);font-size:11px;" id="regime-asof">—</span>
+      </div>
+      <div class="regime-grid" id="regime-grid">
+        <div class="regime-card" style="color:var(--text-dim);font-size:12px;">Loading…</div>
+      </div>
+    </section>
 
     <!-- ── Performance Cards (Live) ── -->
     <section id="perf-live-section">
@@ -669,13 +785,46 @@
               <tr>
                 <th>Market</th>
                 <th>Position</th>
+                <th>Entry</th>
+                <th>Now</th>
+                <th>Edge Now</th>
                 <th>Exposure</th>
                 <th>Fees</th>
                 <th>Realized PnL</th>
               </tr>
             </thead>
             <tbody id="positions-body">
-              <tr class="empty-row"><td colspan="5">Loading positions…</td></tr>
+              <tr class="empty-row"><td colspan="8">Loading positions…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Observer high-edge signals ── -->
+    <section id="observer-section">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div class="section-title" style="margin-bottom:0">Observer high-edge signals — last 60 min</div>
+        <span style="color:var(--text-dim);font-size:11px;">Pinnacle vs Kalshi YES gap ≥ 5¢. Selection-bias monitor.</span>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll" style="max-height:280px;">
+          <table id="observer-table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Sport</th>
+                <th>Phase</th>
+                <th>Ticker</th>
+                <th>MTS</th>
+                <th>Kalshi YES</th>
+                <th>Pin YES</th>
+                <th>Edge</th>
+                <th>Fired?</th>
+              </tr>
+            </thead>
+            <tbody id="observer-body">
+              <tr class="empty-row"><td colspan="9">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -697,20 +846,27 @@
           <select id="strategy-filter">
             <option value="">All</option>
           </select>
+          <label>Range</label>
+          <div class="range-group" id="range-group">
+            <button type="button" data-range="1d">1d</button>
+            <button type="button" data-range="7d" class="active">7d</button>
+            <button type="button" data-range="30d">30d</button>
+            <button type="button" data-range="all">All</button>
+          </div>
         </div>
         <div class="table-scroll">
           <table id="trades-table">
             <thead>
               <tr>
-                <th>Timestamp</th>
-                <th>Mode</th>
-                <th>Strategy</th>
+                <th class="sortable" data-sort="timestamp">Timestamp <span class="sort-arrow">↓</span></th>
+                <th class="sortable" data-sort="mode">Mode</th>
+                <th class="sortable" data-sort="strategy">Strategy</th>
                 <th>Market</th>
                 <th>Direction</th>
-                <th>Price</th>
-                <th>Size</th>
-                <th>Fee</th>
-                <th>PnL</th>
+                <th class="sortable" data-sort="price">Price</th>
+                <th class="sortable" data-sort="size">Size</th>
+                <th class="sortable" data-sort="fee">Fee</th>
+                <th class="sortable" data-sort="pnl">PnL</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -1084,7 +1240,7 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
     else if (v4Strats.has(strat)) versionBadge = '<span class="version-badge v4">V4</span>';
 
     return `
-      <div class="${cardCls}"${titleAttr}>
+      <div class="${cardCls}" data-strat="${strat}"${titleAttr}>
         <div class="strategy-header">
           <div class="strategy-badges">
             ${sportsBadge}${versionBadge}${playoffOnlyBadge}
@@ -1181,17 +1337,65 @@ function renderPerfCards() {
 
 async function refreshPerf() {
   try {
-    const [perfData, stratStatus] = await Promise.all([
+    const [perfData, stratStatus, equity] = await Promise.all([
       apiFetch('/api/performance'),
       apiFetch('/api/strategy-status').catch(() => ({})),
+      apiFetch('/api/equity-curve?days=30').catch(() => ({})),
     ]);
     perfCache = perfData;
     stratStatusCache = stratStatus;
+    equityCache = equity;
     renderPerfCards();
+    renderSparklines();
   } catch (e) {
     document.getElementById('perf-grid').innerHTML =
       `<div class="perf-card" style="color:var(--red);font-size:12px;">Failed to load: ${e.message}</div>`;
   }
+}
+
+// ─────────────────────────────────────────────
+//  Equity-curve sparklines (per perf card)
+// ─────────────────────────────────────────────
+//  Drawn after perf cards render — finds each card by data-strat attribute
+//  and injects an inline SVG. Zero dependencies.
+let equityCache = {};
+
+function buildSparklineSVG(series) {
+  if (!series || series.length < 2) return '';
+  const w = 200, h = 32, pad = 1;
+  const xs = series.map((_, i) => i);
+  const ys = series.map(d => d.cum_pnl);
+  const minY = Math.min(0, ...ys);
+  const maxY = Math.max(0, ...ys);
+  const span = maxY - minY || 1;
+  const sx = i => pad + (i / Math.max(1, series.length - 1)) * (w - pad * 2);
+  const sy = v => h - pad - ((v - minY) / span) * (h - pad * 2);
+  const last = ys[ys.length - 1];
+  const cls = last > 0.01 ? 'positive' : last < -0.01 ? 'negative' : 'flat';
+  const linePts = series.map((d, i) => `${sx(i).toFixed(1)},${sy(d.cum_pnl).toFixed(1)}`).join(' ');
+  const zeroY = sy(0).toFixed(1);
+  const areaPts = `${sx(0).toFixed(1)},${zeroY} ${linePts} ${sx(series.length - 1).toFixed(1)},${zeroY}`;
+  return `
+    <svg class="sparkline ${cls}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"
+         aria-label="Cumulative PnL last 30d">
+      <line class="axis" x1="0" y1="${zeroY}" x2="${w}" y2="${zeroY}" />
+      <polygon class="area" points="${areaPts}" />
+      <polyline class="line" points="${linePts}" />
+    </svg>`;
+}
+
+function renderSparklines() {
+  document.querySelectorAll('.perf-card[data-strat]').forEach(card => {
+    const strat = card.dataset.strat;
+    const series = equityCache[strat];
+    let host = card.querySelector('.sparkline-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'sparkline-host';
+      card.appendChild(host);
+    }
+    host.innerHTML = series && series.length >= 2 ? buildSparklineSVG(series) : '';
+  });
 }
 
 // ─────────────────────────────────────────────
@@ -1248,12 +1452,65 @@ function modeBadge(status) {
     : '<span class="badge badge-gray">PAPER</span>';
 }
 
+// Range / sort state — affect trade-history rendering only.
+let tradeRange = '7d';        // '1d' | '7d' | '30d' | 'all'
+let tradeSort  = 'timestamp'; // column key
+let tradeSortDir = 'desc';    // 'asc' | 'desc'
+
+function rangeCutoffMs(range) {
+  const now = Date.now();
+  if (range === '1d')  return now - 24 * 3600 * 1000;
+  if (range === '7d')  return now - 7  * 24 * 3600 * 1000;
+  if (range === '30d') return now - 30 * 24 * 3600 * 1000;
+  return 0; // 'all'
+}
+
 function renderTrades() {
   const stratFilter = document.getElementById('strategy-filter').value;
   const modeFilter = document.getElementById('mode-filter').value;
+  const cutoff = rangeCutoffMs(tradeRange);
   let rows = allTrades;
   if (stratFilter) rows = rows.filter(t => t.strategy === stratFilter);
   if (modeFilter) rows = rows.filter(t => getTradeMode(t.status) === modeFilter);
+  if (cutoff > 0) {
+    rows = rows.filter(t => {
+      const ts = t.timestamp ? new Date(t.timestamp).getTime() : 0;
+      return ts >= cutoff;
+    });
+  }
+  // Apply sort. 'mode' is derived from status.
+  const dir = tradeSortDir === 'asc' ? 1 : -1;
+  rows = [...rows].sort((a, b) => {
+    let va, vb;
+    if (tradeSort === 'timestamp') {
+      va = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      vb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    } else if (tradeSort === 'mode') {
+      va = getTradeMode(a.status); vb = getTradeMode(b.status);
+    } else if (['price', 'size', 'fee', 'pnl'].includes(tradeSort)) {
+      va = parseFloat(a[tradeSort]) || 0;
+      vb = parseFloat(b[tradeSort]) || 0;
+    } else {
+      va = a[tradeSort] || ''; vb = b[tradeSort] || '';
+    }
+    if (va < vb) return -1 * dir;
+    if (va > vb) return  1 * dir;
+    return 0;
+  });
+
+  // Refresh sort arrows
+  document.querySelectorAll('#trades-table th.sortable').forEach(th => {
+    const arrow = th.querySelector('.sort-arrow');
+    if (!arrow) return;
+    if (th.dataset.sort === tradeSort) {
+      arrow.textContent = tradeSortDir === 'asc' ? '↑' : '↓';
+      arrow.style.opacity = 1;
+    } else {
+      arrow.textContent = '';
+      arrow.style.opacity = 0;
+    }
+  });
+
   const tbody = document.getElementById('trades-body');
 
   if (rows.length === 0) {
@@ -1311,16 +1568,16 @@ async function refreshOrders() {
 }
 
 // ─────────────────────────────────────────────
-//  Live Positions
+//  Live Positions (with current edge from observer)
 // ─────────────────────────────────────────────
 async function refreshPositions() {
   try {
-    const data = await apiFetch('/api/live');
+    const data = await apiFetch('/api/positions-edge');
     const tbody = document.getElementById('positions-body');
-    const positions = (data.positions || []).filter(p => parseFloat(p.position_fp || 0) !== 0);
+    const positions = (data || []).filter(p => parseFloat(p.position_fp || 0) !== 0);
 
     if (!positions || positions.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No live positions.</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No live positions.</td></tr>';
       return;
     }
 
@@ -1335,10 +1592,21 @@ async function refreshPositions() {
       const sideBadge = pos > 0
         ? '<span class="badge badge-green">YES</span>'
         : '<span class="badge badge-red">NO</span>';
+      // Edge = pinnacle_yes_prob - kalshi_yes_ask (already side-adjusted server-side)
+      const edge = p.edge_now;
+      const edgeStr = edge == null ? '—' :
+        ((edge >= 0 ? '+' : '') + (edge * 100).toFixed(1) + '¢');
+      const edgeCls = edge == null ? '' : (edge > 0 ? 'edge-pos' : 'edge-neg');
+      const stale = p.obs_age_s != null && p.obs_age_s > 600 ? 'edge-stale' : '';
+      const entry = p.entry_price == null ? '—' : (parseFloat(p.entry_price) * 100).toFixed(1) + '¢';
+      const cur = p.current_ask == null ? '—' : (parseFloat(p.current_ask) * 100).toFixed(1) + '¢';
       return `
         <tr>
           <td class="td-mono" title="${p.ticker || ''}">${shortMarket(p.ticker)}</td>
           <td>${sideBadge} ${qty}x</td>
+          <td class="td-mono">${entry}</td>
+          <td class="td-mono">${cur}</td>
+          <td class="td-mono"><span class="${edgeCls} ${stale}">${edgeStr}</span></td>
           <td class="td-mono">${fmtMoney(exposure)}</td>
           <td class="td-mono">${fmtMoney(fees)}</td>
           <td class="td-mono ${rpnlCls}">${fmtMoney(rpnl)}</td>
@@ -1346,7 +1614,82 @@ async function refreshPositions() {
     }).join('');
   } catch (e) {
     document.getElementById('positions-body').innerHTML =
-      `<tr class="empty-row"><td colspan="5">Error: ${e.message}</td></tr>`;
+      `<tr class="empty-row"><td colspan="8">Error: ${e.message}</td></tr>`;
+  }
+}
+
+// ─────────────────────────────────────────────
+//  Regime — last 60 min sport phase / playoff state
+// ─────────────────────────────────────────────
+async function refreshRegime() {
+  try {
+    const data = await apiFetch('/api/regime');
+    const grid = document.getElementById('regime-grid');
+    const sports = data.sports || [];
+    document.getElementById('regime-asof').textContent =
+      sports.length ? `${sports.reduce((a, s) => a + s.tickers, 0)} tickers active` : '';
+    if (!sports.length) {
+      grid.innerHTML = '<div class="regime-card" style="color:var(--text-dim);font-size:12px;">No active markets in last 60 min.</div>';
+      return;
+    }
+    grid.innerHTML = sports.map(s => {
+      const phaseRows = Object.entries(s.phases)
+        .sort()
+        .map(([phase, n]) =>
+          `<div class="phase-row"><span class="key">${phase}</span><span>${n}</span></div>`)
+        .join('');
+      const flag = s.playoff
+        ? '<span class="playoff-flag">PLAYOFF</span>'
+        : '';
+      return `
+        <div class="regime-card">
+          <div class="sport-name">${s.sport}${flag}</div>
+          <div class="phase-row" style="border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:4px;">
+            <span class="key">total tickers</span><span style="font-weight:600;">${s.tickers}</span>
+          </div>
+          ${phaseRows}
+        </div>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('regime-grid').innerHTML =
+      `<div class="regime-card" style="color:var(--red);font-size:12px;">Failed: ${e.message}</div>`;
+  }
+}
+
+// ─────────────────────────────────────────────
+//  Observer high-edge signals
+// ─────────────────────────────────────────────
+async function refreshObserverSignals() {
+  try {
+    const data = await apiFetch('/api/observer-signals?limit=20&min_edge=0.05&minutes=60');
+    const tbody = document.getElementById('observer-body');
+    if (!data || data.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No high-edge signals in last 60 min.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(r => {
+      const edgeC = r.edge >= 0 ? 'edge-pos' : 'edge-neg';
+      const edgeStr = (r.edge >= 0 ? '+' : '') + (r.edge * 100).toFixed(1) + '¢';
+      const fired = r.fired
+        ? '<span class="badge badge-green">FIRED</span>'
+        : '<span class="badge badge-gray">SKIPPED</span>';
+      const mts = r.minutes_to_start == null ? '—' : `${Math.round(r.minutes_to_start)}m`;
+      return `
+        <tr>
+          <td class="td-mono">${fmtTs(r.timestamp)}</td>
+          <td><span class="badge badge-blue">${r.sport || '—'}</span></td>
+          <td>${r.phase || '—'}</td>
+          <td class="td-mono" title="${r.kalshi_ticker}">${shortMarket(r.kalshi_ticker)}</td>
+          <td class="td-mono">${mts}</td>
+          <td class="td-mono">${(r.kalshi_yes_ask * 100).toFixed(1)}¢</td>
+          <td class="td-mono">${(r.pinnacle_yes_prob * 100).toFixed(1)}¢</td>
+          <td class="td-mono"><span class="${edgeC}">${edgeStr}</span></td>
+          <td>${fired}</td>
+        </tr>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('observer-body').innerHTML =
+      `<tr class="empty-row"><td colspan="9">Error: ${e.message}</td></tr>`;
   }
 }
 
@@ -1464,6 +1807,7 @@ function applyViewMode(mode) {
   document.getElementById('perf-archived-section').style.display = showPaper ? '' : 'none';
   document.getElementById('settlement-history-section').style.display = showLive ? '' : 'none';
   document.getElementById('positions-section').style.display     = showLive  ? '' : 'none';
+  // Regime + observer signals are scanner-state, relevant in any mode — keep them visible.
 
   // Auto-filter the trade history dropdown to match.
   const modeFilter = document.getElementById('mode-filter');
@@ -1484,6 +1828,30 @@ applyViewMode(viewMode);
 document.getElementById('strategy-filter').addEventListener('change', renderTrades);
 document.getElementById('mode-filter').addEventListener('change', renderTrades);
 
+// Range buttons (trade history)
+document.querySelectorAll('#range-group button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    tradeRange = btn.dataset.range;
+    document.querySelectorAll('#range-group button').forEach(b =>
+      b.classList.toggle('active', b === btn));
+    renderTrades();
+  });
+});
+
+// Sortable column headers — toggle direction on same col, reset to desc on new
+document.querySelectorAll('#trades-table th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.sort;
+    if (tradeSort === col) {
+      tradeSortDir = tradeSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      tradeSort = col;
+      tradeSortDir = 'desc';
+    }
+    renderTrades();
+  });
+});
+
 async function fullRefresh() {
   await Promise.allSettled([
     refreshStatus(),
@@ -1492,6 +1860,8 @@ async function fullRefresh() {
     refreshTrades(),
     refreshOrders(),
     refreshPositions(),
+    refreshRegime(),
+    refreshObserverSignals(),
   ]);
 }
 

@@ -807,6 +807,226 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             }
         return summary
 
+    @app.get("/api/equity-curve")
+    async def get_equity_curve(days: int = Query(30, ge=1, le=180)):
+        """Daily cumulative PnL per strategy over the last `days`.
+        Settled trades only (paper_settled or settled). Bucket by entry-day
+        UTC — close enough for a sparkline; matches the daily-bucket lens
+        the rest of the dashboard already uses."""
+        import aiosqlite
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        async with aiosqlite.connect(database.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute(
+                """SELECT strategy,
+                          SUBSTR(timestamp, 1, 10) AS day,
+                          SUM(pnl) AS daily_pnl
+                   FROM trades
+                   WHERE status IN ('paper_settled', 'settled')
+                     AND timestamp >= ?
+                   GROUP BY strategy, day
+                   ORDER BY strategy, day""",
+                (cutoff,),
+            )
+            rows = await cursor.fetchall()
+        out: dict[str, list] = {}
+        cum: dict[str, float] = {}
+        for r in rows:
+            strat = r["strategy"]
+            cum[strat] = cum.get(strat, 0.0) + float(r["daily_pnl"] or 0)
+            out.setdefault(strat, []).append({
+                "day": r["day"],
+                "pnl": round(float(r["daily_pnl"] or 0), 2),
+                "cum_pnl": round(cum[strat], 2),
+            })
+        return out
+
+    @app.get("/api/positions-edge")
+    async def get_positions_edge():
+        """Live Kalshi positions augmented with most-recent observer edge.
+        Joins on ticker via the latest odds_observations row — gives the
+        user a "is this trade still +EV right now?" view without leaving
+        the dashboard. Edge = pinnacle_yes_prob - kalshi_yes_ask (signed,
+        YES-side); flips sign for NO positions in the frontend."""
+        if not kalshi_client:
+            return []
+        import asyncio, aiosqlite
+        loop = asyncio.get_event_loop()
+        try:
+            positions = await loop.run_in_executor(None, kalshi_client.get_positions)
+        except Exception:
+            positions = []
+        live_pos = [p for p in positions if float(p.get("position_fp", 0) or 0) != 0]
+        if not live_pos:
+            return []
+        tickers = list({p.get("ticker", "") for p in live_pos if p.get("ticker")})
+        if not tickers:
+            return live_pos
+        # Latest observer row per ticker (within last 30 min — older than that
+        # is stale enough we'd rather show null than mislead)
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+        latest: dict[str, dict] = {}
+        async with aiosqlite.connect(database.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            placeholders = ",".join("?" * len(tickers))
+            cursor = await conn.execute(
+                f"""SELECT o.kalshi_ticker, o.kalshi_yes_ask, o.kalshi_no_ask,
+                          o.us_yes_prob, o.eu_yes_prob, o.pinnacle_yes_prob,
+                          o.timestamp, o.minutes_to_start, o.phase
+                   FROM odds_observations o
+                   INNER JOIN (
+                       SELECT kalshi_ticker, MAX(timestamp) AS mx
+                       FROM odds_observations
+                       WHERE kalshi_ticker IN ({placeholders})
+                         AND timestamp >= ?
+                       GROUP BY kalshi_ticker
+                   ) m ON o.kalshi_ticker = m.kalshi_ticker
+                      AND o.timestamp = m.mx""",
+                (*tickers, cutoff),
+            )
+            for r in await cursor.fetchall():
+                latest[r["kalshi_ticker"]] = dict(r)
+        # Also pull entry trade for context (most recent live-side trade per
+        # ticker — might mismatch positions sourced from earlier sessions, but
+        # good enough for an "entry @ X" hint).
+        entry_by_ticker: dict[str, dict] = {}
+        async with aiosqlite.connect(database.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            placeholders = ",".join("?" * len(tickers))
+            cursor = await conn.execute(
+                f"""SELECT market_id, strategy, price, direction, timestamp
+                   FROM trades
+                   WHERE market_id IN ({placeholders})
+                     AND status NOT LIKE 'paper%'
+                   ORDER BY timestamp DESC""",
+                tickers,
+            )
+            for r in await cursor.fetchall():
+                if r["market_id"] not in entry_by_ticker:
+                    entry_by_ticker[r["market_id"]] = dict(r)
+        out = []
+        for p in live_pos:
+            t = p.get("ticker", "")
+            obs = latest.get(t)
+            entry = entry_by_ticker.get(t)
+            pos_fp = float(p.get("position_fp", 0) or 0)
+            side = "YES" if pos_fp > 0 else "NO"
+            edge = None
+            cur_ask = None
+            if obs:
+                pin = obs.get("pinnacle_yes_prob")
+                yes_ask = obs.get("kalshi_yes_ask")
+                no_ask = obs.get("kalshi_no_ask")
+                if pin is not None:
+                    if side == "YES" and yes_ask is not None:
+                        edge = round(float(pin) - float(yes_ask), 4)
+                        cur_ask = float(yes_ask)
+                    elif side == "NO" and no_ask is not None:
+                        edge = round((1.0 - float(pin)) - float(no_ask), 4)
+                        cur_ask = float(no_ask)
+            out.append({
+                **p,
+                "side": side,
+                "entry_price": entry.get("price") if entry else None,
+                "entry_strategy": entry.get("strategy") if entry else None,
+                "entry_ts": entry.get("timestamp") if entry else None,
+                "current_ask": cur_ask,
+                "edge_now": edge,
+                "obs_age_s": (
+                    int((datetime.now(timezone.utc)
+                        - datetime.fromisoformat(obs["timestamp"].replace("Z", "+00:00"))
+                        ).total_seconds())
+                    if obs else None
+                ),
+            })
+        return out
+
+    @app.get("/api/observer-signals")
+    async def get_observer_signals(
+        limit: int = Query(20, ge=1, le=100),
+        min_edge: float = Query(0.05, ge=0.0, le=1.0),
+        minutes: int = Query(60, ge=5, le=1440),
+    ):
+        """Recent observer-side signals with high pinnacle edge that may or
+        may not have fired (selection-bias monitor — see memory `Observer
+        replay before gate changes`). Returns rows where the absolute
+        difference between pinnacle YES prob and Kalshi YES ask exceeds
+        `min_edge`. Joined to trades to flag whether we actually entered
+        within ±10min on the same ticker."""
+        import aiosqlite
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+        async with aiosqlite.connect(database.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute(
+                """SELECT timestamp, kalshi_ticker, sport, phase,
+                          minutes_to_start,
+                          kalshi_yes_ask, kalshi_no_ask,
+                          us_yes_prob, eu_yes_prob, pinnacle_yes_prob,
+                          pinnacle_age_s
+                   FROM odds_observations
+                   WHERE timestamp >= ?
+                     AND pinnacle_yes_prob IS NOT NULL
+                     AND kalshi_yes_ask IS NOT NULL
+                     AND ABS(pinnacle_yes_prob - kalshi_yes_ask) >= ?
+                   ORDER BY ABS(pinnacle_yes_prob - kalshi_yes_ask) DESC
+                   LIMIT ?""",
+                (cutoff, min_edge, limit),
+            )
+            rows = [dict(r) for r in await cursor.fetchall()]
+            # Annotate "fired" — any trade on same ticker within ±10 min.
+            fired = set()
+            for r in rows:
+                t_iso = r["timestamp"]
+                cur = await conn.execute(
+                    """SELECT 1 FROM trades
+                       WHERE market_id = ?
+                         AND ABS(strftime('%s', timestamp) - strftime('%s', ?)) <= 600
+                       LIMIT 1""",
+                    (r["kalshi_ticker"], t_iso),
+                )
+                if await cur.fetchone():
+                    fired.add((r["timestamp"], r["kalshi_ticker"]))
+        for r in rows:
+            r["edge"] = round(float(r["pinnacle_yes_prob"]) - float(r["kalshi_yes_ask"]), 4)
+            r["fired"] = (r["timestamp"], r["kalshi_ticker"]) in fired
+        return rows
+
+    @app.get("/api/regime")
+    async def get_regime():
+        """Current trading-universe state — sport phase mix, playoff flag,
+        ticker count last hour. Sourced from odds_observations (1-min cadence,
+        all open sports markets, gate-independent), so this reflects what the
+        scanner *sees*, not what fired."""
+        import aiosqlite
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
+        async with aiosqlite.connect(database.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute(
+                """SELECT sport,
+                          phase,
+                          MAX(is_playoff) AS any_playoff,
+                          COUNT(DISTINCT kalshi_ticker) AS tickers
+                   FROM odds_observations
+                   WHERE timestamp >= ?
+                   GROUP BY sport, phase
+                   ORDER BY sport, phase""",
+                (cutoff,),
+            )
+            rows = [dict(r) for r in await cursor.fetchall()]
+        # Aggregate per sport
+        by_sport: dict[str, dict] = {}
+        for r in rows:
+            sp = r["sport"] or "?"
+            d = by_sport.setdefault(sp, {"sport": sp, "phases": {}, "tickers": 0,
+                                         "playoff": False})
+            d["phases"][r["phase"] or "?"] = int(r["tickers"])
+            d["tickers"] += int(r["tickers"])
+            if r["any_playoff"]:
+                d["playoff"] = True
+        return {"sports": list(by_sport.values()),
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "window_minutes": 60}
+
     @app.get("/api/odds-usage")
     async def get_odds_usage():
         # Read from the shared module-level cache: every sports_* subclass
