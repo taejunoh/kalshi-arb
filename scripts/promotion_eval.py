@@ -192,26 +192,65 @@ def _load_quality_stats(conn: sqlite3.Connection, sport: str, window_days: int) 
 
 
 def _load_live_baselines(conn: sqlite3.Connection, window_days: int) -> dict:
-    """Per-strategy realized ROI on currently-live sports. Used as decision context."""
-    out = {}
+    """Per-strategy realized ROI categorized by current liveness status.
+
+    Returns three groups:
+      live_now: strategy is in config.LIVE_STRATEGIES env right now → only
+        status='settled' (real-money) trades count. This is the comparison
+        baseline for new-sport promotion decisions.
+      demoted: strategy is NOT in LIVE_STRATEGIES env but has 'settled' trades
+        in the window — i.e. was demoted to paper recently. Shown as historical
+        context; do NOT use for go/no-go on new sports.
+      paper_only: strategy never live in window — only paper_* statuses.
+    """
+    try:
+        from core.config import Config
+        live_set = set(Config().LIVE_STRATEGIES) if Config else set()
+    except Exception:
+        live_set = set()
+
     cursor = conn.execute(
         f"""
-        SELECT strategy, COUNT(*) AS n,
+        SELECT strategy, status, COUNT(*) AS n,
                SUM(pnl) AS total_pnl,
                SUM(price * 100) AS total_size_proxy
         FROM trades
         WHERE timestamp >= datetime('now', '-{int(window_days)} days')
           AND status IN ('filled', 'settled', 'paper_filled', 'paper_settled')
           AND strategy IS NOT NULL
-        GROUP BY strategy
-        HAVING n >= 5
+        GROUP BY strategy, status
         """
     )
+    by_strat = defaultdict(lambda: {"live_n": 0, "live_pnl": 0.0, "live_size": 0.0,
+                                      "paper_n": 0, "paper_pnl": 0.0, "paper_size": 0.0})
     for r in cursor.fetchall():
-        strat, n, pnl, size_proxy = r
-        if size_proxy and size_proxy > 0:
-            out[strat] = {"n": n, "roi": pnl / size_proxy}
-    return out
+        strat, status, n, pnl, size_proxy = r
+        if size_proxy is None or size_proxy <= 0:
+            continue
+        if status in ("settled", "filled"):
+            by_strat[strat]["live_n"] += n
+            by_strat[strat]["live_pnl"] += pnl or 0
+            by_strat[strat]["live_size"] += size_proxy
+        else:  # paper_*
+            by_strat[strat]["paper_n"] += n
+            by_strat[strat]["paper_pnl"] += pnl or 0
+            by_strat[strat]["paper_size"] += size_proxy
+
+    live_now, demoted, paper_only = {}, {}, {}
+    for strat, d in by_strat.items():
+        live_roi = d["live_pnl"] / d["live_size"] if d["live_size"] > 0 else None
+        paper_roi = d["paper_pnl"] / d["paper_size"] if d["paper_size"] > 0 else None
+        if strat in live_set:
+            if d["live_n"] >= 5:
+                live_now[strat] = {"n": d["live_n"], "roi": live_roi}
+        elif d["live_n"] >= 5:
+            # Was live in window, no longer in env
+            demoted[strat] = {"n_live_historical": d["live_n"], "roi_live_historical": live_roi,
+                              "n_paper": d["paper_n"], "roi_paper": paper_roi}
+        elif d["paper_n"] >= 5:
+            paper_only[strat] = {"n": d["paper_n"], "roi": paper_roi}
+    return {"live_now": live_now, "demoted": demoted, "paper_only": paper_only,
+            "live_strategies_env": sorted(live_set)}
 
 
 def _load_clv(conn: sqlite3.Connection, sport: str, window_days: int) -> dict:
@@ -378,12 +417,39 @@ def _section_summary(results: dict, baselines: dict) -> list[str]:
         if d.get("best_strategy") and d.get("best_roi") is not None:
             line += f" (best: {d['best_strategy']} +{d['best_roi']:.1%})"
         lines.append(line)
-    if baselines:
+
+    # Currently-live baselines — the comparison bar for promotion decisions
+    live_now = baselines.get("live_now", {})
+    if live_now:
         lines.append("")
-        lines.append("<i>Live baseline (last 7d, all sports):</i>")
-        for strat in sorted(baselines):
-            b = baselines[strat]
-            lines.append(f"  {strat}: n={b['n']}, ROI {b['roi']:+.1%}")
+        lines.append("<b>📊 LIVE baseline (currently in LIVE_STRATEGIES env, settled-only)</b>")
+        for strat in sorted(live_now):
+            b = live_now[strat]
+            roi_str = f"{b['roi']:+.1%}" if b["roi"] is not None else "n/a"
+            lines.append(f"  {strat}: n={b['n']}, ROI {roi_str}")
+
+    demoted = baselines.get("demoted", {})
+    if demoted:
+        lines.append("")
+        lines.append("<i>⚠️ Demoted strategies (NOT live anymore — historical context only):</i>")
+        for strat in sorted(demoted):
+            b = demoted[strat]
+            live_roi_str = f"{b['roi_live_historical']:+.1%}" if b["roi_live_historical"] is not None else "n/a"
+            paper_roi_str = f"{b['roi_paper']:+.1%}" if b["roi_paper"] is not None else "n/a"
+            lines.append(
+                f"  {strat}: live_hist n={b['n_live_historical']} ROI {live_roi_str} | "
+                f"paper n={b['n_paper']} ROI {paper_roi_str}"
+            )
+
+    paper_only = baselines.get("paper_only", {})
+    if paper_only:
+        lines.append("")
+        lines.append("<i>📝 Paper-only strategies (last 7d):</i>")
+        for strat in sorted(paper_only):
+            b = paper_only[strat]
+            roi_str = f"{b['roi']:+.1%}" if b["roi"] is not None else "n/a"
+            lines.append(f"  {strat}: n={b['n']}, ROI {roi_str}")
+
     return lines
 
 
