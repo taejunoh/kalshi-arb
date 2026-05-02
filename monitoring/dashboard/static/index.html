@@ -501,6 +501,43 @@
       color: var(--text);
     }
 
+    /* ── View-mode toggle (header) ── */
+    .view-toggle {
+      display: inline-flex;
+      gap: 2px;
+      padding: 3px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .view-toggle button {
+      background: transparent;
+      color: var(--text-dim);
+      border: none;
+      padding: 5px 14px;
+      border-radius: 4px;
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      transition: all 0.15s;
+    }
+    .view-toggle button.active {
+      background: var(--accent);
+      color: #fff;
+    }
+    .view-toggle button:hover:not(.active) {
+      color: var(--text);
+      background: rgba(255,255,255,0.03);
+    }
+    /* Hide stats that don't belong to the active view mode */
+    body[data-view-mode="live"] .stat.paper-only,
+    body[data-view-mode="paper"] .stat.live-only {
+      display: none;
+    }
+
     /* ── Responsive ── */
     @media (max-width: 640px) {
       header { padding: 12px 16px; gap: 16px; }
@@ -516,28 +553,33 @@
   <!-- ── Header / Status Bar ── -->
   <header>
     <div class="brand">⬡ Arb Bot</div>
+    <div class="view-toggle" role="tablist" aria-label="View mode">
+      <button type="button" data-view="all"   class="active">All</button>
+      <button type="button" data-view="live">Live</button>
+      <button type="button" data-view="paper">Paper</button>
+    </div>
     <div class="status-items">
-      <div class="stat">
+      <div class="stat live-only">
         <span class="stat-label">Live Balance</span>
         <span class="stat-value neutral" id="s-live-balance">—</span>
       </div>
-      <div class="stat">
+      <div class="stat live-only">
         <span class="stat-label">Live Positions</span>
         <span class="stat-value neutral" id="s-live-positions">—</span>
       </div>
-      <div class="stat">
+      <div class="stat live-only">
         <span class="stat-label">Live Fees Paid</span>
         <span class="stat-value negative" id="s-live-fees">—</span>
       </div>
-      <div class="stat">
+      <div class="stat live-only">
         <span class="stat-label">Live Exposure</span>
         <span class="stat-value neutral" id="s-live-exposure">—</span>
       </div>
-      <div class="stat">
+      <div class="stat live-only">
         <span class="stat-label">Live PnL</span>
         <span class="stat-value neutral" id="s-live-pnl">—</span>
       </div>
-      <div class="stat">
+      <div class="stat paper-only">
         <span class="stat-label">Paper PnL</span>
         <span class="stat-value neutral" id="s-paper-pnl">—</span>
       </div>
@@ -1394,6 +1436,47 @@ async function refreshSettlementHistory() {
       `<div class="perf-card" style="color:var(--red);font-size:12px;">Failed: ${e.message}</div>`;
   }
 }
+
+// ─────────────────────────────────────────────
+//  View-mode toggle (All / Live / Paper)
+// ─────────────────────────────────────────────
+//  Persists across reloads via localStorage. When set to 'live' or 'paper',
+//  hides the perf section, header stats, and trade-history rows that belong
+//  to the other side. 'all' restores the original layout.
+const VIEW_MODE_KEY = 'arb_dashboard_view_mode';
+let viewMode = localStorage.getItem(VIEW_MODE_KEY) || 'all';
+
+function applyViewMode(mode) {
+  viewMode = mode;
+  localStorage.setItem(VIEW_MODE_KEY, mode);
+  document.body.dataset.viewMode = mode;
+
+  // Toggle button highlighting
+  document.querySelectorAll('.view-toggle button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === mode);
+  });
+
+  // Section visibility — settlement history & live positions are Kalshi-only.
+  const showLive  = (mode === 'all' || mode === 'live');
+  const showPaper = (mode === 'all' || mode === 'paper');
+  document.getElementById('perf-live-section').style.display     = showLive  ? '' : 'none';
+  document.getElementById('perf-section').style.display          = showPaper ? '' : 'none';
+  document.getElementById('perf-archived-section').style.display = showPaper ? '' : 'none';
+  document.getElementById('settlement-history-section').style.display = showLive ? '' : 'none';
+  document.getElementById('positions-section').style.display     = showLive  ? '' : 'none';
+
+  // Auto-filter the trade history dropdown to match.
+  const modeFilter = document.getElementById('mode-filter');
+  if (mode === 'live')       modeFilter.value = 'live';
+  else if (mode === 'paper') modeFilter.value = 'paper';
+  else                       modeFilter.value = '';
+  renderTrades();
+}
+
+document.querySelectorAll('.view-toggle button').forEach(btn => {
+  btn.addEventListener('click', () => applyViewMode(btn.dataset.view));
+});
+applyViewMode(viewMode);
 
 // ─────────────────────────────────────────────
 //  Initialise & schedule
