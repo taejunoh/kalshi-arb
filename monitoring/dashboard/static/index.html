@@ -216,6 +216,16 @@
       color: #f59e0b;
       border: 1px solid rgba(245, 158, 11, 0.35);
     }
+    .status-badge.sleeping {
+      background: rgba(139, 92, 246, 0.15);
+      color: #a78bfa;
+      border: 1px solid rgba(139, 92, 246, 0.35);
+    }
+    .status-badge.muted {
+      background: rgba(120, 130, 145, 0.15);
+      color: #94a3b8;
+      border: 1px solid rgba(120, 130, 145, 0.35);
+    }
     .info-icon {
       position: relative;
       display: inline-flex;
@@ -720,8 +730,20 @@
     <section id="perf-live-section">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
         <div class="section-title" style="margin-bottom:0">Strategy Performance (Live)</div>
+        <span style="color:var(--text-dim);font-size:11px;">Currently in LIVE_STRATEGIES env, placing real-money trades</span>
       </div>
       <div class="perf-grid" id="perf-live-grid">
+        <div class="perf-card" style="color:var(--text-dim);font-size:12px;">Loading…</div>
+      </div>
+    </section>
+
+    <!-- ── Performance Cards (Demoted) ── -->
+    <section id="perf-demoted-section">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div class="section-title" style="margin-bottom:0">Strategy Performance (Demoted)</div>
+        <span style="color:var(--text-dim);font-size:11px;">Removed from LIVE_STRATEGIES env or scan loop — historical live trades shown, no new live entries</span>
+      </div>
+      <div class="perf-grid" id="perf-demoted-grid">
         <div class="perf-card" style="color:var(--text-dim);font-size:12px;">Loading…</div>
       </div>
     </section>
@@ -1090,7 +1112,10 @@ let perfCache = {};
 let stratStatusCache = {};
 const perfMode = 'paper';
 
-function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
+function renderPerfCardsByMode(mode, gridId, opts = {}) {
+  // opts: { archivedOnly: bool, demotedOnly: bool }
+  const archivedOnly = !!opts.archivedOnly;
+  const demotedOnly = !!opts.demotedOnly;
   const grid = document.getElementById(gridId);
   const strategies = Object.keys(perfCache);
   if (strategies.length === 0) {
@@ -1101,25 +1126,33 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
   const modeKey = mode.toLowerCase();  // 'paper' | 'live'
   const isArchived = (strat) =>
     !!(stratStatusCache[strat] || {}).archived || !!(perfCache[strat] || {}).archived;
-  // Show a strategy in this mode's section if it has activity in that bucket
-  // OR if the strategy is currently configured in this mode. This ensures
-  // legacy Live positions (e.g., econ_trader disabled but still has Kalshi
-  // positions) show up in the Live section even when not in LIVE_STRATEGIES.
+  const isDemotedStrat = (strat) =>
+    !!(stratStatusCache[strat] || {}).demoted;
+
+  // Routing rules:
+  //   demotedOnly=true → only demoted strategies (with live-trade history)
+  //   archivedOnly=true → only retired/archived
+  //   default → live or paper, EXCLUDING demoted (they go to dedicated section)
+  //             EXCLUDING archived (separate section)
   const filtered = strategies.filter(strat => {
+    if (demotedOnly) {
+      // Show in demoted section if marked demoted AND has live trades to show
+      const liveData = (perfCache[strat] || {}).live || {};
+      return isDemotedStrat(strat) && (liveData.trade_count || 0) > 0;
+    }
     if (archivedOnly !== isArchived(strat)) return false;
+    if (!archivedOnly && isDemotedStrat(strat)) return false;  // demoted has its own section
     const data = (perfCache[strat] || {})[modeKey] || {};
     const hasActivity = (data.trade_count || 0) > 0;
     const stratMode = (stratStatusCache[strat] || {}).mode || 'PAPER';
     return hasActivity || stratMode === mode;
   });
 
-  // Sort: TRULY-LIVE first, DEMOTED (mode=PAPER appearing in LIVE), DISABLED last.
-  // Within each tier keep insertion order (stable sort).
+  // Sort: TRULY-LIVE first, then DISABLED last. Within each tier keep insertion order.
   const tierOf = (s) => {
     const st = stratStatusCache[s] || {};
     if (st.active === false) return 2; // disabled
-    if (mode === 'LIVE' && (st.mode || 'PAPER') === 'PAPER') return 1; // demoted
-    return 0; // active matching mode
+    return 0; // active
   };
   filtered.sort((a, b) => tierOf(a) - tierOf(b));
 
@@ -1142,14 +1175,16 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
 
     const status = stratStatusCache[strat] || {};
     const isActive = status.active !== false;  // default true if undefined (backward compat)
-    const statusCls = isActive ? 'active' : 'disabled';
-    const statusLabel = isActive ? 'ACTIVE' : 'DISABLED';
-    const cardCls = isActive ? 'perf-card' : 'perf-card disabled';
-    // Demoted: appearing in the LIVE section but the strategy's actual mode
-    // is PAPER (i.e., removed from LIVE_STRATEGIES env). Card stays visible
-    // because of historical settled trades / open positions; the badge tells
-    // the user no NEW live entries will be taken.
-    const isDemoted = mode === 'LIVE' && (status.mode || 'PAPER') === 'PAPER';
+    // Demoted: removed from LIVE_STRATEGIES env (or loop) — no new live entries.
+    // ACTIVE badge is suppressed for demoted cards because they're not actually
+    // placing trades; the DEMOTED badge alone communicates the state.
+    const isDemoted = !!status.demoted;
+    // Sleeping: in LIVE_STRATEGIES env but firing rate effectively zero due to
+    // tight gate stack (e.g. v4_edge). Active but not productive.
+    const isSleeping = !!status.sleeping;
+    const statusCls = !isActive ? 'disabled' : (isDemoted || isSleeping ? 'muted' : 'active');
+    const statusLabel = !isActive ? 'DISABLED' : (isDemoted ? '' : (isSleeping ? '' : 'ACTIVE'));
+    const cardCls = !isActive ? 'perf-card disabled' : (isDemoted || isSleeping ? 'perf-card' : 'perf-card');
 
     // Entry-price gate — render a compact label when set (sports only)
     const gate = status.price_gate;
@@ -1244,7 +1279,7 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
         <div class="strategy-header">
           <div class="strategy-badges">
             ${sportsBadge}${versionBadge}${playoffOnlyBadge}
-            <span class="status-badge ${statusCls}">${statusLabel}</span>${isDemoted ? '<span class="status-badge demoted" title="Demoted to paper — historical live trades shown; no new live entries">DEMOTED</span>' : ''}${infoIcon}
+            ${statusLabel ? `<span class="status-badge ${statusCls}">${statusLabel}</span>` : ''}${isDemoted ? `<span class="status-badge demoted" title="${(status.demotion_detail || 'Demoted — no new live entries').replace(/"/g, '&quot;')}">DEMOTED</span>` : ''}${isSleeping ? `<span class="status-badge sleeping" title="${(status.sleeping_detail || 'Sleeping — gate stack blocks most signals').replace(/"/g, '&quot;')}">SLEEPING</span>` : ''}${infoIcon}
           </div>
           <div class="strategy-name">${displayName}</div>
         </div>
@@ -1331,8 +1366,9 @@ function renderPerfCardsByMode(mode, gridId, archivedOnly = false) {
 
 function renderPerfCards() {
   renderPerfCardsByMode('LIVE', 'perf-live-grid');
+  renderPerfCardsByMode('LIVE', 'perf-demoted-grid', { demotedOnly: true });
   renderPerfCardsByMode('PAPER', 'perf-grid');
-  renderPerfCardsByMode('PAPER', 'perf-archived-grid', true);
+  renderPerfCardsByMode('PAPER', 'perf-archived-grid', { archivedOnly: true });
 }
 
 async function refreshPerf() {
@@ -1803,6 +1839,7 @@ function applyViewMode(mode) {
   const showLive  = (mode === 'all' || mode === 'live');
   const showPaper = (mode === 'all' || mode === 'paper');
   document.getElementById('perf-live-section').style.display     = showLive  ? '' : 'none';
+  document.getElementById('perf-demoted-section').style.display  = showLive  ? '' : 'none';
   document.getElementById('perf-section').style.display          = showPaper ? '' : 'none';
   document.getElementById('perf-archived-section').style.display = showPaper ? '' : 'none';
   document.getElementById('settlement-history-section').style.display = showLive ? '' : 'none';

@@ -567,6 +567,37 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "+19.7% 와 거의 동률. 추가 mechanism (cap) 정당화 안 됨, 단순 v31 유지가 "
                 "더 깔끔. v32 underdog (+27.1%) 가 동일 슬롯에서 명백히 우월하므로 거기 집중.",
         }
+        # Demotion details for strategies that are NOT retired but have been
+        # removed from LIVE_STRATEGIES env (still in main.py loop, paper-only).
+        # Used for the DEMOTED badge tooltip on the dashboard so users know
+        # why the strategy stopped trading live.
+        demotion_detail = {
+            "sports_longshot_v35":
+                "Demoted to paper 2026-04-28: NBA pre us underdog 패턴 -25% ROI. "
+                "현재 NBA PLAYOFF_BLOCKLIST 에도 걸려서 paper 도 0건 (4/30 이후). "
+                "NBA 정규시즌 복귀 (~2026-10) 까지 휴면.",
+            "sports_midshot_v35":
+                "Demoted to paper 2026-04-30: -89% ROI n=51, NBA pre us 모든 변종이 "
+                "playoff 에서 손실. 같은 4/28 longshot_v35 demote 패턴. "
+                "NBA 정규시즌 복귀까지 휴면.",
+            "sports_underdog_v35":
+                "Demoted to paper 2026-04-30: NBA pre us 패턴 손실. "
+                "ALLOWED_CELLS=(NBA, pre) + PLAYOFF_BLOCKLIST cascade 로 paper 도 정지. "
+                "NBA 정규시즌 복귀까지 휴면.",
+            "econ_trader":
+                "Demoted historical: CPI/GDP/FED 계열 전략 비활성화 (loop 에서 제거). "
+                "기존 settled trades 만 DB 에 남음, 신규 entry 없음.",
+        }
+        # Sleeping live strategies — in LIVE_STRATEGIES env but firing rate
+        # very low due to gate stack. Not demoted, but shouldn't be treated as
+        # active baseline for new-sport comparison decisions.
+        sleeping_detail = {
+            "sports_v4_edge":
+                "Sleeping despite LIVE: 게이트가 너무 빡세서 주 1-2회만 fire. "
+                "(a) ALLOWED_CELLS=5 cells (b) MIN_SIDE_PROB=0.50 (c) CELL_PRICE_BANDS "
+                "narrowing (4/26) (d) NBA playoff cascade. 4/30 20:50 잠시 demote 됐다 "
+                "20:57 복귀 (7분 window). 7d ROI -3.2% n=18 — 작은 sample 이라 noise 처리.",
+        }
         # Per-strategy gate config (entry-price + game phase + region +
         # sport blocklist). Read class-level attributes so frontend renders
         # what's actually in effect without drift risk.
@@ -720,8 +751,26 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             else:
                 reason = f"{flag_attr}=false"
                 reason_detail = retirement_detail.get(s, f"Disabled via env flag {flag_attr}=false.")
+            # Demoted classification: not retired, but no longer producing
+            # new live entries. Two paths:
+            #   (a) mode=PAPER + in main.py loop (e.g. v35 trio — removed
+            #       from LIVE_STRATEGIES env, still scans paper)
+            #   (b) mentions_trader special case — in env (mode=LIVE) but
+            #       removed from main.py loop via silent-drift bug; behaves
+            #       same as demoted from a UX perspective (no new entries)
+            #   Plus econ_trader: removed from loop entirely with historical
+            #   live trades — reuse demoted bucket so users see the context.
+            is_demoted = s not in archived_set and (
+                (mode == "PAPER" and in_loop and s != "shutdown_fade")
+                or s in {"mentions_trader", "econ_trader"}
+            )
+            sleeping_msg = sleeping_detail.get(s)
             result[s] = {"mode": mode, "active": active, "reason": reason,
                          "reason_detail": reason_detail, "archived": s in archived_set,
+                         "demoted": is_demoted,
+                         "demotion_detail": demotion_detail.get(s) if is_demoted else None,
+                         "sleeping": sleeping_msg is not None,
+                         "sleeping_detail": sleeping_msg,
                          "price_gate": price_gates.get(s),
                          "phase_gate": phase_gates.get(s),
                          "region": regions.get(s),
