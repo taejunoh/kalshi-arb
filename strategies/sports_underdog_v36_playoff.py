@@ -46,10 +46,13 @@ class SportsUnderdogV36PlayoffStrategy(SportsUnderdogV31Strategy):
     SPORT_BLOCKLIST = frozenset()
     # Override v31's PLAYOFF_BLOCKLIST — v36 IS the playoff strategy.
     PLAYOFF_BLOCKLIST = frozenset()
-    # Live-promoted 2026-04-30 ahead of n>=25 paper gate (user accepted small
-    # sample risk on observer +135% / trades +153%). Base 8 / depth $10 — same
-    # tier as v35 trio. Smaller than v31 base 20 (limited live track record).
-    MIN_DEPTH_USDC = 10.0
+    # Live-promoted 2026-04-30. Sizing 8→16 (2x) on 2026-05-02: NBA playoff
+    # window finite (~3-4 weeks left) and live n=6 / 67% WR / 57% ROI is
+    # consistent with the playoff-mispricing thesis. Aggressive bump to capture
+    # more of the time-limited opportunity; if next n=15 checkpoint shows
+    # post-change ROI < 50% of pre-change, revert. Depth 10→15 keeps cushion at
+    # top of underdog price range (16 × $0.50 = $8 stake, $15 = 1.88x).
+    MIN_DEPTH_USDC = 15.0
 
     def _get_trade_size(self, signal: dict) -> float:
-        return min(8.0, self._order_manager.bankroll * 0.02)
+        return min(16.0, self._order_manager.bankroll * 0.02)
