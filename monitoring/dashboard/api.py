@@ -996,7 +996,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         """Current trading-universe state — sport phase mix, playoff flag,
         ticker count last hour. Sourced from odds_observations (1-min cadence,
         all open sports markets, gate-independent), so this reflects what the
-        scanner *sees*, not what fired."""
+        scanner *sees*, not what fired.
+
+        INDEXED BY idx_obs_time forces the optimizer to range-scan the
+        timestamp index first (3-4k rows in the last hour) instead of
+        scanning the entire idx_obs_sport_phase B-tree — without the hint
+        SQLite picked the wrong index and the query took ~10s."""
         import aiosqlite
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
         async with aiosqlite.connect(database.db_path) as conn:
@@ -1006,7 +1011,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                           phase,
                           MAX(is_playoff) AS any_playoff,
                           COUNT(DISTINCT kalshi_ticker) AS tickers
-                   FROM odds_observations
+                   FROM odds_observations INDEXED BY idx_obs_time
                    WHERE timestamp >= ?
                    GROUP BY sport, phase
                    ORDER BY sport, phase""",
