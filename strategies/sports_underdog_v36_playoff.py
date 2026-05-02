@@ -36,7 +36,11 @@ class SportsUnderdogV36PlayoffStrategy(SportsUnderdogV31Strategy):
     REGION_OVERRIDE = "eu"  # observer eu and us nearly identical (+135% vs +134%)
     ALLOWED_CELLS = frozenset({("NBA", "pre")})
     PLAYOFF_ONLY = True
-    MIN_ENTRY_PRICE = 0.35
+    # Floor 0.35 → 0.30 (2026-05-01). Re-analysis with grown observer sample
+    # showed 30-35¢ band (originally n=8 +5.5% ROI break-even) now n=12 +118%
+    # eu / +98% us — was alpha, not break-even. Trades data agrees: n=7 +280%
+    # eu / +279% us at game level. Both regions confirm 30¢ as the right floor.
+    MIN_ENTRY_PRICE = 0.30
     # Override v31's PRE_GAME_ONLY/SPORT_BLOCKLIST since ALLOWED_CELLS subsumes.
     PRE_GAME_ONLY = False
     SPORT_BLOCKLIST = frozenset()

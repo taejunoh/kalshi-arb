@@ -31,7 +31,11 @@ class SportsUnderdogV36USStrategy(SportsUnderdogV31Strategy):
     REGION_OVERRIDE = "us"
     ALLOWED_CELLS = frozenset({("NBA", "pre")})
     PLAYOFF_ONLY = True
-    MIN_ENTRY_PRICE = 0.35
+    # Floor 0.35 → 0.30 (2026-05-01). Re-analysis with grown observer sample
+    # showed 30-35¢ band now strongly positive (+98% us, +118% eu). Trades
+    # data agrees: n=7 +279% us. Symmetric with v36_playoff (eu) — both regions
+    # confirm 30¢ as the right floor; 35¢ left $200+ alpha on the table.
+    MIN_ENTRY_PRICE = 0.30
     # Override v31-inherited gates.
     PRE_GAME_ONLY = False
     SPORT_BLOCKLIST = frozenset()
