@@ -545,15 +545,15 @@
       height: 32px;
       margin-top: 10px;
     }
-    .sparkline path.area    { fill-opacity: 0.18; stroke: none; }
-    .sparkline path.line    { fill: none; stroke-width: 1.5; }
-    .sparkline .axis        { stroke: var(--text-dim); stroke-width: 0.5; stroke-dasharray: 2,2; opacity: 0.4; }
-    .sparkline.positive path.line { stroke: var(--green); }
-    .sparkline.positive path.area { fill: var(--green); }
-    .sparkline.negative path.line { stroke: var(--red); }
-    .sparkline.negative path.area { fill: var(--red); }
-    .sparkline.flat path.line     { stroke: var(--text-dim); }
-    .sparkline.flat path.area     { fill: var(--text-dim); }
+    .sparkline .area    { fill-opacity: 0.18; stroke: none; }
+    .sparkline .line    { fill: none; stroke-width: 1.5; }
+    .sparkline .axis    { stroke: var(--text-dim); stroke-width: 0.5; stroke-dasharray: 2,2; opacity: 0.4; }
+    .sparkline.positive .line { stroke: var(--green); }
+    .sparkline.positive .area { fill: var(--green); }
+    .sparkline.negative .line { stroke: var(--red); }
+    .sparkline.negative .area { fill: var(--red); }
+    .sparkline.flat .line     { stroke: var(--text-dim); }
+    .sparkline.flat .area     { fill: var(--text-dim); }
 
     /* ── Range buttons (table toolbar) ── */
     .range-group {
