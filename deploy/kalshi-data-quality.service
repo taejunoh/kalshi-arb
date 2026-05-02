@@ -1,0 +1,21 @@
+[Unit]
+Description=Kalshi sports observer data quality monitor (one-shot)
+After=network.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/daily_data_quality.py
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+# Exit code 2 = degradation alerts present (Telegram already sent). Treat as
+# success at the systemd level so the timer doesn't enter failure state.
+SuccessExitStatus=0 2
+
+# Security (same pattern as kalshi-bot.service)
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs

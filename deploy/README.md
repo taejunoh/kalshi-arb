@@ -70,6 +70,27 @@ sudo systemctl start kalshi-ticker-backfill.service
 journalctl -u kalshi-ticker-backfill.service -n 50
 ```
 
+## 5c. Install daily data quality monitor (optional)
+
+Runs daily at 10:45 UTC (30 min after settlement backfill) to report per-sport
+observer health: row counts, n_books p10/p50, Pinnacle %, Kalshi OI median,
+soccer 3-way leg balance. Sends Telegram if any sport degrades >25% vs 7-day
+baseline. Exit code 2 = alerts present (timer treats as success — alert is
+delivered out-of-band via Telegram).
+
+```bash
+sudo cp deploy/kalshi-data-quality.service /etc/systemd/system/
+sudo cp deploy/kalshi-data-quality.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now kalshi-data-quality.timer
+
+# Verify next fire time
+systemctl list-timers kalshi-data-quality.timer
+
+# Manual run (dry-run = print report locally, no Telegram)
+cd /home/ubuntu/kalshi-arb && venv/bin/python scripts/daily_data_quality.py --dry-run
+```
+
 ## 6. Common Commands
 
 ```bash
