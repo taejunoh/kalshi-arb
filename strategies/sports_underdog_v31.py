@@ -37,7 +37,6 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     PLAYOFF_BLOCKLIST = frozenset({"NBA"})
 
     def _get_trade_size(self, signal: dict) -> float:
-        # Raised 4→20 on 2026-04-25. Underdog v31 LIVE near break-even (n=153,
-        # ROI -2.5%) and v32 paper +143% over 7d window justify capital scale-up
-        # on this base only. Other underdog variants (v34/v35) still on 4.
-        return min(20.0, self._order_manager.bankroll * 0.02)
+        # Raised 20→25 on 2026-05-02 (1.25x). Live n=224, ROI 17.6% on $1,526
+        # volume — solid but lower $/$ return than midshot, hence smaller bump.
+        return min(25.0, self._order_manager.bankroll * 0.02)

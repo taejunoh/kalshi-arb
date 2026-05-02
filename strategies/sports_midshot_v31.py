@@ -34,7 +34,7 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     PLAYOFF_BLOCKLIST = frozenset({"NBA"})
 
     def _get_trade_size(self, signal: dict) -> float:
-        # Raised 4→16 on 2026-04-25. SOLO_PAPER post-promo ROI +384% (n=19)
-        # vs LIVE TWIN −5% — strongest size-raise case in v31 trio. v34/v35
-        # midshot use their own overrides (no inheritance leak).
-        return min(16.0, self._order_manager.bankroll * 0.02)
+        # Raised 16→24 on 2026-05-02 (1.5x). Live n=193, ROI 25.8% on $832
+        # volume — best capital efficiency in the v31 trio. Bigger relative
+        # bump than underdog (1.25x) because $/$ return is 1.47x higher.
+        return min(24.0, self._order_manager.bankroll * 0.02)
