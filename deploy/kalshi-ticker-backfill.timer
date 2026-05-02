@@ -3,11 +3,12 @@ Description=Daily Kalshi ticker settlement backfill
 Requires=kalshi-ticker-backfill.service
 
 [Timer]
-# Fire once a day at 10:15 UTC (06:15 ET). 10:00 UTC aligns with the
-# dashboard's "Today" cutoff (06:00 ET) — by 10:15 most overnight
-# NBA/NHL playoff games and late MLB games have finalized on Kalshi.
-# :15 instead of :00 to avoid the minute everyone defaults to.
-OnCalendar=*-*-* 10:15:00 UTC
+# Fire 4x/day at 00:15, 06:15, 12:15, 18:15 UTC. 2026-05-02: stepped up from
+# 1x daily to keep settlement lag ≤ 6h, enabling end-of-week promotion-eval
+# decisions on newly-added sports (NPB/KBO/EPL/LAL/BUN/MLS/UCL) where
+# day-7 ROI estimates need same-day game settlements. :15 instead of :00
+# to avoid the minute everyone defaults to.
+OnCalendar=*-*-* 00,06,12,18:15:00 UTC
 # Run on next boot if the last scheduled run was missed (e.g., host down).
 Persistent=true
 # Small random delay so repeated AWS instances don't hammer Kalshi at once.

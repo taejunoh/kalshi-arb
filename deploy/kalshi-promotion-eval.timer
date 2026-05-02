@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily Kalshi sport promotion eligibility evaluation
+Requires=kalshi-promotion-eval.service
+
+[Timer]
+# Fire daily at 10:50 UTC — 5 min after data quality monitor and after the
+# 10:15 UTC settlement backfill. Reports per-sport PROMOTE/HOLD/KILL based
+# on observer + settlement data accumulated in the last 7 days.
+OnCalendar=*-*-* 10:50:00 UTC
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

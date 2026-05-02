@@ -91,6 +91,27 @@ systemctl list-timers kalshi-data-quality.timer
 cd /home/ubuntu/kalshi-arb && venv/bin/python scripts/daily_data_quality.py --dry-run
 ```
 
+## 5d. Install daily promotion eligibility evaluator (optional)
+
+Runs daily at 10:50 UTC (5 min after data quality monitor) to evaluate
+PROMOTE / HOLD / KILL recommendation per OBSERVATION_ONLY sport based on
+last 7 days of observer + settlement data. Sends Telegram report.
+
+Decision criteria: n_settled_games >= 25, top edge bucket ROI >= +3%,
+n_books_eu p50 >= 8, Kalshi OI median > $500. Pinnacle % is shown for
+context but NOT gated (live strategies use eu consensus, not Pinnacle).
+
+```bash
+sudo cp deploy/kalshi-promotion-eval.service /etc/systemd/system/
+sudo cp deploy/kalshi-promotion-eval.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now kalshi-promotion-eval.timer
+
+# Manual run options
+cd /home/ubuntu/kalshi-arb && venv/bin/python scripts/promotion_eval.py --dry-run
+venv/bin/python scripts/promotion_eval.py --sport EPL --window 7
+```
+
 ## 6. Common Commands
 
 ```bash
