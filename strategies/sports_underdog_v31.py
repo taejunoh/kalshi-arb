@@ -23,6 +23,12 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     #   ≥20¢:   ROI positive (+95% at 20-25¢, +46% at 30-35¢)
     # Largest sub-20¢ drain of any v31 variant (−$80). 20¢ simple floor.
     MIN_ENTRY_PRICE = 0.20
+    # Upper cliff at 0.40c (2026-05-03 reg-season analysis): n=62, ROI -25%
+    # spread across 23 games (top-1 drop still -14%). 0.39c=+11% n=43.
+    # 0.40c sits at payoff=2.0 fee-boundary — fee-adjusted edge ≈ 0, so
+    # base evaluate's payoff>=2.0 gate accepts trades with ~no real edge.
+    # Counterfactual: full v31 underdog ROI +3.3% → +14.4% with this cap.
+    MAX_ENTRY_PRICE = 0.39
     # Pre-game-only (2026-04-21). Phase split shows live-game v31 entries
     # systematically lose (-13% ROI live, paper+live n=176) while pre-game
     # wins (+20% ROI, n=116 — strongest sample among v31 trio).

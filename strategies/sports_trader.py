@@ -289,6 +289,12 @@ class SportsTraderStrategy:
     # v31 at sub-20¢: 0% win on 27/36 trades). Subclasses set to e.g. 0.20;
     # None = no filter.
     MIN_ENTRY_PRICE: Optional[float] = None
+    # Maximum entry price (0–1). Mirror of MIN_ENTRY_PRICE for the upper
+    # boundary. Used when the strategy's natural ceiling shows a cliff —
+    # underdog v31 at 0.40c hits payoff≈2.0 fee-boundary (n=62, -25% ROI
+    # vs +11% at 0.39c). Subclasses set to e.g. 0.39 to drop only the
+    # cliff cent. None = no filter.
+    MAX_ENTRY_PRICE: Optional[float] = None
     # Dead-zone gate (lo, hi): skip limit_price in [lo, hi). Used when the
     # dead zone has a lower bound above strategy's overall min price, e.g.
     # longshot_v31 and v4_edge show <10¢ winning but 10–20¢ zero-win.
@@ -1328,6 +1334,17 @@ class SportsTraderStrategy:
                     logger.debug(
                         f"[{self.STRATEGY_NAME}] {ticker}: limit_price "
                         f"{limit_price:.3f} < floor {self.MIN_ENTRY_PRICE:.2f}, skip"
+                    )
+                    continue
+
+                # Entry price ceiling. underdog_v31 at 0.40c hits the
+                # payoff≈2.0 fee-boundary cliff (-25% ROI n=62 vs +11% at
+                # 0.39c). Drop the cliff cent without touching the rest of
+                # the band.
+                if self.MAX_ENTRY_PRICE is not None and limit_price > self.MAX_ENTRY_PRICE:
+                    logger.debug(
+                        f"[{self.STRATEGY_NAME}] {ticker}: limit_price "
+                        f"{limit_price:.3f} > cap {self.MAX_ENTRY_PRICE:.2f}, skip"
                     )
                     continue
 
