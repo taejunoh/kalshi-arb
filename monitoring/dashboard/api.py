@@ -28,6 +28,17 @@ Top-of-book depth is what fires actual trades; NPB p50 $122 (100% pass),
 KBO p50 $90 (100% pass), BUN p50 $20 (51% pass). All collecting data
 for 5/9 promotion eval."""
 
+_DASHBOARD_TRACKED_SPORTS: tuple = (
+    "NBA", "MLB", "NHL",
+    "NPB", "KBO",
+    "MLS", "EPL", "LAL", "UCL", "BUN",
+)
+"""Sports the Regime card always shows — even with 0 obs in the last
+60 min — so users can see the sport is monitored but currently waiting
+on data (typical for KBO/NPB/UCL where Odds API publishes games only
+within ~24-48h of kickoff). Without this, regional sports between game
+days silently disappear from the dashboard and look like a bug."""
+
 
 def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None, sports_trader=None) -> FastAPI:
     app = FastAPI(title="Kalshi Arb Bot Dashboard")
@@ -1079,8 +1090,15 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 (cutoff, *_DASHBOARD_HIDDEN_SPORTS),
             )
             rows = [dict(r) for r in await cursor.fetchall()]
-        # Aggregate per sport
-        by_sport: dict[str, dict] = {}
+        # Aggregate per sport — seed with all tracked sports at 0 so
+        # leagues between game days (e.g. KBO when Odds API hasn't yet
+        # published the next-day fixtures) still appear on the card
+        # rather than silently disappearing.
+        by_sport: dict[str, dict] = {
+            sp: {"sport": sp, "phases": {}, "tickers": 0, "playoff": False}
+            for sp in _DASHBOARD_TRACKED_SPORTS
+            if sp not in _DASHBOARD_HIDDEN_SPORTS
+        }
         for r in rows:
             sp = r["sport"] or "?"
             d = by_sport.setdefault(sp, {"sport": sp, "phases": {}, "tickers": 0,
@@ -1089,7 +1107,13 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             d["tickers"] += int(r["tickers"])
             if r["any_playoff"]:
                 d["playoff"] = True
-        return {"sports": list(by_sport.values()),
+        # Sort: active (>0) first by ticker count desc, then idle (=0)
+        # alphabetically so the dashboard shows the busy leagues first.
+        sports_sorted = sorted(
+            by_sport.values(),
+            key=lambda s: (s["tickers"] == 0, -s["tickers"], s["sport"]),
+        )
+        return {"sports": sports_sorted,
                 "as_of": datetime.now(timezone.utc).isoformat(),
                 "window_minutes": 60}
 

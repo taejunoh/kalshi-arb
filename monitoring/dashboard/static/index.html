@@ -640,6 +640,18 @@
       color: var(--text);
     }
     .regime-card .phase-row .key { color: var(--text-dim); }
+    .regime-card.idle {
+      opacity: 0.45;
+    }
+    .regime-card.idle .sport-name {
+      color: var(--text-dim);
+    }
+    .regime-card .idle-note {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-style: italic;
+      margin-top: 4px;
+    }
     .regime-card .playoff-flag {
       display: inline-block;
       font-size: 9px;
@@ -1684,13 +1696,22 @@ async function refreshRegime() {
       const flag = s.playoff
         ? '<span class="playoff-flag">PLAYOFF</span>'
         : '';
+      const isIdle = s.tickers === 0;
+      const cardCls = isIdle ? 'regime-card idle' : 'regime-card';
+      // For idle sports, show a "waiting on Odds API" note instead of an
+      // empty card — explains the 0 to the user (typical for KBO/NPB
+      // between game days when Odds API hasn't yet published fixtures).
+      const idleNote = isIdle
+        ? '<div class="idle-note">no Odds API fixtures yet</div>'
+        : '';
       return `
-        <div class="regime-card">
+        <div class="${cardCls}">
           <div class="sport-name">${s.sport}${flag}</div>
           <div class="phase-row" style="border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:4px;">
             <span class="key">total tickers</span><span style="font-weight:600;">${s.tickers}</span>
           </div>
           ${phaseRows}
+          ${idleNote}
         </div>`;
     }).join('');
   } catch (e) {
