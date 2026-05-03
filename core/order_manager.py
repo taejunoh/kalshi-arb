@@ -427,12 +427,13 @@ class OrderManager:
 
     async def _paper_market_order(self, ticker, side, size_usdc, price, strategy, market_id,
                                    minutes_to_start: Optional[float] = None):
-        # DB-side dedup: in-memory _traded_tickers can be lost across
-        # restarts (file save races, transient errors). Sports tickers are
-        # one-shot events, so a second entry on (strategy, market_id) is
-        # always a bug. Guarding here covers paper-only mode AND the
-        # paper-twin fired alongside live trades.
-        if await self._db.has_existing_trade(strategy, market_id):
+        # DB-side dedup is sports-only: sports tickers are one-shot events
+        # (a single game has one outcome), so a second entry on
+        # (strategy, market_id) is always a bug. Other strategies
+        # (mentions_trader, econ_trader, market_maker, spread_scanner)
+        # legitimately re-enter the same ticker (continuous markets, fade
+        # in/out, two-sided market making) — DB dedup would block them.
+        if strategy.startswith("sports_") and await self._db.has_existing_trade(strategy, market_id):
             logger.warning(
                 f"[PAPER] dedup skip: {strategy} {market_id} already has a trade, "
                 f"in-memory dedup likely missed (restart / save race)"
@@ -458,8 +459,8 @@ class OrderManager:
     # limit_order, persist minutes_to_start on the orders row so settlement can
     # forward it.
     async def _paper_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
-        # DB-side dedup — same rationale as _paper_market_order.
-        if await self._db.has_existing_trade(strategy, market_id):
+        # DB-side dedup is sports-only — see _paper_market_order rationale.
+        if strategy.startswith("sports_") and await self._db.has_existing_trade(strategy, market_id):
             logger.warning(
                 f"[PAPER-LIMIT] dedup skip: {strategy} {market_id} already has a trade"
             )
@@ -478,9 +479,8 @@ class OrderManager:
 
     async def _live_market_order(self, ticker, side, size_usdc, price, strategy, market_id,
                                   minutes_to_start: Optional[float] = None):
-        # DB-side dedup — same rationale as _paper_market_order. Prevents
-        # double-firing if the strategy's in-memory dedup state is lost.
-        if await self._db.has_existing_trade(strategy, market_id):
+        # DB-side dedup is sports-only — see _paper_market_order rationale.
+        if strategy.startswith("sports_") and await self._db.has_existing_trade(strategy, market_id):
             logger.warning(
                 f"[LIVE] dedup skip: {strategy} {market_id} already has a trade"
             )
@@ -557,8 +557,10 @@ class OrderManager:
         fills are recorded at actual size; unfilled orders return `skipped`
         (not `failed`, so strategy state isn't dirtied with a fake entry).
         """
-        # DB-side dedup — same rationale as _paper_market_order.
-        if await self._db.has_existing_trade(strategy, market_id):
+        # DB-side dedup is sports-only — see _paper_market_order rationale.
+        # (Currently this method is only called by sports strategies via
+        # LIMIT_TTL_STRATEGIES, but the prefix gate makes the policy explicit.)
+        if strategy.startswith("sports_") and await self._db.has_existing_trade(strategy, market_id):
             logger.warning(
                 f"[LIVE-LIMIT] dedup skip: {strategy} {market_id} already has a trade"
             )
@@ -704,8 +706,12 @@ class OrderManager:
         }
 
     async def _live_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
-        # DB-side dedup — same rationale as _paper_market_order.
-        if await self._db.has_existing_trade(strategy, market_id):
+        # DB-side dedup is sports-only — see _paper_market_order rationale.
+        # IMPORTANT: this method is shared by mentions_trader, econ_trader,
+        # market_maker, spread_scanner — those strategies legitimately
+        # re-enter the same ticker. The prefix gate ensures only sports
+        # strategies (one-shot games) get the dedup guard.
+        if strategy.startswith("sports_") and await self._db.has_existing_trade(strategy, market_id):
             logger.warning(
                 f"[LIVE-LIMIT] dedup skip: {strategy} {market_id} already has a trade"
             )
