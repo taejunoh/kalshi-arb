@@ -34,6 +34,7 @@ from strategies.sports_midshot_v35 import SportsMidshotV35Strategy
 from strategies.sports_underdog_v35 import SportsUnderdogV35Strategy
 from strategies.sports_underdog_v36_playoff import SportsUnderdogV36PlayoffStrategy
 from strategies.sports_underdog_v36_us import SportsUnderdogV36USStrategy
+from strategies.sports_underdog_v36_nhl_playoff import SportsUnderdogV36NHLPlayoffStrategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
@@ -158,6 +159,15 @@ class Bot:
         # Same 35¢+ floor + PLAYOFF_ONLY logic. Evidence: trade-level us 35¢+
         # n=12 +88-189% across underdog_v34 paper + v35 LIVE+twin.
         self.sports_underdog_v36_us = SportsUnderdogV36USStrategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # V3.6 NHL Playoff — pure price-band gate (35-45¢ + 50-55¢, dead zone
+        # 45-50¢ skipped). Built 2026-05-03 from observer analysis showing
+        # NHL playoff alpha lives in narrow bands separated by a toss-up dead
+        # zone. Combined gate: n=35, ROI +33% (baseline). NHL-only via
+        # SPORT_BLOCKLIST. Realistic realized estimate +5-15% after the
+        # paper-to-live regression seen on NBA v36.
+        self.sports_underdog_v36_nhl_playoff = SportsUnderdogV36NHLPlayoffStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
@@ -375,6 +385,9 @@ class Bot:
             # gate: n_games ≥ 25 with ROI ≥ +30%.
             ("sports_underdog_v36_playoff", self.sports_underdog_v36_playoff),
             ("sports_underdog_v36_us", self.sports_underdog_v36_us),
+            # V3.6 NHL Playoff — pure price-band gate (35-45¢ + 50-55¢ with
+            # 45-50¢ dead zone). Observer baseline +33% on n=35. NHL-only.
+            ("sports_underdog_v36_nhl_playoff", self.sports_underdog_v36_nhl_playoff),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
             # -37.5% ROI. Freshness gate was added 2026-04-16 (80ad42e) but
             # only a handful of post-gate entries accumulated before shutdown;
