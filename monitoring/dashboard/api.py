@@ -696,6 +696,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
 
             for name, cls in _gate_classes.items():
                 floor = getattr(cls, "MIN_ENTRY_PRICE", None)
+                ceiling = getattr(cls, "MAX_ENTRY_PRICE", None)
                 dz = getattr(cls, "ENTRY_PRICE_DEAD_ZONE", None)
                 # Window gate (chalk_shadow): PRICE_MIN + PRICE_MAX pair
                 # that restricts entry to a price band. Only render when
@@ -703,8 +704,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 # has neither).
                 p_min = getattr(cls, "PRICE_MIN", None)
                 p_max = getattr(cls, "PRICE_MAX", None)
-                if floor is not None:
+                if floor is not None and ceiling is not None:
+                    price_gates[name] = {"type": "band", "floor": floor, "ceiling": ceiling}
+                elif floor is not None:
                     price_gates[name] = {"type": "floor", "floor": floor}
+                elif ceiling is not None:
+                    price_gates[name] = {"type": "ceiling", "ceiling": ceiling}
                 elif dz is not None:
                     price_gates[name] = {"type": "dead_zone", "dead_zone": list(dz)}
                 elif p_min is not None and p_max is not None:
