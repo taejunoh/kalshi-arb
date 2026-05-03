@@ -15,9 +15,13 @@ class SportsUnderdogV32Strategy(SportsUnderdogV31Strategy):
     # NBA playoff suspend (2026-04-30). Game-level: v32 NBA pre eu -87%
     # n=28 (worse than v31 -36%) — edge-scaled sizing amplifies losses
     # in NBA playoff regime. Same-game analysis shows v32 sizes up on
-    # losing games at ~1.1x v31 cost. Auto-resumes when NBA returns to
-    # regular season. v32 evaluation continues on MLB/NHL pre cells.
-    PLAYOFF_BLOCKLIST = frozenset({"NBA"})
+    # losing games at ~1.1x v31 cost.
+    # 2026-05-03: NHL added — paper n=28 ROI -23%, live n=5 -7% (same
+    # direction). NHL playoff regime mismatch confirmed across v31 trio
+    # and v32. v36_nhl_playoff picks up the 35-45c+50-55c sweet spot via
+    # pure price-band gate with MAX_MTS_AT_ENTRY=1440. Auto-resumes when
+    # each sport returns to regular season.
+    PLAYOFF_BLOCKLIST = frozenset({"NBA", "NHL"})
 
     def _get_trade_size(self, signal: dict) -> float:
         base = super()._get_trade_size(signal)
