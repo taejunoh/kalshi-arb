@@ -263,6 +263,25 @@ class Database:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
+    async def has_existing_trade(self, strategy: str, market_id: str) -> bool:
+        """Return True if a non-cancelled trade already exists for
+        (strategy, market_id). Used by order_manager as a DB-side dedup
+        guard so paper-twin / restart-corrupted in-memory state can't
+        produce duplicate entries on a one-shot ticker (sports games).
+
+        Counts any status other than 'cancelled'/'failed' as live —
+        paper_filled/paper_settled/filled/settled all block re-entry.
+        """
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                """SELECT 1 FROM trades
+                   WHERE strategy = ? AND market_id = ?
+                     AND status NOT IN ('cancelled', 'failed')
+                   LIMIT 1""",
+                (strategy, market_id),
+            )
+            return (await cursor.fetchone()) is not None
+
     async def get_open_orders(self, limit: int = 100):
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
