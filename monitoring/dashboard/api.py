@@ -782,12 +782,22 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             }
             is_demoted = s in DEMOTED_FROM_LIVE
             sleeping_msg = sleeping_detail.get(s)
+            # Paper-twin flag: LIVE strategies that ALSO record paper-twin
+            # trades (1:1 alongside every live entry). Dashboard uses this
+            # to render the strategy in BOTH the LIVE and PAPER perf
+            # sections so users can compare paper-vs-live execution.
+            try:
+                from core.order_manager import PAPER_TWIN_STRATEGIES
+                has_paper_twin = s in PAPER_TWIN_STRATEGIES
+            except Exception:
+                has_paper_twin = False
             result[s] = {"mode": mode, "active": active, "reason": reason,
                          "reason_detail": reason_detail, "archived": s in archived_set,
                          "demoted": is_demoted,
                          "demotion_detail": demotion_detail.get(s) if is_demoted else None,
                          "sleeping": sleeping_msg is not None,
                          "sleeping_detail": sleeping_msg,
+                         "has_paper_twin": has_paper_twin,
                          "price_gate": price_gates.get(s),
                          "phase_gate": phase_gates.get(s),
                          "region": regions.get(s),

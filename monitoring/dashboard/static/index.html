@@ -1164,6 +1164,12 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     const data = (perfCache[strat] || {})[modeKey] || {};
     const hasActivity = (data.trade_count || 0) > 0;
     const stratMode = (stratStatusCache[strat] || {}).mode || 'PAPER';
+    // LIVE strategies with paper twins should appear in BOTH sections
+    // (live shows real-money fills, paper shows idealized twin) so users
+    // can compare execution side-by-side from day 1, not after the first
+    // paper twin fires.
+    const hasPaperTwin = !!(stratStatusCache[strat] || {}).has_paper_twin;
+    if (mode === 'PAPER' && hasPaperTwin) return true;
     return hasActivity || stratMode === mode;
   });
 

@@ -67,6 +67,7 @@ PAPER_TWIN_STRATEGIES = {
     "sports_underdog_v35",
     "sports_underdog_v36_playoff",  # 2026-04-30 live-promoted — keep paper twin for slippage A/B
     "sports_underdog_v36_us",  # 2026-04-30 us companion
+    "sports_underdog_v36_nhl_playoff",  # 2026-05-03 live-promoted — keep paper twin for live/paper A/B
 }
 
 
