@@ -300,6 +300,15 @@ class SportsTraderStrategy:
     # all 3 v31 variants but most pronounced on longshot. Strategies that gain
     # alpha during live volatility (v4_edge: +59% live-game) leave this None.
     PRE_GAME_ONLY: bool = False
+    # Max minutes-to-start at entry. Blocks entries placed more than this
+    # many minutes in advance of game start. None = no upper cap.
+    # 2026-05-03 added for v36_nhl_playoff after data showed v31 underdog
+    # NHL playoff -4.5% ROI on the 35-45c+50-55c sweet spot was driven by
+    # entries placed days early (mts=2000-4000 minutes); the observer
+    # baseline +33% was measured on T-1h to T-24h FIRST obs window.
+    # Limiting to 24h captures the price-discovery sweet spot where sharp
+    # money has converged on a fair line but Kalshi may still lag.
+    MAX_MTS_AT_ENTRY: Optional[float] = None
     # Per-game aggregate stake cap (USDC). 2026-04-17 paper analysis found
     # v31 fires median 6 trades per game with 75% intra-game outcome
     # correlation — capping aggregate per-game stake at $9 kept +23.1% ROI
@@ -1265,6 +1274,19 @@ class SportsTraderStrategy:
                         logger.debug(
                             f"[{self.STRATEGY_NAME}] {ticker}: live-game entry "
                             f"(mts={minutes_to_start}), pre-game only, skip"
+                        )
+                        continue
+
+                # Max-MTS gate (block entries placed too far in advance).
+                # Protects strategies whose alpha was measured in a specific
+                # pre-game time window from drifting into earlier mts where
+                # the line is unstable.
+                if self.MAX_MTS_AT_ENTRY is not None:
+                    mts_check = _commence_time_to_minutes(matched_game.get("commence_time"))
+                    if mts_check is not None and mts_check > self.MAX_MTS_AT_ENTRY:
+                        logger.debug(
+                            f"[{self.STRATEGY_NAME}] {ticker}: mts={mts_check:.0f} > "
+                            f"MAX_MTS_AT_ENTRY={self.MAX_MTS_AT_ENTRY:.0f}, skip"
                         )
                         continue
 

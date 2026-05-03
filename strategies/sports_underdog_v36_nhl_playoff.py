@@ -59,6 +59,13 @@ class SportsUnderdogV36NHLPlayoffStrategy(SportsUnderdogV31Strategy):
     # measured on (T-1h to T-24h pre-game). Live-game NHL playoff fires
     # are unvalidated; revisit after pre-game alpha is confirmed.
     PRE_GAME_ONLY = True
+    # Max 24h before game (1440 min) — observer baseline was measured on
+    # FIRST obs in T-1h to T-24h. v31 underdog post-mortem (2026-05-03)
+    # showed the 35-45c+50-55c sweet spot ROI dropped from +33% (observer)
+    # to -4.5% (v31 trades) primarily because v31 fired days early at
+    # mts=2000-4000 where lines hadn't converged. Capping at 24h keeps
+    # entries in the price-discovery sweet spot.
+    MAX_MTS_AT_ENTRY = 1440.0
 
     # Price band: [0.35, 0.55) excluding dead zone [0.45, 0.50).
     MIN_ENTRY_PRICE = 0.35
