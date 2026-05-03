@@ -54,11 +54,16 @@ logger = logging.getLogger("promotion_eval")
 
 # Decision criteria (single source of truth — keep in sync with
 # memory/sport_promotion_thresholds.md)
+# 2026-05-03: replaced min_kalshi_oi_median ($500) with
+# min_kalshi_top_of_book_depth_p50 ($20). OI was a forensics error — the
+# strategies actually fire on top-of-book DEPTH (price × ask_size) per
+# _has_sufficient_depth in sports_trader.py. NPB/KBO had OI median $2-30
+# but top-of-book depth p50 $90-122, well above the $20 fire gate.
 PROMOTE_CRITERIA = {
     "min_settled_games": 25,
     "min_top_strategy_roi": 0.03,    # +3% by ANY strategy beats threshold
     "min_n_books_p50": 8,
-    "min_kalshi_oi_median": 500.0,
+    "min_kalshi_top_of_book_depth_p50": 20.0,
     "min_ci_lower_for_promote": -0.05,  # 95% CI lower bound > -5% (alpha not noise)
 }
 KILL_CRITERIA = {
@@ -157,7 +162,8 @@ def _load_quality_stats(conn: sqlite3.Connection, sport: str, window_days: int) 
     cursor = conn.execute(
         f"""
         SELECT n_books_eu, has_pinnacle, kalshi_open_interest,
-               is_yes_home, is_yes_draw, minutes_to_start, kalshi_ticker
+               is_yes_home, is_yes_draw, minutes_to_start, kalshi_ticker,
+               kalshi_yes_ask, kalshi_yes_ask_size, kalshi_no_ask, kalshi_no_ask_size
         FROM odds_observations
         WHERE sport = ?
           AND timestamp >= datetime('now', '-{int(window_days)} days')
@@ -174,6 +180,25 @@ def _load_quality_stats(conn: sqlite3.Connection, sport: str, window_days: int) 
     entry_rows = [r for r in rows
                   if r[5] is not None and PRE_WINDOW_MIN_MINS <= r[5] <= PRE_WINDOW_MAX_MINS]
     oi_vals = [r[2] for r in entry_rows if r[2] is not None]
+    # Top-of-book depth in USDC (price × top-level ask size). Mirrors what
+    # _has_sufficient_depth checks against MIN_DEPTH_USDC. We take the max
+    # of YES vs NO side: a strategy can fire on either, so the deeper side
+    # is what determines tradability. Both sides have to be present and
+    # finite for the row to count.
+    depth_vals = []
+    for r in entry_rows:
+        ya, ysz, na, nsz = r[7], r[8], r[9], r[10]
+        if ya is not None and ysz is not None:
+            yd = float(ya) * float(ysz)
+        else:
+            yd = None
+        if na is not None and nsz is not None:
+            nd = float(na) * float(nsz)
+        else:
+            nd = None
+        if yd is None and nd is None:
+            continue
+        depth_vals.append(max(yd or 0.0, nd or 0.0))
     home_legs = sum(1 for r in rows if r[3] == 1)
     away_legs = sum(1 for r in rows if r[3] == 0 and r[4] != 1)
     tie_legs = sum(1 for r in rows if r[4] == 1)
@@ -185,6 +210,8 @@ def _load_quality_stats(conn: sqlite3.Connection, sport: str, window_days: int) 
         "n_books_p50": _percentile(n_books, 0.50),
         "pin_pct_pre12h": pin_pct,
         "oi_median": _percentile(oi_vals, 0.50),
+        "depth_p50": _percentile(depth_vals, 0.50),
+        "depth_p25": _percentile(depth_vals, 0.25),
         "home_legs": home_legs,
         "away_legs": away_legs,
         "tie_legs": tie_legs,
@@ -365,9 +392,12 @@ def _decide(quality: dict, replay: dict, n_games: int, ci_required: bool = True)
     n_books_p50 = quality.get("n_books_p50") or 0
     if n_books_p50 < PROMOTE_CRITERIA["min_n_books_p50"]:
         failures.append(f"n_books_p50={n_books_p50} < {PROMOTE_CRITERIA['min_n_books_p50']}")
-    oi_med = quality.get("oi_median") or 0
-    if oi_med < PROMOTE_CRITERIA["min_kalshi_oi_median"]:
-        failures.append(f"oi_median=${oi_med:.0f} < ${PROMOTE_CRITERIA['min_kalshi_oi_median']:.0f}")
+    depth_p50 = quality.get("depth_p50") or 0
+    if depth_p50 < PROMOTE_CRITERIA["min_kalshi_top_of_book_depth_p50"]:
+        failures.append(
+            f"top_of_book_depth_p50=${depth_p50:.0f} < "
+            f"${PROMOTE_CRITERIA['min_kalshi_top_of_book_depth_p50']:.0f}"
+        )
 
     # Best strategy by ROI (where ci_lo > -5% if CI available)
     best_strat = None
@@ -522,7 +552,8 @@ def _section_clv(results: dict) -> list[str]:
 def _section_quality(results: dict) -> list[str]:
     lines = ["", "<b>🔍 DATA QUALITY</b>", "<pre>"]
     lines.append(f"{'sport':5s} {'rows':>5s} {'tickers':>7s} "
-                 f"{'books_p50':>9s} {'p10':>4s} {'pin%':>4s} {'OI_med':>7s} {'leg_check':>10s}")
+                 f"{'books_p50':>9s} {'p10':>4s} {'pin%':>4s} "
+                 f"{'depth_med':>9s} {'OI_med':>7s} {'leg_check':>10s}")
     for sport in TARGET_SPORTS:
         r = results.get(sport)
         if not r:
@@ -537,7 +568,8 @@ def _section_quality(results: dict) -> list[str]:
         lines.append(
             f"{sport:5s} {q.get('n_rows', 0):>5d} {q.get('n_unique_tickers', 0):>7d} "
             f"{q.get('n_books_p50', 0):>9d} {q.get('n_books_p10', 0):>4d} "
-            f"{q.get('pin_pct_pre12h', 0):>3.0f}% {int(q.get('oi_median', 0)):>7d} {leg:>10s}"
+            f"{q.get('pin_pct_pre12h', 0):>3.0f}% "
+            f"{int(q.get('depth_p50', 0)):>9d} {int(q.get('oi_median', 0)):>7d} {leg:>10s}"
         )
     lines.append("</pre>")
     return lines
@@ -552,7 +584,7 @@ def _section_criteria(window_days: int) -> list[str]:
         f"  • n_settled_games ≥ {PROMOTE_CRITERIA['min_settled_games']}",
         f"  • some strategy ROI ≥ +{PROMOTE_CRITERIA['min_top_strategy_roi']:.0%} with 95% CI lower ≥ {PROMOTE_CRITERIA['min_ci_lower_for_promote']:+.0%}",
         f"  • n_books_eu p50 ≥ {PROMOTE_CRITERIA['min_n_books_p50']}",
-        f"  • Kalshi OI median (entry window) ≥ ${PROMOTE_CRITERIA['min_kalshi_oi_median']:.0f}",
+        f"  • Kalshi top-of-book depth median (entry window) ≥ ${PROMOTE_CRITERIA['min_kalshi_top_of_book_depth_p50']:.0f}",
         f"KILL: overall_roi < {KILL_CRITERIA['max_overall_roi_with_n10']:+.0%} (n≥10) OR ≥{KILL_CRITERIA['max_failed_criteria']+1} criteria fail",
         f"<i>Pinnacle % shown for context only — live v3.x strategies use eu consensus.</i>",
     ]

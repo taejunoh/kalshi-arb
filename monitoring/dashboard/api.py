@@ -20,11 +20,12 @@ def _today_cutoff_utc() -> str:
     return start.astimezone(timezone.utc).isoformat()
 
 
-_DASHBOARD_HIDDEN_SPORTS = ("KBO", "NPB", "BUN")
+_DASHBOARD_HIDDEN_SPORTS = ("BUN",)
 """Sports excluded from Regime card + Observer signals panel.
-Data still collected by the observer (don't touch); just hidden from
-the dashboard UI per user request — these leagues are scanned but no
-strategy currently trades them, so they were diluting the views."""
+NPB/KBO removed from this list 2026-05-03 after the prior 'untradeable'
+classification was found to use OI as the gate metric (top-of-book depth
+is what fires actual trades; NPB/KBO p50 depth $90-122 with 100% above
+the $20 gate). Re-collecting data for 5/9 promotion eval."""
 
 
 def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None, sports_trader=None) -> FastAPI:

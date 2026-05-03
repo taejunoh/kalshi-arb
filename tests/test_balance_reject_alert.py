@@ -20,6 +20,7 @@ def _make_manager(balance_value):
     client = MagicMock()
     client.get_balance = MagicMock(return_value=balance_value)
     db = MagicMock()
+    db.has_existing_trade = AsyncMock(return_value=False)
     notifier = MagicMock()
     notifier.send = AsyncMock()
     om = OrderManager(config, client, db, notifier=notifier)
@@ -87,7 +88,9 @@ def test_no_alert_when_notifier_is_none():
     config.estimate_fee = MagicMock(return_value=0.5)
     client = MagicMock()
     client.get_balance = MagicMock(return_value=10.0)
-    om = OrderManager(config, client, MagicMock(), notifier=None)
+    db = MagicMock()
+    db.has_existing_trade = AsyncMock(return_value=False)
+    om = OrderManager(config, client, db, notifier=None)
     # Should not raise even though notifier is None
     res = _run(om._live_market_order(
         ticker="KX-X", side="yes", size_usdc=20.0, price=0.4,
