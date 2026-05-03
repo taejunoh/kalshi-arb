@@ -35,7 +35,12 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     # Cascades to v33, v34, v35 — all show same NBA playoff bleed pattern.
     # v32 already has its own explicit PLAYOFF_BLOCKLIST. Auto-resumes when
     # NBA returns to regular season (~2026-10).
-    PLAYOFF_BLOCKLIST = frozenset({"NBA"})
+    # 2026-05-03 NHL added — n=44 LIVE -12% (PnL -$25). Bleed concentrated
+    # in 25-30c (-100% n=4 NO), 35-40c NO (-55% n=11). The 35-45c+50-55c
+    # sweet spot is ~break-even (-4.5% n=33) — that band is now picked up
+    # by sports_underdog_v36_nhl_playoff (pure price-band gate, paper-twin
+    # baseline +33%). v32 has its own PLAYOFF_BLOCKLIST.
+    PLAYOFF_BLOCKLIST = frozenset({"NBA", "NHL"})
 
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 25→30 on 2026-05-02 (second pass, 1.2x more, total 1.5x vs

@@ -43,7 +43,10 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
     # (already paper-demoted) via inheritance. Auto-resumes when NBA
     # returns to regular season ~2026-10. No v36 longshot variant — at
     # 35¢+ floor longshot's price band (5-25¢) collapses to nothing.
-    PLAYOFF_BLOCKLIST = frozenset({"NBA"})
+    # 2026-05-03 NHL added — n=27 LIVE -27% on NHL playoff. Longshot rarely
+    # fires there (playoff prices stay 30-71c, longshot's 5-25c band almost
+    # empty) but every fire so far lost. Auto-resumes regular season ~Oct.
+    PLAYOFF_BLOCKLIST = frozenset({"NBA", "NHL"})
 
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 4→12 on 2026-04-25. LIVE −53% (n=140) was the biggest

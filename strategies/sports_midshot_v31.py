@@ -34,7 +34,11 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     # ROI). All NBA data post-2026-04-21 is playoff (regular season ended
     # ~2026-04-13). Auto-resumes when NBA regular season returns
     # (~2026-10). Cascades to v34, v35 via inheritance.
-    PLAYOFF_BLOCKLIST = frozenset({"NBA"})
+    # 2026-05-03 NHL added — n=35 LIVE -43% on NHL playoff. Midshot fires
+    # mostly in 30-35c (-100%) and 35-40c (-43% on 11 trades) bands; NHL
+    # playoff's 50/50 matchup distribution puts almost no underdogs in the
+    # 5-30c sweet spot. Cascades to v34, v35.
+    PLAYOFF_BLOCKLIST = frozenset({"NBA", "NHL"})
 
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 24→36 on 2026-05-02 (second pass, 1.5x more, total 2.25x
