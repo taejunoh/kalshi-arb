@@ -42,6 +42,7 @@ SPORT_MAP = {
     "KXEPLGAME": "soccer_epl",
     "KXLALIGAGAME": "soccer_spain_la_liga",
     "KXUCLGAME": "soccer_uefa_champs_league",
+    "KXBUNDESLIGAGAME": "soccer_germany_bundesliga",
 }
 SPORT_SHORT = {
     "KXNBAGAME": "NBA",
@@ -53,6 +54,7 @@ SPORT_SHORT = {
     "KXEPLGAME": "EPL",
     "KXLALIGAGAME": "LAL",
     "KXUCLGAME": "UCL",
+    "KXBUNDESLIGAGAME": "BUN",
 }
 
 

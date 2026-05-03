@@ -131,21 +131,23 @@ def _odds_cache_reset() -> None:
 SPORTS_SERIES = [
     "KXNBAGAME", "KXMLBGAME", "KXNHLGAME",
     "KXNPBGAME", "KXKBOGAME",
-    "KXMLSGAME", "KXEPLGAME", "KXLALIGAGAME", "KXUCLGAME",
+    "KXMLSGAME", "KXEPLGAME", "KXLALIGAGAME", "KXUCLGAME", "KXBUNDESLIGAGAME",
 ]
 
 # Game-suffix tokens used to extract a 3-letter sport short code from a ticker.
 # Order matters when one suffix is a substring of another (none currently).
-# 2026-05-03 re-added NPB/KBO: prior 2026-05-02 removal used Kalshi OI as the
-# tradability metric, but the actual strategy gate is top-of-book DEPTH
-# (kalshi_yes_ask × kalshi_yes_ask_size). On the 95-min observation window
-# we did capture, NPB/KBO p50 depth was $90-$122 with 100% of pre-game obs
-# above the $20 gate — fully tradeable. Re-collecting data for 5/9 eval.
-# BUN remains removed (separate decision; can revisit with same correction).
+# 2026-05-03 re-added NPB/KBO/BUN: prior 2026-05-02 removals used Kalshi OI
+# as the tradability metric, but the actual strategy gate is top-of-book
+# DEPTH (kalshi_yes_ask × kalshi_yes_ask_size). Re-checked metrics:
+#   - NPB: depth p50 $122, 100% of obs ≥ $20 → fully tradeable
+#   - KBO: depth p50 $90,  100% of obs ≥ $20 → fully tradeable
+#   - BUN: depth p50 $20,  51% of obs ≥ $20 → half-tradeable (paper sim
+#     and live depth gate will both cull the thin half symmetrically; the
+#     5/9 paper backtest will tell us if the surviving half carries alpha)
 SPORT_GAME_TOKENS = (
     "NBAGAME", "MLBGAME", "NHLGAME",
     "NPBGAME", "KBOGAME",
-    "MLSGAME", "EPLGAME", "LALIGAGAME", "UCLGAME",
+    "MLSGAME", "EPLGAME", "LALIGAGAME", "UCLGAME", "BUNDESLIGAGAME",
 )
 
 # Sports whose Pinnacle h2h market includes a "Draw" outcome. Probability
@@ -221,6 +223,23 @@ ODDS_TO_KALSHI_SHORT = {
     "ca osasuna": "osasuna",
     "elche cf": "elche",
     "rayo vallecano": "vallecano",
+
+    # Bundesliga
+    "1. fc heidenheim": "heidenheim",
+    "1. fc köln": "fc köln",
+    "bayer leverkusen": "leverkusen",
+    "borussia dortmund": "dortmund",
+    "borussia monchengladbach": "m´gladbach",
+    "eintracht frankfurt": "frankfurt",
+    "fc st. pauli": "st. pauli",
+    "fsv mainz 05": "mainz",
+    "hamburger sv": "hamburg",
+    "rb leipzig": "leipzig",
+    "sc freiburg": "freiburg",
+    "tsg hoffenheim": "hoffenheim",
+    "vfb stuttgart": "stuttgart",
+    "vfl wolfsburg": "wolfsburg",
+    "werder bremen": "bremen",
 
     # UCL (overlaps with EPL/La Liga; same alias rules apply)
     "paris saint germain": "psg",
@@ -331,7 +350,7 @@ class SportsTraderStrategy:
     # 3-way (draw) handling before any live promotion can be considered.
     OBSERVATION_ONLY_SPORTS: frozenset = frozenset({
         "NPB", "KBO",
-        "MLS", "EPL", "LAL", "UCL",
+        "MLS", "EPL", "LAL", "UCL", "BUN",
     })
     # Minimum bookmaker count required in the consensus before evaluating a
     # signal. None = no gate (legacy behavior). Recommended for newly-added
@@ -584,6 +603,7 @@ class SportsTraderStrategy:
         "soccer_epl": 0.0,
         "soccer_spain_la_liga": 0.0,
         "soccer_uefa_champs_league": 0.0,
+        "soccer_germany_bundesliga": 0.0,
     }
 
     def _detect_line_movement(self, game_id: str, home_prob: float, away_prob: float) -> float:
@@ -967,6 +987,7 @@ class SportsTraderStrategy:
             "KXEPLGAME": "soccer_epl",
             "KXLALIGAGAME": "soccer_spain_la_liga",
             "KXUCLGAME": "soccer_uefa_champs_league",
+            "KXBUNDESLIGAGAME": "soccer_germany_bundesliga",
         }
 
         all_odds = {}
