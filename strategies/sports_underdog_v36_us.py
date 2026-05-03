@@ -40,6 +40,12 @@ class SportsUnderdogV36USStrategy(SportsUnderdogV31Strategy):
     PRE_GAME_ONLY = False
     SPORT_BLOCKLIST = frozenset()
     PLAYOFF_BLOCKLIST = frozenset()  # this IS the playoff strategy
+    # Override v31's MAX_ENTRY_PRICE=0.39 cap — that cliff is MLB-reg-specific
+    # (v31/v32 -25/-29% ROI). NBA plf 0.40c shows +17.4% aggregate; v36_us
+    # specifically is -0.4% n=14 (break-even, not cliff). Mechanism (payoff
+    # boundary) is sport-agnostic but NBA playoff pricing dynamics differ —
+    # keep 0.40c open here.
+    MAX_ENTRY_PRICE = None
     # Sizing 8→16 (2x) on 2026-05-02 — symmetric with v36_playoff. Live n=12 /
     # 67% WR / 57% ROI mirrors the EU twin; both regions confirm playoff
     # underdog mispricing. Depth 10→20 keeps 1.92× cushion at top of underdog

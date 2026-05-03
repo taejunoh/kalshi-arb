@@ -46,6 +46,12 @@ class SportsUnderdogV36PlayoffStrategy(SportsUnderdogV31Strategy):
     SPORT_BLOCKLIST = frozenset()
     # Override v31's PLAYOFF_BLOCKLIST — v36 IS the playoff strategy.
     PLAYOFF_BLOCKLIST = frozenset()
+    # Override v31's MAX_ENTRY_PRICE=0.39 cap — that cliff is MLB-reg-specific
+    # (v31/v32 -25/-29% ROI). The strategy's design rationale (see docstring)
+    # explicitly targets the 0.40-0.45¢ band as alpha (+160% ROI observer,
+    # n=7 games). Capping at 0.39 would block exactly the band this strategy
+    # was built to capture.
+    MAX_ENTRY_PRICE = None
     # Live-promoted 2026-04-30. Sizing 8→16 (2x) on 2026-05-02: NBA playoff
     # window finite (~3-4 weeks left) and live n=6 / 67% WR / 57% ROI is
     # consistent with the playoff-mispricing thesis. Aggressive bump to capture
