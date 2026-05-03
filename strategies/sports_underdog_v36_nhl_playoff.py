@@ -55,7 +55,10 @@ class SportsUnderdogV36NHLPlayoffStrategy(SportsUnderdogV31Strategy):
     # Override parent v31's NBA PLAYOFF_BLOCKLIST — this strategy IS the
     # playoff strategy and is NHL-only via SPORT_BLOCKLIST anyway.
     PLAYOFF_BLOCKLIST = frozenset()
-    PRE_GAME_ONLY = False
+    # Pre-game only — matches the data window the +33% ROI baseline was
+    # measured on (T-1h to T-24h pre-game). Live-game NHL playoff fires
+    # are unvalidated; revisit after pre-game alpha is confirmed.
+    PRE_GAME_ONLY = True
 
     # Price band: [0.35, 0.55) excluding dead zone [0.45, 0.50).
     MIN_ENTRY_PRICE = 0.35
