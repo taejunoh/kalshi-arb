@@ -596,7 +596,7 @@ def _section_criteria(window_days: int) -> list[str]:
 
 def _evaluate(db_path: str, window_days: int, sport_filter: str | None,
               n_boot: int, ci_required: bool) -> tuple[dict, dict]:
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
     sports = [sport_filter] if sport_filter else TARGET_SPORTS
     results = {}
     for sport in sports:

@@ -43,7 +43,7 @@ async def main():
     args = ap.parse_args()
 
     cfg = Config()
-    c = sqlite3.connect(DB_PATH)
+    c = sqlite3.connect(DB_PATH, timeout=30.0)
     rows = list(c.execute("""
         SELECT id, timestamp, strategy, market_id, direction, price,
                size, fee, pnl, minutes_to_start
@@ -117,7 +117,7 @@ async def main():
         ) if hasattr(db, "record_trade_raw") else None
     # Fallback: direct INSERT if helper missing
     if inserts and not hasattr(db, "record_trade_raw"):
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30.0)
         conn.executemany("""
             INSERT INTO trades (timestamp, strategy, market_id, direction,
                                 price, size, fee, pnl, status, minutes_to_start,

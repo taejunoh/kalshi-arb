@@ -71,7 +71,7 @@ class CLVTracker:
         """Find paper_filled sports trades whose game starts in the window,
         lacking a pre_close snapshot, and record one. Returns number captured."""
         import aiosqlite
-        async with aiosqlite.connect(self._db.db_path) as conn:
+        async with aiosqlite.connect(self._db.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute("""
                 SELECT t.id, t.market_id

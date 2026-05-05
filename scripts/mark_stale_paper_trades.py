@@ -37,7 +37,7 @@ def main() -> int:
     parser.add_argument("--db", default=str(DB_PATH), help="Path to bot.db")
     args = parser.parse_args()
 
-    con = sqlite3.connect(args.db)
+    con = sqlite3.connect(args.db, timeout=30.0)
     cur = con.cursor()
 
     placeholders = ",".join("?" for _ in STALE_STRATEGIES)

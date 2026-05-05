@@ -898,7 +898,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         the rest of the dashboard already uses."""
         import aiosqlite
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        async with aiosqlite.connect(database.db_path) as conn:
+        async with aiosqlite.connect(database.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
                 """SELECT strategy,
@@ -949,7 +949,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         # is stale enough we'd rather show null than mislead)
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
         latest: dict[str, dict] = {}
-        async with aiosqlite.connect(database.db_path) as conn:
+        async with aiosqlite.connect(database.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             placeholders = ",".join("?" * len(tickers))
             cursor = await conn.execute(
@@ -973,7 +973,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         # ticker — might mismatch positions sourced from earlier sessions, but
         # good enough for an "entry @ X" hint).
         entry_by_ticker: dict[str, dict] = {}
-        async with aiosqlite.connect(database.db_path) as conn:
+        async with aiosqlite.connect(database.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             placeholders = ",".join("?" * len(tickers))
             cursor = await conn.execute(
@@ -1039,7 +1039,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         import aiosqlite
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
         hidden_ph = ",".join("?" * len(_DASHBOARD_HIDDEN_SPORTS))
-        async with aiosqlite.connect(database.db_path) as conn:
+        async with aiosqlite.connect(database.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
                 f"""SELECT timestamp, kalshi_ticker, sport, phase,
@@ -1090,7 +1090,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         import aiosqlite
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
         hidden_ph = ",".join("?" * len(_DASHBOARD_HIDDEN_SPORTS))
-        async with aiosqlite.connect(database.db_path) as conn:
+        async with aiosqlite.connect(database.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
                 f"""SELECT sport,

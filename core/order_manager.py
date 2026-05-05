@@ -324,7 +324,7 @@ class OrderManager:
                 realized = None
                 try:
                     import sqlite3
-                    conn = sqlite3.connect(self._db.db_path)
+                    conn = sqlite3.connect(self._db.db_path, timeout=30.0)
                     row = conn.execute(
                         "SELECT realized_fill_price FROM trades WHERE id=?",
                         (result.get("trade_id"),),
@@ -404,7 +404,7 @@ class OrderManager:
         """If the order is in 'open'/'paper_open', credit size+fee back and
         return the refund amount. Otherwise return 0. No-op for unknown ids."""
         import aiosqlite
-        async with aiosqlite.connect(self._db.db_path) as conn:
+        async with aiosqlite.connect(self._db.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
                 "SELECT status, price, size FROM orders WHERE order_id = ?", (order_id,),

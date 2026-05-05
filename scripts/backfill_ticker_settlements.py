@@ -39,7 +39,7 @@ def _safe_float(v):
 
 def fetch_settlements(db_path: str, client: KalshiClient, limit: int | None, dry_run: bool) -> dict:
     """Query Kalshi for tickers observed but not yet settled. Return counts."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
     cursor = conn.execute(
         """

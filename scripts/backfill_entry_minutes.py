@@ -73,7 +73,7 @@ def main():
     config = Config()
     client = KalshiClient(config)
 
-    conn = sqlite3.connect(args.db)
+    conn = sqlite3.connect(args.db, timeout=30.0)
     try:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(

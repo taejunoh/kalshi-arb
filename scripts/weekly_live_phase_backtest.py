@@ -83,7 +83,7 @@ EVAL_FUNCS = {"longshot": eval_longshot, "midshot": eval_midshot, "underdog": ev
 
 def run_backtest(db_path: str) -> str:
     """Run the live-phase backtest for all strategies. Returns formatted output."""
-    con = sqlite3.connect(db_path)
+    con = sqlite3.connect(db_path, timeout=30.0)
     cutoff_dt = datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
     cutoff = cutoff_dt.isoformat()
 

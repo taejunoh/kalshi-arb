@@ -10,7 +10,7 @@ class Database:
         self.db_path = db_path
 
     async def initialize(self):
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS trades (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -226,7 +226,7 @@ class Database:
         now = datetime.now(timezone.utc).isoformat()
         playoff = is_playoff(market_id, now)
         playoff_int = None if playoff is None else (1 if playoff else 0)
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             cursor = await conn.execute(
                 """INSERT INTO trades
                    (timestamp, strategy, market_id, direction, price, size, fee, pnl, status,
@@ -240,7 +240,7 @@ class Database:
 
     async def record_order(self, order_id, market_id, strategy, side, price, size, order_type, status):
         now = datetime.now(timezone.utc).isoformat()
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             await conn.execute(
                 """INSERT INTO orders (timestamp, order_id, market_id, strategy, side, price, size, order_type, status)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -249,12 +249,12 @@ class Database:
             await conn.commit()
 
     async def update_order_status(self, order_id, status):
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             await conn.execute("UPDATE orders SET status = ? WHERE order_id = ?", (status, order_id))
             await conn.commit()
 
     async def get_trades(self, strategy=None):
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             if strategy:
                 cursor = await conn.execute("SELECT * FROM trades WHERE strategy = ? ORDER BY timestamp DESC", (strategy,))
@@ -272,7 +272,7 @@ class Database:
         Counts any status other than 'cancelled'/'failed' as live —
         paper_filled/paper_settled/filled/settled all block re-entry.
         """
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             cursor = await conn.execute(
                 """SELECT 1 FROM trades
                    WHERE strategy = ? AND market_id = ?
@@ -283,7 +283,7 @@ class Database:
             return (await cursor.fetchone()) is not None
 
     async def get_open_orders(self, limit: int = 100):
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
                 "SELECT * FROM orders WHERE status IN ('open', 'paper_open') ORDER BY id DESC LIMIT ?",
@@ -293,7 +293,7 @@ class Database:
             return [dict(row) for row in rows]
 
     async def get_paper_open_orders(self):
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
                 "SELECT * FROM orders WHERE status = 'paper_open' ORDER BY id"
@@ -308,7 +308,7 @@ class Database:
         timestamp (entry can lead settlement by hours-to-days for sports).
         Used by the daily report's "Realized PnL Today" section.
         """
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             sql = (
                 "SELECT t.* FROM trades t "
@@ -325,7 +325,7 @@ class Database:
             return [dict(row) for row in rows]
 
     async def get_unsettled_trades(self):
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
                 "SELECT * FROM trades "
@@ -335,7 +335,7 @@ class Database:
             return [dict(row) for row in rows]
 
     async def settle_trade(self, trade_id: int, pnl: float, status: str = "paper_settled"):
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             await conn.execute(
                 "UPDATE trades SET pnl = ?, status = ? WHERE id = ?", (pnl, status, trade_id)
             )
@@ -375,7 +375,7 @@ class Database:
         # which column is which orientation.
         pin_yes_prob = pinnacle_prob
         is_yes_home_int = None if is_yes_home is None else (1 if is_yes_home else 0)
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             await conn.execute(
                 """INSERT INTO clv_snapshots
                    (trade_id, snapshot_at, snapshot_time, yes_ask, no_ask, pinnacle_prob,
@@ -411,7 +411,7 @@ class Database:
             status_clause = " AND t.status LIKE 'paper%'"
         elif mode == "live":
             status_clause = " AND t.status IN ('filled', 'settled')"
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
                 f"""
@@ -449,7 +449,7 @@ class Database:
 
     async def set_bot_state(self, key: str, value: float) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             await conn.execute(
                 """INSERT INTO bot_state (key, value, updated_at) VALUES (?, ?, ?)
                    ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at""",
@@ -458,7 +458,7 @@ class Database:
             await conn.commit()
 
     async def get_bot_state(self, key: str) -> Optional[float]:
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             cursor = await conn.execute("SELECT value FROM bot_state WHERE key = ?", (key,))
             row = await cursor.fetchone()
         return row[0] if row else None
@@ -499,7 +499,7 @@ class Database:
         is_yes_home_int = None if is_yes_home is None else (1 if is_yes_home else 0)
         is_yes_draw_int = None if is_yes_draw is None else (1 if is_yes_draw else 0)
         has_pinnacle_int = None if has_pinnacle is None else (1 if has_pinnacle else 0)
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             await conn.execute(
                 """INSERT INTO odds_observations
                    (timestamp, kalshi_ticker, series, sport, phase, minutes_to_start,
@@ -529,7 +529,7 @@ class Database:
 
     async def get_daily_pnl(self):
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             cursor = await conn.execute(
                 "SELECT COALESCE(SUM(pnl), 0) FROM trades WHERE timestamp LIKE ?", (f"{today}%",)
             )

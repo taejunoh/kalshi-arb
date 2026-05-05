@@ -112,7 +112,7 @@ async def reconcile(apply: bool):
     import aiosqlite
     existing_settled: set[tuple[str, str]] = set()
     existing_filled: set[tuple[str, str]] = set()
-    async with aiosqlite.connect(db.db_path) as conn:
+    async with aiosqlite.connect(db.db_path, timeout=30.0) as conn:
         cursor = await conn.execute(
             "SELECT strategy, market_id, status FROM trades "
             "WHERE status IN ('settled', 'paper_settled', 'filled', 'paper_filled')"

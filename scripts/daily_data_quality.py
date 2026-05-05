@@ -167,7 +167,7 @@ def _detect_degradation(today: dict, baseline: dict) -> list[str]:
 
 
 def _build_report(db_path: str) -> tuple[str, list[str]]:
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
     today = _per_sport_stats(conn, hours=24)
     baseline = _per_sport_stats(conn, hours=24 * 7)
     settle = _settlement_lag(conn)

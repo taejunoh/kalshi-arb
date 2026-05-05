@@ -1,6 +1,12 @@
 [Unit]
 Description=Kalshi ticker settlement backfill (one-shot)
-After=network.target
+After=network.target kalshi-bot.service
+# After= alone (not Requires=/Wants=) — backfill should not start before
+# kalshi-bot has finished its DB schema migrations to avoid a SQLite write-
+# lock race that crashed the bot on AWS-initiated reboot 2026-05-05. Without
+# this ordering, both processes started within 1s of each other on boot,
+# the backfill grabbed the write lock first, and the bot's initialize()
+# DDL commit hit "database is locked".
 
 [Service]
 Type=oneshot
