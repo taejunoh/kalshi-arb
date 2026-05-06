@@ -63,9 +63,11 @@ class SportsUnderdogV37SoccerStrategy(SportsUnderdogV31Strategy):
     MIN_DEPTH_USDC = 20.0
 
     def _get_trade_size(self, signal: dict) -> float:
-        # Small starter — paper-twin only at launch. Matches v36_NHL launch
-        # size pattern (n=35 borderline → start at 4 contracts).
-        return min(4.0, self._order_manager.bankroll * 0.02)
+        # Live launch size 8 (2x bumped from initial 4 same-day on 2026-05-06).
+        # Matches v36 NBA launch pattern (size 8 starter for n borderline
+        # strategies). Peak stake at 0.29 × 8 = $2.32; depth $20 keeps ~8.6×
+        # cushion which is still generous for soccer book sizes.
+        return min(8.0, self._order_manager.bankroll * 0.02)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
