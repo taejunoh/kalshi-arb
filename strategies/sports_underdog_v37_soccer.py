@@ -57,10 +57,12 @@ class SportsUnderdogV37SoccerStrategy(SportsUnderdogV31Strategy):
     MIN_ENTRY_PRICE = 0.20
     MAX_ENTRY_PRICE = 0.29
 
-    # Depth gate. Peak stake at price 0.29 × size 4 = $1.16, so $20 keeps
-    # ~17x cushion — generous for tradeable soccer book sizes (per
-    # sport_promotion_thresholds memory: top-of-book p50 >= $20 for soccer).
-    MIN_DEPTH_USDC = 20.0
+    # Depth gate. Peak stake at price 0.29 × size 8 = $2.32, so $15 keeps
+    # ~6.5× cushion. Lowered from $20 (2026-05-06 same-day) to capture more
+    # BUN candidates — per npb_kbo_soccer_observers memory, BUN top-of-book
+    # depth p50 ≈ $20 (51% pass rate at $20). $15 gate captures ~80% of BUN
+    # markets while still keeping >5× cushion.
+    MIN_DEPTH_USDC = 15.0
 
     def _get_trade_size(self, signal: dict) -> float:
         # Live launch size 8 (2x bumped from initial 4 same-day on 2026-05-06).
