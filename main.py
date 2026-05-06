@@ -34,6 +34,7 @@ from strategies.sports_midshot_v35 import SportsMidshotV35Strategy
 from strategies.sports_underdog_v35 import SportsUnderdogV35Strategy
 from strategies.sports_underdog_v36_playoff import SportsUnderdogV36PlayoffStrategy
 from strategies.sports_underdog_v36_us import SportsUnderdogV36USStrategy
+from strategies.sports_underdog_v37_soccer import SportsUnderdogV37SoccerStrategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
@@ -158,6 +159,13 @@ class Bot:
         # Same 35¢+ floor + PLAYOFF_ONLY logic. Evidence: trade-level us 35¢+
         # n=12 +88-189% across underdog_v34 paper + v35 LIVE+twin.
         self.sports_underdog_v36_us = SportsUnderdogV36USStrategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # V3.7 Soccer — soccer-only deep-underdog 20-29c TEAM-only.
+        # Built 2026-05-06 from observer analysis of MLS/EPL/LAL/BUN/UCL.
+        # Paper-twin only at launch. n=13 games / +120% ROI / drop-top-3 +55%.
+        # Promotion gate: n>=25 + ROI>=+30% + drop-3 > 0.
+        self.sports_underdog_v37_soccer = SportsUnderdogV37SoccerStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
@@ -375,6 +383,8 @@ class Bot:
             # gate: n_games ≥ 25 with ROI ≥ +30%.
             ("sports_underdog_v36_playoff", self.sports_underdog_v36_playoff),
             ("sports_underdog_v36_us", self.sports_underdog_v36_us),
+            # V3.7 Soccer — paper-twin only at launch. Soccer 20-29c TEAM.
+            ("sports_underdog_v37_soccer", self.sports_underdog_v37_soccer),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
             # -37.5% ROI. Freshness gate was added 2026-04-16 (80ad42e) but
             # only a handful of post-gate entries accumulated before shutdown;
