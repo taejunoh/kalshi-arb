@@ -635,6 +635,22 @@ class Database:
             )
             await conn.commit()
 
+    async def total_open_exposure(self, market_id: str) -> float:
+        """Sum of `size` across all strategies for open trades on this ticker.
+
+        Open = status in ('paper_filled', 'paper_open', 'filled', 'open').
+        Excludes settled / closed / failed trades.
+        """
+        OPEN_STATUSES = ("paper_filled", "paper_open", "filled", "open")
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                f"SELECT COALESCE(SUM(size), 0.0) FROM trades "
+                f"WHERE market_id = ? AND status IN ({','.join('?' * len(OPEN_STATUSES))})",
+                (market_id, *OPEN_STATUSES),
+            )
+            row = await cur.fetchone()
+            return float(row[0]) if row else 0.0
+
     async def get_daily_pnl(self):
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
