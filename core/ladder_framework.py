@@ -109,3 +109,47 @@ def group_legs_into_ladders(
             direction=direction, legs=tuple(sorted_legs),
         ))
     return out
+
+
+def find_arb_opportunities(
+    group: LadderGroup,
+    fee: float,
+    min_edge_usdc: float,
+    min_depth_usdc: float,
+    max_position_usdc: float,
+) -> list[ArbTrade]:
+    """Detect adjacent inversion (cumulative) or sum-to-1 violation (bucketed)
+    that produces a riskless arb above the fee budget. Sub-strategy is
+    responsible for de-duplicating multiple opportunities on the same group.
+    """
+    trades: list[ArbTrade] = []
+    if group.ladder_type == "cumulative":
+        legs = group.legs  # already sorted by group_legs_into_ladders
+        for i in range(len(legs) - 1):
+            t1, t2 = legs[i], legs[i + 1]
+            # Inversion: easier threshold's yes_ask < stricter threshold's yes_bid
+            inv = t2.yes_bid - t1.yes_ask
+            if inv <= 0:
+                continue
+            # Worst-case payoff = $1; cost = yes_ask(T1) + no_ask(T2)
+            cost = t1.yes_ask + t2.no_ask
+            edge = 1.0 - cost - 2 * fee
+            if edge < min_edge_usdc:
+                continue
+            if t1.yes_depth < min_depth_usdc or t2.no_depth < min_depth_usdc:
+                continue
+            half = max_position_usdc / 2.0
+            trades.append(ArbTrade(
+                group_key=f"{group.series}-{group.event_key}",
+                legs=(
+                    ArbLeg(ticker=t1.ticker, side="yes",
+                           size_usdc=half, price=t1.yes_ask),
+                    ArbLeg(ticker=t2.ticker, side="no",
+                           size_usdc=half, price=t2.no_ask),
+                ),
+                expected_edge_usdc=round(edge * (max_position_usdc / 1.0), 4),
+            ))
+    elif group.ladder_type == "bucketed":
+        # implemented in Task 4
+        pass
+    return trades

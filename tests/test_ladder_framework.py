@@ -160,3 +160,74 @@ def test_group_legs_separates_distinct_event_keys():
     )
     assert len(groups) == 2
     assert {g.event_key for g in groups} == {"26MAY09-1500", "26MAY10-1500"}
+
+
+from core.ladder_framework import find_arb_opportunities
+
+
+def _leg(ticker: str, threshold: float, yes_ask: float, yes_bid: float,
+         depth: float = 100.0) -> LadderLeg:
+    return LadderLeg(
+        ticker=ticker, threshold=threshold,
+        yes_ask=yes_ask, yes_bid=yes_bid,
+        no_ask=1.0 - yes_bid, no_bid=1.0 - yes_ask,
+        yes_depth=depth, no_depth=depth,
+    )
+
+
+def _cum_group(legs: list[LadderLeg]) -> LadderGroup:
+    return LadderGroup(
+        series="X", event_key="E1", ladder_type="cumulative",
+        direction="asc", legs=tuple(legs),
+    )
+
+
+def test_arb_fires_on_cumulative_inversion_above_fee_budget():
+    # T1 (easier threshold) yes_ask 0.40, T2 (stricter) yes_bid 0.60
+    # Inversion = 0.20. Cost = 0.40 + 0.40 (no @ T2) = 0.80. + 2·fee 0.14 = 0.94 < 1.
+    # Worst payoff = 1.0 → edge = 0.06.
+    g = _cum_group([
+        _leg("T1", 1.0, yes_ask=0.40, yes_bid=0.38, depth=200.0),
+        _leg("T2", 2.0, yes_ask=0.62, yes_bid=0.60, depth=200.0),
+    ])
+    trades = find_arb_opportunities(
+        g, fee=0.07, min_edge_usdc=0.02, min_depth_usdc=50.0,
+        max_position_usdc=50.0,
+    )
+    assert len(trades) == 1
+    t = trades[0]
+    assert t.legs[0].ticker == "T1" and t.legs[0].side == "yes"
+    assert t.legs[1].ticker == "T2" and t.legs[1].side == "no"
+    assert t.expected_edge_usdc > 0.05
+
+
+def test_arb_skips_when_inversion_below_fee_budget():
+    # Inversion = 0.05. Cost = 0.45 + 0.50 = 0.95. + 2·fee = 1.09 > 1 → no edge.
+    g = _cum_group([
+        _leg("T1", 1.0, yes_ask=0.45, yes_bid=0.43),
+        _leg("T2", 2.0, yes_ask=0.52, yes_bid=0.50),
+    ])
+    trades = find_arb_opportunities(g, fee=0.07, min_edge_usdc=0.02,
+                                     min_depth_usdc=50.0, max_position_usdc=50.0)
+    assert trades == []
+
+
+def test_arb_skips_when_depth_insufficient():
+    g = _cum_group([
+        _leg("T1", 1.0, yes_ask=0.40, yes_bid=0.38, depth=20.0),
+        _leg("T2", 2.0, yes_ask=0.62, yes_bid=0.60, depth=200.0),
+    ])
+    trades = find_arb_opportunities(g, fee=0.07, min_edge_usdc=0.02,
+                                     min_depth_usdc=50.0, max_position_usdc=50.0)
+    assert trades == []
+
+
+def test_arb_skips_when_no_inversion():
+    # Strictly monotonic (no inversion).
+    g = _cum_group([
+        _leg("T1", 1.0, yes_ask=0.50, yes_bid=0.48),
+        _leg("T2", 2.0, yes_ask=0.40, yes_bid=0.38),
+    ])
+    trades = find_arb_opportunities(g, fee=0.07, min_edge_usdc=0.02,
+                                     min_depth_usdc=50.0, max_position_usdc=50.0)
+    assert trades == []
