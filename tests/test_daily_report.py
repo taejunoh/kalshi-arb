@@ -66,12 +66,12 @@ async def test_report_prepends_season_reminder_when_due(db, monkeypatch):
     from datetime import date
     monkeypatch.setattr(
         "scripts.daily_report._today_et",
-        lambda: date(2026, 5, 8),  # 7 days before WNBA opener 2026-05-15
+        lambda: date(2026, 8, 22),  # 7 days before NCAA Football opener 2026-08-29
     )
     text = await build_report(db, bankroll=2000.0)
     # Reminder should appear above the main report body
-    assert "WNBA" in text
-    assert text.index("WNBA") < text.index("V3 ")
+    assert "NCAA Football" in text
+    assert text.index("NCAA Football") < text.index("V3 ")
 
 
 @pytest.mark.asyncio

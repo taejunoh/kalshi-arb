@@ -129,13 +129,15 @@ def _odds_cache_reset() -> None:
 
 # Kalshi sports series
 SPORTS_SERIES = [
-    "KXNBAGAME", "KXMLBGAME", "KXNHLGAME",
+    "KXNBAGAME", "KXWNBAGAME", "KXMLBGAME", "KXNHLGAME",
     "KXNPBGAME", "KXKBOGAME",
     "KXMLSGAME", "KXEPLGAME", "KXLALIGAGAME", "KXUCLGAME", "KXBUNDESLIGAGAME",
 ]
 
-# Game-suffix tokens used to extract a 3-letter sport short code from a ticker.
-# Order matters when one suffix is a substring of another (none currently).
+# Game-suffix tokens used to extract a sport short code from a ticker.
+# Order matters: WNBAGAME must come before NBAGAME because "NBAGAME" is a
+# substring of "WNBAGAME" — first-match wins in the `next((s for s in ... if s in ticker))`
+# pattern, so a WNBA ticker would classify as NBA if NBAGAME came first.
 # 2026-05-03 re-added NPB/KBO/BUN: prior 2026-05-02 removals used Kalshi OI
 # as the tradability metric, but the actual strategy gate is top-of-book
 # DEPTH (kalshi_yes_ask × kalshi_yes_ask_size). Re-checked metrics:
@@ -145,10 +147,23 @@ SPORTS_SERIES = [
 #     and live depth gate will both cull the thin half symmetrically; the
 #     5/9 paper backtest will tell us if the surviving half carries alpha)
 SPORT_GAME_TOKENS = (
+    "WNBAGAME",  # MUST come before NBAGAME — substring collision
     "NBAGAME", "MLBGAME", "NHLGAME",
     "NPBGAME", "KBOGAME",
     "MLSGAME", "EPLGAME", "LALIGAGAME", "UCLGAME", "BUNDESLIGAGAME",
 )
+
+# Token → short sport code. Most tokens use the first 3 chars (NBA, MLB, NHL,
+# NPB, KBO, MLS, EPL, LAL, UCL, BUN) but WNBA is 4 letters — explicit map
+# avoids "WNBAGAME"[:3] == "WNB" silently misclassifying WNBA tickers in
+# OBSERVATION_ONLY/SPORT_BLOCKLIST/PLAYOFF_BLOCKLIST/ALLOWED_CELLS gates.
+SPORT_SHORT_BY_TOKEN = {
+    "WNBAGAME": "WNBA",
+    "NBAGAME": "NBA", "MLBGAME": "MLB", "NHLGAME": "NHL",
+    "NPBGAME": "NPB", "KBOGAME": "KBO",
+    "MLSGAME": "MLS", "EPLGAME": "EPL", "LALIGAGAME": "LAL",
+    "UCLGAME": "UCL", "BUNDESLIGAGAME": "BUN",
+}
 
 # Sports whose Pinnacle h2h market includes a "Draw" outcome. Probability
 # helpers normalize home + away + draw to sum=1 for these.
@@ -364,6 +379,9 @@ class SportsTraderStrategy:
     # this set in the subclass with the entry removed. Soccer leagues require
     # 3-way (draw) handling before any live promotion can be considered.
     OBSERVATION_ONLY_SPORTS: frozenset = frozenset({
+        "WNBA",  # 2026-05-09 wired (KXWNBAGAME). Observe through ~5/16 opener
+                 # + first 1-2 weeks before any promotion. Pinnacle line quality
+                 # on women's basketball historically thinner than men's.
         "NPB", "KBO",
         "MLS", "EPL", "LAL", "UCL", "BUN",
     })
@@ -434,7 +452,7 @@ class SportsTraderStrategy:
             return sum(
                 float(p.get("market_exposure_dollars", 0))
                 for p in positions
-                if any(s in p.get("ticker", "") for s in ["NBAGAME", "MLBGAME", "NHLGAME"])
+                if any(s in p.get("ticker", "") for s in SPORT_GAME_TOKENS)
                 and float(p.get("position_fp", 0)) != 0
             )
         except Exception as e:
@@ -610,6 +628,7 @@ class SportsTraderStrategy:
     # Kept as reference only. Only used if Kalshi specifically misprices home/away.
     HOME_ADVANTAGE = {
         "basketball_nba": 0.0,
+        "basketball_wnba": 0.0,
         "baseball_mlb": 0.0,
         "icehockey_nhl": 0.0,
         "baseball_npb": 0.0,
@@ -994,6 +1013,7 @@ class SportsTraderStrategy:
         # Fetch odds from API
         sport_map = {
             "KXNBAGAME": "basketball_nba",
+            "KXWNBAGAME": "basketball_wnba",
             "KXMLBGAME": "baseball_mlb",
             "KXNHLGAME": "icehockey_nhl",
             "KXNPBGAME": "baseball_npb",
@@ -1053,7 +1073,7 @@ class SportsTraderStrategy:
         sports_exp = sum(
             float(p.get("market_exposure_dollars", 0))
             for p in all_positions
-            if any(s in p.get("ticker", "") for s in ["NBAGAME", "MLBGAME", "NHLGAME"])
+            if any(s in p.get("ticker", "") for s in SPORT_GAME_TOKENS)
             and float(p.get("position_fp", 0)) != 0
         )
         kalshi_balance = self._client.get_balance(max_age_s=60)
@@ -1106,7 +1126,7 @@ class SportsTraderStrategy:
                 # entering trades on it.
                 if self.OBSERVATION_ONLY_SPORTS:
                     obs_sport = next(
-                        (s[:3] for s in SPORT_GAME_TOKENS if s in ticker),
+                        (SPORT_SHORT_BY_TOKEN[s] for s in SPORT_GAME_TOKENS if s in ticker),
                         None,
                     )
                     if obs_sport and obs_sport in self.OBSERVATION_ONLY_SPORTS:
@@ -1120,7 +1140,7 @@ class SportsTraderStrategy:
                         (s for s in SPORT_GAME_TOKENS if s in ticker),
                         None,
                     )
-                    short = sport_code[:3] if sport_code else None
+                    short = SPORT_SHORT_BY_TOKEN.get(sport_code) if sport_code else None
                     if short and short in self.SPORT_BLOCKLIST:
                         continue
 
@@ -1130,7 +1150,7 @@ class SportsTraderStrategy:
                 # skip. Auto-resumes when sport returns to regular season.
                 if self.PLAYOFF_BLOCKLIST:
                     pb_sport = next(
-                        (s[:3] for s in SPORT_GAME_TOKENS if s in ticker),
+                        (SPORT_SHORT_BY_TOKEN[s] for s in SPORT_GAME_TOKENS if s in ticker),
                         None,
                     )
                     if pb_sport and pb_sport in self.PLAYOFF_BLOCKLIST:
@@ -1243,7 +1263,7 @@ class SportsTraderStrategy:
                 # +14% — two cells need different regions).
                 if self.ALLOWED_CELLS is not None:
                     sport_code = next(
-                        (s[:3] for s in SPORT_GAME_TOKENS if s in ticker),
+                        (SPORT_SHORT_BY_TOKEN[s] for s in SPORT_GAME_TOKENS if s in ticker),
                         None,
                     )
                     mts = _commence_time_to_minutes(matched_game.get("commence_time"))

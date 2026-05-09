@@ -34,6 +34,7 @@ logger = logging.getLogger("sports_scan_observer")
 
 SPORT_MAP = {
     "KXNBAGAME": "basketball_nba",
+    "KXWNBAGAME": "basketball_wnba",
     "KXMLBGAME": "baseball_mlb",
     "KXNHLGAME": "icehockey_nhl",
     "KXNPBGAME": "baseball_npb",
@@ -46,6 +47,7 @@ SPORT_MAP = {
 }
 SPORT_SHORT = {
     "KXNBAGAME": "NBA",
+    "KXWNBAGAME": "WNBA",
     "KXMLBGAME": "MLB",
     "KXNHLGAME": "NHL",
     "KXNPBGAME": "NPB",

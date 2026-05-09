@@ -14,13 +14,7 @@ from typing import Optional
 # Source: official league schedules (verify annually).
 # open_date = Day 1 of regular season (first game). Reminder fires T-7 days.
 SEASON_OPENINGS: list[dict] = [
-    {
-        "name": "WNBA",
-        "open_date": date(2026, 5, 15),
-        "action": "Add KXWNBAGAME series to sports_trader.sport_map "
-                  "(Odds API sport_key: basketball_wnba). "
-                  "Update clv_tracker regex to include WNBA.",
-    },
+    # WNBA wired 2026-05-09 (observer-only via OBSERVATION_ONLY_SPORTS).
     {
         "name": "NCAA Football",
         "open_date": date(2026, 8, 29),

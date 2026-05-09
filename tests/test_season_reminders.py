@@ -11,17 +11,17 @@ def test_no_reminder_when_no_season_starts_today():
 
 
 def test_reminder_fires_exactly_7_days_before_season():
-    """WNBA opens ~May 15, 2026 → reminder on May 8."""
-    msgs = get_active_reminders(date(2026, 5, 8))
+    """NCAA Football opens 2026-08-29 → reminder on 2026-08-22."""
+    msgs = get_active_reminders(date(2026, 8, 22))
     assert len(msgs) == 1
-    assert "WNBA" in msgs[0]
+    assert "NCAA Football" in msgs[0]
 
 
 def test_reminder_does_not_fire_6_days_before():
     """Only T-7 exactly, not a week-long window."""
-    assert get_active_reminders(date(2026, 5, 9)) == []
-    assert get_active_reminders(date(2026, 5, 14)) == []  # day before
-    assert get_active_reminders(date(2026, 5, 15)) == []  # day of
+    assert get_active_reminders(date(2026, 8, 23)) == []
+    assert get_active_reminders(date(2026, 8, 28)) == []  # day before
+    assert get_active_reminders(date(2026, 8, 29)) == []  # day of
 
 
 def test_multiple_reminders_same_day_possible():
@@ -39,10 +39,11 @@ def test_each_entry_has_required_fields():
         assert "action" in entry and entry["action"]
 
 
-def test_covers_wnba_nfl_ncaa_foot_ncaa_bball():
-    """Verify the four requested seasons are tracked."""
+def test_covers_remaining_pre_wired_seasons():
+    """Verify the remaining un-wired seasons are tracked. WNBA was wired
+    2026-05-09 and removed from the list."""
     names = {e["name"] for e in SEASON_OPENINGS}
-    assert "WNBA" in names
+    assert "WNBA" not in names  # wired
     assert "NFL" in names
     assert "NCAA Football" in names
     assert "NCAA Basketball" in names

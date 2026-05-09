@@ -216,7 +216,7 @@ def verify_state():
     resting = k.get_resting_orders()
     positions = k.get_positions()
     active = [p for p in positions if float(p.get("position_fp", 0)) != 0]
-    sports = [p for p in active if any(s in p["ticker"] for s in ["NBAGAME", "MLBGAME", "NHLGAME"])]
+    sports = [p for p in active if any(s in p["ticker"] for s in ["WNBAGAME", "NBAGAME", "MLBGAME", "NHLGAME", "NPBGAME", "KBOGAME", "MLSGAME", "EPLGAME", "LALIGAGAME", "UCLGAME", "BUNDESLIGAGAME"])]
     mentions = [p for p in active if "FEDMENTION" in p["ticker"]]
     total_exp = sum(float(p["market_exposure_dollars"]) for p in active)
     print(f"  Balance: ${bal}")

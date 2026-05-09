@@ -81,10 +81,14 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             # Legacy: econ_trader placed live CPI/GDP/FED trades before being
             # disabled. Positions still tracked on Kalshi.
             return "econ_trader"
-        if any(s in ticker for s in ["NBAGAME", "MLBGAME", "NHLGAME"]):
+        if any(s in ticker for s in ["WNBAGAME", "NBAGAME", "MLBGAME", "NHLGAME",
+                                      "NPBGAME", "KBOGAME",
+                                      "MLSGAME", "EPLGAME", "LALIGAGAME",
+                                      "UCLGAME", "BUNDESLIGAGAME"]):
             # Sports subclasses (longshot/midshot/underdog) cannot be
             # disambiguated from ticker alone. Attribute to generic
             # sports_trader. Currently none are Live anyway.
+            # WNBAGAME must come before NBAGAME (substring collision).
             return "sports_trader"
         return None
 
@@ -828,7 +832,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             """Map ticker → strategy name. Keep in sync with
             _categorize_live_ticker above and ticker patterns used by
             each strategy's scan loop."""
-            if any(s in ticker for s in ["NBAGAME", "MLBGAME", "NHLGAME"]):
+            if any(s in ticker for s in ["WNBAGAME", "NBAGAME", "MLBGAME", "NHLGAME",
+                                          "NPBGAME", "KBOGAME",
+                                          "MLSGAME", "EPLGAME", "LALIGAGAME",
+                                          "UCLGAME", "BUNDESLIGAGAME"]):
                 return "sports_trader"
             if any(s in ticker for s in ["KXBTC", "KXETH", "KXSOL", "KXXRP"]):
                 return "spread_scanner"
