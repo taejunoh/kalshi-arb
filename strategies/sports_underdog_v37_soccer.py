@@ -41,7 +41,15 @@ class SportsUnderdogV37SoccerStrategy(SportsUnderdogV31Strategy):
 
     # Soccer leagues only — block all non-soccer sports.
     # Deny-list approach so future-added leagues (e.g., Liga MX) auto-include.
-    SPORT_BLOCKLIST = frozenset({"NBA", "MLB", "NHL", "NPB", "KBO"})
+    SPORT_BLOCKLIST = frozenset({"NBA", "WNBA", "MLB", "NHL", "NPB", "KBO"})
+
+    # Override parent's OBSERVATION_ONLY_SPORTS (which contains soccer leagues)
+    # so soccer tickers actually reach evaluate(). v37 is the explicit live
+    # promotion of soccer; SPORT_BLOCKLIST above keeps non-soccer blocked.
+    # Without this override, the parent gate at sports_trader.py:1127 silently
+    # skips every MLS/EPL/LAL/UCL/BUN ticker — verified 2026-05-09 by 0
+    # trade rows since 2026-05-06 launch.
+    OBSERVATION_ONLY_SPORTS = frozenset()
 
     # Override v31's NBA/NHL playoff blocklist — soccer doesn't have playoff
     # phase the same way; v31's blocklist is irrelevant here.
