@@ -8,7 +8,7 @@ for sub-strategies to execute.
 Spec: docs/superpowers/specs/2026-05-09-ladder-consistency-arb-design.md
 """
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Literal
 
 
 @dataclass(frozen=True)

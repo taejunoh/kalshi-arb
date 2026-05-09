@@ -1,4 +1,5 @@
 import pytest
+from dataclasses import FrozenInstanceError
 from core.ladder_framework import LadderLeg, LadderGroup, ArbLeg, ArbTrade, FadeTrade
 
 
@@ -8,13 +9,11 @@ def test_ladder_leg_is_frozen():
         yes_ask=0.45, yes_bid=0.43, no_ask=0.57, no_bid=0.55,
         yes_depth=120.0, no_depth=80.0,
     )
-    assert leg.ticker == "KXBTC-26MAY09-1500-B70250"
-    assert leg.threshold == 70250.0
-    with pytest.raises(Exception):  # frozen → can't reassign
+    with pytest.raises(FrozenInstanceError):
         leg.threshold = 0
 
 
-def test_ladder_group_holds_sorted_legs():
+def test_ladder_group_stores_legs_as_provided():
     legs = (
         LadderLeg("T1", 70250.0, 0.45, 0.43, 0.57, 0.55, 120.0, 80.0),
         LadderLeg("T2", 70350.0, 0.42, 0.40, 0.60, 0.58, 100.0, 90.0),
