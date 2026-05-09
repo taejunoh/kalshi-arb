@@ -1,0 +1,104 @@
+{
+  "funding_deadline_proxy": {
+    "n_markets": 19,
+    "result_yes": 7,
+    "result_no": 12,
+    "result_other": 0,
+    "base_rate_yes": 0.3684,
+    "base_rate_no": 0.6316,
+    "fade_sim": {
+      "0.25": {
+        "n_trigger": 19,
+        "trigger_resolved_no": 12,
+        "trigger_resolved_yes": 7,
+        "win_rate_no": 0.631578947368421,
+        "avg_pnl_per_trade_usd": -0.1884,
+        "roi_pct": -22.98
+      },
+      "0.35": {
+        "n_trigger": 17,
+        "trigger_resolved_no": 10,
+        "trigger_resolved_yes": 7,
+        "win_rate_no": 0.5882352941176471,
+        "avg_pnl_per_trade_usd": -0.1318,
+        "roi_pct": -18.3
+      },
+      "0.50": {
+        "n_trigger": 14,
+        "trigger_resolved_no": 7,
+        "trigger_resolved_yes": 7,
+        "win_rate_no": 0.5,
+        "avg_pnl_per_trade_usd": -0.07,
+        "roi_pct": -12.28
+      }
+    }
+  },
+  "budget_resolution": {
+    "n_markets": 19,
+    "result_yes": 11,
+    "result_no": 8,
+    "result_other": 0,
+    "base_rate_yes": 0.5789,
+    "base_rate_no": 0.4211,
+    "fade_sim": {
+      "0.25": {
+        "n_trigger": 17,
+        "trigger_resolved_no": 6,
+        "trigger_resolved_yes": 11,
+        "win_rate_no": 0.35294117647058826,
+        "avg_pnl_per_trade_usd": -0.4671,
+        "roi_pct": -56.96
+      },
+      "0.35": {
+        "n_trigger": 15,
+        "trigger_resolved_no": 4,
+        "trigger_resolved_yes": 11,
+        "win_rate_no": 0.26666666666666666,
+        "avg_pnl_per_trade_usd": -0.4533,
+        "roi_pct": -62.96
+      },
+      "0.50": {
+        "n_trigger": 14,
+        "trigger_resolved_no": 3,
+        "trigger_resolved_yes": 11,
+        "win_rate_no": 0.21428571428571427,
+        "avg_pnl_per_trade_usd": -0.3557,
+        "roi_pct": -62.41
+      }
+    }
+  },
+  "rhetoric_baseline": {
+    "n_markets": 102,
+    "result_yes": 37,
+    "result_no": 65,
+    "result_other": 0,
+    "base_rate_yes": 0.3627,
+    "base_rate_no": 0.6373,
+    "fade_sim": {
+      "0.25": {
+        "n_trigger": 71,
+        "trigger_resolved_no": 36,
+        "trigger_resolved_yes": 35,
+        "win_rate_no": 0.5070422535211268,
+        "avg_pnl_per_trade_usd": -0.313,
+        "roi_pct": -38.17
+      },
+      "0.35": {
+        "n_trigger": 59,
+        "trigger_resolved_no": 28,
+        "trigger_resolved_yes": 31,
+        "win_rate_no": 0.4745762711864407,
+        "avg_pnl_per_trade_usd": -0.2454,
+        "roi_pct": -34.09
+      },
+      "0.50": {
+        "n_trigger": 51,
+        "trigger_resolved_no": 21,
+        "trigger_resolved_yes": 30,
+        "win_rate_no": 0.4117647058823529,
+        "avg_pnl_per_trade_usd": -0.1582,
+        "roi_pct": -27.76
+      }
+    }
+  }
+}

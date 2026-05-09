@@ -92,6 +92,26 @@ class Database:
                     is_playoff INTEGER
                 )
             """)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS ladder_violations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts TEXT NOT NULL,
+                    series TEXT NOT NULL,
+                    event_key TEXT NOT NULL,
+                    ladder_type TEXT NOT NULL,
+                    leg_a_ticker TEXT NOT NULL,
+                    leg_b_ticker TEXT,
+                    inversion_amount REAL NOT NULL,
+                    leg_a_depth REAL,
+                    leg_b_depth REAL,
+                    action_taken TEXT NOT NULL,
+                    sub_strategy TEXT NOT NULL
+                )
+            """)
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_lv_strategy_ts "
+                "ON ladder_violations(sub_strategy, ts)"
+            )
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_status_pnl ON trades(status, pnl)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_trade ON clv_snapshots(trade_id)")
@@ -281,6 +301,39 @@ class Database:
                 (strategy, market_id),
             )
             return (await cursor.fetchone()) is not None
+
+    async def record_ladder_violation(
+        self, *, series: str, event_key: str, ladder_type: str,
+        leg_a_ticker: str, leg_b_ticker: str | None,
+        inversion_amount: float,
+        leg_a_depth: float | None, leg_b_depth: float | None,
+        action_taken: str, sub_strategy: str,
+    ) -> int:
+        ts = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                "INSERT INTO ladder_violations "
+                "(ts, series, event_key, ladder_type, leg_a_ticker, leg_b_ticker, "
+                " inversion_amount, leg_a_depth, leg_b_depth, action_taken, sub_strategy) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (ts, series, event_key, ladder_type, leg_a_ticker, leg_b_ticker,
+                 inversion_amount, leg_a_depth, leg_b_depth, action_taken, sub_strategy),
+            )
+            await conn.commit()
+            return cur.lastrowid
+
+    async def fetch_recent_ladder_violations(
+        self, sub_strategy: str, limit: int = 100,
+    ) -> list[dict]:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                "SELECT * FROM ladder_violations WHERE sub_strategy = ? "
+                "ORDER BY ts DESC LIMIT ?",
+                (sub_strategy, limit),
+            )
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
 
     async def get_open_orders(self, limit: int = 100):
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
