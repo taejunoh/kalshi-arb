@@ -120,5 +120,109 @@ class MacroEventStrategy:
         return min(base * scale, cfg.MACRO_EVENT_MAX_POSITION_PER_TICKER)
 
     async def scan_and_execute(self):
-        """Stub — fully wired in Task 11."""
-        return
+        if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
+            return
+        markets = [m for m in self._scanner.get_all_markets()
+                   if self._is_target_market(m)]
+        if not markets:
+            return
+        now = datetime.now(timezone.utc)
+        db = getattr(self._order_manager, "_db", None)
+        if db is None:
+            logger.warning("OrderManager has no _db attribute — skipping scan")
+            return
+        for m in markets:
+            await self._handle_market(m, db=db, now=now)
+
+    async def _handle_market(self, market: dict, *, db, now: datetime):
+        cfg = self.config
+        ticker = market.get("ticker", "")
+
+        # Gate 1: window
+        if not self._inside_window(market, now=now):
+            return
+
+        # Fetch latest book
+        yes_price, no_price = self._client.get_market_prices(ticker)
+        if yes_price is None or no_price is None:
+            return
+        yes_depth, no_depth = self._client.get_order_book_depth(ticker)
+        yes_depth = yes_depth or 0.0
+        no_depth = no_depth or 0.0
+
+        # Bid/ask: prefer market-dict fields (in cents → divide by 100) so that
+        # the mid is computed from the spread rather than collapsing to ask.
+        # Fall back to client price as both ask and bid when dict fields absent
+        # (bid-ask collapse limitation documented in spec section 3.7 for v0).
+        raw_yes_ask = market.get("yes_ask")
+        raw_yes_bid = market.get("yes_bid")
+        raw_no_ask = market.get("no_ask")
+        raw_no_bid = market.get("no_bid")
+        if raw_yes_ask is not None and raw_yes_bid is not None:
+            yes_ask = raw_yes_ask / 100.0
+            yes_bid = raw_yes_bid / 100.0
+        else:
+            yes_ask = yes_bid = yes_price
+        if raw_no_ask is not None and raw_no_bid is not None:
+            no_ask = raw_no_ask / 100.0
+            no_bid = raw_no_bid / 100.0
+        else:
+            no_ask = no_bid = no_price
+
+        # Resolve event_key + bucket + consensus
+        event_key = self._extract_event_key(market)
+        bucket = self._extract_bucket(market)
+        if not event_key or not bucket:
+            return
+        consensus_row = await db.fetch_macro_consensus(event_key, bucket)
+        if not consensus_row:
+            return
+        consensus = consensus_row["prob"]
+
+        # Gate 2: consensus staleness
+        try:
+            fetched_at = datetime.fromisoformat(
+                consensus_row["fetched_at"].replace("Z", "+00:00")
+            )
+        except Exception:
+            return
+        age_hours = (now - fetched_at).total_seconds() / 3600.0
+        if age_hours > cfg.MACRO_CONSENSUS_STALE_HOURS:
+            logger.warning(f"[MACRO] consensus stale for {event_key}/{bucket} "
+                           f"({age_hours:.1f}h)")
+            return
+
+        # Gates 3 + 4: deviation + EV (handled by _compute_edge)
+        edge = self._compute_edge(
+            kalshi_yes_ask=yes_ask, kalshi_yes_bid=yes_bid,
+            kalshi_no_ask=no_ask, kalshi_no_bid=no_bid,
+            consensus=consensus,
+        )
+        if not edge:
+            return
+
+        # Gate 5: depth (check the side we're entering)
+        depth_for_side = yes_depth if edge["side"] == "yes" else no_depth
+        if depth_for_side < cfg.MACRO_EVENT_MIN_DEPTH_USDC:
+            return
+
+        # Gate 6: per-strategy dedup is enforced by OrderManager's
+        # has_existing_trade guard — extended to macro_* in Task 6.
+
+        # Gate 7: cross-strategy exposure cap
+        size = self._size_for_edge(edge["deviation"])
+        existing = await db.total_open_exposure(ticker)
+        if existing + size > cfg.MACRO_EVENT_MAX_TICKER_TOTAL_EXPOSURE:
+            logger.info(f"[MACRO] exposure cap on {ticker}: "
+                        f"existing={existing} + size={size} > "
+                        f"{cfg.MACRO_EVENT_MAX_TICKER_TOTAL_EXPOSURE}")
+            return
+
+        # Fire
+        logger.info(f"[MACRO] FIRE {ticker} {edge['side']} size=${size:.2f} "
+                    f"dev={edge['deviation']:+.4f} ev={edge['ev_per_contract']:+.4f}")
+        await self._order_manager.market_order(
+            ticker=ticker, side=edge["side"], size_usdc=size,
+            price=edge["entry_price"], strategy=self.STRATEGY_NAME,
+            market_id=ticker,
+        )
