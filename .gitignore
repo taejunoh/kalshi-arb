@@ -9,3 +9,7 @@ data/
 logs/
 .pytest_cache/
 .claude/
+
+# Research raw API dumps (regenerable via scripts/research/*.py)
+scripts/research/shutdown_fade_data/markets_*.json
+scripts/research/shutdown_fade_data/candles_*.json

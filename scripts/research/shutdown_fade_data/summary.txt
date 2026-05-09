@@ -1,0 +1,28 @@
+shutdown_fade redesign prereq — analysis summary
+generated: 2026-05-09T13:34:17.157615+00:00
+pre_close_window_days=14, fee=0.07, thresholds=[0.25, 0.35, 0.5]
+
+=== funding_deadline_proxy ===
+  n_markets: 19  YES=7  NO=12  other=0
+  base_rate_NO: 0.6316  base_rate_YES: 0.3684
+  fade sim (BUY NO when pre-close YES_high crosses threshold):
+    thr=0.25  triggered=  19  resolved_NO= 12  resolved_YES=  7  win_rate_NO=0.631578947368421  avg_pnl=$-0.1884  ROI=-22.98%
+    thr=0.35  triggered=  17  resolved_NO= 10  resolved_YES=  7  win_rate_NO=0.5882352941176471  avg_pnl=$-0.1318  ROI=-18.3%
+    thr=0.50  triggered=  14  resolved_NO=  7  resolved_YES=  7  win_rate_NO=0.5  avg_pnl=$-0.07  ROI=-12.28%
+
+=== budget_resolution ===
+  n_markets: 19  YES=11  NO=8  other=0
+  base_rate_NO: 0.4211  base_rate_YES: 0.5789
+  fade sim (BUY NO when pre-close YES_high crosses threshold):
+    thr=0.25  triggered=  17  resolved_NO=  6  resolved_YES= 11  win_rate_NO=0.35294117647058826  avg_pnl=$-0.4671  ROI=-56.96%
+    thr=0.35  triggered=  15  resolved_NO=  4  resolved_YES= 11  win_rate_NO=0.26666666666666666  avg_pnl=$-0.4533  ROI=-62.96%
+    thr=0.50  triggered=  14  resolved_NO=  3  resolved_YES= 11  win_rate_NO=0.21428571428571427  avg_pnl=$-0.3557  ROI=-62.41%
+
+=== rhetoric_baseline ===
+  n_markets: 102  YES=37  NO=65  other=0
+  base_rate_NO: 0.6373  base_rate_YES: 0.3627
+  fade sim (BUY NO when pre-close YES_high crosses threshold):
+    thr=0.25  triggered=  71  resolved_NO= 36  resolved_YES= 35  win_rate_NO=0.5070422535211268  avg_pnl=$-0.313  ROI=-38.17%
+    thr=0.35  triggered=  59  resolved_NO= 28  resolved_YES= 31  win_rate_NO=0.4745762711864407  avg_pnl=$-0.2454  ROI=-34.09%
+    thr=0.50  triggered=  51  resolved_NO= 21  resolved_YES= 30  win_rate_NO=0.4117647058823529  avg_pnl=$-0.1582  ROI=-27.76%
+

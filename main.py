@@ -40,6 +40,10 @@ from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
 from strategies.sports_scan_observer import SportsScanObserver
 from strategies.econ_trader import EconTraderStrategy
+from strategies.ladder_crypto import LadderCryptoStrategy
+from strategies.ladder_fed import LadderFedStrategy
+from strategies.ladder_approval import LadderApprovalStrategy
+from strategies.ladder_shutdown import LadderShutdownStrategy
 from core.settlement import SettlementChecker
 from core.clv_tracker import CLVTracker
 from monitoring.logger import setup_logger, TradeLogger
@@ -173,6 +177,21 @@ class Bot:
         )
         self.sports_v4_edge = SportsV4EdgeStrategy(
             self.config, self.order_manager, self.kalshi_client
+        )
+        # Ladder Consistency Arb (A1) — paper-only at launch.
+        # 4 sub-strategies share core/ladder_framework.py. See spec:
+        # docs/superpowers/specs/2026-05-09-ladder-consistency-arb-design.md
+        self.ladder_shutdown = LadderShutdownStrategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client
+        )
+        self.ladder_approval = LadderApprovalStrategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client
+        )
+        self.ladder_fed = LadderFedStrategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client
+        )
+        self.ladder_crypto = LadderCryptoStrategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client
         )
         # Chalk shadow — paper-only experimental strategy testing the
         # 2026-04-24 observer hypothesis that live-game 60-95¢ chalk YES
@@ -408,6 +427,13 @@ class Bot:
             # V31 at $0.06 higher entry → per-trade edge $1.36 vs V31's $2.36.
             # No orthogonal signal. See docs/future-work/v3-v31-follow-ups.md
             ("econ_trader", self.econ_trader),
+            # Ladder Consistency Arb (A1) — paper-only at launch (no entry in
+            # LIVE_STRATEGIES env). Phase 0 prevalence research must validate
+            # per-sub-strategy fire rate before live promotion.
+            ("ladder_shutdown", self.ladder_shutdown),
+            ("ladder_approval", self.ladder_approval),
+            ("ladder_fed", self.ladder_fed),
+            ("ladder_crypto", self.ladder_crypto),
         ]
         while self._running:
             for name, strategy in strategies:
