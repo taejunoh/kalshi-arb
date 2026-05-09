@@ -127,6 +127,25 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_mc_event_ts "
                 "ON macro_consensus(event_key, fetched_at)"
             )
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS macro_event_signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts TEXT NOT NULL,
+                    ticker TEXT NOT NULL,
+                    event_key TEXT NOT NULL,
+                    bucket TEXT NOT NULL,
+                    kalshi_implied REAL NOT NULL,
+                    consensus REAL NOT NULL,
+                    deviation REAL NOT NULL,
+                    side TEXT,
+                    expected_size_usdc REAL,
+                    action_taken TEXT NOT NULL
+                )
+            """)
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mes_ticker_ts "
+                "ON macro_event_signals(ticker, ts)"
+            )
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_status_pnl ON trades(status, pnl)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_trade ON clv_snapshots(trade_id)")
@@ -389,6 +408,37 @@ class Database:
                 )
             row = await cur.fetchone()
             return dict(row) if row else None
+
+    async def record_macro_event_signal(
+        self, *, ticker: str, event_key: str, bucket: str,
+        kalshi_implied: float, consensus: float, deviation: float,
+        side: str | None, expected_size_usdc: float | None,
+        action_taken: str,
+    ) -> int:
+        ts = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                "INSERT INTO macro_event_signals "
+                "(ts, ticker, event_key, bucket, kalshi_implied, consensus, "
+                " deviation, side, expected_size_usdc, action_taken) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (ts, ticker, event_key, bucket, kalshi_implied, consensus,
+                 deviation, side, expected_size_usdc, action_taken),
+            )
+            await conn.commit()
+            return cur.lastrowid
+
+    async def fetch_recent_macro_event_signals(
+        self, limit: int = 100,
+    ) -> list[dict]:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                "SELECT * FROM macro_event_signals ORDER BY ts DESC LIMIT ?",
+                (limit,),
+            )
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
 
     async def get_open_orders(self, limit: int = 100):
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
