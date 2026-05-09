@@ -187,3 +187,55 @@ def find_arb_opportunities(
                 expected_edge_usdc=round(edge_no * max_position_usdc, 4),
             ))
     return trades
+
+
+def find_fade_opportunities(
+    group: LadderGroup,
+    fee: float,
+    min_inversion: float,
+    max_size_usdc: float,
+) -> list[FadeTrade]:
+    """Single-leg directional fade when arb path is unavailable.
+
+    cumulative: pick easier-threshold leg whose yes_ask is below stricter
+                leg's yes_bid by ≥ min_inversion.
+    bucketed:   pick leg whose yes_ask is most underpriced relative to
+                implied probability (= 1 - sum_others_yes_mid).
+    """
+    fades: list[FadeTrade] = []
+    if group.ladder_type == "cumulative":
+        legs = group.legs
+        for i in range(len(legs) - 1):
+            t1, t2 = legs[i], legs[i + 1]
+            inv = round(t2.yes_bid - t1.yes_ask, 10)
+            if inv >= min_inversion:
+                fades.append(FadeTrade(
+                    group_key=f"{group.series}-{group.event_key}",
+                    ticker=t1.ticker, side="yes",
+                    size_usdc=max_size_usdc, price=t1.yes_ask,
+                    inversion_amount=round(inv, 4),
+                ))
+    elif group.ladder_type == "bucketed":
+        legs = group.legs
+        if len(legs) < 2:
+            return fades
+        # implied(leg_i) = 1 - sum(yes_mid for other legs)
+        yes_mid = [(l.yes_ask + l.yes_bid) / 2.0 for l in legs]
+        sum_mid = sum(yes_mid)
+        best_idx = -1
+        best_dev = -1.0
+        for i, l in enumerate(legs):
+            implied = 1.0 - (sum_mid - yes_mid[i])
+            dev = implied - l.yes_ask
+            if dev > best_dev:
+                best_dev = dev
+                best_idx = i
+        if best_dev >= min_inversion and best_idx >= 0:
+            target = legs[best_idx]
+            fades.append(FadeTrade(
+                group_key=f"{group.series}-{group.event_key}",
+                ticker=target.ticker, side="yes",
+                size_usdc=max_size_usdc, price=target.yes_ask,
+                inversion_amount=round(best_dev, 4),
+            ))
+    return fades

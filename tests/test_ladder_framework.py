@@ -310,3 +310,45 @@ def test_bucketed_arb_skips_when_sum_within_fee_budget():
         min_depth_usdc=50.0, max_position_usdc=60.0,
     )
     assert trades == []
+
+
+from core.ladder_framework import find_fade_opportunities
+
+
+def test_fade_fires_on_cumulative_when_arb_too_small():
+    # Inversion 0.05 — too small for arb at fee 0.07 but ≥ MIN_FADE_INVERSION.
+    g = _cum_group([
+        _leg("T1", 1.0, yes_ask=0.45, yes_bid=0.43),
+        _leg("T2", 2.0, yes_ask=0.52, yes_bid=0.50),
+    ])
+    fades = find_fade_opportunities(g, fee=0.07, min_inversion=0.05, max_size_usdc=20.0)
+    assert len(fades) == 1
+    assert fades[0].ticker == "T1"
+    assert fades[0].side == "yes"
+    assert fades[0].inversion_amount >= 0.05
+
+
+def test_fade_skips_below_min_inversion():
+    g = _cum_group([
+        _leg("T1", 1.0, yes_ask=0.50, yes_bid=0.48),
+        _leg("T2", 2.0, yes_ask=0.52, yes_bid=0.50),
+    ])
+    fades = find_fade_opportunities(g, fee=0.07, min_inversion=0.05, max_size_usdc=20.0)
+    assert fades == []
+
+
+def test_fade_picks_most_underpriced_leg_in_bucketed():
+    # implied(C50) = 1 - (0.18+0.50+0.20) = 0.12. yes_ask(C50) = 0.04 → deviation 0.08.
+    # implied(H25) = 1 - (0.04+0.18+0.50) = 0.28. yes_ask(H25) = 0.20 → deviation 0.08.
+    # implied(C25) = 1 - (0.04+0.50+0.20) = 0.26. yes_ask = 0.18 → deviation 0.08. (tie)
+    # implied(H0) = 1 - (0.04+0.18+0.20) = 0.58. yes_ask = 0.50 → deviation 0.08. (tie)
+    # Pick first by sort order on tie.
+    g = _bucket_group([
+        _leg("C50", -0.50, yes_ask=0.04, yes_bid=0.03),
+        _leg("C25", -0.25, yes_ask=0.18, yes_bid=0.16),
+        _leg("H0",   0.00, yes_ask=0.50, yes_bid=0.48),
+        _leg("H25",  0.25, yes_ask=0.20, yes_bid=0.18),
+    ])
+    fades = find_fade_opportunities(g, fee=0.07, min_inversion=0.05, max_size_usdc=20.0)
+    assert len(fades) == 1
+    assert fades[0].inversion_amount > 0.05
