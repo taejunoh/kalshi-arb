@@ -112,6 +112,21 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_lv_strategy_ts "
                 "ON ladder_violations(sub_strategy, ts)"
             )
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS macro_consensus (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_key TEXT NOT NULL,
+                    bucket TEXT NOT NULL,
+                    prob REAL NOT NULL,
+                    source TEXT NOT NULL,
+                    fetched_at TEXT NOT NULL,
+                    UNIQUE(event_key, bucket, source)
+                )
+            """)
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mc_event_ts "
+                "ON macro_consensus(event_key, fetched_at)"
+            )
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_status_pnl ON trades(status, pnl)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_trade ON clv_snapshots(trade_id)")
@@ -334,6 +349,46 @@ class Database:
             )
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
+
+    async def record_macro_consensus(
+        self, event_key: str, bucket: str, prob: float, source: str,
+    ) -> int:
+        ts = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                "INSERT INTO macro_consensus "
+                "(event_key, bucket, prob, source, fetched_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(event_key, bucket, source) DO UPDATE SET "
+                "prob = excluded.prob, fetched_at = excluded.fetched_at",
+                (event_key, bucket, prob, source, ts),
+            )
+            await conn.commit()
+            return cur.lastrowid
+
+    async def fetch_macro_consensus(
+        self, event_key: str, bucket: str, source: str | None = None,
+    ) -> dict | None:
+        """Returns the most recent consensus row for (event_key, bucket).
+        If source is given, restrict to that source; else return any."""
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            if source:
+                cur = await conn.execute(
+                    "SELECT * FROM macro_consensus "
+                    "WHERE event_key = ? AND bucket = ? AND source = ? "
+                    "ORDER BY fetched_at DESC LIMIT 1",
+                    (event_key, bucket, source),
+                )
+            else:
+                cur = await conn.execute(
+                    "SELECT * FROM macro_consensus "
+                    "WHERE event_key = ? AND bucket = ? "
+                    "ORDER BY fetched_at DESC LIMIT 1",
+                    (event_key, bucket),
+                )
+            row = await cur.fetchone()
+            return dict(row) if row else None
 
     async def get_open_orders(self, limit: int = 100):
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
