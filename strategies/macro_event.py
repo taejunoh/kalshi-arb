@@ -74,6 +74,51 @@ class MacroEventStrategy:
         return (delta_min >= cfg.MACRO_EVENT_WINDOW_MIN_MINUTES
                 and delta_hr <= cfg.MACRO_EVENT_WINDOW_MAX_HOURS)
 
+    def _compute_edge(
+        self, *,
+        kalshi_yes_ask: float, kalshi_yes_bid: float,
+        kalshi_no_ask: float, kalshi_no_bid: float,
+        consensus: float,
+    ) -> Optional[dict]:
+        """Returns trade signal dict or None.
+
+        Signal dict: {'side': 'yes'|'no', 'deviation': float (signed),
+                      'entry_price': float, 'ev_per_contract': float}
+        Caller still needs to apply window + dedup + depth + exposure gates.
+        """
+        cfg = self.config
+        kalshi_yes_mid = (kalshi_yes_ask + kalshi_yes_bid) / 2.0
+        deviation = consensus - kalshi_yes_mid  # positive ⇒ Kalshi underprices YES
+        if abs(deviation) < cfg.MACRO_EVENT_MIN_DEVIATION:
+            return None
+        fee = cfg.KALSHI_FEE_PER_CONTRACT
+        if deviation > 0:
+            side = "yes"
+            entry_price = kalshi_yes_ask
+            # EV = consensus·(1 - entry - fee) + (1-consensus)·(-entry - fee)
+            #    = consensus - entry - fee
+            ev = consensus - entry_price - fee
+        else:
+            side = "no"
+            entry_price = kalshi_no_ask
+            # NO wins prob = 1 - consensus
+            ev = (1.0 - consensus) - entry_price - fee
+        if ev <= 0:
+            return None
+        return {
+            "side": side,
+            "deviation": deviation,
+            "entry_price": entry_price,
+            "ev_per_contract": ev,
+        }
+
+    def _size_for_edge(self, deviation: float) -> float:
+        """Edge-scaled fire size capped by per-ticker maximum."""
+        cfg = self.config
+        base = cfg.MACRO_EVENT_BASE_SIZE_USDC
+        scale = max(0.5, min(3.0, abs(deviation) / cfg.MACRO_EVENT_MIN_DEVIATION))
+        return min(base * scale, cfg.MACRO_EVENT_MAX_POSITION_PER_TICKER)
+
     async def scan_and_execute(self):
         """Stub — fully wired in Task 11."""
         return
