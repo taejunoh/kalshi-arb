@@ -456,3 +456,25 @@ Live 배포 후:
 - **2026-05-09**: Posture = Hybrid (arb 먼저, fade fallback) (user 선택).
 - **2026-05-09**: Architecture = Approach 2 (Framework + 5 sub-strategy)
   (user 선택). Parlay deferred → 4 sub-strategy 만 본 spec.
+- **2026-05-09**: 14-task implementation 완료 (commits cfa0e9a..3c14ac9 on
+  branch feat/ladder-consistency-arb). 38 ladder unit/integration tests
+  green, V1 dedup integration test pass, scanner --once dry run successful.
+
+## Implementation deferrals (post-final-review)
+
+본 v0 구현은 다음 항목을 의도적으로 deferred — Phase 0 prevalence 결과
+분석 후 우선순위에 따라 후속 commit 으로 처리:
+
+1. **Bid-ask collapse**: 4 sub-strategy 가 `client.get_market_prices()` 의
+   ask-only 반환값으로 yes_bid = yes_ask 설정 → cumulative arb inversion
+   체크가 ask-vs-ask 비교로 collapse. Phase 0 영향: signal overfire (보수
+   적 — 실제로는 더 적게 fire). Live promotion 전 양면 호가 fetch 필요.
+2. **Fade size = constant**: spec 의 edge-scaled `clamp(inv/0.05, 0.5,
+   2.0)` 미적용 — flat $20 (LADDER_MAX_POSITION_PER_GROUP / 2.5). Paper 안전.
+3. **`LADDER_STALE_ORDERBOOK_SEC` 미사용**: config knob 만 있고 실제 staleness
+   체크 없음. 특히 ladder_crypto 에서 필요.
+4. **`record_ladder_violation` sub-strategy 미호출**: 현재는 Phase 0 scanner
+   에서만 logging. 라이브 sub-strategy 에서는 trade 만 기록 → dashboard 의
+   "n_violations per sub_strategy" 가 scanner 데이터에만 의존.
+5. **Spot anchor (Coinbase WS)**: spec open question 4 → ladder_crypto 의
+   ATM proxy 가 yes_ask≈0.50 leg 사용 (Coinbase feed 불필요한 v0 cut).
