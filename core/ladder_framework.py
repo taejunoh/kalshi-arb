@@ -70,6 +70,10 @@ def group_legs_into_ladders(
     'yes_ask', 'yes_bid', 'no_ask', 'no_bid', plus 'yes_depth', 'no_depth'.
     Caller (sub-strategy) is responsible for normalizing Kalshi's cents-int
     fields to dollar floats before calling.
+
+    `suffix_parser` receives only the trailing segment after the last '-'
+    in the ticker (e.g. for 'KXBTC-26MAY09-1500-B70250' it receives 'B70250').
+    Return None to skip an unparseable leg.
     """
     by_event: dict[str, list[LadderLeg]] = {}
     for m in markets:

@@ -94,6 +94,25 @@ def test_group_legs_groups_by_event_key_and_sorts_asc():
     assert g.direction == "asc"
 
 
+def test_group_legs_skips_market_missing_ticker():
+    markets = [
+        {"yes_ask": 0.5, "yes_bid": 0.5, "no_ask": 0.5, "no_bid": 0.5,
+         "yes_depth": 100.0, "no_depth": 100.0},
+        _btc_market("B70250", 0.45, 0.43),
+    ]
+    groups = group_legs_into_ladders(
+        markets, _btc_suffix_parser, "cumulative", _btc_event_key,
+    )
+    assert len(groups) == 1
+    assert len(groups[0].legs) == 1
+
+
+def test_group_legs_returns_empty_for_empty_input():
+    assert group_legs_into_ladders(
+        [], _btc_suffix_parser, "cumulative", _btc_event_key,
+    ) == []
+
+
 def test_group_legs_skips_unparseable_suffix():
     markets = [
         _btc_market("B70250", 0.45, 0.43),
