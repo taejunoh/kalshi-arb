@@ -72,6 +72,15 @@ class Config:
         self.MENTIONS_MIN_EDGE = float(os.getenv("MENTIONS_MIN_EDGE", "0.15"))
         self.MENTIONS_FREQUENCY_API_URL = os.getenv("MENTIONS_FREQUENCY_API_URL", "")
 
+        # Ladder consistency arb (A1) — 4 sub-strategy shared knobs.
+        # Per-sub-strategy override pattern: each sub-strategy class can
+        # override class-level constants instead of env vars.
+        self.LADDER_MIN_ARB_EDGE_USDC = float(os.getenv("LADDER_MIN_ARB_EDGE_USDC", "0.02"))
+        self.LADDER_MIN_FADE_INVERSION = float(os.getenv("LADDER_MIN_FADE_INVERSION", "0.05"))
+        self.LADDER_MIN_DEPTH_USDC = float(os.getenv("LADDER_MIN_DEPTH_USDC", "30"))
+        self.LADDER_MAX_POSITION_PER_GROUP = float(os.getenv("LADDER_MAX_POSITION_PER_GROUP", "50"))
+        self.LADDER_STALE_ORDERBOOK_SEC = float(os.getenv("LADDER_STALE_ORDERBOOK_SEC", "10"))
+
         # Monitoring
         self.TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
         self.TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
