@@ -87,3 +87,48 @@ def test_fedwatch_scraper_returns_none_on_missing_date():
     with patch("core.macro_consensus.httpx.get", return_value=fake_response):
         scraper = FedWatchScraper()
         assert scraper.fetch_meeting("2026-06-17") is None
+
+
+from core.macro_consensus import CPINowcastScraper
+
+# Realistic snippet of Cleveland Fed Nowcast HTML — point + std embedded
+# in a tabular layout. Adjust regex if real page layout differs.
+SAMPLE_NOWCAST_HTML = """
+<html><body>
+<div class="nowcast-table">
+  <table>
+    <tr><th>Indicator</th><th>Forecast (%)</th><th>Std Error</th></tr>
+    <tr><td>CPI MoM</td><td>0.31</td><td>0.10</td></tr>
+    <tr><td>Core CPI MoM</td><td>0.27</td><td>0.09</td></tr>
+  </table>
+</div>
+</body></html>
+"""
+
+
+def test_cpi_nowcast_scraper_extracts_point_and_std():
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.text = SAMPLE_NOWCAST_HTML
+    with patch("core.macro_consensus.httpx.get", return_value=fake_response):
+        scraper = CPINowcastScraper()
+        out = scraper.fetch()
+        assert out is not None
+        assert abs(out["cpi_mom_point"] - 0.31) < 1e-6
+        assert abs(out["cpi_mom_std"] - 0.10) < 1e-6
+
+
+def test_cpi_nowcast_scraper_returns_none_when_pattern_missing():
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.text = "<html><body>maintenance</body></html>"
+    with patch("core.macro_consensus.httpx.get", return_value=fake_response):
+        scraper = CPINowcastScraper()
+        assert scraper.fetch() is None
+
+
+def test_cpi_nowcast_scraper_returns_none_on_http_error():
+    fake_response = MagicMock()
+    fake_response.status_code = 503
+    with patch("core.macro_consensus.httpx.get", return_value=fake_response):
+        assert CPINowcastScraper().fetch() is None

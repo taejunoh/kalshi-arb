@@ -6,6 +6,7 @@ Spec: docs/superpowers/specs/2026-05-09-macro-event-trader-design.md
 """
 import logging
 import math
+import re
 from typing import Optional
 
 import httpx
@@ -85,3 +86,42 @@ class FedWatchScraper:
                 if probs:
                     return dict(probs)
         return None
+
+
+CPI_NOWCAST_URL = "https://www.clevelandfed.org/indicators-and-data/inflation-nowcasting"
+
+# Match a row containing "CPI MoM" then two decimal numbers (point, std).
+# Adjust this if Cleveland Fed page layout changes.
+CPI_MOM_ROW_RE = re.compile(
+    r"CPI\s*MoM.*?>\s*(-?\d+(?:\.\d+)?)\s*</td>\s*<td[^>]*>\s*(-?\d+(?:\.\d+)?)\s*</td>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+class CPINowcastScraper:
+    """Fetches Cleveland Fed Inflation Nowcast point + std for next CPI release."""
+
+    def __init__(self, timeout: float = 10.0):
+        self._timeout = timeout
+
+    def fetch(self) -> Optional[dict]:
+        """Returns {'cpi_mom_point': float, 'cpi_mom_std': float} or None."""
+        try:
+            response = httpx.get(CPI_NOWCAST_URL, timeout=self._timeout)
+        except Exception as e:
+            logger.warning(f"CPI Nowcast fetch failed: {e}")
+            return None
+        if response.status_code != 200:
+            logger.warning(f"CPI Nowcast HTTP {response.status_code}")
+            return None
+        match = CPI_MOM_ROW_RE.search(response.text)
+        if not match:
+            logger.warning("CPI Nowcast: CPI MoM row not found in HTML")
+            return None
+        try:
+            point = float(match.group(1))
+            std = float(match.group(2))
+        except ValueError as e:
+            logger.warning(f"CPI Nowcast: failed to parse point/std: {e}")
+            return None
+        return {"cpi_mom_point": point, "cpi_mom_std": std}
