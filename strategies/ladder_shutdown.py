@@ -57,8 +57,10 @@ class LadderShutdownStrategy:
     async def scan_and_execute(self):
         if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
             return
-        # Pull open universe — caller-side filter
-        markets = [m for m in self._scanner.get_unlocked_markets()
+        # Pull open universe — caller-side filter.
+        # Use get_all_markets() (broad strategy pool from STRATEGY_SERIES list)
+        # rather than get_unlocked_markets() (crypto-only pool from poll_loop).
+        markets = [m for m in self._scanner.get_all_markets()
                    if self._is_target_market(m)]
         if not markets:
             return

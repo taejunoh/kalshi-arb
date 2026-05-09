@@ -9,13 +9,22 @@ logger = logging.getLogger("market_scanner")
 
 # Series tickers targeted by non-crypto strategies
 STRATEGY_SERIES = [
-    # Shutdown fade
+    # Shutdown fade (legacy V1 — kept until KXNUMSHUTDOWNS settles 2027)
     "KXFEDMENTION", "KXNUMSHUTDOWNS", "KXGOVSHUT", "KXGOVSHUTLENG",
     # Mentions (Fed press conferences, presidential speeches, etc.)
     "KXPOTUS", "KXPOTUSSPEECH", "KXSOTUWORD",
     # Popular event markets (spread scanner)
     "KXINX", "KXCPI", "KXGDP", "KXFED", "KXUNEMPLOY",
     "KXBTCRANGE", "KXETHRANGE", "KXNASDAQ", "KXSP500",
+    # Ladder Consistency Arb (A1) — non-crypto sub-strategy universes
+    # ladder_fed
+    "KXFEDDECISION",
+    # ladder_approval
+    "KXTRUMPAPPROVALYEAR", "KXTRUMPAPPROVALBELOW",
+    "KX538APPROVE", "KX538APPROVEMAX", "KX538APPROVEMIN", "KX538APPROVEY",
+    # ladder_shutdown — KXGOVTSHUTLENGTH is the active duration ladder
+    # (KXGOVSHUTLENG above is empty in current Kalshi listing)
+    "KXGOVTSHUTLENGTH",
 ]
 
 

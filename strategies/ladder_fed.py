@@ -58,7 +58,9 @@ class LadderFedStrategy:
     async def scan_and_execute(self):
         if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
             return
-        markets = [m for m in self._scanner.get_unlocked_markets()
+        # get_all_markets() = broad strategy pool from STRATEGY_SERIES.
+        # get_unlocked_markets() is crypto-only and would return [].
+        markets = [m for m in self._scanner.get_all_markets()
                    if self._is_target_market(m)]
         if not markets:
             return
