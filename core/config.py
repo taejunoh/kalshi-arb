@@ -81,6 +81,17 @@ class Config:
         self.LADDER_MAX_POSITION_PER_GROUP = float(os.getenv("LADDER_MAX_POSITION_PER_GROUP", "50"))
         self.LADDER_STALE_ORDERBOOK_SEC = float(os.getenv("LADDER_STALE_ORDERBOOK_SEC", "10"))
 
+        # Macro Event Trader (C1) — single sub-strategy macro_event.
+        # Spec: docs/superpowers/specs/2026-05-09-macro-event-trader-design.md
+        self.MACRO_EVENT_MIN_DEVIATION = float(os.getenv("MACRO_EVENT_MIN_DEVIATION", "0.10"))
+        self.MACRO_EVENT_MIN_DEPTH_USDC = float(os.getenv("MACRO_EVENT_MIN_DEPTH_USDC", "20"))
+        self.MACRO_EVENT_BASE_SIZE_USDC = float(os.getenv("MACRO_EVENT_BASE_SIZE_USDC", "20"))
+        self.MACRO_EVENT_MAX_POSITION_PER_TICKER = float(os.getenv("MACRO_EVENT_MAX_POSITION_PER_TICKER", "30"))
+        self.MACRO_EVENT_MAX_TICKER_TOTAL_EXPOSURE = float(os.getenv("MACRO_EVENT_MAX_TICKER_TOTAL_EXPOSURE", "80"))
+        self.MACRO_EVENT_WINDOW_MAX_HOURS = float(os.getenv("MACRO_EVENT_WINDOW_MAX_HOURS", "336"))
+        self.MACRO_EVENT_WINDOW_MIN_MINUTES = float(os.getenv("MACRO_EVENT_WINDOW_MIN_MINUTES", "30"))
+        self.MACRO_CONSENSUS_STALE_HOURS = float(os.getenv("MACRO_CONSENSUS_STALE_HOURS", "24"))
+
         # Monitoring
         self.TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
         self.TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
