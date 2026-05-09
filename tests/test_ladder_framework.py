@@ -241,3 +241,72 @@ def test_arb_skips_when_no_inversion():
     trades = find_arb_opportunities(g, fee=0.07, min_edge_usdc=0.02,
                                      min_depth_usdc=50.0, max_position_usdc=50.0)
     assert trades == []
+
+
+def _bucket_group(legs: list[LadderLeg]) -> LadderGroup:
+    return LadderGroup(
+        series="KXFEDDECISION", event_key="FOMC-26JUN",
+        ladder_type="bucketed", direction="asc", legs=tuple(legs),
+    )
+
+
+def test_arb_fires_on_bucketed_sum_below_fee_budget():
+    # 4 mutually-exclusive outcomes, sum_yes_ask = 0.25+0.20+0.15+0.30 = 0.90.
+    # Plus 4·fee = 0.28 → 1.18 > 1, no buy-YES arb. NO side: sum_yes_bid = 0.85.
+    # n - sum_yes_bid = 4 - 0.85 = 3.15. payoff = n - 1 = 3. cost+fees = 3.15+0.28=3.43. negative.
+    # Make it tighter: drop ask sum well below 1 - margin.
+    g = _bucket_group([
+        _leg("C50", -0.50, yes_ask=0.05, yes_bid=0.04, depth=200.0),
+        _leg("C25", -0.25, yes_ask=0.15, yes_bid=0.13, depth=200.0),
+        _leg("H0",   0.00, yes_ask=0.50, yes_bid=0.48, depth=200.0),
+        _leg("H25",  0.25, yes_ask=0.10, yes_bid=0.08, depth=200.0),
+    ])
+    # sum_yes_ask = 0.80, n=4, fees=0.28 → cost 1.08 > 1 → NO arb.
+    # Need sum_yes_ask + n·fee < 1 - min_edge.
+    g2 = _bucket_group([
+        _leg("C50", -0.50, yes_ask=0.05, yes_bid=0.04, depth=200.0),
+        _leg("C25", -0.25, yes_ask=0.10, yes_bid=0.08, depth=200.0),
+        _leg("H0",   0.00, yes_ask=0.40, yes_bid=0.38, depth=200.0),
+        _leg("H25",  0.25, yes_ask=0.05, yes_bid=0.04, depth=200.0),
+    ])
+    # sum_yes_ask = 0.60, +4·0.07 = 0.88 < 1 - 0.02 → arb (buy YES on all).
+    trades = find_arb_opportunities(
+        g2, fee=0.07, min_edge_usdc=0.02,
+        min_depth_usdc=50.0, max_position_usdc=80.0,
+    )
+    assert len(trades) == 1
+    t = trades[0]
+    assert len(t.legs) == 4
+    assert all(l.side == "yes" for l in t.legs)
+
+
+def test_arb_fires_on_bucketed_sum_above_one():
+    # sum_yes_bid = 0.95+0.20+0.10+0.05 = 1.30 → buy NO on all.
+    # cost = (n - sum_yes_bid) + n·fee = (4 - 1.30) + 0.28 = 2.98. payoff = n-1 = 3.
+    # edge = 3 - 2.98 = 0.02 ≥ min_edge_usdc.
+    g = _bucket_group([
+        _leg("C50", -0.50, yes_ask=0.97, yes_bid=0.95, depth=200.0),
+        _leg("C25", -0.25, yes_ask=0.22, yes_bid=0.20, depth=200.0),
+        _leg("H0",   0.00, yes_ask=0.12, yes_bid=0.10, depth=200.0),
+        _leg("H25",  0.25, yes_ask=0.07, yes_bid=0.05, depth=200.0),
+    ])
+    trades = find_arb_opportunities(
+        g, fee=0.07, min_edge_usdc=0.02,
+        min_depth_usdc=50.0, max_position_usdc=80.0,
+    )
+    assert len(trades) == 1
+    assert all(l.side == "no" for l in trades[0].legs)
+
+
+def test_bucketed_arb_skips_when_sum_within_fee_budget():
+    # sum_yes_ask = 0.95, +4·0.07 = 1.23 → no buy-YES arb. sum_yes_bid = 0.91, NO side: cost 3.09+0.28=3.37 vs payoff 3 → no.
+    g = _bucket_group([
+        _leg("C25", -0.25, yes_ask=0.20, yes_bid=0.18, depth=200.0),
+        _leg("H0",   0.00, yes_ask=0.50, yes_bid=0.48, depth=200.0),
+        _leg("H25",  0.25, yes_ask=0.25, yes_bid=0.23, depth=200.0),
+    ])
+    trades = find_arb_opportunities(
+        g, fee=0.07, min_edge_usdc=0.02,
+        min_depth_usdc=50.0, max_position_usdc=60.0,
+    )
+    assert trades == []

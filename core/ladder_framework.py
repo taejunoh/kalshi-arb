@@ -150,6 +150,40 @@ def find_arb_opportunities(
                 expected_edge_usdc=round(edge * max_position_usdc, 4),
             ))
     elif group.ladder_type == "bucketed":
-        # implemented in Task 4
-        pass
+        legs = group.legs
+        n = len(legs)
+        if n < 2:
+            return trades
+        sum_yes_ask = sum(l.yes_ask for l in legs)
+        sum_yes_bid = sum(l.yes_bid for l in legs)
+        per_leg = max_position_usdc / n
+
+        # Buy YES on all legs: cost = sum_yes_ask + n·fee, payoff = $1
+        cost_yes = sum_yes_ask + n * fee
+        edge_yes = round(1.0 - cost_yes, 10)
+        if edge_yes >= min_edge_usdc and all(l.yes_depth >= min_depth_usdc for l in legs):
+            trades.append(ArbTrade(
+                group_key=f"{group.series}-{group.event_key}",
+                legs=tuple(
+                    ArbLeg(ticker=l.ticker, side="yes",
+                           size_usdc=per_leg, price=l.yes_ask)
+                    for l in legs
+                ),
+                expected_edge_usdc=round(edge_yes * max_position_usdc, 4),
+            ))
+            return trades
+
+        # Buy NO on all: cost = (n - sum_yes_bid) + n·fee, payoff = n - 1
+        cost_no = (n - sum_yes_bid) + n * fee
+        edge_no = round((n - 1) - cost_no, 10)
+        if edge_no >= min_edge_usdc and all(l.no_depth >= min_depth_usdc for l in legs):
+            trades.append(ArbTrade(
+                group_key=f"{group.series}-{group.event_key}",
+                legs=tuple(
+                    ArbLeg(ticker=l.ticker, side="no",
+                           size_usdc=per_leg, price=l.no_ask)
+                    for l in legs
+                ),
+                expected_edge_usdc=round(edge_no * max_position_usdc, 4),
+            ))
     return trades
