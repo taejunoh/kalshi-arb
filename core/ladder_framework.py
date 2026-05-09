@@ -147,7 +147,7 @@ def find_arb_opportunities(
                     ArbLeg(ticker=t2.ticker, side="no",
                            size_usdc=half, price=t2.no_ask),
                 ),
-                expected_edge_usdc=round(edge * (max_position_usdc / 1.0), 4),
+                expected_edge_usdc=round(edge * max_position_usdc, 4),
             ))
     elif group.ladder_type == "bucketed":
         # implemented in Task 4

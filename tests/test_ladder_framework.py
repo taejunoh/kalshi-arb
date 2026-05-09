@@ -212,10 +212,20 @@ def test_arb_skips_when_inversion_below_fee_budget():
     assert trades == []
 
 
-def test_arb_skips_when_depth_insufficient():
+def test_arb_skips_when_depth_insufficient_t1_yes():
     g = _cum_group([
         _leg("T1", 1.0, yes_ask=0.40, yes_bid=0.38, depth=20.0),
         _leg("T2", 2.0, yes_ask=0.62, yes_bid=0.60, depth=200.0),
+    ])
+    trades = find_arb_opportunities(g, fee=0.07, min_edge_usdc=0.02,
+                                     min_depth_usdc=50.0, max_position_usdc=50.0)
+    assert trades == []
+
+
+def test_arb_skips_when_depth_insufficient_t2_no():
+    g = _cum_group([
+        _leg("T1", 1.0, yes_ask=0.40, yes_bid=0.38, depth=200.0),
+        _leg("T2", 2.0, yes_ask=0.62, yes_bid=0.60, depth=20.0),
     ])
     trades = find_arb_opportunities(g, fee=0.07, min_edge_usdc=0.02,
                                      min_depth_usdc=50.0, max_position_usdc=50.0)
