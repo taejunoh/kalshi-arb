@@ -463,7 +463,7 @@ class OrderManager:
     # limit_order, persist minutes_to_start on the orders row so settlement can
     # forward it.
     async def _paper_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
-        # DB-side dedup is sports-only — see _paper_market_order rationale.
+        # DB-side dedup guard (sports_* + ladder_*) — see _paper_market_order.
         if (strategy.startswith("sports_") or strategy.startswith("ladder_")) \
                 and await self._db.has_existing_trade(strategy, market_id):
             logger.warning(
@@ -484,7 +484,7 @@ class OrderManager:
 
     async def _live_market_order(self, ticker, side, size_usdc, price, strategy, market_id,
                                   minutes_to_start: Optional[float] = None):
-        # DB-side dedup is sports-only — see _paper_market_order rationale.
+        # DB-side dedup guard (sports_* + ladder_*) — see _paper_market_order.
         if (strategy.startswith("sports_") or strategy.startswith("ladder_")) \
                 and await self._db.has_existing_trade(strategy, market_id):
             logger.warning(
@@ -563,7 +563,7 @@ class OrderManager:
         fills are recorded at actual size; unfilled orders return `skipped`
         (not `failed`, so strategy state isn't dirtied with a fake entry).
         """
-        # DB-side dedup is sports-only — see _paper_market_order rationale.
+        # DB-side dedup guard (sports_* + ladder_*) — see _paper_market_order.
         # (Currently this method is only called by sports strategies via
         # LIMIT_TTL_STRATEGIES, but the prefix gate makes the policy explicit.)
         if (strategy.startswith("sports_") or strategy.startswith("ladder_")) \
@@ -713,11 +713,11 @@ class OrderManager:
         }
 
     async def _live_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
-        # DB-side dedup is sports-only — see _paper_market_order rationale.
+        # DB-side dedup guard (sports_* + ladder_*) — see _paper_market_order.
         # IMPORTANT: this method is shared by mentions_trader, econ_trader,
         # market_maker, spread_scanner — those strategies legitimately
-        # re-enter the same ticker. The prefix gate ensures only sports
-        # strategies (one-shot games) get the dedup guard.
+        # re-enter the same ticker. The prefix gate ensures only one-shot
+        # strategies (sports games + ladder events) get the dedup guard.
         if (strategy.startswith("sports_") or strategy.startswith("ladder_")) \
                 and await self._db.has_existing_trade(strategy, market_id):
             logger.warning(
