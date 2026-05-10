@@ -95,7 +95,10 @@ async def scan_once(client: KalshiClient, db: Database, cfg: Config) -> dict:
                 kalshi_no_ask=no_price, kalshi_no_bid=no_price,
                 consensus=consensus,
             )
-            kalshi_implied = (yes_price + yes_price) / 2.0  # mid for logging
+            # KalshiClient.get_market_prices returns (yes_ask, no_ask).
+            # Mid YES prob = (yes_ask + (1 - no_ask)) / 2 = (yes_ask + yes_bid) / 2
+            # where yes_bid = 1 - no_ask. For Phase 0 analytics fidelity.
+            kalshi_implied = (yes_price + (1.0 - no_price)) / 2.0
             deviation = consensus - kalshi_implied
 
             if not edge:

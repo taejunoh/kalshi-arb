@@ -87,11 +87,15 @@ async def refresh_cpi(db: Database, scraper: CPINowcastScraper) -> int:
     point = nowcast["cpi_mom_point"]
     std = nowcast["cpi_mom_std"]
     updated = 0
+    n = len(CPI_BUCKET_VALUES)
     for date in CPI_DATES:
         ek = event_key_cpi(date)
-        for value in CPI_BUCKET_VALUES:
-            low = value - CPI_BUCKET_WIDTH / 2.0
-            high = value + CPI_BUCKET_WIDTH / 2.0
+        for i, value in enumerate(CPI_BUCKET_VALUES):
+            # First / last buckets are open-ended to capture extreme tails.
+            # Without this, far-tail outcomes (e.g. CPI = -0.5) get 0 prob
+            # in the lowest bucket, biasing consensus low for tail buckets.
+            low = None if i == 0 else value - CPI_BUCKET_WIDTH / 2.0
+            high = None if i == n - 1 else value + CPI_BUCKET_WIDTH / 2.0
             prob = bucket_prob_from_normal(low, high, point, std)
             bucket = f"T{value}"
             await db.record_macro_consensus(ek, bucket, prob, "clevelandfed")
