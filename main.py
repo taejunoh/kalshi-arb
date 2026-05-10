@@ -44,6 +44,7 @@ from strategies.ladder_crypto import LadderCryptoStrategy
 from strategies.ladder_fed import LadderFedStrategy
 from strategies.ladder_approval import LadderApprovalStrategy
 from strategies.ladder_shutdown import LadderShutdownStrategy
+from strategies.macro_event import MacroEventStrategy
 from core.settlement import SettlementChecker
 from core.clv_tracker import CLVTracker
 from monitoring.logger import setup_logger, TradeLogger
@@ -191,6 +192,13 @@ class Bot:
             self.config, self.order_manager, self.scanner, self.kalshi_client
         )
         self.ladder_crypto = LadderCryptoStrategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client
+        )
+        # Macro Event Trader (C1) — paper-only at launch.
+        # Requires scripts/macro_consensus_cron.py to populate consensus
+        # cache. See spec:
+        # docs/superpowers/specs/2026-05-09-macro-event-trader-design.md
+        self.macro_event = MacroEventStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client
         )
         # Chalk shadow — paper-only experimental strategy testing the
@@ -434,6 +442,8 @@ class Bot:
             ("ladder_approval", self.ladder_approval),
             ("ladder_fed", self.ladder_fed),
             ("ladder_crypto", self.ladder_crypto),
+            # Macro Event Trader (C1) — paper-only. Requires consensus cron.
+            ("macro_event", self.macro_event),
         ]
         while self._running:
             for name, strategy in strategies:
