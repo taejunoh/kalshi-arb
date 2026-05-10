@@ -112,6 +112,40 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_lv_strategy_ts "
                 "ON ladder_violations(sub_strategy, ts)"
             )
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS macro_consensus (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_key TEXT NOT NULL,
+                    bucket TEXT NOT NULL,
+                    prob REAL NOT NULL,
+                    source TEXT NOT NULL,
+                    fetched_at TEXT NOT NULL,
+                    UNIQUE(event_key, bucket, source)
+                )
+            """)
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mc_event_ts "
+                "ON macro_consensus(event_key, fetched_at)"
+            )
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS macro_event_signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts TEXT NOT NULL,
+                    ticker TEXT NOT NULL,
+                    event_key TEXT NOT NULL,
+                    bucket TEXT NOT NULL,
+                    kalshi_implied REAL NOT NULL,
+                    consensus REAL NOT NULL,
+                    deviation REAL NOT NULL,
+                    side TEXT,
+                    expected_size_usdc REAL,
+                    action_taken TEXT NOT NULL
+                )
+            """)
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mes_ticker_ts "
+                "ON macro_event_signals(ticker, ts)"
+            )
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_status_pnl ON trades(status, pnl)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_trade ON clv_snapshots(trade_id)")
@@ -331,6 +365,77 @@ class Database:
                 "SELECT * FROM ladder_violations WHERE sub_strategy = ? "
                 "ORDER BY ts DESC LIMIT ?",
                 (sub_strategy, limit),
+            )
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
+    async def record_macro_consensus(
+        self, event_key: str, bucket: str, prob: float, source: str,
+    ) -> int:
+        ts = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                "INSERT INTO macro_consensus "
+                "(event_key, bucket, prob, source, fetched_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(event_key, bucket, source) DO UPDATE SET "
+                "prob = excluded.prob, fetched_at = excluded.fetched_at",
+                (event_key, bucket, prob, source, ts),
+            )
+            await conn.commit()
+            return cur.lastrowid
+
+    async def fetch_macro_consensus(
+        self, event_key: str, bucket: str, source: str | None = None,
+    ) -> dict | None:
+        """Returns the most recent consensus row for (event_key, bucket).
+        If source is given, restrict to that source; else return any."""
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            if source:
+                cur = await conn.execute(
+                    "SELECT * FROM macro_consensus "
+                    "WHERE event_key = ? AND bucket = ? AND source = ? "
+                    "ORDER BY fetched_at DESC LIMIT 1",
+                    (event_key, bucket, source),
+                )
+            else:
+                cur = await conn.execute(
+                    "SELECT * FROM macro_consensus "
+                    "WHERE event_key = ? AND bucket = ? "
+                    "ORDER BY fetched_at DESC LIMIT 1",
+                    (event_key, bucket),
+                )
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+    async def record_macro_event_signal(
+        self, *, ticker: str, event_key: str, bucket: str,
+        kalshi_implied: float, consensus: float, deviation: float,
+        side: str | None, expected_size_usdc: float | None,
+        action_taken: str,
+    ) -> int:
+        ts = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                "INSERT INTO macro_event_signals "
+                "(ts, ticker, event_key, bucket, kalshi_implied, consensus, "
+                " deviation, side, expected_size_usdc, action_taken) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (ts, ticker, event_key, bucket, kalshi_implied, consensus,
+                 deviation, side, expected_size_usdc, action_taken),
+            )
+            await conn.commit()
+            return cur.lastrowid
+
+    async def fetch_recent_macro_event_signals(
+        self, limit: int = 100,
+    ) -> list[dict]:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                "SELECT * FROM macro_event_signals ORDER BY ts DESC LIMIT ?",
+                (limit,),
             )
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
@@ -579,6 +684,22 @@ class Database:
                  kalshi_volume_24h, kalshi_open_interest),
             )
             await conn.commit()
+
+    async def total_open_exposure(self, market_id: str) -> float:
+        """Sum of `size` across all strategies for open trades on this ticker.
+
+        Open = status in ('paper_filled', 'paper_open', 'filled', 'open').
+        Excludes settled / closed / failed trades.
+        """
+        OPEN_STATUSES = ("paper_filled", "paper_open", "filled", "open")
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                f"SELECT COALESCE(SUM(size), 0.0) FROM trades "
+                f"WHERE market_id = ? AND status IN ({','.join('?' * len(OPEN_STATUSES))})",
+                (market_id, *OPEN_STATUSES),
+            )
+            row = await cur.fetchone()
+            return float(row[0]) if row else 0.0
 
     async def get_daily_pnl(self):
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
