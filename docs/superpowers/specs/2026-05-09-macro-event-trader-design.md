@@ -351,3 +351,28 @@ Live 배포 후:
 - **2026-05-09**: Execution window = "T-2주 장기 윈도우" (user 선택).
 - **2026-05-09**: Approach = "Approach 3 — Single fire + edge-scaled sizing" (user 선택).
 - **2026-05-09**: MIN_DEVIATION = 0.10 (fee 0.07 + 3c cushion, EV 양수 조건 확보).
+- **2026-05-09**: 14-task implementation 완료 (commits 6936c82..e496e1e on
+  branch feat/macro-event-trader). 33 macro unit/integration tests green,
+  V1 dedup integration test pass for macro_*, scanner --once dry run successful.
+
+## Implementation deferrals (post-final-review)
+
+본 v0 구현은 다음 항목을 deferred — Phase 0 prevalence 결과 분석 후
+우선순위에 따라 후속 commit 으로 처리:
+
+1. **Gate 8 — Per-event circuit breaker (필수, live 전)**: spec 의 "같은
+   `event_key` 누적 손실 > $50 → 추가 fire 차단" 미구현. 현재 global
+   `MAX_DAILY_LOSS` 만 보호. paper-only 에선 안전하나 live promotion 전
+   `MacroEventStrategy.__init__` 에 settled-trade 누적 손실 캐시 + scan 시
+   loss check 필요.
+2. **Stale consensus Telegram alert**: `macro_event.py:190` 의 logger.warning
+   은 있으나 `_order_manager._notifier.send(...)` 호출 없음. cron 실패 시
+   silent — Phase 1 시작 전 wiring 권장.
+3. **CPI bucket name verification (T0.0 vs T0)**: cron 이 `f"T{value}"`
+   포맷 (예: `T0.0`) 사용하나 Kalshi 가 `T0` 로 listing 할 가능성. 첫 KXCPI
+   실제 마켓 매칭 검증 필요. 불일치 시 normalize 로직 추가.
+4. **`paper_open` exposure 포함 vs 제외**: 현재 limit order pending 도 노출
+   에 합산 (보수적). spec intent 는 "committed capital" 만이라 약간 보수적
+   bias. live 로 전환 시 재검토.
+5. **Auto-discovery FOMC/CPI dates**: 현재 cron 의 `FOMC_DATES` /
+   `CPI_DATES` 하드코딩. Kalshi /series API parse 로 자동화 가능 (Phase 2).
