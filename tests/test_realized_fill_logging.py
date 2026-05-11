@@ -185,3 +185,69 @@ async def test_ttl_limit_prices_aggressive_on_no_side(tmp_path):
     # NO 40¢ signal → yes_price = (100 - 40) - AGG = 58 (paying up to 42¢).
     args = client.place_limit_order.call_args[0]
     assert args[2] == (100 - 40) - LIMIT_AGGRESSION_CENTS
+
+
+@pytest.mark.asyncio
+async def test_ttl_limit_uses_per_strategy_aggression_override(tmp_path):
+    """Strategies in LIMIT_AGGRESSION_CENTS_BY_STRATEGY use their bumped cap."""
+    from core.order_manager import LIMIT_AGGRESSION_CENTS_BY_STRATEGY
+    db = Database(str(tmp_path / "t.db"))
+    await db.initialize()
+    config = MagicMock()
+    config.INITIAL_BANKROLL = 2000.0
+    config.LIVE_STRATEGIES = set()
+    config.estimate_fee = MagicMock(return_value=0.07)
+    config.KALSHI_FEE_PER_CONTRACT = 0.07
+    config.MAX_DAILY_LOSS = 200
+    config.MAX_DAILY_LOSS_LIVE = 200
+    config.MAX_CONSECUTIVE_LOSSES = 1000
+    client = MagicMock()
+    client.get_balance = MagicMock(return_value=100.0)
+    client.invalidate_balance_cache = MagicMock()
+    client.place_limit_order = MagicMock(return_value={"order_id": "ord-mid"})
+    client.get_order = MagicMock(return_value={
+        "fill_count_fp": 0, "remaining_count_fp": 10,
+        "status": "canceled", "taker_fill_cost_dollars": 0,
+        "maker_fill_cost_dollars": 0,
+    })
+    client.cancel_order = MagicMock(return_value=True)
+    om = OrderManager(config, kalshi_client=client, database=db, notifier=None)
+    await om.hydrate_bankroll()
+    # midshot_v31 has override (25) — should beat default (15)
+    assert LIMIT_AGGRESSION_CENTS_BY_STRATEGY["sports_midshot_v31"] == 25
+    await om._live_limit_ttl_order("KX-T1", "yes", 3.0, 0.30, "sports_midshot_v31", "KX-T1")
+    args = client.place_limit_order.call_args[0]
+    assert args[2] == 30 + 25, f"midshot_v31 should use 25¢ aggression, got yes_price={args[2]} (expected 55)"
+
+
+@pytest.mark.asyncio
+async def test_ttl_limit_default_aggression_for_non_overridden_strategy(tmp_path):
+    """Strategies not in override dict fall back to the default 15¢ cap."""
+    from core.order_manager import LIMIT_AGGRESSION_CENTS, LIMIT_AGGRESSION_CENTS_BY_STRATEGY
+    db = Database(str(tmp_path / "t.db"))
+    await db.initialize()
+    config = MagicMock()
+    config.INITIAL_BANKROLL = 2000.0
+    config.LIVE_STRATEGIES = set()
+    config.estimate_fee = MagicMock(return_value=0.07)
+    config.KALSHI_FEE_PER_CONTRACT = 0.07
+    config.MAX_DAILY_LOSS = 200
+    config.MAX_DAILY_LOSS_LIVE = 200
+    config.MAX_CONSECUTIVE_LOSSES = 1000
+    client = MagicMock()
+    client.get_balance = MagicMock(return_value=100.0)
+    client.invalidate_balance_cache = MagicMock()
+    client.place_limit_order = MagicMock(return_value={"order_id": "ord-und"})
+    client.get_order = MagicMock(return_value={
+        "fill_count_fp": 0, "remaining_count_fp": 10,
+        "status": "canceled", "taker_fill_cost_dollars": 0,
+        "maker_fill_cost_dollars": 0,
+    })
+    client.cancel_order = MagicMock(return_value=True)
+    om = OrderManager(config, kalshi_client=client, database=db, notifier=None)
+    await om.hydrate_bankroll()
+    # underdog_v31 NOT in override dict (shield strategy, keeps 15¢ default)
+    assert "sports_underdog_v31" not in LIMIT_AGGRESSION_CENTS_BY_STRATEGY
+    await om._live_limit_ttl_order("KX-T1", "yes", 3.0, 0.30, "sports_underdog_v31", "KX-T1")
+    args = client.place_limit_order.call_args[0]
+    assert args[2] == 30 + LIMIT_AGGRESSION_CENTS, f"underdog_v31 should use default {LIMIT_AGGRESSION_CENTS}¢, got yes_price={args[2]}"

@@ -51,6 +51,29 @@ LIMIT_TTL_POLL_INTERVAL = 5
 # benefit plateaus (60s price moves rarely exceed 15¢ on Kalshi sports).
 LIMIT_AGGRESSION_CENTS = 15
 
+# Per-strategy overrides for unfilled-alpha capture (2026-05-11). Paired
+# paper-vs-live analysis over 4/26-5/11 showed three strategies whose
+# unfilled signals were 100% paper-wins (mechanism: book agreed with our
+# signal and moved the ask past our 15¢ cap before we could cross). The
+# other v3X strategies had unfilled cohorts dominated by losers (TTL acted
+# as an adverse-selection shield) — those keep the 15¢ default.
+#   sports_midshot_v31:         2/2 wins, paper +$103
+#   sports_underdog_v36_playoff: 4/4 wins, paper +$22
+#   sports_underdog_v36_us:     1/1 win,  paper +$12
+# Bump from 15→25 captures asks in the +15-25¢ band without affecting the
+# full-fill cohort (avg realized slip 0.98¢ — depth is in book front, the
+# wider cap only matters when book has moved past +15¢).
+# Re-eval ~2026-05-25 (1 month at current ~1 unfilled / 2 days pace).
+LIMIT_AGGRESSION_CENTS_BY_STRATEGY = {
+    "sports_midshot_v31": 25,
+    "sports_underdog_v36_playoff": 25,
+    "sports_underdog_v36_us": 25,
+}
+
+
+def _aggression_cents_for(strategy: str) -> int:
+    return LIMIT_AGGRESSION_CENTS_BY_STRATEGY.get(strategy, LIMIT_AGGRESSION_CENTS)
+
 # Strategies that should record a paper twin alongside every live entry.
 # Rationale: keep generating paper_filled rows under the same strategy name
 # so paper and live stats accumulate in parallel from the same signal. The
@@ -589,17 +612,18 @@ class OrderManager:
             return {"status": "skipped", "reason": "duplicate_trade"}
         count = max(1, int(size_usdc / price))
         price_cents = int(round(price * 100))
+        aggression_cents = _aggression_cents_for(strategy)
         # Aggression: push yes_price so we're willing to pay up to
-        # LIMIT_AGGRESSION_CENTS more per contract than signal. For YES buys
+        # aggression_cents more per contract than signal. For YES buys
         # the yes_price IS our cost → bump up. For NO buys cost = 100 -
         # yes_price → bump yes_price DOWN to raise our NO cost cap.
         if side == "yes":
-            yes_price_cents = price_cents + LIMIT_AGGRESSION_CENTS
+            yes_price_cents = price_cents + aggression_cents
         else:
-            yes_price_cents = (100 - price_cents) - LIMIT_AGGRESSION_CENTS
+            yes_price_cents = (100 - price_cents) - aggression_cents
         yes_price_cents = max(1, min(99, yes_price_cents))
         # Worst-case per-contract cost; used for fee/balance reservation.
-        max_cost_cents = price_cents + LIMIT_AGGRESSION_CENTS
+        max_cost_cents = price_cents + aggression_cents
         max_cost_cents = max(1, min(99, max_cost_cents))
         expected_fee = self.config.estimate_fee(count, max_cost_cents)
 
