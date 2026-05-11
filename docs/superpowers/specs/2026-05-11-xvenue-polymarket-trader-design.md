@@ -406,3 +406,38 @@ Telegram alerts:
 - **2026-05-11**: Cadence = 60-sec poll (기존 _strategy_loop 활용,
   Polymarket slow-moving political).
 - **2026-05-11**: MIN_DEVIATION = 0.10 (A1/C1/B2 와 동일).
+- **2026-05-11**: 13-task implementation 완료 (commits 77d9842..b628c72 + final-
+  review fixes on branch feat/xvenue-polymarket). 40 xvenue unit/integration
+  tests green.
+
+## Implementation deferrals (post-final-review)
+
+본 v0 구현은 다음 항목을 deferred — Phase 0 prevalence 결과 분석 후 우선순위:
+
+1. **Scanner universe coverage (operational)**: `scanner.get_all_markets()` 가
+   `STRATEGY_SERIES` 하드코딩 list 에 의존. v0 seed 20 매핑 중 13개 prefix 가
+   목록 외 → 라이브 strategy 가 해당 ticker 못 봄 (Phase 0 scanner 는 직접 API
+   fetch 라 영향 없음). user 가 mapping 검증 후 실제 prefix 를 STRATEGY_SERIES
+   에 추가 또는 `_kalshi_markets_for_prefix` 를 직접 API 호출 패턴으로 전환.
+2. **bid/ask collapse (consistent with C1/B2 pattern)**: `yes_bid = 1 - no_ask`
+   approximation. MIN_DEVIATION=0.10 cushion 으로 흡수되나 C1 macro_event 의
+   market dict 우선 패턴과 미정렬. 통합 후속.
+3. **Live strategy cross_venue_signals 미기록 (A1/C1/B2 동일 패턴)**: 현재는
+   Phase 0 scanner 만 logging. live strategy 는 trade row 만 기록. Phase 1
+   skip funnel 분석 필요 시 _handle_market 에 record 추가.
+4. **Polymarket cron 24h+ stale Telegram alert (spec section)**: 미구현.
+   Phase 1 시작 전 wiring.
+5. **`recently_fired` clock skew**: `time.time()` 사용 (NTP step 영향 가능).
+   A1/C1/B2 portfolio-wide convention. `time.monotonic()` 으로 통합 후속.
+6. **v0 seed mapping 정확도**: 20개 슬러그 모두 best-guess. user 가 실제
+   polymarket.com URL 보고 mapping JSON 업데이트 필요. cron 의 `updated=0`
+   메시지가 이를 확인.
+
+## Final-review inline fixes applied (commits to follow)
+
+1. **`outcomePrices` string decoding** (CRITICAL): real gamma-api 가 JSON-encoded
+   string 으로 반환 (`'["0.42", "0.58"]'`). `parse_market_response` 가 list
+   가정 → silent None. `_decode_field` helper 추가 + test fixture.
+2. **`fetch_batch` 가 unrequested slugs 흡수 (real bug)**: gamma-api 가 slugs
+   filter 무시하고 인기 마켓 반환 관찰됨 (GTA VI 등 mapping 외 데이터 cache 오염).
+   defensive: `parsed["slug"] in requested` 체크 추가 + test 추가.

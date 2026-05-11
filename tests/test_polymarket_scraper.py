@@ -38,6 +38,21 @@ def test_parse_market_response_rejects_inactive():
     assert parse_market_response(raw) is None
 
 
+def test_parse_market_response_decodes_string_encoded_fields():
+    """Real gamma-api returns outcomes + outcomePrices as JSON-encoded strings."""
+    raw = {
+        "slug": "trump-2028",
+        "outcomes": '["Yes", "No"]',          # JSON-encoded string
+        "outcomePrices": '["0.42", "0.58"]',  # JSON-encoded string
+        "volume24hr": "100000",
+        "active": True, "closed": False,
+    }
+    out = parse_market_response(raw)
+    assert out is not None
+    assert abs(out["yes_price"] - 0.42) < 1e-6
+    assert abs(out["no_price"] - 0.58) < 1e-6
+
+
 def test_parse_market_response_rejects_multi_outcome():
     """B1 v0 only handles binary Yes/No markets."""
     raw = {
@@ -100,3 +115,23 @@ def test_fetch_batch_returns_dict_keyed_by_slug():
         assert "b" in out
         assert "c-closed" not in out  # closed market filtered
         assert out["a"]["yes_price"] == 0.3
+
+
+def test_fetch_batch_filters_out_unrequested_slugs():
+    """gamma-api was observed to ignore slugs filter and return popular
+    markets when no match. Defensive: drop any returned slug not in request."""
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.json.return_value = [
+        {"slug": "a-requested", "outcomes": ["Yes", "No"],
+         "outcomePrices": ["0.3", "0.7"], "volume24hr": "100",
+         "active": True, "closed": False},
+        {"slug": "unrelated-popular-market", "outcomes": ["Yes", "No"],
+         "outcomePrices": ["0.5", "0.5"], "volume24hr": "999999",
+         "active": True, "closed": False},
+    ]
+    with patch("core.polymarket_scraper.httpx.get", return_value=fake_response):
+        scraper = PolymarketScraper()
+        out = scraper.fetch_batch(["a-requested"])
+        assert "a-requested" in out
+        assert "unrelated-popular-market" not in out

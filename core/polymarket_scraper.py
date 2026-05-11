@@ -15,6 +15,18 @@ logger = logging.getLogger("polymarket_scraper")
 GAMMA_API_BASE = "https://gamma-api.polymarket.com/markets"
 
 
+def _decode_field(value):
+    """gamma-api returns `outcomes` and `outcomePrices` as JSON-encoded strings
+    (e.g., '["Yes", "No"]'). Decode if needed, pass through if already list."""
+    if isinstance(value, str):
+        try:
+            import json as _json
+            return _json.loads(value)
+        except (ValueError, TypeError):
+            return None
+    return value
+
+
 def parse_market_response(raw: dict) -> Optional[dict]:
     """Normalize gamma-api market dict → {slug, yes_price, no_price, volume_24h}.
 
@@ -23,11 +35,11 @@ def parse_market_response(raw: dict) -> Optional[dict]:
     """
     if not raw.get("active") or raw.get("closed"):
         return None
-    outcomes = raw.get("outcomes") or []
+    outcomes = _decode_field(raw.get("outcomes")) or []
     if outcomes != ["Yes", "No"]:
         return None
-    prices = raw.get("outcomePrices") or []
-    if len(prices) < 2:
+    prices = _decode_field(raw.get("outcomePrices")) or []
+    if not isinstance(prices, list) or len(prices) < 2:
         return None
     try:
         yes_price = float(prices[0])
@@ -105,9 +117,14 @@ class PolymarketScraper:
             return {}
         if not isinstance(data, list):
             return {}
+        # Defensive: gamma-api was observed to ignore the slugs filter and
+        # return unrelated popular markets when none of the requested slugs
+        # match. Filter response to only include slugs we actually requested
+        # so cache doesn't pollute with off-mapping markets.
+        requested = set(slugs)
         out: dict[str, dict] = {}
         for raw in data:
             parsed = parse_market_response(raw)
-            if parsed:
+            if parsed and parsed["slug"] in requested:
                 out[parsed["slug"]] = parsed
         return out
