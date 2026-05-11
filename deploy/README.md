@@ -162,6 +162,40 @@ systemctl status kalshi-polymarket-quote.service
 journalctl -u kalshi-polymarket-quote.service -f
 ```
 
+## 5h. Install Phase 0 prevalence scanners (4 services, A1/B1/B2/C1)
+
+Each scanner mirrors its strategy's signal logic but does NOT fire any
+trade. Logs every (would-fire / skip) evaluation to its signal table
+for offline analysis. Run for >=1-2 weeks before deciding paper
+promotion or live promotion.
+
+Output tables:
+- A1 (ladder): `ladder_violations`
+- B1 (xvenue): `cross_venue_signals`
+- B2 (crypto): `crypto_fair_value_signals`
+- C1 (macro): `macro_event_signals`
+
+```bash
+cd /home/ubuntu/kalshi-arb
+sudo cp deploy/kalshi-scanner-ladder.service /etc/systemd/system/
+sudo cp deploy/kalshi-scanner-macro.service  /etc/systemd/system/
+sudo cp deploy/kalshi-scanner-crypto.service /etc/systemd/system/
+sudo cp deploy/kalshi-scanner-xvenue.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now kalshi-scanner-ladder.service \
+                            kalshi-scanner-macro.service  \
+                            kalshi-scanner-crypto.service \
+                            kalshi-scanner-xvenue.service
+
+# Verify
+systemctl is-active kalshi-scanner-{ladder,macro,crypto,xvenue}.service
+journalctl -u kalshi-scanner-ladder.service -n 30 -f
+```
+
+Cadences (script `--interval`): ladder 60s, xvenue 60s, crypto 60s,
+macro 3600s (1h — macro_consensus refreshes 4h, so anything more
+frequent than ~1h doesn't add new signals).
+
 ## 6. Common Commands
 
 ```bash
