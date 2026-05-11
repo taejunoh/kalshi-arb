@@ -1,0 +1,18 @@
+[Unit]
+Description=Kalshi crypto_fair_value: Deribit BTC/ETH ATM IV refresh (4h)
+After=network.target kalshi-bot.service
+# After= guards against the 5/5 boot-time SQLite write-lock race
+# (see kalshi-ticker-backfill.service comment).
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/deribit_iv_cron.py --once
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs

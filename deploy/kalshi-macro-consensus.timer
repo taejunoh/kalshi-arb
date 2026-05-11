@@ -1,0 +1,13 @@
+[Unit]
+Description=4-hourly macro consensus refresh (FedWatch + CPI Nowcast)
+Requires=kalshi-macro-consensus.service
+
+[Timer]
+# Every 4h at :17 past the hour. :17 picked to avoid the :00/:15 minute
+# everyone defaults to; same convention as kalshi-ticker-backfill (:15).
+OnCalendar=*-*-* 00,04,08,12,16,20:17:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

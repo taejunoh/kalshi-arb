@@ -1,0 +1,28 @@
+[Unit]
+Description=Kalshi xvenue: Polymarket gamma-api quote refresh (1-min loop)
+After=network.target kalshi-bot.service
+# After= (not Requires=) — quote refresh writes its own table
+# (polymarket_quotes) and is independent of kalshi-bot, but kalshi-bot
+# owns the bot.db schema init so we let it finish first to avoid the
+# boot-time SQLite write-lock race that crashed prod 2026-05-05.
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+# No --once: the script loops internally every 60s. Running as a
+# long-running service avoids 60 systemd timer fires per hour (journal
+# churn) while preserving Restart=always for transient HTTP/DB faults.
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/polymarket_quote_cron.py
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs
+
+[Install]
+WantedBy=multi-user.target
