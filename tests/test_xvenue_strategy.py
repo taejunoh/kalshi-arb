@@ -147,3 +147,193 @@ def test_size_for_edge_scales_and_caps():
     assert s._size_for_edge(0.30) == 30.0
     # base x clamp(0.05/0.10, 0.5, 3.0) = 0.5 -> 10
     assert s._size_for_edge(0.05) == 10.0
+
+
+import time
+
+
+def _kalshi_book_for_ticker(yes_ask, no_ask, depth=100.0):
+    """Mock get_market_prices + get_order_book_depth pair."""
+    return (yes_ask, no_ask), (depth, depth)
+
+
+@pytest.mark.asyncio
+async def test_scan_fires_buy_yes_when_all_gates_pass():
+    """Polymarket 0.50 > Kalshi mid 0.30 -> BUY YES at 0.32."""
+    cfg = _cfg()
+    now = datetime.now(timezone.utc)
+    db = MagicMock()
+    db.fetch_polymarket_quote = AsyncMock(return_value={
+        "slug": "test", "yes_price": 0.50, "no_price": 0.50,
+        "volume_24h": 50000.0,
+        "fetched_at": now.isoformat(),
+    })
+    db.total_open_exposure = AsyncMock(return_value=0.0)
+
+    om = MagicMock()
+    om.is_circuit_breaker_active = MagicMock(return_value=False)
+    om.market_order = AsyncMock(return_value={"status": "paper_filled"})
+    om._db = db
+
+    client = MagicMock()
+    client.get_market_prices = MagicMock(return_value=(0.32, 0.68))
+    client.get_order_book_depth = MagicMock(return_value=(100.0, 100.0))
+
+    scanner = MagicMock()
+    scanner.get_all_markets = MagicMock(return_value=[
+        {"ticker": "KXTEST-A"},
+    ])
+
+    mapping = MagicMock()
+    mapping.all_slugs = MagicMock(return_value=["test"])
+    mapping.entries_for_slug = MagicMock(return_value=[{
+        "kalshi_ticker_prefix": "KXTEST-",
+        "outcome_match": "direct",
+        "notes": "",
+    }])
+    mapping.reload = MagicMock(return_value=None)
+
+    s = XVenuePolymarketStrategy(cfg, om, scanner, client, mapping=mapping)
+    await s.scan_and_execute()
+
+    om.market_order.assert_called_once()
+    call_kwargs = om.market_order.call_args.kwargs
+    assert call_kwargs["ticker"] == "KXTEST-A"
+    assert call_kwargs["side"] == "yes"
+    assert call_kwargs["strategy"] == "xvenue_polymarket"
+
+
+@pytest.mark.asyncio
+async def test_scan_skips_when_polymarket_quote_stale():
+    cfg = _cfg()
+    now = datetime.now(timezone.utc)
+    db = MagicMock()
+    db.fetch_polymarket_quote = AsyncMock(return_value={
+        "slug": "test", "yes_price": 0.50, "no_price": 0.50,
+        "volume_24h": 50000.0,
+        "fetched_at": (now - timedelta(minutes=30)).isoformat(),  # > 15 min
+    })
+    db.total_open_exposure = AsyncMock(return_value=0.0)
+    om = MagicMock()
+    om.is_circuit_breaker_active = MagicMock(return_value=False)
+    om.market_order = AsyncMock()
+    om._db = db
+    client = MagicMock()
+    client.get_market_prices = MagicMock(return_value=(0.32, 0.68))
+    client.get_order_book_depth = MagicMock(return_value=(100.0, 100.0))
+    scanner = MagicMock()
+    scanner.get_all_markets = MagicMock(return_value=[{"ticker": "KXTEST-A"}])
+    mapping = MagicMock()
+    mapping.all_slugs = MagicMock(return_value=["test"])
+    mapping.entries_for_slug = MagicMock(return_value=[{
+        "kalshi_ticker_prefix": "KXTEST-",
+        "outcome_match": "direct", "notes": "",
+    }])
+    mapping.reload = MagicMock(return_value=None)
+    s = XVenuePolymarketStrategy(cfg, om, scanner, client, mapping=mapping)
+    await s.scan_and_execute()
+    om.market_order.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_scan_skips_when_polymarket_volume_too_low():
+    cfg = _cfg()
+    now = datetime.now(timezone.utc)
+    db = MagicMock()
+    db.fetch_polymarket_quote = AsyncMock(return_value={
+        "slug": "test", "yes_price": 0.50, "no_price": 0.50,
+        "volume_24h": 1000.0,  # < 5000 floor
+        "fetched_at": now.isoformat(),
+    })
+    db.total_open_exposure = AsyncMock(return_value=0.0)
+    om = MagicMock()
+    om.is_circuit_breaker_active = MagicMock(return_value=False)
+    om.market_order = AsyncMock()
+    om._db = db
+    client = MagicMock()
+    client.get_market_prices = MagicMock(return_value=(0.32, 0.68))
+    client.get_order_book_depth = MagicMock(return_value=(100.0, 100.0))
+    scanner = MagicMock()
+    scanner.get_all_markets = MagicMock(return_value=[{"ticker": "KXTEST-A"}])
+    mapping = MagicMock()
+    mapping.all_slugs = MagicMock(return_value=["test"])
+    mapping.entries_for_slug = MagicMock(return_value=[{
+        "kalshi_ticker_prefix": "KXTEST-",
+        "outcome_match": "direct", "notes": "",
+    }])
+    mapping.reload = MagicMock(return_value=None)
+    s = XVenuePolymarketStrategy(cfg, om, scanner, client, mapping=mapping)
+    await s.scan_and_execute()
+    om.market_order.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_scan_skips_when_recently_fired():
+    cfg = _cfg()
+    now = datetime.now(timezone.utc)
+    db = MagicMock()
+    db.fetch_polymarket_quote = AsyncMock(return_value={
+        "slug": "test", "yes_price": 0.50, "no_price": 0.50,
+        "volume_24h": 50000.0,
+        "fetched_at": now.isoformat(),
+    })
+    db.total_open_exposure = AsyncMock(return_value=0.0)
+    om = MagicMock()
+    om.is_circuit_breaker_active = MagicMock(return_value=False)
+    om.market_order = AsyncMock()
+    om._db = db
+    client = MagicMock()
+    client.get_market_prices = MagicMock(return_value=(0.32, 0.68))
+    client.get_order_book_depth = MagicMock(return_value=(100.0, 100.0))
+    scanner = MagicMock()
+    scanner.get_all_markets = MagicMock(return_value=[{"ticker": "KXTEST-A"}])
+    mapping = MagicMock()
+    mapping.all_slugs = MagicMock(return_value=["test"])
+    mapping.entries_for_slug = MagicMock(return_value=[{
+        "kalshi_ticker_prefix": "KXTEST-",
+        "outcome_match": "direct", "notes": "",
+    }])
+    mapping.reload = MagicMock(return_value=None)
+    s = XVenuePolymarketStrategy(cfg, om, scanner, client, mapping=mapping)
+    s._recently_fired["KXTEST-A"] = time.time() - 60.0  # fired 60s ago, cap=300s
+    await s.scan_and_execute()
+    om.market_order.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_scan_applies_reversed_outcome_match():
+    """Polymarket Trump=YES 0.42 with reversed match -> Kalshi Dem-side
+    interpretation = 1 - 0.42 = 0.58.  If Kalshi DEM mid is 0.30, dev = 0.28
+    -> BUY YES on KX-DEM."""
+    cfg = _cfg()
+    now = datetime.now(timezone.utc)
+    db = MagicMock()
+    db.fetch_polymarket_quote = AsyncMock(return_value={
+        "slug": "trump-win", "yes_price": 0.42, "no_price": 0.58,
+        "volume_24h": 50000.0,
+        "fetched_at": now.isoformat(),
+    })
+    db.total_open_exposure = AsyncMock(return_value=0.0)
+    om = MagicMock()
+    om.is_circuit_breaker_active = MagicMock(return_value=False)
+    om.market_order = AsyncMock(return_value={"status": "paper_filled"})
+    om._db = db
+    client = MagicMock()
+    client.get_market_prices = MagicMock(return_value=(0.32, 0.68))
+    client.get_order_book_depth = MagicMock(return_value=(100.0, 100.0))
+    scanner = MagicMock()
+    scanner.get_all_markets = MagicMock(return_value=[
+        {"ticker": "KXPRES-2028-DEM"},
+    ])
+    mapping = MagicMock()
+    mapping.all_slugs = MagicMock(return_value=["trump-win"])
+    mapping.entries_for_slug = MagicMock(return_value=[{
+        "kalshi_ticker_prefix": "KXPRES-2028-DEM",
+        "outcome_match": "reversed",  # Trump=YES on Poly -> Dem=YES on Kalshi flipped
+        "notes": "",
+    }])
+    mapping.reload = MagicMock(return_value=None)
+    s = XVenuePolymarketStrategy(cfg, om, scanner, client, mapping=mapping)
+    await s.scan_and_execute()
+    om.market_order.assert_called_once()
+    assert om.market_order.call_args.kwargs["side"] == "yes"
