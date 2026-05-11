@@ -1047,8 +1047,16 @@ function shortMarket(id) {
 // ─────────────────────────────────────────────
 async function apiFetch(path) {
   const r = await fetch(BASE + path);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
+  if (!r.ok) throw new Error(`${path} → HTTP ${r.status}`);
+  const text = await r.text();
+  if (text.startsWith('<')) {
+    throw new Error(`${path} → got HTML (likely 404 from static mount): ${text.slice(0, 60)}`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`${path} → ${e.message}`);
+  }
 }
 
 // ─────────────────────────────────────────────
