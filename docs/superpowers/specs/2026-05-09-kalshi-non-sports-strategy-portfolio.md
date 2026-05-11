@@ -97,36 +97,46 @@ vs KXFEDDECISION (rate cut binary) vs KXCPI* vs KXJOBS*. 첫 cycle 하나만.
 
 ## Sub-project C2 — SCOTUS opinion-day parser
 
-**Edge thesis**: SCOTUS opinion 은 화/목 10:00 ET drop. PDF 다운 → keyword
-parse → 관련 Kalshi 마켓 (e.g., 특정 case 결과) 5-30초 안에 reaction. 인간
-대비 latency 우위.
+**🚫 2026-05-11 폐기 (shutdown_fade V1 패턴 반복)**
 
-**데이터**: SCOTUSblog feed / SCOTUS official RSS (무료). PDF parser + LLM
-classifier. Kalshi market 매칭 dictionary (manual + 자동).
+원안 thesis: SCOTUS opinion 화/목 10:00 ET drop → PDF parse + 5-30초
+reaction. Kalshi 의 케이스 마켓에 latency arb.
 
-**검증**: 과거 opinion 일자 + 매칭된 Kalshi case 마켓 candle 분석 → 평균
-reaction 크기 + 봇 latency 가능성 평가.
+**Universe probe 결과 (2026-05-11):**
+- 직접 SCOTUS-case 시리즈 18개 후보 중 현재 open=0 (KXNEWSCOTUSCONF 10개
+  만 open — 2029-01 close 의 카운트 마켓, opinion-day reactive 아님)
+- 과거 KXMOOREUS, KXLOPER, BIDENVNEBRASKA, SFFA 등 SCOTUS 판결 마켓 모두
+  settled — Kalshi 가 prior term 에는 listing 했으나 OT2025-26 (현 term)
+  케이스 마켓 listing 없음
+- 광범위 legal events (KXIMPEACH, KXJUDGECOUNT, KXAGANNOUNCE) 25 open
+  존재 하나 모두 count/long-horizon prediction 형 → low-latency 인프라
+  이점 없음
 
-**인프라 비용**: feed listener + PDF parser + classifier + low-latency
-trader. **4-5일.** 가장 비싸지만 mechanical, 인적 dependency 없음.
+**핵심 결론**:
+1. C2 의 trade vector (opinion-day reactive 케이스 마켓) 의 universe 가
+   사실상 0 in May 2026
+2. Reframe (broader legal events) 도 archetype mismatch — count/threshold
+   마켓은 PDF parser 인프라가 무용
+3. 가장 가까운 archetype 인 mentions_trader (KXFEDMENTION rhetoric) 은
+   prereq 분석에서 -38% fade ROI 음수 EV 확인 (shutdown_fade prereq doc)
+4. 4-5일 인프라 투자해도 paper 검증 불가능 (universe 없음)
 
-**의존성**: 없음.
+**재평가 trigger**: Oct 2026 (OT2026-27 term 시작) Kalshi 가 case
+markets listing 재개하는지 + 마켓 빈도/유동성 충분한지. 그 시점에 다시
+브레인스토밍.
 
-**Open question**: (1) Kalshi 가 SCOTUS case 마켓 listing 빈도 — 충분히
-잦은가? (2) Latency budget — 1초 / 10초 / 60초? (3) Case → Kalshi market
-매칭 — manual mapping 유지보수 비용.
+**대체**: 5번째 sub-project 부산으로 시간 재배분.
 
-## 추천 실행 순서
+## 추천 실행 순서 (2026-05-11 갱신 — C2 폐기 후)
 
-| 순위 | sub-project | 근거 |
+| 순위 | sub-project | 결과 |
 |---|---|---|
-| 1 | **A1 Count-ladder** | 가장 빠른 prototype (1-2일), 외부 data 불요, 즉시 paper. risk 평가 빠름 |
-| 2 | **C1 FOMC/CPI** | V1 thesis 의 직접 진화, 명확한 시간확정성, 표본은 thin 하지만 macro alpha 확실 |
-| 3 | **B2 Crypto vs spot** | 봇이 한 번도 안 건드린 영역, 새 data integration cost 있음 (3일) |
-| 4 | **C2 SCOTUS** | 가장 신박, 가장 비쌈 (5일), 표본 thin — 1-3 검증 후 evaluate |
+| 1 | **A1 Count-ladder** | ✅ 머지 (PR #1, 2026-05-09) — paper-only |
+| 2 | **C1 FOMC/CPI** | ✅ 머지 (PR #2, 2026-05-10) — paper-only |
+| 3 | **B2 Crypto vs spot** | ✅ PR #3 생성 (2026-05-10) — paper-only |
+| 4 | ~~C2 SCOTUS~~ | 🚫 폐기 (2026-05-11) — universe 0, reframe 도 archetype mismatch |
 
-**병렬 처리 기준**: A1 + C1 은 동일 인프라 (Kalshi-only data + 기존 paper-
-twin) 라 동시 진행 가능. B2 / C2 는 신규 외부 data feed 필요 → 직렬.
+**달성**: 3/4 sub-project 완성. 5번째 sub-project 부산 진행 (별도 결정).
 
 ## 동시 cleanup — shutdown_fade V1 폐기 영구화
 
