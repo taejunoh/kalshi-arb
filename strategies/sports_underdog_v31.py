@@ -16,13 +16,18 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     # entry price ~60¢, peak stake = 30 × $0.60 = $18 → $30 keeps ~1.67×
     # cushion (matches the prior buffer ratio).
     MIN_DEPTH_USDC = 30.0
-    # Price bucket ROI (2026-04-20, settled paper+live):
-    #   <10¢:   n=8,  0% win, ROI −100%
-    #   10–15¢: n=8,  0% win, ROI −100%
-    #   15–20¢: n=11, 0% win, ROI −100%
-    #   ≥20¢:   ROI positive (+95% at 20-25¢, +46% at 30-35¢)
-    # Largest sub-20¢ drain of any v31 variant (−$80). 20¢ simple floor.
-    MIN_ENTRY_PRICE = 0.20
+    # 2026-05-11: floor raised 0.20 → 0.30 from paired v31↔v32 bucket analysis.
+    # Earlier 4/20 calibration (+95% at 20-25¢) has fully reversed in current
+    # data — the universe-zero edge finding (memory: v31 underdog calibration
+    # 2026-05-06) shows up most sharply in sub-30¢ buckets:
+    #   <25¢:    n=24,  ROI −430%
+    #   25-30¢:  n=56,  ROI −295%
+    #   30-35¢:  n=86,  ROI +169%  ← kept (top-1 dependent, monitor)
+    #   35-40¢:  n=282, ROI +9.6%  ← stable bulk
+    # Cascades to v32, v33, v34, v35 via inheritance. v36_playoff/v36_us
+    # already use 0.30 floor; v36_nhl_playoff (0.35) and v37_soccer (0.20-0.29)
+    # have their own bands.
+    MIN_ENTRY_PRICE = 0.30
     # Upper cliff at 0.40c (2026-05-03 reg-season analysis): n=62, ROI -25%
     # spread across 23 games (top-1 drop still -14%). 0.39c=+11% n=43.
     # 0.40c sits at payoff=2.0 fee-boundary — fee-adjusted edge ≈ 0, so
