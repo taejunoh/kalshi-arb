@@ -116,6 +116,17 @@ class Config:
         self.CRYPTO_FAIR_ATM_WINDOW_N = int(os.getenv("CRYPTO_FAIR_ATM_WINDOW_N", "5"))
         self.CRYPTO_FAIR_MIN_TIME_TO_CLOSE_SECS = float(os.getenv("CRYPTO_FAIR_MIN_TIME_TO_CLOSE_SECS", "60"))
 
+        # Cross-Venue Polymarket Trader (B1) — single sub-strategy xvenue_polymarket.
+        # Spec: docs/superpowers/specs/2026-05-11-xvenue-polymarket-trader-design.md
+        self.XVENUE_MIN_DEVIATION = float(os.getenv("XVENUE_MIN_DEVIATION", "0.10"))
+        self.XVENUE_MIN_DEPTH_USDC = float(os.getenv("XVENUE_MIN_DEPTH_USDC", "30"))
+        self.XVENUE_BASE_SIZE_USDC = float(os.getenv("XVENUE_BASE_SIZE_USDC", "20"))
+        self.XVENUE_MAX_POSITION_PER_TICKER = float(os.getenv("XVENUE_MAX_POSITION_PER_TICKER", "30"))
+        self.XVENUE_MAX_TICKER_TOTAL_EXPOSURE = float(os.getenv("XVENUE_MAX_TICKER_TOTAL_EXPOSURE", "80"))
+        self.XVENUE_QUOTE_STALE_MINS = float(os.getenv("XVENUE_QUOTE_STALE_MINS", "15"))
+        self.XVENUE_MIN_POLYMARKET_VOLUME = float(os.getenv("XVENUE_MIN_POLYMARKET_VOLUME", "5000"))
+        self.XVENUE_RECENTLY_FIRED_SECS = float(os.getenv("XVENUE_RECENTLY_FIRED_SECS", "300"))
+
     @property
     def is_paper_mode(self) -> bool:
         return self.TRADING_MODE == "paper"
