@@ -71,6 +71,17 @@ def test_fedwatch_scraper_returns_none_on_http_error():
         assert scraper.fetch_meeting("2026-06-17") is None
 
 
+def test_fedwatch_scraper_returns_none_on_403_ip_block():
+    """CME IP-blocks the FedWatch endpoint with HTTP 403 — verified live
+    2026-05-11. Scraper must return None and not raise."""
+    fake_response = MagicMock()
+    fake_response.status_code = 403
+    fake_response.text = '{"message": "This IP address is blocked..."}'
+    with patch("core.macro_consensus.httpx.get", return_value=fake_response):
+        scraper = FedWatchScraper()
+        assert scraper.fetch_meeting("2026-06-17") is None
+
+
 def test_fedwatch_scraper_returns_none_on_malformed_json():
     fake_response = MagicMock()
     fake_response.status_code = 200
@@ -89,42 +100,83 @@ def test_fedwatch_scraper_returns_none_on_missing_date():
         assert scraper.fetch_meeting("2026-06-17") is None
 
 
-from core.macro_consensus import CPINowcastScraper
-
-# Realistic snippet of Cleveland Fed Nowcast HTML — point + std embedded
-# in a tabular layout. Adjust regex if real page layout differs.
-SAMPLE_NOWCAST_HTML = """
-<html><body>
-<div class="nowcast-table">
-  <table>
-    <tr><th>Indicator</th><th>Forecast (%)</th><th>Std Error</th></tr>
-    <tr><td>CPI MoM</td><td>0.31</td><td>0.10</td></tr>
-    <tr><td>Core CPI MoM</td><td>0.27</td><td>0.09</td></tr>
-  </table>
-</div>
-</body></html>
-"""
+from core.macro_consensus import CPINowcastScraper, CPI_NOWCAST_DEFAULT_STD
 
 
-def test_cpi_nowcast_scraper_extracts_point_and_std():
+# Real-shape sample matching nowcast_month.json (fusioncharts format).
+# Outer list = one record per charted month; latest is the active one.
+SAMPLE_NOWCAST_JSON_LATEST_RECORD = {
+    "chart": {"subcaption": "2026-5", "yaxisname": "Month-over-month percent change"},
+    "categories": [{"category": [{"label": "05/01"}, {"label": "05/04"}]}],
+    "dataset": [
+        {
+            "seriesname": "CPI Inflation",
+            "data": [
+                {"value": "0.418054848749231", "tooltext": "..."},
+                {"value": "0.418054848749231", "tooltext": "..."},
+            ],
+        },
+        {"seriesname": "Core CPI Inflation", "data": [{"value": "0.212"}]},
+        {"seriesname": "Actual CPI Inflation", "data": [{"value": ""}]},
+    ],
+}
+
+
+def test_cpi_nowcast_scraper_extracts_latest_cpi_inflation_value():
     fake_response = MagicMock()
     fake_response.status_code = 200
-    fake_response.text = SAMPLE_NOWCAST_HTML
+    fake_response.json.return_value = [SAMPLE_NOWCAST_JSON_LATEST_RECORD]
     with patch("core.macro_consensus.httpx.get", return_value=fake_response):
-        scraper = CPINowcastScraper()
-        out = scraper.fetch()
+        out = CPINowcastScraper().fetch()
         assert out is not None
-        assert abs(out["cpi_mom_point"] - 0.31) < 1e-6
-        assert abs(out["cpi_mom_std"] - 0.10) < 1e-6
+        assert abs(out["cpi_mom_point"] - 0.41805) < 1e-4
+        assert out["cpi_mom_std"] == CPI_NOWCAST_DEFAULT_STD
 
 
-def test_cpi_nowcast_scraper_returns_none_when_pattern_missing():
+def test_cpi_nowcast_scraper_uses_only_latest_record():
+    """Multiple records in the list — scraper must pick the last (most recent)."""
     fake_response = MagicMock()
     fake_response.status_code = 200
-    fake_response.text = "<html><body>maintenance</body></html>"
+    fake_response.json.return_value = [
+        {"dataset": [{"seriesname": "CPI Inflation", "data": [{"value": "0.10"}]}]},
+        {"dataset": [{"seriesname": "CPI Inflation", "data": [{"value": "0.42"}]}]},
+    ]
     with patch("core.macro_consensus.httpx.get", return_value=fake_response):
-        scraper = CPINowcastScraper()
-        assert scraper.fetch() is None
+        out = CPINowcastScraper().fetch()
+        assert abs(out["cpi_mom_point"] - 0.42) < 1e-6
+
+
+def test_cpi_nowcast_scraper_skips_empty_values():
+    """The 'Actual' series ships with empty strings — must not be picked
+    as CPI Inflation, and within CPI Inflation we walk back from the end
+    until we find a non-empty value."""
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.json.return_value = [
+        {"dataset": [{
+            "seriesname": "CPI Inflation",
+            "data": [{"value": "0.30"}, {"value": ""}, {"value": None}],
+        }]}
+    ]
+    with patch("core.macro_consensus.httpx.get", return_value=fake_response):
+        out = CPINowcastScraper().fetch()
+        assert abs(out["cpi_mom_point"] - 0.30) < 1e-6
+
+
+def test_cpi_nowcast_scraper_returns_none_when_series_missing():
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.json.return_value = [{"dataset": [{"seriesname": "PCE Inflation", "data": [{"value": "0.2"}]}]}]
+    with patch("core.macro_consensus.httpx.get", return_value=fake_response):
+        assert CPINowcastScraper().fetch() is None
+
+
+def test_cpi_nowcast_scraper_returns_none_on_unexpected_shape():
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.json.return_value = {"not": "a list"}
+    with patch("core.macro_consensus.httpx.get", return_value=fake_response):
+        assert CPINowcastScraper().fetch() is None
 
 
 def test_cpi_nowcast_scraper_returns_none_on_http_error():

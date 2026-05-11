@@ -1,122 +1,110 @@
 [
   {
-    "polymarket_slug": "will-trump-win-2028",
-    "kalshi_ticker_prefix": "KXPRES-2028-T",
+    "polymarket_slug": "will-the-fed-decrease-interest-rates-by-25-bps-after-the-june-2026-meeting",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-T0.25",
     "outcome_match": "direct",
-    "notes": "Trump = YES on both venues (assumes Kalshi PRES-2028 uses Trump-favored YES)"
+    "notes": "FOMC Jun 2026 — 25bp cut. Verify Kalshi bucket suffix format (T0.25 vs T25 vs C25 — see C1 spec open question)."
   },
   {
-    "polymarket_slug": "will-trump-win-2028",
-    "kalshi_ticker_prefix": "KXPRES-2028-DEM",
-    "outcome_match": "reversed",
-    "notes": "Trump=YES (Poly) → Dem=NO (Kalshi)"
+    "polymarket_slug": "will-the-fed-decrease-interest-rates-by-50-bps-after-the-june-2026-meeting",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-T0.50",
+    "outcome_match": "direct",
+    "notes": "FOMC Jun 2026 — 50+bp cut. Verify Kalshi bucket format."
   },
   {
-    "polymarket_slug": "fed-decision-june-2026",
-    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-",
+    "polymarket_slug": "will-the-fed-increase-interest-rates-by-25-bps-after-the-june-2026-meeting",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-H0.25",
     "outcome_match": "direct",
-    "notes": "FOMC June 2026 — both venues binary bucket per outcome"
+    "notes": "FOMC Jun 2026 — 25bp hike. Verify Kalshi bucket format."
   },
   {
-    "polymarket_slug": "fed-decision-july-2026",
-    "kalshi_ticker_prefix": "KXFEDDECISION-26JUL-",
+    "polymarket_slug": "will-the-fed-increase-interest-rates-by-50-bps-after-the-june-2026-meeting",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-H0.50",
     "outcome_match": "direct",
-    "notes": "FOMC July 2026"
+    "notes": "FOMC Jun 2026 — 50+bp hike."
   },
   {
-    "polymarket_slug": "us-recession-2026",
-    "kalshi_ticker_prefix": "KXRECESSION-26-",
+    "polymarket_slug": "will-there-be-no-change-in-fed-interest-rates-after-the-june-2026-meeting",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-T0.0",
     "outcome_match": "direct",
-    "notes": "US recession declaration 2026"
+    "notes": "FOMC Jun 2026 — hold. Highest-volume FOMC market on Polymarket."
   },
   {
-    "polymarket_slug": "cpi-june-2026",
-    "kalshi_ticker_prefix": "KXCPI-26JUN-",
+    "polymarket_slug": "will-the-fed-decrease-interest-rates-by-25-bps-after-the-july-2026-meeting",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUL-T0.25",
     "outcome_match": "direct",
-    "notes": "June CPI release — both venues bucketed"
+    "notes": "FOMC Jul 2026 — 25bp cut."
   },
   {
-    "polymarket_slug": "cpi-july-2026",
-    "kalshi_ticker_prefix": "KXCPI-26JUL-",
+    "polymarket_slug": "will-the-fed-decrease-interest-rates-by-50-bps-after-the-july-2026-meeting",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUL-T0.50",
     "outcome_match": "direct",
-    "notes": "July CPI release"
+    "notes": "FOMC Jul 2026 — 50+bp cut."
   },
   {
-    "polymarket_slug": "btc-95000-by-june-2026",
-    "kalshi_ticker_prefix": "KXBTC-26JUN-T95000",
+    "polymarket_slug": "will-the-fed-increase-interest-rates-by-25-bps-after-the-july-2026-meeting",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUL-H0.25",
     "outcome_match": "direct",
-    "notes": "BTC ≥ $95k by June 2026 — verify Kalshi exact strike"
+    "notes": "FOMC Jul 2026 — 25bp hike."
   },
   {
-    "polymarket_slug": "btc-100000-by-2026",
-    "kalshi_ticker_prefix": "KXBTC-2026-T100000",
+    "polymarket_slug": "will-michelle-bowman-be-confirmed-as-fed-chair",
+    "kalshi_ticker_prefix": "KXFEDCHAIR-BOWMAN",
     "outcome_match": "direct",
-    "notes": "BTC ≥ $100k by year-end 2026"
+    "notes": "Fed Chair confirmation — highest-volume candidate ($3M+ 24h on Polymarket). Verify Kalshi ticker (may not be listed)."
   },
   {
-    "polymarket_slug": "eth-4000-by-june-2026",
-    "kalshi_ticker_prefix": "KXETH-26JUN-T4000",
+    "polymarket_slug": "will-judy-shelton-be-confirmed-as-fed-chair",
+    "kalshi_ticker_prefix": "KXFEDCHAIR-SHELTON",
     "outcome_match": "direct",
-    "notes": "ETH ≥ $4k by June 2026"
+    "notes": "Fed Chair confirmation. Verify Kalshi listing."
   },
   {
-    "polymarket_slug": "trump-approval-above-45-june",
-    "kalshi_ticker_prefix": "KXTRUMPAPPROVAL-26JUN-45",
+    "polymarket_slug": "will-jerome-powell-be-confirmed-as-fed-chair",
+    "kalshi_ticker_prefix": "KXFEDCHAIR-POWELL",
     "outcome_match": "direct",
-    "notes": "Trump approval > 45% in June 2026 polls"
+    "notes": "Fed Chair confirmation. Verify Kalshi listing."
   },
   {
-    "polymarket_slug": "vance-vp-2028",
-    "kalshi_ticker_prefix": "KXVP-2028-VANCE",
+    "polymarket_slug": "will-bitcoin-hit-150k-by-june-30-2026",
+    "kalshi_ticker_prefix": "KXBTC-26JUN30-T150000",
     "outcome_match": "direct",
-    "notes": "JD Vance as VP candidate 2028"
+    "notes": "BTC ≥ $150k by Jun 30. $5.8M 24h on Polymarket (highest macro market overall). Verify Kalshi ticker format (current KXBTC pattern is KXBTC-{YYMMM}{DD}{HH}-T{strike} per ladder_crypto parser fix 5/10)."
   },
   {
-    "polymarket_slug": "harris-2028",
-    "kalshi_ticker_prefix": "KXPRES-2028-HARRIS",
+    "polymarket_slug": "will-bitcoin-reach-100000-by-december-31-2026-571-361-361",
+    "kalshi_ticker_prefix": "KXBTC-26DEC31-T100000",
     "outcome_match": "direct",
-    "notes": "Harris wins 2028"
+    "notes": "BTC ≥ $100k by year-end. Polymarket slug has trailing -571-361-361 numeric suffix (gamma-api internal); use full slug verbatim."
   },
   {
-    "polymarket_slug": "ukraine-russia-ceasefire-2026",
-    "kalshi_ticker_prefix": "KXUKRRUSSIACEASE-26-",
+    "polymarket_slug": "will-ethereum-reach-3000-in-may-2026",
+    "kalshi_ticker_prefix": "KXETH-26MAY-T3000",
     "outcome_match": "direct",
-    "notes": "Ceasefire by end-2026"
+    "notes": "ETH ≥ $3k in May 2026."
   },
   {
-    "polymarket_slug": "china-taiwan-conflict-2026",
-    "kalshi_ticker_prefix": "KXCHINATAIWAN-26-",
+    "polymarket_slug": "will-ethereum-reach-5000-in-may-2026",
+    "kalshi_ticker_prefix": "KXETH-26MAY-T5000",
     "outcome_match": "direct",
-    "notes": "China-Taiwan conflict event 2026"
+    "notes": "ETH ≥ $5k in May 2026."
   },
   {
-    "polymarket_slug": "us-government-shutdown-2026",
-    "kalshi_ticker_prefix": "KXGOVTSHUTDOWN-26-",
+    "polymarket_slug": "will-donald-trump-win-the-2028-republican-presidential-nomination",
+    "kalshi_ticker_prefix": "KXNOMRGOP-2028-TRUMP",
     "outcome_match": "direct",
-    "notes": "Govt shutdown by end-2026 (Kalshi listing status: verify)"
+    "notes": "2028 GOP nomination. Verify Kalshi ticker (KXNOMRGOP guess from series convention)."
   },
   {
-    "polymarket_slug": "supreme-court-vacancy-2026",
-    "kalshi_ticker_prefix": "KXSCOTUSVACANCY-26-",
+    "polymarket_slug": "will-jd-vance-win-the-2028-republican-presidential-nomination",
+    "kalshi_ticker_prefix": "KXNOMRGOP-2028-VANCE",
     "outcome_match": "direct",
-    "notes": "SCOTUS vacancy in 2026"
+    "notes": "2028 GOP nomination."
   },
   {
-    "polymarket_slug": "nasdaq-record-high-2026",
-    "kalshi_ticker_prefix": "KXNASDAQ-26-NEWHIGH",
+    "polymarket_slug": "will-gavin-newsom-win-the-2028-us-presidential-election",
+    "kalshi_ticker_prefix": "KXPRES-2028-NEWSOM",
     "outcome_match": "direct",
-    "notes": "Nasdaq new all-time high in 2026"
-  },
-  {
-    "polymarket_slug": "sp500-7000-2026",
-    "kalshi_ticker_prefix": "KXSP500-26-T7000",
-    "outcome_match": "direct",
-    "notes": "S&P 500 ≥ 7000 by end-2026"
-  },
-  {
-    "polymarket_slug": "oil-100-2026",
-    "kalshi_ticker_prefix": "KXOIL-26-T100",
-    "outcome_match": "direct",
-    "notes": "WTI crude ≥ $100 in 2026"
+    "notes": "2028 general election."
   }
 ]
