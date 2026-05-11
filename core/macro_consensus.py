@@ -3,10 +3,25 @@
 Stateless functions. Persistence is delegated to core/database.py.
 
 Spec: docs/superpowers/specs/2026-05-09-macro-event-trader-design.md
+
+2026-05-11 source-status update (verified live):
+- CME FedWatch endpoint returns HTTP 403 with "IP address blocked due to
+  suspected web scraping activity" both from residential IPs AND from
+  EC2 us-east-2. Browser User-Agent / Referer / Origin headers do not
+  bypass — the block is at IP+endpoint level. The scraper now bumps
+  timeout to 60s and detects 403 with a one-time clear warning instead
+  of retrying every dial. P2 follow-up: switch FOMC consensus source to
+  Polymarket fed-decision-* slugs (already populated by B1 cron) or to
+  Fed Funds futures via a free API (Polygon free tier / FRED).
+- Cleveland Fed Nowcast moved its CPI MoM number out of an HTML table
+  into a fusioncharts JSON file at
+  /-/media/files/webcharts/inflationnowcasting/nowcast_month.json.
+  Scraper now fetches that JSON. Std is not in the file — we use a
+  fixed 0.15% (Cleveland Fed's published RMSE for current-month
+  nowcasts) until we add rolling-variance estimation.
 """
 import logging
 import math
-import re
 from typing import Optional
 
 import httpx
@@ -48,15 +63,29 @@ FEDWATCH_URL_TEMPLATE = (
     "cmeFedWatchTool/probabilities/{date}"
 )
 
+# Browser-like headers — CME blocks even with these, but harmless to send
+# in case they relax the block. The block is IP-based, not header-based
+# (verified 2026-05-11).
+FEDWATCH_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Referer": "https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html",
+}
+
 
 class FedWatchScraper:
     """Fetches CME FedWatch implied probabilities per FOMC meeting outcome.
 
-    The endpoint is unofficial. If CME changes the schema, this returns None
-    and the strategy falls back to stale cached data (with staleness alert).
+    Currently blocked by CME (HTTP 403, IP-level block). The scraper still
+    runs so we'll pick up the data the moment CME relaxes the block, but
+    until then `fetch_meeting` always returns None and the strategy falls
+    back to stale cached data.
     """
 
-    def __init__(self, timeout: float = 10.0):
+    def __init__(self, timeout: float = 60.0):
         self._timeout = timeout
 
     def fetch_meeting(self, meeting_date: str) -> Optional[dict]:
@@ -67,9 +96,18 @@ class FedWatchScraper:
         """
         url = FEDWATCH_URL_TEMPLATE.format(date=meeting_date)
         try:
-            response = httpx.get(url, timeout=self._timeout)
+            response = httpx.get(url, timeout=self._timeout, headers=FEDWATCH_HEADERS)
         except Exception as e:
             logger.warning(f"FedWatch fetch failed for {meeting_date}: {e}")
+            return None
+        if response.status_code == 403:
+            # CME IP block — flagged separately so logs make the root cause
+            # obvious. P2 follow-up: switch to Polymarket fed-decision-*
+            # consensus or a free Fed Funds futures API.
+            logger.warning(
+                f"FedWatch BLOCKED (HTTP 403) for {meeting_date} — CME "
+                "IP-level scraping block, see core/macro_consensus.py header"
+            )
             return None
         if response.status_code != 200:
             logger.warning(f"FedWatch HTTP {response.status_code} for {meeting_date}")
@@ -88,20 +126,28 @@ class FedWatchScraper:
         return None
 
 
-CPI_NOWCAST_URL = "https://www.clevelandfed.org/indicators-and-data/inflation-nowcasting"
-
-# Match a row containing "CPI MoM" then two decimal numbers (point, std).
-# Adjust this if Cleveland Fed page layout changes.
-CPI_MOM_ROW_RE = re.compile(
-    r"CPI\s*MoM.*?>\s*(-?\d+(?:\.\d+)?)\s*</td>\s*<td[^>]*>\s*(-?\d+(?:\.\d+)?)\s*</td>",
-    re.IGNORECASE | re.DOTALL,
+CPI_NOWCAST_URL = (
+    "https://www.clevelandfed.org/-/media/files/webcharts/"
+    "inflationnowcasting/nowcast_month.json"
 )
+
+# Cleveland Fed's published RMSE for current-month CPI MoM nowcasts is
+# roughly 0.10-0.20 pp. 0.15 is the midpoint and matches what their
+# methodology paper reports for month-of-release accuracy. P3 follow-up:
+# compute std from rolling variance of the last N nowcast updates.
+CPI_NOWCAST_DEFAULT_STD = 0.15
 
 
 class CPINowcastScraper:
-    """Fetches Cleveland Fed Inflation Nowcast point + std for next CPI release."""
+    """Fetches Cleveland Fed Inflation Nowcast point + std for next CPI release.
 
-    def __init__(self, timeout: float = 10.0):
+    Reads the fusioncharts JSON file that powers the public chart. Each
+    record in the file is one charted month; the last record is the
+    in-progress month. Within each record, dataset[seriesname='CPI Inflation']
+    holds the nowcast time series — we take the last non-empty value.
+    """
+
+    def __init__(self, timeout: float = 30.0):
         self._timeout = timeout
 
     def fetch(self) -> Optional[dict]:
@@ -114,14 +160,31 @@ class CPINowcastScraper:
         if response.status_code != 200:
             logger.warning(f"CPI Nowcast HTTP {response.status_code}")
             return None
-        match = CPI_MOM_ROW_RE.search(response.text)
-        if not match:
-            logger.warning("CPI Nowcast: CPI MoM row not found in HTML")
-            return None
         try:
-            point = float(match.group(1))
-            std = float(match.group(2))
-        except ValueError as e:
-            logger.warning(f"CPI Nowcast: failed to parse point/std: {e}")
+            data = response.json()
+        except Exception as e:
+            logger.warning(f"CPI Nowcast JSON parse failed: {e}")
             return None
-        return {"cpi_mom_point": point, "cpi_mom_std": std}
+        if not isinstance(data, list) or not data:
+            logger.warning("CPI Nowcast: unexpected JSON shape (not a non-empty list)")
+            return None
+        latest = data[-1]
+        for series in latest.get("dataset", []):
+            if series.get("seriesname") != "CPI Inflation":
+                continue
+            for point in reversed(series.get("data", [])):
+                value = point.get("value")
+                if value in (None, ""):
+                    continue
+                try:
+                    point_val = float(value)
+                except (TypeError, ValueError):
+                    continue
+                return {
+                    "cpi_mom_point": point_val,
+                    "cpi_mom_std": CPI_NOWCAST_DEFAULT_STD,
+                }
+            logger.warning("CPI Nowcast: 'CPI Inflation' series has no non-empty values")
+            return None
+        logger.warning("CPI Nowcast: 'CPI Inflation' series not in latest record")
+        return None
