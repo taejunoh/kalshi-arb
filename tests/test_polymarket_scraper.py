@@ -98,17 +98,26 @@ def test_fetch_single_returns_none_on_http_error():
 
 
 def test_fetch_batch_returns_dict_keyed_by_slug():
-    fake_response = MagicMock()
-    fake_response.status_code = 200
-    fake_response.json.return_value = [
-        {"slug": "a", "outcomes": ["Yes", "No"], "outcomePrices": ["0.3", "0.7"],
-         "volume24hr": "100", "active": True, "closed": False},
-        {"slug": "b", "outcomes": ["Yes", "No"], "outcomePrices": ["0.6", "0.4"],
-         "volume24hr": "200", "active": True, "closed": False},
-        {"slug": "c-closed", "outcomes": ["Yes", "No"], "outcomePrices": ["0.5", "0.5"],
-         "volume24hr": "50", "active": True, "closed": True},
-    ]
-    with patch("core.polymarket_scraper.httpx.get", return_value=fake_response):
+    """fetch_batch issues one ?slug= call per entry — the plural form is
+    broken on Polymarket's side. Each response is a list of length 1
+    (gamma-api wraps singular slug result in a list)."""
+    def per_slug(url, timeout):
+        slug = url.split("slug=")[1]
+        fixtures = {
+            "a": [{"slug": "a", "outcomes": ["Yes", "No"], "outcomePrices": ["0.3", "0.7"],
+                   "volume24hr": "100", "active": True, "closed": False}],
+            "b": [{"slug": "b", "outcomes": ["Yes", "No"], "outcomePrices": ["0.6", "0.4"],
+                   "volume24hr": "200", "active": True, "closed": False}],
+            "c-closed": [{"slug": "c-closed", "outcomes": ["Yes", "No"],
+                          "outcomePrices": ["0.5", "0.5"], "volume24hr": "50",
+                          "active": True, "closed": True}],
+        }
+        m = MagicMock()
+        m.status_code = 200
+        m.json.return_value = fixtures.get(slug, [])
+        return m
+
+    with patch("core.polymarket_scraper.httpx.get", side_effect=per_slug):
         scraper = PolymarketScraper()
         out = scraper.fetch_batch(["a", "b", "c-closed"])
         assert "a" in out
@@ -117,21 +126,22 @@ def test_fetch_batch_returns_dict_keyed_by_slug():
         assert out["a"]["yes_price"] == 0.3
 
 
-def test_fetch_batch_filters_out_unrequested_slugs():
-    """gamma-api was observed to ignore slugs filter and return popular
-    markets when no match. Defensive: drop any returned slug not in request."""
-    fake_response = MagicMock()
-    fake_response.status_code = 200
-    fake_response.json.return_value = [
-        {"slug": "a-requested", "outcomes": ["Yes", "No"],
-         "outcomePrices": ["0.3", "0.7"], "volume24hr": "100",
-         "active": True, "closed": False},
-        {"slug": "unrelated-popular-market", "outcomes": ["Yes", "No"],
-         "outcomePrices": ["0.5", "0.5"], "volume24hr": "999999",
-         "active": True, "closed": False},
-    ]
-    with patch("core.polymarket_scraper.httpx.get", return_value=fake_response):
+def test_fetch_batch_drops_response_with_different_slug():
+    """Defensive: if a per-slug call returns a market whose slug doesn't
+    match the request (e.g., gamma-api fell back to a popular market),
+    drop it instead of caching under the wrong key."""
+    def per_slug(url, timeout):
+        m = MagicMock()
+        m.status_code = 200
+        # gamma-api returned an unrelated market regardless of what we asked
+        m.json.return_value = [{"slug": "unrelated-popular-market",
+                                "outcomes": ["Yes", "No"],
+                                "outcomePrices": ["0.5", "0.5"],
+                                "volume24hr": "999999",
+                                "active": True, "closed": False}]
+        return m
+
+    with patch("core.polymarket_scraper.httpx.get", side_effect=per_slug):
         scraper = PolymarketScraper()
         out = scraper.fetch_batch(["a-requested"])
-        assert "a-requested" in out
-        assert "unrelated-popular-market" not in out
+        assert out == {}
