@@ -35,6 +35,7 @@ from strategies.sports_underdog_v35 import SportsUnderdogV35Strategy
 from strategies.sports_underdog_v36_playoff import SportsUnderdogV36PlayoffStrategy
 from strategies.sports_underdog_v36_us import SportsUnderdogV36USStrategy
 from strategies.sports_underdog_v37_soccer import SportsUnderdogV37SoccerStrategy
+from strategies.sports_draw_v38_soccer import SportsDrawV38SoccerStrategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
@@ -175,6 +176,14 @@ class Bot:
         # Paper-twin only at launch. n=13 games / +120% ROI / drop-top-3 +55%.
         # Promotion gate: n>=25 + ROI>=+30% + drop-3 > 0.
         self.sports_underdog_v37_soccer = SportsUnderdogV37SoccerStrategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # V3.8 Soccer Draw — DRAW side of soccer 3-way markets.
+        # Built 2026-05-11 from observer of 71 settled TIE tickers since 5/2.
+        # EPL+LAL only, 0.25-0.30 YES band. n=13 baseline ROI ~+60%/drop-1
+        # ~+25%. Non-BUN 0.20-0.30 sample n=47, ROI +27%, drop-3 +9%.
+        # LIVE at launch (size 12). Eval gate: n>=25, ROI>=+30%, drop-3>0 by ~6/22.
+        self.sports_draw_v38_soccer = SportsDrawV38SoccerStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
@@ -450,6 +459,8 @@ class Bot:
             ("sports_underdog_v36_us", self.sports_underdog_v36_us),
             # V3.7 Soccer — paper-twin only at launch. Soccer 20-29c TEAM.
             ("sports_underdog_v37_soccer", self.sports_underdog_v37_soccer),
+            # V3.8 Soccer Draw — DRAW side, EPL+LAL 0.25-0.30 YES only.
+            ("sports_draw_v38_soccer", self.sports_draw_v38_soccer),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
             # -37.5% ROI. Freshness gate was added 2026-04-16 (80ad42e) but
             # only a handful of post-gate entries accumulated before shutdown;

@@ -25,6 +25,7 @@ LIMIT_TTL_STRATEGIES = {
     "sports_underdog_v36_playoff",  # 2026-04-30 live-promoted on observer +135% n=10 + trades +153% n=9
     "sports_underdog_v36_us",  # 2026-04-30 us companion to v36_playoff
     "sports_underdog_v37_soccer",  # 2026-05-06 paper-twin launch — soccer 20-29c TEAM
+    "sports_draw_v38_soccer",  # 2026-05-11 live launch — soccer DRAW EPL+LAL 0.25-0.30
 }
 LIMIT_TTL_SECONDS = 60
 LIMIT_TTL_POLL_INTERVAL = 5
@@ -92,6 +93,7 @@ PAPER_TWIN_STRATEGIES = {
     "sports_underdog_v36_playoff",  # 2026-04-30 live-promoted — keep paper twin for slippage A/B
     "sports_underdog_v36_us",  # 2026-04-30 us companion
     "sports_underdog_v37_soccer",  # 2026-05-06 paper-twin launch — soccer 20-29c TEAM
+    "sports_draw_v38_soccer",  # 2026-05-11 live launch — soccer DRAW EPL+LAL 0.25-0.30
 }
 
 
