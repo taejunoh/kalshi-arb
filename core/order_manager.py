@@ -438,10 +438,14 @@ class OrderManager:
         #              one-shot invariant. C1 macro_event sub-strategy.
         #   crypto_* — single (crypto strike at close) outcome — same
         #              one-shot invariant. B2 crypto_fair_value sub-strategy.
+        #   xvenue_* — single Kalshi market resolved by external signal — one
+        #              trade per (strategy, market_id) per Polymarket alpha
+        #              cycle. B1 xvenue_polymarket sub-strategy.
         # Other strategies (mentions, market_maker, spread_scanner)
         # legitimately re-enter the same ticker.
         if (strategy.startswith("sports_") or strategy.startswith("ladder_") or
-                strategy.startswith("macro_") or strategy.startswith("crypto_")) \
+                strategy.startswith("macro_") or strategy.startswith("crypto_") or
+                strategy.startswith("xvenue_")) \
                 and await self._db.has_existing_trade(strategy, market_id):
             logger.warning(
                 f"[PAPER] dedup skip: {strategy} {market_id} already has a trade, "
@@ -468,9 +472,10 @@ class OrderManager:
     # limit_order, persist minutes_to_start on the orders row so settlement can
     # forward it.
     async def _paper_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
-        # DB-side dedup guard (sports_* + ladder_* + macro_*) — see _paper_market_order.
+        # DB-side dedup guard (sports_* + ladder_* + macro_* + crypto_* + xvenue_*) — see _paper_market_order.
         if (strategy.startswith("sports_") or strategy.startswith("ladder_") or
-                strategy.startswith("macro_") or strategy.startswith("crypto_")) \
+                strategy.startswith("macro_") or strategy.startswith("crypto_") or
+                strategy.startswith("xvenue_")) \
                 and await self._db.has_existing_trade(strategy, market_id):
             logger.warning(
                 f"[PAPER-LIMIT] dedup skip: {strategy} {market_id} already has a trade"
@@ -490,9 +495,10 @@ class OrderManager:
 
     async def _live_market_order(self, ticker, side, size_usdc, price, strategy, market_id,
                                   minutes_to_start: Optional[float] = None):
-        # DB-side dedup guard (sports_* + ladder_* + macro_*) — see _paper_market_order.
+        # DB-side dedup guard (sports_* + ladder_* + macro_* + crypto_* + xvenue_*) — see _paper_market_order.
         if (strategy.startswith("sports_") or strategy.startswith("ladder_") or
-                strategy.startswith("macro_") or strategy.startswith("crypto_")) \
+                strategy.startswith("macro_") or strategy.startswith("crypto_") or
+                strategy.startswith("xvenue_")) \
                 and await self._db.has_existing_trade(strategy, market_id):
             logger.warning(
                 f"[LIVE] dedup skip: {strategy} {market_id} already has a trade"
@@ -570,11 +576,12 @@ class OrderManager:
         fills are recorded at actual size; unfilled orders return `skipped`
         (not `failed`, so strategy state isn't dirtied with a fake entry).
         """
-        # DB-side dedup guard (sports_* + ladder_* + macro_*) — see _paper_market_order.
+        # DB-side dedup guard (sports_* + ladder_* + macro_* + crypto_* + xvenue_*) — see _paper_market_order.
         # (Currently this method is only called by sports strategies via
         # LIMIT_TTL_STRATEGIES, but the prefix gate makes the policy explicit.)
         if (strategy.startswith("sports_") or strategy.startswith("ladder_") or
-                strategy.startswith("macro_") or strategy.startswith("crypto_")) \
+                strategy.startswith("macro_") or strategy.startswith("crypto_") or
+                strategy.startswith("xvenue_")) \
                 and await self._db.has_existing_trade(strategy, market_id):
             logger.warning(
                 f"[LIVE-LIMIT] dedup skip: {strategy} {market_id} already has a trade"
@@ -725,9 +732,10 @@ class OrderManager:
         # IMPORTANT: this method is shared by mentions_trader, econ_trader,
         # market_maker, spread_scanner — those strategies legitimately
         # re-enter the same ticker. The prefix gate ensures only one-shot
-        # strategies (sports games + ladder events + macro events) get the dedup guard.
+        # strategies (sports games + ladder events + macro events + cross-venue) get the dedup guard.
         if (strategy.startswith("sports_") or strategy.startswith("ladder_") or
-                strategy.startswith("macro_") or strategy.startswith("crypto_")) \
+                strategy.startswith("macro_") or strategy.startswith("crypto_") or
+                strategy.startswith("xvenue_")) \
                 and await self._db.has_existing_trade(strategy, market_id):
             logger.warning(
                 f"[LIVE-LIMIT] dedup skip: {strategy} {market_id} already has a trade"

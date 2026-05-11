@@ -46,6 +46,8 @@ from strategies.ladder_approval import LadderApprovalStrategy
 from strategies.ladder_shutdown import LadderShutdownStrategy
 from strategies.macro_event import MacroEventStrategy
 from strategies.crypto_fair_value import CryptoFairValueStrategy
+from strategies.xvenue_polymarket import XVenuePolymarketStrategy
+from core.polymarket_mapping import PolymarketKalshiMapping
 from core.kalshi_orderbook_cache import OrderbookCache
 from core.settlement import SettlementChecker
 from core.clv_tracker import CLVTracker
@@ -214,6 +216,16 @@ class Bot:
         self.crypto_fair_value = CryptoFairValueStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client,
             price_feed=self.price_feed,
+        )
+        # Cross-Venue Polymarket Trader (B1) — paper-only at launch.
+        # Reads gamma-api via 1-min cron. Spec:
+        # docs/superpowers/specs/2026-05-11-xvenue-polymarket-trader-design.md
+        self.xvenue_mapping = PolymarketKalshiMapping(
+            "data/polymarket_kalshi_mapping.json"
+        )
+        self.xvenue_polymarket = XVenuePolymarketStrategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client,
+            mapping=self.xvenue_mapping,
         )
         # Chalk shadow — paper-only experimental strategy testing the
         # 2026-04-24 observer hypothesis that live-game 60-95¢ chalk YES
@@ -470,6 +482,9 @@ class Bot:
             ("ladder_crypto", self.ladder_crypto),
             # Macro Event Trader (C1) — paper-only. Requires consensus cron.
             ("macro_event", self.macro_event),
+            # Cross-Venue Polymarket Trader (B1) — paper-only. Requires
+            # scripts/polymarket_quote_cron.py running separately.
+            ("xvenue_polymarket", self.xvenue_polymarket),
         ]
         while self._running:
             for name, strategy in strategies:
