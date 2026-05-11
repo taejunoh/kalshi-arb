@@ -111,3 +111,97 @@ class XVenuePolymarketStrategy:
         base = cfg.XVENUE_BASE_SIZE_USDC
         scale = max(0.5, min(3.0, abs(deviation) / cfg.XVENUE_MIN_DEVIATION))
         return min(base * scale, cfg.XVENUE_MAX_POSITION_PER_TICKER)
+
+    async def scan_and_execute(self):
+        """Single iteration — called by main bot's _strategy_loop (60s)."""
+        if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
+            return
+        db = getattr(self._order_manager, "_db", None)
+        if db is None:
+            logger.warning("OrderManager has no _db — xvenue_polymarket disabled")
+            return
+
+        # Hot-reload mapping each scan so JSON edits take effect without restart
+        self._mapping.reload()
+
+        now = datetime.now(timezone.utc)
+        for slug in self._mapping.all_slugs():
+            quote_row = await db.fetch_polymarket_quote(slug)
+            if quote_row is None:
+                continue
+            # Gate 1: quote freshness
+            if not self._is_quote_fresh(quote_row, now=now):
+                continue
+            # Gate 2: volume floor
+            if not self._is_quote_volume_ok(quote_row):
+                continue
+            poly_yes_raw = float(quote_row["yes_price"])
+            for entry in self._mapping.entries_for_slug(slug):
+                prefix = entry["kalshi_ticker_prefix"]
+                outcome_match = entry["outcome_match"]
+                poly_yes = self._apply_outcome_match(poly_yes_raw, outcome_match)
+
+                # Gate 3: mapping resolves to open Kalshi markets
+                kalshi_markets = self._kalshi_markets_for_prefix(prefix)
+                for m in kalshi_markets:
+                    await self._handle_market(
+                        m, slug=slug, poly_yes=poly_yes, db=db, now=now,
+                    )
+
+    async def _handle_market(
+        self, market: dict, *, slug: str, poly_yes: float,
+        db, now: datetime,
+    ):
+        cfg = self.config
+        ticker = market.get("ticker", "")
+
+        # Fetch Kalshi book
+        yes_price, no_price = self._client.get_market_prices(ticker)
+        if yes_price is None or no_price is None:
+            return
+        depths = self._client.get_order_book_depth(ticker)
+        yes_depth, no_depth = depths if depths else (0.0, 0.0)
+        # Derive true 2-sided book (yes_bid ~= 1 - no_ask)
+        yes_ask = yes_price
+        no_ask = no_price
+        yes_bid = max(0.0, 1.0 - no_ask)
+        no_bid = max(0.0, 1.0 - yes_ask)
+
+        # Gates 4 + 5: deviation + EV (via _compute_edge)
+        edge = self._compute_edge(
+            polymarket_yes=poly_yes,
+            kalshi_yes_ask=yes_ask, kalshi_yes_bid=yes_bid,
+            kalshi_no_ask=no_ask, kalshi_no_bid=no_bid,
+        )
+        if not edge:
+            return
+
+        # Gate 6: depth (side we're entering)
+        depth_for_side = (yes_depth or 0.0) if edge["side"] == "yes" else (no_depth or 0.0)
+        if depth_for_side < cfg.XVENUE_MIN_DEPTH_USDC:
+            return
+
+        # Gate 7: per-strategy DB dedup enforced by OrderManager (xvenue_* prefix).
+        # Gate 8: cross-strategy exposure cap.
+        size = self._size_for_edge(edge["deviation"])
+        existing = await db.total_open_exposure(ticker)
+        if existing + size > cfg.XVENUE_MAX_TICKER_TOTAL_EXPOSURE:
+            return
+
+        # Gate 9: recently_fired guard
+        last = self._recently_fired.get(ticker)
+        if last is not None and (time.time() - last) < cfg.XVENUE_RECENTLY_FIRED_SECS:
+            return
+
+        logger.info(
+            f"[XVENUE] FIRE {ticker} {edge['side']} size=${size:.2f} "
+            f"slug={slug} poly={poly_yes:.4f} kalshi_mid="
+            f"{(yes_ask + yes_bid) / 2:.4f} dev={edge['deviation']:+.4f} "
+            f"ev={edge['ev_per_contract']:+.4f}"
+        )
+        await self._order_manager.market_order(
+            ticker=ticker, side=edge["side"], size_usdc=size,
+            price=edge["entry_price"], strategy=self.STRATEGY_NAME,
+            market_id=ticker,
+        )
+        self._recently_fired[ticker] = time.time()
