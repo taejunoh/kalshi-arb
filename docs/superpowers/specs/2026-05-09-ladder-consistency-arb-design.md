@@ -478,3 +478,12 @@ Live 배포 후:
    "n_violations per sub_strategy" 가 scanner 데이터에만 의존.
 5. **Spot anchor (Coinbase WS)**: spec open question 4 → ladder_crypto 의
    ATM proxy 가 yes_ask≈0.50 leg 사용 (Coinbase feed 불필요한 v0 cut).
+   **2026-05-10 promoted to dedicated sub-project B2** (spec
+   `2026-05-10-crypto-fair-value-trader-design.md`) — Coinbase/Binance WS
+   spot + Deribit IV → fair-value model 별도 strategy 로 분리.
+6. **ladder_crypto ticker parser 이슈** (2026-05-10 fixed): Kalshi 가
+   ticker 형식 `B<int>` → `T<float>` 변경 (3-part `KXBTC-26MAY1017-T89749.99`).
+   기존 `_parse_suffix` (B prefix only) + `_extract_event_key` (>=4 parts
+   요구) 가 모든 현 prod 마켓 silent skip 중이었음. B2 brainstorm 중 발견,
+   commit `<sha>` 에서 prefix-agnostic parser + 3/4-part 모두 처리 로
+   수정. 기존 6 테스트 + 신규 2 테스트 (current format) green.

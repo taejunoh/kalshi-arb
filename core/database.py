@@ -146,6 +146,43 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_mes_ticker_ts "
                 "ON macro_event_signals(ticker, ts)"
             )
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS crypto_iv (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    asset TEXT NOT NULL,
+                    expiry_date TEXT NOT NULL,
+                    atm_iv REAL NOT NULL,
+                    fetched_at TEXT NOT NULL,
+                    UNIQUE(asset, expiry_date)
+                )
+            """)
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_civ_asset_ts "
+                "ON crypto_iv(asset, fetched_at)"
+            )
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS crypto_fair_value_signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts TEXT NOT NULL,
+                    ticker TEXT NOT NULL,
+                    asset TEXT NOT NULL,
+                    spot REAL NOT NULL,
+                    strike REAL NOT NULL,
+                    vol REAL NOT NULL,
+                    vol_source TEXT NOT NULL,
+                    time_to_close_secs INTEGER NOT NULL,
+                    fair_prob REAL NOT NULL,
+                    kalshi_implied REAL NOT NULL,
+                    deviation REAL NOT NULL,
+                    side TEXT,
+                    expected_size_usdc REAL,
+                    action_taken TEXT NOT NULL
+                )
+            """)
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cfvs_ticker_ts "
+                "ON crypto_fair_value_signals(ticker, ts)"
+            )
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_status_pnl ON trades(status, pnl)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_trade ON clv_snapshots(trade_id)")
@@ -435,6 +472,68 @@ class Database:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
                 "SELECT * FROM macro_event_signals ORDER BY ts DESC LIMIT ?",
+                (limit,),
+            )
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
+    async def record_crypto_iv(
+        self, asset: str, expiry_date: str, atm_iv: float,
+    ) -> int:
+        ts = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                "INSERT INTO crypto_iv (asset, expiry_date, atm_iv, fetched_at) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(asset, expiry_date) DO UPDATE SET "
+                "atm_iv = excluded.atm_iv, fetched_at = excluded.fetched_at",
+                (asset, expiry_date, atm_iv, ts),
+            )
+            await conn.commit()
+            return cur.lastrowid
+
+    async def fetch_nearest_crypto_iv(self, asset: str) -> dict | None:
+        """Returns earliest expiry row for `asset`. ISO yyyy-mm-dd sorts correctly."""
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                "SELECT * FROM crypto_iv WHERE asset = ? "
+                "ORDER BY expiry_date ASC LIMIT 1",
+                (asset,),
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+    async def record_crypto_fair_value_signal(
+        self, *, ticker: str, asset: str, spot: float, strike: float,
+        vol: float, vol_source: str, time_to_close_secs: int,
+        fair_prob: float, kalshi_implied: float, deviation: float,
+        side: str | None, expected_size_usdc: float | None,
+        action_taken: str,
+    ) -> int:
+        ts = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                "INSERT INTO crypto_fair_value_signals "
+                "(ts, ticker, asset, spot, strike, vol, vol_source, "
+                " time_to_close_secs, fair_prob, kalshi_implied, deviation, "
+                " side, expected_size_usdc, action_taken) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (ts, ticker, asset, spot, strike, vol, vol_source,
+                 time_to_close_secs, fair_prob, kalshi_implied, deviation,
+                 side, expected_size_usdc, action_taken),
+            )
+            await conn.commit()
+            return cur.lastrowid
+
+    async def fetch_recent_crypto_fair_value_signals(
+        self, limit: int = 100,
+    ) -> list[dict]:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                "SELECT * FROM crypto_fair_value_signals "
+                "ORDER BY ts DESC LIMIT ?",
                 (limit,),
             )
             rows = await cur.fetchall()

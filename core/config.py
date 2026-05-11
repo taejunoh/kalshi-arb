@@ -102,7 +102,19 @@ class Config:
             "BTC": f"{binance_base}/ws/btcusdt@aggTrade",
             "ETH": f"{binance_base}/ws/ethusdt@aggTrade",
             "SOL": f"{binance_base}/ws/solusdt@aggTrade",
+            "XRP": f"{binance_base}/ws/xrpusdt@aggTrade",
         }
+
+        # Crypto Fair-Value Trader (B2) — single sub-strategy crypto_fair_value.
+        # Spec: docs/superpowers/specs/2026-05-10-crypto-fair-value-trader-design.md
+        self.CRYPTO_FAIR_MIN_DEVIATION = float(os.getenv("CRYPTO_FAIR_MIN_DEVIATION", "0.10"))
+        self.CRYPTO_FAIR_MIN_DEPTH_USDC = float(os.getenv("CRYPTO_FAIR_MIN_DEPTH_USDC", "30"))
+        self.CRYPTO_FAIR_BASE_SIZE_USDC = float(os.getenv("CRYPTO_FAIR_BASE_SIZE_USDC", "20"))
+        self.CRYPTO_FAIR_MAX_POSITION_PER_TICKER = float(os.getenv("CRYPTO_FAIR_MAX_POSITION_PER_TICKER", "30"))
+        self.CRYPTO_FAIR_MAX_TICKER_TOTAL_EXPOSURE = float(os.getenv("CRYPTO_FAIR_MAX_TICKER_TOTAL_EXPOSURE", "80"))
+        self.CRYPTO_FAIR_RECENTLY_FIRED_SECS = float(os.getenv("CRYPTO_FAIR_RECENTLY_FIRED_SECS", "60"))
+        self.CRYPTO_FAIR_ATM_WINDOW_N = int(os.getenv("CRYPTO_FAIR_ATM_WINDOW_N", "5"))
+        self.CRYPTO_FAIR_MIN_TIME_TO_CLOSE_SECS = float(os.getenv("CRYPTO_FAIR_MIN_TIME_TO_CLOSE_SECS", "60"))
 
     @property
     def is_paper_mode(self) -> bool:
