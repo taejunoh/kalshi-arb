@@ -183,6 +183,20 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_cfvs_ticker_ts "
                 "ON crypto_fair_value_signals(ticker, ts)"
             )
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS polymarket_quotes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    slug TEXT NOT NULL UNIQUE,
+                    yes_price REAL NOT NULL,
+                    no_price REAL NOT NULL,
+                    volume_24h REAL,
+                    fetched_at TEXT NOT NULL
+                )
+            """)
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_pmq_slug_ts "
+                "ON polymarket_quotes(slug, fetched_at)"
+            )
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_status_pnl ON trades(status, pnl)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_trade ON clv_snapshots(trade_id)")
@@ -538,6 +552,36 @@ class Database:
             )
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
+
+    async def record_polymarket_quote(
+        self, slug: str, yes_price: float, no_price: float,
+        volume_24h: float | None = None,
+    ) -> int:
+        ts = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                "INSERT INTO polymarket_quotes "
+                "(slug, yes_price, no_price, volume_24h, fetched_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(slug) DO UPDATE SET "
+                "yes_price = excluded.yes_price, "
+                "no_price = excluded.no_price, "
+                "volume_24h = excluded.volume_24h, "
+                "fetched_at = excluded.fetched_at",
+                (slug, yes_price, no_price, volume_24h, ts),
+            )
+            await conn.commit()
+            return cur.lastrowid
+
+    async def fetch_polymarket_quote(self, slug: str) -> dict | None:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                "SELECT * FROM polymarket_quotes WHERE slug = ?",
+                (slug,),
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else None
 
     async def get_open_orders(self, limit: int = 100):
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
