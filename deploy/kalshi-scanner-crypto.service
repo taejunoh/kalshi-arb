@@ -1,0 +1,21 @@
+[Unit]
+Description=Phase 0 prevalence scanner — B2 crypto fair-value signals (60s loop, no fires)
+After=network.target kalshi-bot.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/research/crypto_fair_value_signal_scanner.py --interval 60
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,24 @@
+[Unit]
+Description=Phase 0 prevalence scanner — A1 ladder violations (60s loop, no fires)
+After=network.target kalshi-bot.service
+# After= (not Requires=) — scanner is independent of bot. Wait for bot
+# to finish initialize() to avoid the boot-time SQLite write-lock race
+# (2026-05-05 incident, see kalshi-ticker-backfill.service comment).
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/research/ladder_violation_scanner.py --interval 60
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs
+
+[Install]
+WantedBy=multi-user.target
