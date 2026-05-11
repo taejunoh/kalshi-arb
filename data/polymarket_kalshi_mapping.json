@@ -1,110 +1,50 @@
 [
   {
     "polymarket_slug": "will-the-fed-decrease-interest-rates-by-25-bps-after-the-june-2026-meeting",
-    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-T0.25",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-C25",
     "outcome_match": "direct",
-    "notes": "FOMC Jun 2026 — 25bp cut. Verify Kalshi bucket suffix format (T0.25 vs T25 vs C25 — see C1 spec open question)."
+    "notes": "FOMC Jun 2026 — 25bp cut. Kalshi format verified 2026-05-11."
   },
   {
     "polymarket_slug": "will-the-fed-decrease-interest-rates-by-50-bps-after-the-june-2026-meeting",
-    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-T0.50",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-C26",
     "outcome_match": "direct",
-    "notes": "FOMC Jun 2026 — 50+bp cut. Verify Kalshi bucket format."
+    "notes": "FOMC Jun 2026 — 50+bp cut (Kalshi C26 = >25bp, matches Polymarket '50+ bps' in practice since Fed only moves in 25bp increments)."
   },
   {
     "polymarket_slug": "will-the-fed-increase-interest-rates-by-25-bps-after-the-june-2026-meeting",
-    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-H0.25",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-H25",
     "outcome_match": "direct",
-    "notes": "FOMC Jun 2026 — 25bp hike. Verify Kalshi bucket format."
+    "notes": "FOMC Jun 2026 — 25bp hike."
   },
   {
     "polymarket_slug": "will-the-fed-increase-interest-rates-by-50-bps-after-the-june-2026-meeting",
-    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-H0.50",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-H26",
     "outcome_match": "direct",
-    "notes": "FOMC Jun 2026 — 50+bp hike."
+    "notes": "FOMC Jun 2026 — 50+bp hike (Kalshi H26 = >25bp)."
   },
   {
     "polymarket_slug": "will-there-be-no-change-in-fed-interest-rates-after-the-june-2026-meeting",
-    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-T0.0",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUN-H0",
     "outcome_match": "direct",
-    "notes": "FOMC Jun 2026 — hold. Highest-volume FOMC market on Polymarket."
+    "notes": "FOMC Jun 2026 — hold (96.7% Polymarket consensus 2026-05-11)."
   },
   {
     "polymarket_slug": "will-the-fed-decrease-interest-rates-by-25-bps-after-the-july-2026-meeting",
-    "kalshi_ticker_prefix": "KXFEDDECISION-26JUL-T0.25",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUL-C25",
     "outcome_match": "direct",
     "notes": "FOMC Jul 2026 — 25bp cut."
   },
   {
     "polymarket_slug": "will-the-fed-decrease-interest-rates-by-50-bps-after-the-july-2026-meeting",
-    "kalshi_ticker_prefix": "KXFEDDECISION-26JUL-T0.50",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUL-C26",
     "outcome_match": "direct",
     "notes": "FOMC Jul 2026 — 50+bp cut."
   },
   {
     "polymarket_slug": "will-the-fed-increase-interest-rates-by-25-bps-after-the-july-2026-meeting",
-    "kalshi_ticker_prefix": "KXFEDDECISION-26JUL-H0.25",
+    "kalshi_ticker_prefix": "KXFEDDECISION-26JUL-H25",
     "outcome_match": "direct",
     "notes": "FOMC Jul 2026 — 25bp hike."
-  },
-  {
-    "polymarket_slug": "will-michelle-bowman-be-confirmed-as-fed-chair",
-    "kalshi_ticker_prefix": "KXFEDCHAIR-BOWMAN",
-    "outcome_match": "direct",
-    "notes": "Fed Chair confirmation — highest-volume candidate ($3M+ 24h on Polymarket). Verify Kalshi ticker (may not be listed)."
-  },
-  {
-    "polymarket_slug": "will-judy-shelton-be-confirmed-as-fed-chair",
-    "kalshi_ticker_prefix": "KXFEDCHAIR-SHELTON",
-    "outcome_match": "direct",
-    "notes": "Fed Chair confirmation. Verify Kalshi listing."
-  },
-  {
-    "polymarket_slug": "will-jerome-powell-be-confirmed-as-fed-chair",
-    "kalshi_ticker_prefix": "KXFEDCHAIR-POWELL",
-    "outcome_match": "direct",
-    "notes": "Fed Chair confirmation. Verify Kalshi listing."
-  },
-  {
-    "polymarket_slug": "will-bitcoin-hit-150k-by-june-30-2026",
-    "kalshi_ticker_prefix": "KXBTC-26JUN30-T150000",
-    "outcome_match": "direct",
-    "notes": "BTC ≥ $150k by Jun 30. $5.8M 24h on Polymarket (highest macro market overall). Verify Kalshi ticker format (current KXBTC pattern is KXBTC-{YYMMM}{DD}{HH}-T{strike} per ladder_crypto parser fix 5/10)."
-  },
-  {
-    "polymarket_slug": "will-bitcoin-reach-100000-by-december-31-2026-571-361-361",
-    "kalshi_ticker_prefix": "KXBTC-26DEC31-T100000",
-    "outcome_match": "direct",
-    "notes": "BTC ≥ $100k by year-end. Polymarket slug has trailing -571-361-361 numeric suffix (gamma-api internal); use full slug verbatim."
-  },
-  {
-    "polymarket_slug": "will-ethereum-reach-3000-in-may-2026",
-    "kalshi_ticker_prefix": "KXETH-26MAY-T3000",
-    "outcome_match": "direct",
-    "notes": "ETH ≥ $3k in May 2026."
-  },
-  {
-    "polymarket_slug": "will-ethereum-reach-5000-in-may-2026",
-    "kalshi_ticker_prefix": "KXETH-26MAY-T5000",
-    "outcome_match": "direct",
-    "notes": "ETH ≥ $5k in May 2026."
-  },
-  {
-    "polymarket_slug": "will-donald-trump-win-the-2028-republican-presidential-nomination",
-    "kalshi_ticker_prefix": "KXNOMRGOP-2028-TRUMP",
-    "outcome_match": "direct",
-    "notes": "2028 GOP nomination. Verify Kalshi ticker (KXNOMRGOP guess from series convention)."
-  },
-  {
-    "polymarket_slug": "will-jd-vance-win-the-2028-republican-presidential-nomination",
-    "kalshi_ticker_prefix": "KXNOMRGOP-2028-VANCE",
-    "outcome_match": "direct",
-    "notes": "2028 GOP nomination."
-  },
-  {
-    "polymarket_slug": "will-gavin-newsom-win-the-2028-us-presidential-election",
-    "kalshi_ticker_prefix": "KXPRES-2028-NEWSOM",
-    "outcome_match": "direct",
-    "notes": "2028 general election."
   }
 ]

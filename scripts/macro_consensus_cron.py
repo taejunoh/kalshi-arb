@@ -54,26 +54,31 @@ CPI_DATES = [
 
 # Polymarket slug → (event_key, bucket) for the FOMC half of C1
 # macro_event. Used when CME FedWatch is IP-blocked (verified 2026-05-11).
-# Bucket names match what FedWatch returns: C25/C50 = 25/50bp cut,
-# H0 = no change, H25/H50 = 25/50bp hike. Polymarket's 5 outcomes are
-# mutually exclusive and their yes_prices sum to ~1.0, so we use
-# yes_price directly as the bucket probability. Only meetings with all
-# (or most) buckets listed on Polymarket are included — strategy falls
+# Bucket names match Kalshi's actual KXFEDDECISION ticker format
+# (verified 2026-05-11 via /trade-api/v2/markets):
+#   C25 = cut by exactly 25bp
+#   C26 = cut by >25bp (covers 50bp+ — Fed only moves in 25bp increments
+#         so this == 50bp+ in practice, matching Polymarket "50+ bps cut")
+#   H0  = no change
+#   H25 = hike by exactly 25bp
+#   H26 = hike by >25bp (== 50bp+ in practice, matches Polymarket "50+ bps hike")
+# Polymarket's 5 outcomes are mutually exclusive and yes_prices sum to
+# ~1.0, so yes_price is the bucket probability directly. Strategy falls
 # back to stale macro_consensus rows for missing buckets.
 POLYMARKET_FOMC_MAPPING = {
     "FOMC-26JUN": {
-        "C50": "will-the-fed-decrease-interest-rates-by-50-bps-after-the-june-2026-meeting",
+        "C26": "will-the-fed-decrease-interest-rates-by-50-bps-after-the-june-2026-meeting",
         "C25": "will-the-fed-decrease-interest-rates-by-25-bps-after-the-june-2026-meeting",
         "H0":  "will-there-be-no-change-in-fed-interest-rates-after-the-june-2026-meeting",
         "H25": "will-the-fed-increase-interest-rates-by-25-bps-after-the-june-2026-meeting",
-        "H50": "will-the-fed-increase-interest-rates-by-50-bps-after-the-june-2026-meeting",
+        "H26": "will-the-fed-increase-interest-rates-by-50-bps-after-the-june-2026-meeting",
     },
     "FOMC-26JUL": {
-        "C50": "will-the-fed-decrease-interest-rates-by-50-bps-after-the-july-2026-meeting",
+        "C26": "will-the-fed-decrease-interest-rates-by-50-bps-after-the-july-2026-meeting",
         "C25": "will-the-fed-decrease-interest-rates-by-25-bps-after-the-july-2026-meeting",
         "H25": "will-the-fed-increase-interest-rates-by-25-bps-after-the-july-2026-meeting",
-        # Jul H0, H50 not yet on Polymarket — listings appear closer to
-        # meeting. Cron will skip these buckets and emit a debug log.
+        # Jul H0, H26 not yet on Polymarket — listings appear closer to
+        # meeting. Cron skips these buckets and emits a debug log.
     },
 }
 
