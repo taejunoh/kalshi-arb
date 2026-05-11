@@ -9,10 +9,14 @@ cross-strategy exposure cap.
 
 Spec: docs/superpowers/specs/2026-05-10-crypto-fair-value-trader-design.md
 """
+import asyncio
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from typing import Optional
+
+from core.fair_value_math import lognormal_cdf_above
 
 logger = logging.getLogger("crypto_fair_value")
 
@@ -40,6 +44,7 @@ class CryptoFairValueStrategy:
         self._scanner = market_scanner
         self._client = kalshi_client
         self._price_feed = price_feed
+        self._recently_fired: dict[str, float] = {}  # ticker → epoch ts
 
     @staticmethod
     def _is_target_market(m: dict) -> bool:
@@ -157,3 +162,121 @@ class CryptoFairValueStrategy:
         base = cfg.CRYPTO_FAIR_BASE_SIZE_USDC
         scale = max(0.5, min(3.0, abs(deviation) / cfg.CRYPTO_FAIR_MIN_DEVIATION))
         return min(base * scale, cfg.CRYPTO_FAIR_MAX_POSITION_PER_TICKER)
+
+    async def _handle_market(self, market: dict, *, db, cache, now: datetime):
+        """9-gate pipeline for a single market — fires market_order if all gates pass."""
+        cfg = self.config
+        ticker = market.get("ticker", "")
+        asset = self._extract_asset(market)
+        if not asset:
+            return
+
+        # Gate 1: spot freshness
+        if self._price_feed.is_stale(asset):
+            return
+        spot = self._price_feed.get_price(asset)
+        if spot is None or spot <= 0:
+            return
+
+        # Gate 2: vol availability
+        vol_pair = await self._get_vol(asset, db=db)
+        if vol_pair is None:
+            return
+        vol, vol_source = vol_pair
+
+        # Gate 3: window (close > MIN_TIME_TO_CLOSE_SECS)
+        secs_to_close = self._time_to_close_secs(market, now=now)
+        if secs_to_close < cfg.CRYPTO_FAIR_MIN_TIME_TO_CLOSE_SECS:
+            return
+        tau_years = secs_to_close / (365.25 * 86400)
+
+        # Compute fair prob
+        strike = self._extract_strike(market)
+        if strike is None:
+            return
+        fair = lognormal_cdf_above(spot=spot, strike=strike, vol=vol, tau_years=tau_years)
+        if fair is None:
+            return
+
+        # Gate 4: depth (need cached orderbook)
+        ob = cache.get(ticker)
+        if ob is None:
+            return
+        # Compute edge
+        edge = self._compute_edge(
+            kalshi_yes_ask=ob.yes_ask, kalshi_yes_bid=ob.yes_bid,
+            kalshi_no_ask=ob.no_ask, kalshi_no_bid=ob.no_bid,
+            fair_prob=fair,
+        )
+        # Gates 5+6: deviation + EV (handled by _compute_edge)
+        if edge is None:
+            return
+        depth_for_side = ob.yes_depth if edge["side"] == "yes" else ob.no_depth
+        if depth_for_side < cfg.CRYPTO_FAIR_MIN_DEPTH_USDC:
+            return
+
+        # Gate 7: recently_fired (over-fire guard)
+        last_fire = self._recently_fired.get(ticker)
+        if last_fire is not None and (time.time() - last_fire) < cfg.CRYPTO_FAIR_RECENTLY_FIRED_SECS:
+            return
+
+        # Gate 8: cross-strategy exposure cap
+        size = self._size_for_edge(edge["deviation"])
+        existing = await db.total_open_exposure(ticker)
+        if existing + size > cfg.CRYPTO_FAIR_MAX_TICKER_TOTAL_EXPOSURE:
+            return
+
+        # Gate 9: per-strategy DB dedup is enforced by OrderManager
+
+        logger.info(
+            f"[CRYPTO_FAIR] FIRE {ticker} {edge['side']} size=${size:.2f} "
+            f"spot={spot:.2f} strike={strike:.2f} fair={fair:.4f} "
+            f"impl={(ob.yes_ask + ob.yes_bid)/2:.4f} dev={edge['deviation']:+.4f} "
+            f"vol={vol:.3f}({vol_source})"
+        )
+        await self._order_manager.market_order(
+            ticker=ticker, side=edge["side"], size_usdc=size,
+            price=edge["entry_price"], strategy=self.STRATEGY_NAME,
+            market_id=ticker,
+        )
+        self._recently_fired[ticker] = time.time()
+
+    async def scan_loop(self, *, cache, scan_interval_secs: float = 1.0):
+        """Main fast-scan loop — runs as separate asyncio task in main.py.
+
+        cache: OrderbookCache instance (its refresh_loop should be running
+        in parallel — caller's responsibility to schedule both tasks).
+        """
+        if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
+            return
+        db = getattr(self._order_manager, "_db", None)
+        if db is None:
+            logger.warning("OrderManager has no _db — crypto_fair_value scan disabled")
+            return
+        while True:
+            try:
+                now = datetime.now(timezone.utc)
+                # Universe: ATM ±N tickers per asset
+                cfg = self.config
+                all_markets = [
+                    m for m in self._scanner.get_all_markets()
+                    if self._is_target_market(m)
+                ]
+                # Group by asset, filter ATM ±N
+                target_tickers: list[str] = []
+                for asset in ("BTC", "ETH", "XRP"):
+                    spot = self._price_feed.get_price(asset)
+                    if spot is None:
+                        continue
+                    atm_markets = self._filter_atm(
+                        all_markets, spot=spot, asset=asset,
+                        n=cfg.CRYPTO_FAIR_ATM_WINDOW_N,
+                    )
+                    for m in atm_markets:
+                        target_tickers.append(m.get("ticker", ""))
+                        await self._handle_market(m, db=db, cache=cache, now=now)
+                # Update cache target list (so refresh_loop knows what to poll)
+                cache.set_target_tickers(target_tickers)
+            except Exception as e:
+                logger.exception(f"crypto_fair_value scan error: {e}")
+            await asyncio.sleep(scan_interval_secs)
