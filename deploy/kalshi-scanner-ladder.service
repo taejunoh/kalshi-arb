@@ -9,7 +9,7 @@ After=network.target kalshi-bot.service
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/kalshi-arb
-ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/research/ladder_violation_scanner.py --interval 60
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/research/ladder_violation_scanner.py --interval 300
 Restart=always
 RestartSec=30
 Environment=PYTHONUNBUFFERED=1

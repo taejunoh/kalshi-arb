@@ -192,9 +192,36 @@ systemctl is-active kalshi-scanner-{ladder,macro,crypto,xvenue}.service
 journalctl -u kalshi-scanner-ladder.service -n 30 -f
 ```
 
-Cadences (script `--interval`): ladder 60s, xvenue 60s, crypto 60s,
+Cadences (script `--interval`): ladder 300s, xvenue 300s, crypto 300s,
 macro 3600s (1h — macro_consensus refreshes 4h, so anything more
-frequent than ~1h doesn't add new signals).
+frequent than ~1h doesn't add new signals). Originally 60s for the
+three fast scanners but reduced to 300s on 2026-05-11 after bot.db
+write-lock contention with 8+ concurrent writers — see [Database
+locking](#database-locking-wal-mode) below.
+
+## Database locking (WAL mode)
+
+bot.db now runs in **WAL journal mode** (set 2026-05-11). Apply this
+on any new host one-time after bot.db is first created:
+
+```bash
+cd /home/ubuntu/kalshi-arb
+venv/bin/python -c "
+import sqlite3
+c = sqlite3.connect('data/bot.db', timeout=30.0)
+print('mode:', c.execute('PRAGMA journal_mode=WAL').fetchone()[0])
+c.execute('PRAGMA synchronous=NORMAL')
+c.close()
+"
+ls data/bot.db*   # should show bot.db, bot.db-wal, bot.db-shm
+```
+
+WAL = Write-Ahead Logging. Readers don't block writers and vice
+versa, so dashboard reads, observer recordings, settlement checks
+don't queue behind strategy writes. With 8+ concurrent writers
+(kalshi-bot, 4 scanners, 3 crons, dashboard) the default rollback
+journal mode produced cascading "database is locked" errors despite
+busy_timeout=30s — verified 2026-05-11.
 
 ## 6. Common Commands
 
