@@ -197,6 +197,24 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_pmq_slug_ts "
                 "ON polymarket_quotes(slug, fetched_at)"
             )
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS cross_venue_signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts TEXT NOT NULL,
+                    ticker TEXT NOT NULL,
+                    slug TEXT NOT NULL,
+                    kalshi_implied REAL NOT NULL,
+                    polymarket_implied REAL NOT NULL,
+                    deviation REAL NOT NULL,
+                    side TEXT,
+                    expected_size_usdc REAL,
+                    action_taken TEXT NOT NULL
+                )
+            """)
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cvs_ticker_ts "
+                "ON cross_venue_signals(ticker, ts)"
+            )
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_status_pnl ON trades(status, pnl)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_trade ON clv_snapshots(trade_id)")
@@ -582,6 +600,37 @@ class Database:
             )
             row = await cur.fetchone()
             return dict(row) if row else None
+
+    async def record_cross_venue_signal(
+        self, *, ticker: str, slug: str,
+        kalshi_implied: float, polymarket_implied: float, deviation: float,
+        side: str | None, expected_size_usdc: float | None,
+        action_taken: str,
+    ) -> int:
+        ts = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                "INSERT INTO cross_venue_signals "
+                "(ts, ticker, slug, kalshi_implied, polymarket_implied, "
+                " deviation, side, expected_size_usdc, action_taken) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (ts, ticker, slug, kalshi_implied, polymarket_implied,
+                 deviation, side, expected_size_usdc, action_taken),
+            )
+            await conn.commit()
+            return cur.lastrowid
+
+    async def fetch_recent_cross_venue_signals(
+        self, limit: int = 100,
+    ) -> list[dict]:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                "SELECT * FROM cross_venue_signals ORDER BY ts DESC LIMIT ?",
+                (limit,),
+            )
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
 
     async def get_open_orders(self, limit: int = 100):
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
