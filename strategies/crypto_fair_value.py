@@ -92,3 +92,68 @@ class CryptoFairValueStrategy:
         except Exception:
             return -1.0
         return (close_dt - now).total_seconds()
+
+    async def _get_vol(self, asset: str, *, db) -> Optional[tuple[float, str]]:
+        """Returns (vol, source) or None.
+
+        Source priority:
+          1. Deribit ATM IV (BTC/ETH only, fresh ≤ 6h)
+          2. PriceFeed.get_volatility (XRP, or Deribit stale/missing)
+        """
+        DERIBIT_ASSETS = ("BTC", "ETH")
+        DERIBIT_TTL_HOURS = 6.0
+        if asset in DERIBIT_ASSETS:
+            iv_row = await db.fetch_nearest_crypto_iv(asset)
+            if iv_row:
+                try:
+                    fetched = datetime.fromisoformat(
+                        iv_row["fetched_at"].replace("Z", "+00:00")
+                    )
+                    age_h = (datetime.now(timezone.utc) - fetched).total_seconds() / 3600.0
+                    if age_h <= DERIBIT_TTL_HOURS:
+                        return float(iv_row["atm_iv"]), "deribit"
+                except Exception:
+                    pass
+        rv = self._price_feed.get_volatility(asset)
+        if rv:
+            return float(rv), "realized"
+        return None
+
+    def _compute_edge(
+        self, *,
+        kalshi_yes_ask: float, kalshi_yes_bid: float,
+        kalshi_no_ask: float, kalshi_no_bid: float,
+        fair_prob: float,
+    ) -> Optional[dict]:
+        """Returns {'side', 'deviation', 'entry_price', 'ev_per_contract'} or None.
+
+        Mirrors C1 macro_event._compute_edge math (same fee + cushion).
+        """
+        cfg = self.config
+        kalshi_yes_mid = (kalshi_yes_ask + kalshi_yes_bid) / 2.0
+        deviation = fair_prob - kalshi_yes_mid
+        if abs(deviation) < cfg.CRYPTO_FAIR_MIN_DEVIATION:
+            return None
+        fee = cfg.KALSHI_FEE_PER_CONTRACT
+        if deviation > 0:
+            side = "yes"
+            entry_price = kalshi_yes_ask
+            ev = fair_prob - entry_price - fee
+        else:
+            side = "no"
+            entry_price = kalshi_no_ask
+            ev = (1.0 - fair_prob) - entry_price - fee
+        if ev <= 0:
+            return None
+        return {
+            "side": side,
+            "deviation": deviation,
+            "entry_price": entry_price,
+            "ev_per_contract": ev,
+        }
+
+    def _size_for_edge(self, deviation: float) -> float:
+        cfg = self.config
+        base = cfg.CRYPTO_FAIR_BASE_SIZE_USDC
+        scale = max(0.5, min(3.0, abs(deviation) / cfg.CRYPTO_FAIR_MIN_DEVIATION))
+        return min(base * scale, cfg.CRYPTO_FAIR_MAX_POSITION_PER_TICKER)
