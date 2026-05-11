@@ -15,6 +15,7 @@ def _cfg():
 
 
 def test_parse_b_suffix():
+    """Legacy ticker format: B<int> grid."""
     s = LadderCryptoStrategy(_cfg(), MagicMock(), MagicMock(), MagicMock())
     assert s._parse_suffix("B70250") == 70250.0
     assert s._parse_suffix("B1310") == 1310.0
@@ -22,12 +23,28 @@ def test_parse_b_suffix():
     assert s._parse_suffix("") is None
 
 
-def test_event_key_includes_close_window():
+def test_parse_t_suffix_current_format():
+    """Current Kalshi ticker format: T<float>, e.g. T89749.99."""
+    s = LadderCryptoStrategy(_cfg(), MagicMock(), MagicMock(), MagicMock())
+    assert s._parse_suffix("T89749.99") == 89749.99
+    assert s._parse_suffix("T3059.99") == 3059.99
+    assert s._parse_suffix("T1.7799") == 1.7799
+
+
+def test_event_key_legacy_4part_format():
     s = LadderCryptoStrategy(_cfg(), MagicMock(), MagicMock(), MagicMock())
     # KXBTC-26MAY09-1500-B70250 → 26MAY09-1500
     assert s._extract_event_key(
         {"ticker": "KXBTC-26MAY09-1500-B70250"}
     ) == "26MAY09-1500"
+
+
+def test_event_key_current_3part_format():
+    """Current Kalshi format: KXBTC-26MAY1017-T89749.99 → '26MAY1017'."""
+    s = LadderCryptoStrategy(_cfg(), MagicMock(), MagicMock(), MagicMock())
+    assert s._extract_event_key(
+        {"ticker": "KXBTC-26MAY1017-T89749.99"}
+    ) == "26MAY1017"
 
 
 def test_atm_window_filter_keeps_only_within_n():
