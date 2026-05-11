@@ -34,18 +34,37 @@ class LadderCryptoStrategy:
 
     @staticmethod
     def _parse_suffix(suffix: str) -> Optional[float]:
-        if not suffix.startswith("B") or len(suffix) < 2:
+        """Parse strike from suffix.
+
+        Handles both formats:
+          'B70250'    (legacy int, $100 grid)
+          'T89749.99' (current Kalshi format, $50 grid with .99 offsets)
+
+        Strips leading letter prefix then float-parses the numeric tail.
+        """
+        if len(suffix) < 2:
+            return None
+        # Skip leading non-numeric prefix letters (B, T, etc.)
+        i = 0
+        while i < len(suffix) and not (suffix[i].isdigit() or suffix[i] in ".-"):
+            i += 1
+        if i >= len(suffix):
             return None
         try:
-            return float(suffix[1:])
+            return float(suffix[i:])
         except ValueError:
             return None
 
     @staticmethod
     def _extract_event_key(m: dict) -> str:
-        # KXBTC-26MAY09-1500-B70250 → 26MAY09-1500
+        """Event key from ticker.
+
+        Handles both formats:
+          KXBTC-26MAY09-1500-B70250 → '26MAY09-1500'  (legacy 4-part)
+          KXBTC-26MAY1017-T89749.99 → '26MAY1017'    (current 3-part: date+time concat)
+        """
         parts = m.get("ticker", "").split("-")
-        return "-".join(parts[1:-1]) if len(parts) >= 4 else ""
+        return "-".join(parts[1:-1]) if len(parts) >= 3 else ""
 
     @staticmethod
     def _is_target_market(m: dict) -> bool:
