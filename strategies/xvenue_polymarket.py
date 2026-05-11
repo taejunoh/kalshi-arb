@@ -68,3 +68,46 @@ class XVenuePolymarketStrategy:
         if vol is None:
             return False
         return float(vol) >= self.config.XVENUE_MIN_POLYMARKET_VOLUME
+
+    def _compute_edge(
+        self, *,
+        polymarket_yes: float,
+        kalshi_yes_ask: float, kalshi_yes_bid: float,
+        kalshi_no_ask: float, kalshi_no_bid: float,
+    ) -> Optional[dict]:
+        """Returns trade signal dict or None.
+
+        Signal dict: {'side': 'yes'|'no', 'deviation': float (signed),
+                      'entry_price': float, 'ev_per_contract': float}
+        polymarket_yes is the Kalshi-aligned probability AFTER applying
+        outcome_match — caller is responsible for inversion if needed.
+        """
+        cfg = self.config
+        kalshi_yes_mid = (kalshi_yes_ask + kalshi_yes_bid) / 2.0
+        deviation = polymarket_yes - kalshi_yes_mid
+        if abs(deviation) < cfg.XVENUE_MIN_DEVIATION:
+            return None
+        fee = cfg.KALSHI_FEE_PER_CONTRACT
+        if deviation > 0:
+            side = "yes"
+            entry_price = kalshi_yes_ask
+            ev = polymarket_yes - entry_price - fee
+        else:
+            side = "no"
+            entry_price = kalshi_no_ask
+            ev = (1.0 - polymarket_yes) - entry_price - fee
+        if ev <= 0:
+            return None
+        return {
+            "side": side,
+            "deviation": deviation,
+            "entry_price": entry_price,
+            "ev_per_contract": ev,
+        }
+
+    def _size_for_edge(self, deviation: float) -> float:
+        """Edge-scaled fire size capped by per-ticker maximum."""
+        cfg = self.config
+        base = cfg.XVENUE_BASE_SIZE_USDC
+        scale = max(0.5, min(3.0, abs(deviation) / cfg.XVENUE_MIN_DEVIATION))
+        return min(base * scale, cfg.XVENUE_MAX_POSITION_PER_TICKER)

@@ -81,3 +81,69 @@ def test_is_quote_volume_ok():
     assert s._is_quote_volume_ok({"volume_24h": 10000.0}) is True
     assert s._is_quote_volume_ok({"volume_24h": 1000.0}) is False
     assert s._is_quote_volume_ok({"volume_24h": None}) is False
+
+
+def test_compute_edge_buy_yes_when_polymarket_above_kalshi():
+    s = XVenuePolymarketStrategy(_cfg(), MagicMock(), MagicMock(), MagicMock(),
+                                  mapping=MagicMock())
+    # Polymarket says 0.50, Kalshi mid 0.30 -> buy Kalshi YES
+    edge = s._compute_edge(
+        polymarket_yes=0.50,
+        kalshi_yes_ask=0.32, kalshi_yes_bid=0.28,
+        kalshi_no_ask=0.72, kalshi_no_bid=0.68,
+    )
+    assert edge is not None
+    assert edge["side"] == "yes"
+    assert abs(edge["deviation"] - 0.20) < 1e-6  # 0.50 - 0.30 mid
+    assert edge["entry_price"] == 0.32
+
+
+def test_compute_edge_buy_no_when_polymarket_below_kalshi():
+    s = XVenuePolymarketStrategy(_cfg(), MagicMock(), MagicMock(), MagicMock(),
+                                  mapping=MagicMock())
+    edge = s._compute_edge(
+        polymarket_yes=0.30,
+        kalshi_yes_ask=0.62, kalshi_yes_bid=0.58,
+        kalshi_no_ask=0.42, kalshi_no_bid=0.38,
+    )
+    assert edge is not None
+    assert edge["side"] == "no"
+    assert edge["deviation"] < 0
+    assert edge["entry_price"] == 0.42  # no_ask
+
+
+def test_compute_edge_skips_below_min_deviation():
+    s = XVenuePolymarketStrategy(_cfg(), MagicMock(), MagicMock(), MagicMock(),
+                                  mapping=MagicMock())
+    edge = s._compute_edge(
+        polymarket_yes=0.32,  # Kalshi mid = 0.30, dev = 0.02 < 0.10
+        kalshi_yes_ask=0.32, kalshi_yes_bid=0.28,
+        kalshi_no_ask=0.72, kalshi_no_bid=0.68,
+    )
+    assert edge is None
+
+
+def test_compute_edge_skips_when_ev_negative():
+    cfg = _cfg()
+    cfg.XVENUE_MIN_DEVIATION = 0.05  # lower threshold so dev passes
+    s = XVenuePolymarketStrategy(cfg, MagicMock(), MagicMock(), MagicMock(),
+                                  mapping=MagicMock())
+    # Mid 0.20, ask 0.25, polymarket 0.27 -> dev 0.07 >= 0.05 but
+    # EV = 0.27 - 0.25 - 0.07 = -0.05 -> skip
+    edge = s._compute_edge(
+        polymarket_yes=0.27,
+        kalshi_yes_ask=0.25, kalshi_yes_bid=0.15,
+        kalshi_no_ask=0.85, kalshi_no_bid=0.75,
+    )
+    assert edge is None
+
+
+def test_size_for_edge_scales_and_caps():
+    s = XVenuePolymarketStrategy(_cfg(), MagicMock(), MagicMock(), MagicMock(),
+                                  mapping=MagicMock())
+    # base 20, clamp(0.10/0.10, 0.5, 3.0) = 1.0 -> 20
+    assert s._size_for_edge(0.10) == 20.0
+    # base x clamp(0.30/0.10, 0.5, 3.0) = 3.0 -> 60, capped at 30
+    assert s._size_for_edge(0.30) == 30.0
+    # base x clamp(0.05/0.10, 0.5, 3.0) = 0.5 -> 10
+    assert s._size_for_edge(0.05) == 10.0
