@@ -15,7 +15,8 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -51,6 +52,35 @@ CPI_DATES = [
     "2026-10-15", "2026-11-13", "2026-12-10", "2027-01-14",
 ]
 
+# Polymarket slug → (event_key, bucket) for the FOMC half of C1
+# macro_event. Used when CME FedWatch is IP-blocked (verified 2026-05-11).
+# Bucket names match what FedWatch returns: C25/C50 = 25/50bp cut,
+# H0 = no change, H25/H50 = 25/50bp hike. Polymarket's 5 outcomes are
+# mutually exclusive and their yes_prices sum to ~1.0, so we use
+# yes_price directly as the bucket probability. Only meetings with all
+# (or most) buckets listed on Polymarket are included — strategy falls
+# back to stale macro_consensus rows for missing buckets.
+POLYMARKET_FOMC_MAPPING = {
+    "FOMC-26JUN": {
+        "C50": "will-the-fed-decrease-interest-rates-by-50-bps-after-the-june-2026-meeting",
+        "C25": "will-the-fed-decrease-interest-rates-by-25-bps-after-the-june-2026-meeting",
+        "H0":  "will-there-be-no-change-in-fed-interest-rates-after-the-june-2026-meeting",
+        "H25": "will-the-fed-increase-interest-rates-by-25-bps-after-the-june-2026-meeting",
+        "H50": "will-the-fed-increase-interest-rates-by-50-bps-after-the-june-2026-meeting",
+    },
+    "FOMC-26JUL": {
+        "C50": "will-the-fed-decrease-interest-rates-by-50-bps-after-the-july-2026-meeting",
+        "C25": "will-the-fed-decrease-interest-rates-by-25-bps-after-the-july-2026-meeting",
+        "H25": "will-the-fed-increase-interest-rates-by-25-bps-after-the-july-2026-meeting",
+        # Jul H0, H50 not yet on Polymarket — listings appear closer to
+        # meeting. Cron will skip these buckets and emit a debug log.
+    },
+}
+
+# polymarket_quote_cron refreshes every 60s; we treat anything older
+# than 30 min as stale (~30 missed cycles, likely cron is down).
+POLYMARKET_QUOTE_MAX_STALENESS_SEC = 30 * 60
+
 
 def event_key_fomc(meeting_date: str) -> str:
     """2026-06-17 → 'FOMC-26JUN' (matches strategy._extract_event_key)."""
@@ -74,6 +104,48 @@ async def refresh_fomc(db: Database, scraper: FedWatchScraper) -> int:
         ek = event_key_fomc(date)
         for bucket, prob in probs.items():
             await db.record_macro_consensus(ek, bucket, float(prob), "fedwatch")
+            updated += 1
+    return updated
+
+
+async def refresh_fomc_polymarket(
+    db: Database,
+    max_staleness_sec: int = POLYMARKET_QUOTE_MAX_STALENESS_SEC,
+    now: Optional[datetime] = None,
+) -> int:
+    """Populate macro_consensus FOMC rows from polymarket_quotes when
+    FedWatch is unavailable. Returns # of (event, bucket) rows updated."""
+    if now is None:
+        now = datetime.now(timezone.utc)
+    updated = 0
+    for event_key, slug_by_bucket in POLYMARKET_FOMC_MAPPING.items():
+        for bucket, slug in slug_by_bucket.items():
+            quote = await db.fetch_polymarket_quote(slug)
+            if not quote:
+                log.debug(f"Polymarket FOMC: no quote for {slug}")
+                continue
+            fetched_iso = quote.get("fetched_at")
+            if fetched_iso:
+                try:
+                    fetched_dt = datetime.fromisoformat(fetched_iso.replace("Z", "+00:00"))
+                    if fetched_dt.tzinfo is None:
+                        fetched_dt = fetched_dt.replace(tzinfo=timezone.utc)
+                    age = (now - fetched_dt).total_seconds()
+                    if age > max_staleness_sec:
+                        log.warning(
+                            f"Polymarket FOMC: stale quote for {slug} "
+                            f"(age={age:.0f}s > {max_staleness_sec}s); skipping"
+                        )
+                        continue
+                except Exception as e:
+                    log.warning(f"Polymarket FOMC: bad fetched_at on {slug}: {e}")
+                    continue
+            yes_price = quote.get("yes_price")
+            if yes_price is None:
+                continue
+            await db.record_macro_consensus(
+                event_key, bucket, float(yes_price), "polymarket",
+            )
             updated += 1
     return updated
 
@@ -119,11 +191,15 @@ async def main():
     while True:
         t0 = time.time()
         try:
-            n_fomc = await refresh_fomc(db, fed_scraper)
+            n_fomc_fedwatch = await refresh_fomc(db, fed_scraper)
+            n_fomc_polymarket = await refresh_fomc_polymarket(db)
             n_cpi = await refresh_cpi(db, cpi_scraper)
             elapsed = time.time() - t0
-            log.info(f"refresh complete in {elapsed:.1f}s — "
-                     f"fomc={n_fomc} cpi={n_cpi}")
+            log.info(
+                f"refresh complete in {elapsed:.1f}s — "
+                f"fomc_fedwatch={n_fomc_fedwatch} "
+                f"fomc_polymarket={n_fomc_polymarket} cpi={n_cpi}"
+            )
         except Exception as e:
             log.exception(f"refresh error: {e}")
         if args.once:
