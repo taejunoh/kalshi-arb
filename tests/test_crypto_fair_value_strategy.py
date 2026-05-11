@@ -85,3 +85,118 @@ def test_time_to_close_returns_negative_when_past():
         "close_time": (now - timedelta(seconds=3600)).isoformat(),
     }
     assert s._time_to_close_secs(market, now=now) < 0
+
+
+@pytest.mark.asyncio
+async def test_get_vol_uses_deribit_for_btc_when_fresh():
+    cfg = _cfg()
+    db = MagicMock()
+    db.fetch_nearest_crypto_iv = AsyncMock(return_value={
+        "asset": "BTC", "expiry_date": "2026-05-13",
+        "atm_iv": 0.65,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    })
+    pf = MagicMock()
+    pf.get_volatility = MagicMock(return_value=0.80)  # would be used as fallback
+
+    s = CryptoFairValueStrategy(cfg, MagicMock(), MagicMock(), MagicMock(),
+                                 price_feed=pf)
+    vol, source = await s._get_vol("BTC", db=db)
+    assert vol == 0.65
+    assert source == "deribit"
+
+
+@pytest.mark.asyncio
+async def test_get_vol_falls_back_to_realized_when_iv_stale():
+    cfg = _cfg()
+    db = MagicMock()
+    stale = datetime.now(timezone.utc) - timedelta(hours=12)  # > 6h IV TTL
+    db.fetch_nearest_crypto_iv = AsyncMock(return_value={
+        "asset": "BTC", "expiry_date": "2026-05-13",
+        "atm_iv": 0.65, "fetched_at": stale.isoformat(),
+    })
+    pf = MagicMock()
+    pf.get_volatility = MagicMock(return_value=0.80)
+    s = CryptoFairValueStrategy(cfg, MagicMock(), MagicMock(), MagicMock(),
+                                 price_feed=pf)
+    vol, source = await s._get_vol("BTC", db=db)
+    assert vol == 0.80
+    assert source == "realized"
+
+
+@pytest.mark.asyncio
+async def test_get_vol_uses_realized_for_xrp():
+    """XRP is not a Deribit asset, always falls back to realized."""
+    cfg = _cfg()
+    db = MagicMock()
+    db.fetch_nearest_crypto_iv = AsyncMock(return_value=None)
+    pf = MagicMock()
+    pf.get_volatility = MagicMock(return_value=0.95)
+    s = CryptoFairValueStrategy(cfg, MagicMock(), MagicMock(), MagicMock(),
+                                 price_feed=pf)
+    vol, source = await s._get_vol("XRP", db=db)
+    assert vol == 0.95
+    assert source == "realized"
+
+
+@pytest.mark.asyncio
+async def test_get_vol_returns_none_when_both_missing():
+    cfg = _cfg()
+    db = MagicMock()
+    db.fetch_nearest_crypto_iv = AsyncMock(return_value=None)
+    pf = MagicMock()
+    pf.get_volatility = MagicMock(return_value=None)
+    s = CryptoFairValueStrategy(cfg, MagicMock(), MagicMock(), MagicMock(),
+                                 price_feed=pf)
+    out = await s._get_vol("BTC", db=db)
+    assert out is None
+
+
+def test_compute_edge_buy_yes_when_fair_above_implied():
+    s = CryptoFairValueStrategy(_cfg(), MagicMock(), MagicMock(), MagicMock(),
+                                 price_feed=MagicMock())
+    edge = s._compute_edge(
+        kalshi_yes_ask=0.30, kalshi_yes_bid=0.28,
+        kalshi_no_ask=0.72, kalshi_no_bid=0.70,
+        fair_prob=0.50,
+    )
+    assert edge is not None
+    assert edge["side"] == "yes"
+    assert abs(edge["deviation"] - 0.21) < 1e-6  # 0.50 - 0.29 (mid)
+    assert edge["entry_price"] == 0.30
+
+
+def test_compute_edge_buy_no_when_fair_below_implied():
+    s = CryptoFairValueStrategy(_cfg(), MagicMock(), MagicMock(), MagicMock(),
+                                 price_feed=MagicMock())
+    edge = s._compute_edge(
+        kalshi_yes_ask=0.70, kalshi_yes_bid=0.68,
+        kalshi_no_ask=0.32, kalshi_no_bid=0.30,
+        fair_prob=0.45,
+    )
+    assert edge is not None
+    assert edge["side"] == "no"
+    assert edge["deviation"] < 0
+    assert edge["entry_price"] == 0.32  # no_ask
+
+
+def test_compute_edge_skips_below_min_deviation():
+    s = CryptoFairValueStrategy(_cfg(), MagicMock(), MagicMock(), MagicMock(),
+                                 price_feed=MagicMock())
+    edge = s._compute_edge(
+        kalshi_yes_ask=0.30, kalshi_yes_bid=0.28,
+        kalshi_no_ask=0.72, kalshi_no_bid=0.70,
+        fair_prob=0.32,  # mid 0.29, dev 0.03 < 0.10
+    )
+    assert edge is None
+
+
+def test_size_for_edge_scales_and_caps():
+    s = CryptoFairValueStrategy(_cfg(), MagicMock(), MagicMock(), MagicMock(),
+                                 price_feed=MagicMock())
+    # base=20, clamp(0.10/0.10, 0.5, 3.0) = 1.0 → 20
+    assert s._size_for_edge(0.10) == 20.0
+    # base × clamp(0.30/0.10, 0.5, 3.0) = 3.0 → 60, capped at 30
+    assert s._size_for_edge(0.30) == 30.0
+    # base × clamp(0.05/0.10, 0.5, 3.0) = 0.5 → 10
+    assert s._size_for_edge(0.05) == 10.0
