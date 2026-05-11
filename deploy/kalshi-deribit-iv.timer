@@ -1,0 +1,13 @@
+[Unit]
+Description=4-hourly Deribit ATM IV refresh (BTC + ETH)
+Requires=kalshi-deribit-iv.service
+
+[Timer]
+# Every 4h at :19 past the hour. Offset from macro-consensus (:17) so
+# the two 4h crons don't fire in lockstep on the same minute.
+OnCalendar=*-*-* 00,04,08,12,16,20:19:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

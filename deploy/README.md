@@ -112,6 +112,56 @@ cd /home/ubuntu/kalshi-arb && venv/bin/python scripts/promotion_eval.py --dry-ru
 venv/bin/python scripts/promotion_eval.py --sport EPL --window 7
 ```
 
+## 5e. Install macro consensus refresh cron (4h, for C1 macro_event)
+
+Fetches CME FedWatch + Cleveland Fed CPI Nowcast every 4h and upserts
+into `macro_consensus`. Required by `macro_event` strategy. **Note:**
+some sources (FedWatch JSON) may be IP-blocked on residential ISPs but
+work from EC2.
+
+```bash
+sudo cp deploy/kalshi-macro-consensus.service /etc/systemd/system/
+sudo cp deploy/kalshi-macro-consensus.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now kalshi-macro-consensus.timer
+
+systemctl list-timers kalshi-macro-consensus.timer
+sudo systemctl start kalshi-macro-consensus.service   # manual first run
+journalctl -u kalshi-macro-consensus.service -n 50
+```
+
+## 5f. Install Deribit IV refresh cron (4h, for B2 crypto_fair_value)
+
+Fetches BTC + ETH option chains from Deribit every 4h, extracts ATM IV
+per expiry, upserts into `crypto_iv`. Required by `crypto_fair_value`
+strategy.
+
+```bash
+sudo cp deploy/kalshi-deribit-iv.service /etc/systemd/system/
+sudo cp deploy/kalshi-deribit-iv.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now kalshi-deribit-iv.timer
+
+systemctl list-timers kalshi-deribit-iv.timer
+sudo systemctl start kalshi-deribit-iv.service   # manual first run
+journalctl -u kalshi-deribit-iv.service -n 50
+```
+
+## 5g. Install Polymarket quote refresh service (1-min loop, for B1 xvenue_polymarket)
+
+Long-running service (`Type=simple`, not a timer) that polls Polymarket
+gamma-api every 60s and upserts into `polymarket_quotes`. Run as a
+service rather than per-minute timer to avoid systemd journal churn.
+
+```bash
+sudo cp deploy/kalshi-polymarket-quote.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now kalshi-polymarket-quote.service
+
+systemctl status kalshi-polymarket-quote.service
+journalctl -u kalshi-polymarket-quote.service -f
+```
+
 ## 6. Common Commands
 
 ```bash
