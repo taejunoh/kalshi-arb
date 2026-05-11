@@ -449,3 +449,29 @@ Live 배포 후:
 - **2026-05-10**: Architecture = Approach 2 (event-driven, 별도 asyncio
   task) (user 선택).
 - **2026-05-10**: MIN_DEVIATION = 0.10 (C1 와 동일, fee 0.07 + 3c cushion).
+- **2026-05-10**: 13-task implementation 완료 (commits 7828eec..608b4ee on
+  branch feat/crypto-fair-value). 44 crypto unit/integration tests green.
+  Phase 0 scanner 첫 dry run 에서 25 fired signals 즉시 감지 (Deribit IV BTC=12
+  + ETH=12 expiries 정상 populated).
+
+## Implementation deferrals (post-final-review)
+
+본 v0 구현은 다음 항목을 deferred — Phase 0 prevalence 결과 분석 후 우선순위:
+
+1. **Cold-start race minor remainder**: scan_loop 의 첫 ~5-10 sec 는 orderbook
+   cache 가 비어있어 `_handle_market` 가 depth gate 에서 모두 skip. 두 번째
+   iteration 부터 정상화. 별도 fix 불요 (operationally minor).
+2. **High fire rate (25 fires/scan in dev smoke)**: lognormal 모델이 drift=0
+   가정하나 실제 단기 BTC 마켓은 funding/futures basis 로 약간 drift. Phase 0
+   2주 운영 후 (asset, time_to_close, deviation) bucket 별 settled outcome
+   backtest. 실 EV 가 음수 시 MIN_DEVIATION 상향 또는 drift term 추가 검토.
+3. **Live strategy → crypto_fair_value_signals 미기록**: A1/C1 동일 패턴 —
+   현재는 Phase 0 scanner 에서만 logging. live strategy 는 trade row 만 기록.
+   dashboard 의 skip funnel 분석 필요 시 _handle_market 에 record 추가.
+4. **`expected_size_usdc` cap 차이**: log line 에 ev 값 미포함 (M1).
+5. **Multi-expiry IV interpolation**: spec OQ3 — daily 변종 (KXBTCD/KXETHD)
+   horizon 이 단기 IV 와 mismatch. 1-day IV 에 weekly IV 보간 (Phase 2).
+6. **Deribit cron 의 spot reference fallback**: 현재 BTC=$90k, ETH=$3k 하드코딩
+   (M3). cron 내부에서 Coinbase REST 호출하여 동적 fetch (Phase 2).
+7. **Scanner action="fired" misnomer**: read-only scanner 가 "fired" 로 기록.
+   "would_fire" 로 변경 더 명확 (M2).

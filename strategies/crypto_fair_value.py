@@ -247,23 +247,33 @@ class CryptoFairValueStrategy:
         cache: OrderbookCache instance (its refresh_loop should be running
         in parallel — caller's responsibility to schedule both tasks).
         """
-        if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
-            return
         db = getattr(self._order_manager, "_db", None)
         if db is None:
             logger.warning("OrderManager has no _db — crypto_fair_value scan disabled")
             return
         while True:
             try:
+                # Re-check circuit breaker EVERY iteration (kill switch + daily
+                # loss cap + consecutive loss cap must apply to fast-scan too).
+                # macro_event re-checks per scan_and_execute call; we mirror it.
+                if self._order_manager.is_circuit_breaker_active(
+                    strategy=self.STRATEGY_NAME
+                ):
+                    await asyncio.sleep(scan_interval_secs)
+                    continue
+
                 now = datetime.now(timezone.utc)
-                # Universe: ATM ±N tickers per asset
                 cfg = self.config
                 all_markets = [
                     m for m in self._scanner.get_all_markets()
                     if self._is_target_market(m)
                 ]
-                # Group by asset, filter ATM ±N
+
+                # First pass: compute ATM ±N universe so refresh_loop can warm
+                # the cache before _handle_market needs the books. Cold-start
+                # fix from final-review I2.
                 target_tickers: list[str] = []
+                asset_markets: list[tuple[dict, str]] = []
                 for asset in ("BTC", "ETH", "XRP"):
                     spot = self._price_feed.get_price(asset)
                     if spot is None:
@@ -274,9 +284,20 @@ class CryptoFairValueStrategy:
                     )
                     for m in atm_markets:
                         target_tickers.append(m.get("ticker", ""))
-                        await self._handle_market(m, db=db, cache=cache, now=now)
-                # Update cache target list (so refresh_loop knows what to poll)
+                        asset_markets.append((m, asset))
                 cache.set_target_tickers(target_tickers)
+
+                # Second pass: per-market 9-gate evaluation
+                for m, _asset in asset_markets:
+                    await self._handle_market(m, db=db, cache=cache, now=now)
+
+                # Periodic eviction of stale recently_fired entries (>24h old).
+                # Final-review I4 fix: prevents unbounded growth over weeks of
+                # uptime as tickers settle and never fire again.
+                cutoff = time.time() - 86400.0
+                stale = [t for t, ts in self._recently_fired.items() if ts < cutoff]
+                for t in stale:
+                    del self._recently_fired[t]
             except Exception as e:
                 logger.exception(f"crypto_fair_value scan error: {e}")
             await asyncio.sleep(scan_interval_secs)

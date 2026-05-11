@@ -63,11 +63,17 @@ class OrderbookCache:
                         yes_price, no_price = prices
                         depths = self._client.get_order_book_depth(ticker)
                         yes_depth, no_depth = depths if depths else (0.0, 0.0)
-                        # Note: KalshiClient.get_market_prices returns ask side
-                        # only. We collapse bid=ask for v0; spec records this.
+                        # Kalshi binary markets: yes + no = 1 in equilibrium.
+                        # KalshiClient returns (yes_ask, no_ask). Derive bid
+                        # from the OTHER side's ask to get a true 2-sided book
+                        # rather than collapsing to a single price.
+                        # Final-review I1 fix: improves Phase 0 deviation
+                        # accuracy and aligns with scanner's mid computation.
                         self._cache[ticker] = OrderbookEntry(
-                            yes_ask=yes_price, yes_bid=yes_price,
-                            no_ask=no_price, no_bid=no_price,
+                            yes_ask=yes_price,
+                            yes_bid=max(0.0, 1.0 - no_price),
+                            no_ask=no_price,
+                            no_bid=max(0.0, 1.0 - yes_price),
                             yes_depth=yes_depth or 0.0,
                             no_depth=no_depth or 0.0,
                             ts=time.time(),
