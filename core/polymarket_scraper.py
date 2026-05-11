@@ -95,36 +95,17 @@ class PolymarketScraper:
     def fetch_batch(self, slugs: list[str]) -> dict[str, dict]:
         """Returns {slug: normalized_dict} for slugs that parse successfully.
 
-        gamma-api batch syntax: ?slugs=a,b,c (comma-separated).
+        Issues one ?slug=<slug> request per entry. The plural form
+        ?slugs=a,b,c is broken on Polymarket's side as of 2026-05-11 —
+        it ignores the filter entirely and returns 20 unrelated popular
+        markets, no matter what's passed. The singular form is the only
+        one that does exact-match. With our mapping size (~20 slugs) the
+        per-slug call rate is 20/min = 0.3 req/s, well within any
+        reasonable rate limit.
         """
-        if not slugs:
-            return {}
-        slug_param = ",".join(slugs)
-        try:
-            response = httpx.get(
-                f"{GAMMA_API_BASE}?slugs={slug_param}", timeout=self._timeout,
-            )
-        except Exception as e:
-            logger.warning(f"Polymarket batch fetch failed: {e}")
-            return {}
-        if response.status_code != 200:
-            logger.warning(f"Polymarket batch HTTP {response.status_code}")
-            return {}
-        try:
-            data = response.json()
-        except Exception as e:
-            logger.warning(f"Polymarket batch JSON parse failed: {e}")
-            return {}
-        if not isinstance(data, list):
-            return {}
-        # Defensive: gamma-api was observed to ignore the slugs filter and
-        # return unrelated popular markets when none of the requested slugs
-        # match. Filter response to only include slugs we actually requested
-        # so cache doesn't pollute with off-mapping markets.
-        requested = set(slugs)
         out: dict[str, dict] = {}
-        for raw in data:
-            parsed = parse_market_response(raw)
-            if parsed and parsed["slug"] in requested:
-                out[parsed["slug"]] = parsed
+        for slug in slugs:
+            parsed = self.fetch_single(slug)
+            if parsed and parsed["slug"] == slug:
+                out[slug] = parsed
         return out
