@@ -36,14 +36,18 @@ MAPPING_PATH = "data/polymarket_kalshi_mapping.json"
 def fetch_open_markets_for_prefix(client: KalshiClient, prefix: str) -> list[dict]:
     """List open markets whose ticker startswith prefix.
 
-    Iterates open markets paginated. Scanner is research-only so a single
-    full-universe pass per iteration is acceptable cost.
+    Scopes the Kalshi query by series_ticker (first hyphen-segment of
+    the prefix) so we don't paginate the entire open-market universe
+    looking for a few specific tickers. Previous unscoped version
+    missed KXFEDDECISION because those markets weren't in the first
+    20 pages of the unfiltered listing (verified 2026-05-11).
     """
+    series = prefix.split("-", 1)[0]
     out = []
     cursor = None
     pages = 0
-    while pages < 20:
-        path = f"/trade-api/v2/markets?status=open&limit=200"
+    while pages < 10:
+        path = f"/trade-api/v2/markets?status=open&series_ticker={series}&limit=200"
         if cursor:
             path += f"&cursor={cursor}"
         d = client._get(path)
