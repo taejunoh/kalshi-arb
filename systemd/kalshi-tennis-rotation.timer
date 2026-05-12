@@ -1,0 +1,10 @@
+[Unit]
+Description=Kalshi-arb: tennis endpoint rotation daily check
+
+[Timer]
+OnCalendar=daily
+OnCalendar=*-*-* 11:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
