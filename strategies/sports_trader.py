@@ -773,6 +773,7 @@ class SportsTraderStrategy:
             if status == "failed" and reason in (
                 "insufficient_balance",
                 "balance_check_failed",
+                "pre_record_failed",
             ):
                 if self._traded_tickers.pop(ticker, None) is not None:
                     self._save_traded_tickers()
