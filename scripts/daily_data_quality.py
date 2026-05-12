@@ -33,10 +33,6 @@ logger = logging.getLogger("daily_data_quality")
 
 DEGRADATION_THRESHOLD = 0.25  # 25% drop vs 7d baseline triggers alert
 
-# Sports that use a 3-way market (HOME / AWAY / TIE).  Individual sports
-# (ATP, WTA, UFC, etc.) are 2-way and must NOT get a phantom TIE section.
-THREE_WAY_SPORTS: frozenset[str] = frozenset({"MLS", "EPL", "LAL", "UCL"})
-
 
 def _percentile(values, p):
     if not values:
@@ -136,46 +132,6 @@ def _format_stats_block(label: str, stats: dict) -> str:
         )
     lines.append("</pre>")
     return "\n".join(lines)
-
-
-def _format_sport_block(sport: str, stats: dict, baseline: dict | None) -> list[str]:
-    """Format one sport's daily quality block. Returns list of lines.
-
-    Individual sports (ATP/WTA/UFC) skip the 3-way TIE leg balance section,
-    which only makes sense for soccer (THREE_WAY_SPORTS).
-    """
-    lines = [f"<b>{sport}</b>"]
-    lines.append(f"  rows (24h): {stats['n']}")
-    eu = stats.get("books_eu", [])
-    if eu:
-        p10 = _percentile(eu, 0.10)
-        p50 = _percentile(eu, 0.50)
-        lines.append(f"  n_books_eu p10/p50: {p10} / {p50}")
-    pin_pct = (100.0 * stats["pin"] / stats["n"]) if stats["n"] else 0.0
-    lines.append(f"  Pinnacle coverage: {pin_pct:.1f}%")
-    oi = stats.get("oi", [])
-    if oi:
-        lines.append(f"  Kalshi OI median: ${_percentile(oi, 0.50):.0f}")
-    vol = stats.get("vol24", [])
-    if vol:
-        lines.append(f"  Kalshi vol_24h median: ${_percentile(vol, 0.50):.0f}")
-    # 3-way leg balance only for soccer — ATP/WTA/UFC must not get a TIE section
-    if sport in THREE_WAY_SPORTS:
-        h = stats.get("home_legs", 0)
-        a = stats.get("away_legs", 0)
-        t = stats.get("tie_legs", 0)
-        if (h + a + t) > 0:
-            lines.append(f"  leg balance H/A/T: {h}/{a}/{t}")
-    # Baseline degradation note
-    if baseline is not None:
-        baseline_n = baseline.get("n", 0)
-        if baseline_n > 0:
-            change = (stats["n"] - baseline_n) / baseline_n
-            if change < -DEGRADATION_THRESHOLD:
-                lines.append(
-                    f"  ⚠️  rows down {change * 100:.0f}% vs 7d baseline ({baseline_n})"
-                )
-    return lines
 
 
 def _detect_degradation(today: dict, baseline: dict) -> list[str]:
