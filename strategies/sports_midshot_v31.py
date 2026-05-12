@@ -49,9 +49,23 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     PLAYOFF_BLOCKLIST = frozenset({"NBA", "NHL"})
 
     def _get_trade_size(self, signal: dict) -> float:
-        # Raised 24→36 on 2026-05-02 (second pass, 1.5x more, total 2.25x
-        # vs original 16). Last-7d $10.13/trade and 69.8% ROI made this the
-        # clearest winner across the live ladder; user opted to ride it
-        # rather than wait for the 5/5 checkpoint. If the 5/5 fill-quality
-        # check FLAGS slippage, revert to 24.
-        return min(36.0, self._order_manager.bankroll * 0.02)
+        """Depth-tiered cap (2026-05-12). Base cap 36, raise to 60 for
+        thick books ($10k+).
+
+        Rationale: actual fire data 4/24+ shows $10k+ book ROI consistent
+        positive across regimes (pre-sizeup +37% n=6 MLB regular, post +22%
+        n=8). Other tiers kept at cap 36 — small sample for stronger calls.
+        Cushion at tier6 cap 60 with max price 0.35 = $21 stake, depth $10k
+        = 476× cushion.
+        """
+        ticker = signal.get("ticker", "")
+        side = signal.get("side", "yes")
+        depth = None
+        if ticker:
+            try:
+                yd, nd = self._client.get_order_book_depth(ticker)
+                depth = yd if side == "yes" else nd
+            except Exception:
+                pass
+        cap = 60.0 if (depth is not None and depth >= 10000) else 36.0
+        return min(cap, self._order_manager.bankroll * 0.02)
