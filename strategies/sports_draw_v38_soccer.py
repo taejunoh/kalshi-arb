@@ -41,11 +41,10 @@ Promotion gate: n_games >= 25 + ROI >= +30% + drop-top-3 > 0. Soccer
 season cadence ~2 EPL games/week + ~2 LAL games/week → ~16 games/4wk →
 n=25 in ~6 weeks (~2026-06-22). Eval 2026-06-22.
 
-LIVE at launch (size 12) per user decision 2026-05-11. v37 set precedent
-of going live at n=13 baseline with size 8; v38 launches 1.5× larger
-because the universe sample (n=47 non-BUN 0.20-0.30, n=13 EPL+LAL
-0.25-0.30) is materially larger than v37's launch n=13. Sized between
-v37 (8) and v36 (16).
+LIVE at launch (size 8 — matches v37) per user decision 2026-05-11.
+Initial size 12 was reduced to 8 after MLS re-add lowered weighted ROI
+from ~+60% (EPL+LAL only) to ~+32% (with MLS). Same size as v37 ensures
+per-trade edge × size profile is comparable.
 """
 import logging
 from typing import Optional
@@ -80,10 +79,11 @@ class SportsDrawV38SoccerStrategy(SportsUnderdogV37SoccerStrategy):
     MIN_DEPTH_USDC = 15.0
 
     def _get_trade_size(self, signal: dict) -> float:
-        # Launch size 12 (between v37's 8 and v36's 16). Universe sample
-        # n=47 non-BUN 0.20-0.30 is 3.6× v37 launch n=13, so larger size is
-        # supported. Re-eval at n=25 (~2026-06-22).
-        return min(12.0, self._order_manager.bankroll * 0.02)
+        # Launch size 8 (matches v37). Reduced from initial 12 (2026-05-11
+        # same session, pre-first-fire) after MLS re-add: weighted ROI dropped
+        # from EPL+LAL-only ~+60% to combined ~+32%, so smaller size matches
+        # the thinner per-trade edge. Scale up if n=25 sustains ROI >= +20%.
+        return min(8.0, self._order_manager.bankroll * 0.02)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
