@@ -1,0 +1,14 @@
+[Unit]
+Description=Hourly Kalshi orphan-fill check
+Requires=kalshi-orphan-check.service
+
+[Timer]
+# Hourly at HH:35 UTC — well past the top-of-hour scan + settlement
+# spikes. Detects fills that landed on Kalshi but missed our trades
+# table (e.g., record_trade DB-lock failure).
+OnCalendar=*-*-* *:35:00 UTC
+Persistent=true
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target
