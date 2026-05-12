@@ -75,9 +75,23 @@ KILL_CRITERIA = {
 MIN_N_BOOKS_FOR_SIM = 8
 PRE_WINDOW_MIN_MINS = 60
 PRE_WINDOW_MAX_MINS = 1440  # T-24h
-TARGET_SPORTS = ["MLS", "EPL", "LAL", "UCL"]
+TARGET_SPORTS = ["MLS", "EPL", "LAL", "UCL", "ATP", "WTA", "UFC"]
 LIVE_BASELINE_SPORTS = ["NBA", "MLB", "NHL"]
 EDGE_BUCKETS = [(-1.0, 0.0), (0.0, 0.05), (0.05, 0.10), (0.10, 0.20), (0.20, 1.0)]
+
+# 2026-05-11: 4-archetype price buckets for individual-sport replay (Tennis/MMA).
+# Boundaries chosen to align with existing strategy families:
+#   - longshot: 5-25¢   (sports_longshot_v31 band, 3x+ payoff)
+#   - underdog: 25-39¢  (sports_underdog_v31/v32 band)
+#   - mid-fav:  39-75¢  (no existing strategy — Kalshi-underprices-fav hypothesis)
+#   - chalk:    75-100¢ (chalk-shadow territory — retired strategy, kept for diagnostics)
+ARCHETYPE_BUCKETS = [
+    (0.05, 0.25, "longshot"),
+    (0.25, 0.39, "underdog"),
+    (0.39, 0.75, "mid-fav"),
+    (0.75, 1.00, "chalk"),
+]
+ARCHETYPE_EDGE_GATE = 0.05   # Replay only includes signals where eu_prob >= ask + 0.05
 
 
 # ----------------------------------------------------------------------
@@ -110,6 +124,62 @@ def _bucket_label(lo, hi):
     if lo < 0:
         return "<0%"
     return f"{int(lo*100)}-{int(hi*100)}%"
+
+
+def _bucket_label_for_archetype(price: float) -> str | None:
+    """Return archetype label for a Kalshi YES ask price; None if outside
+    all buckets (< 0.05 or >= 1.00)."""
+    if price is None:
+        return None
+    for lo, hi, label in ARCHETYPE_BUCKETS:
+        if lo <= price < hi:
+            return label
+    return None
+
+
+def _replay_archetype_buckets(entries: list[dict], n_boot: int = 1000) -> dict:
+    """Replay synthetic 'buy YES if eu_prob >= yes_ask + ARCHETYPE_EDGE_GATE'
+    across 4 archetype buckets.
+
+    Field-name note: entries produced by _load_entries use `kalshi_yes_ask`
+    (float), `eu_prob` (float), and `result` ('yes'/'no') — NOT `settled_yes`.
+    _replay_archetype_buckets reads these actual field names so it works
+    correctly both with live entries from _load_entries and with synthetic
+    test entries that use the same schema.
+
+    Each entry must have:
+      kalshi_yes_ask (float), eu_prob (float), result ('yes'|'no')
+
+    Returns dict[label] = {n, wins, roi, ci_lo, ci_hi}. ROI is
+    contracts-equivalent (win pays (1-ask)/ask, lose pays -1).
+    """
+    out = {}
+    for lo, hi, label in ARCHETYPE_BUCKETS:
+        bucket_entries = [
+            e for e in entries
+            if e.get("kalshi_yes_ask") is not None
+            and lo <= e["kalshi_yes_ask"] < hi
+            and e.get("eu_prob") is not None
+            and e["eu_prob"] >= e["kalshi_yes_ask"] + ARCHETYPE_EDGE_GATE
+            and e.get("result") in ("yes", "no")
+        ]
+        n = len(bucket_entries)
+        if n == 0:
+            out[label] = {"n": 0, "wins": 0, "roi": None, "ci_lo": None, "ci_hi": None}
+            continue
+        wins = sum(1 for e in bucket_entries if e["result"] == "yes")
+        rois = [
+            ((1.0 - e["kalshi_yes_ask"]) / e["kalshi_yes_ask"])
+            if e["result"] == "yes" else -1.0
+            for e in bucket_entries
+        ]
+        mean_roi = sum(rois) / n
+        ci_lo, ci_hi = _bootstrap_ci(rois, n_iter=n_boot)
+        out[label] = {
+            "n": n, "wins": wins, "roi": mean_roi,
+            "ci_lo": ci_lo, "ci_hi": ci_hi,
+        }
+    return out
 
 
 # ----------------------------------------------------------------------
@@ -534,6 +604,47 @@ def _section_legs(results: dict) -> list[str]:
     return lines
 
 
+def _section_archetype_buckets(results: dict) -> list[str]:
+    """Per-sport 4-archetype bucket replay block. Output appears after the
+    strategy matrix and before legs/CLV."""
+    INDIVIDUAL_SPORTS = ["ATP", "WTA", "UFC"]
+    has_data = any(
+        results.get(s, {}).get("archetype_buckets") for s in INDIVIDUAL_SPORTS
+    )
+    if not has_data:
+        return []
+    lines = ["", "<b>🎯 ARCHETYPE BUCKET REPLAY</b> (individual sports)"]
+    lines.append("<i>YES-buy replay; entry gate: eu_prob >= ask + 5¢</i>")
+    for sport in INDIVIDUAL_SPORTS:
+        r = results.get(sport)
+        if not r or not r.get("archetype_buckets"):
+            continue
+        lines.append("")
+        lines.append(f"  <b>{sport}</b>")
+        for lo, hi, label in ARCHETYPE_BUCKETS:
+            b = r["archetype_buckets"].get(label, {})
+            n = b.get("n", 0)
+            if n == 0:
+                lines.append(f"    {label:9s} ({int(lo*100):2d}-{int(hi*100):2d}¢): n=0")
+                continue
+            wins = b["wins"]
+            wr = 100.0 * wins / n if n > 0 else 0
+            roi = b.get("roi")
+            ci_lo = b.get("ci_lo")
+            ci_hi = b.get("ci_hi")
+            roi_str = f"{roi*100:+6.1f}%" if roi is not None else "—"
+            ci_str = (
+                f"[{ci_lo*100:+5.1f}%, {ci_hi*100:+5.1f}%]"
+                if ci_lo is not None and ci_hi is not None
+                else "[—, —]"
+            )
+            lines.append(
+                f"    {label:9s} ({int(lo*100):2d}-{int(hi*100):2d}¢): "
+                f"n={n:3d}  WR={wr:4.1f}%  ROI={roi_str}  CI95={ci_str}"
+            )
+    return lines
+
+
 def _section_clv(results: dict) -> list[str]:
     lines = ["", "<b>📈 CLOSING LINE VALUE (CLV)</b>",
              "<i>CLV+ = our entry-window price beat the closing-line price. "
@@ -599,6 +710,7 @@ def _evaluate(db_path: str, window_days: int, sport_filter: str | None,
     conn = sqlite3.connect(db_path, timeout=30.0)
     sports = [sport_filter] if sport_filter else TARGET_SPORTS
     results = {}
+    INDIVIDUAL_SPORTS = {"ATP", "WTA", "UFC"}
     for sport in sports:
         entries = _load_entries(conn, sport, window_days)
         quality = _load_quality_stats(conn, sport, window_days)
@@ -606,10 +718,16 @@ def _evaluate(db_path: str, window_days: int, sport_filter: str | None,
         replay = _replay_all_strategies(entries, n_boot)
         is_3way = quality.get("tie_legs", 0) > 0
         legs = _replay_legs(entries, n_boot) if is_3way else None
+        archetype_buckets = (
+            _replay_archetype_buckets(entries, n_boot)
+            if sport in INDIVIDUAL_SPORTS
+            else None
+        )
         decision = _decide(quality, replay, len(entries), ci_required)
         results[sport] = {
             "quality": quality, "clv": clv, "replay": replay,
-            "legs": legs, "n_games": len(entries), "decision": decision,
+            "legs": legs, "archetype_buckets": archetype_buckets,
+            "n_games": len(entries), "decision": decision,
         }
     baselines = _load_live_baselines(conn, window_days)
     conn.close()
@@ -621,6 +739,7 @@ def _build_report(results: dict, baselines: dict, window_days: int) -> str:
     lines = [f"🎯 <b>Sport promotion evaluation — {now_iso}</b>", ""]
     lines += _section_summary(results, baselines)
     lines += _section_strategy_matrix(results)
+    lines += _section_archetype_buckets(results)   # individual sports (ATP/WTA/UFC) only
     lines += _section_legs(results)
     lines += _section_clv(results)
     lines += _section_quality(results)
