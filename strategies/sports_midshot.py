@@ -55,6 +55,7 @@ class SportsMidshotStrategy(SportsTraderStrategy):
                     "price": price,
                     "edge": payoff,
                     "strategy": "midshot",
+                    "ticker": ticker,
                 }
                 best_payoff = payoff
 
