@@ -1297,13 +1297,6 @@ class SportsTraderStrategy:
             except Exception as e:
                 logger.error(f"Failed to fetch {series}: {e}")
                 continue
-            # DEBUG 2026-05-12: trace per-series market count for soccer strategies
-            if self.STRATEGY_NAME in ("sports_underdog_v37_soccer", "sports_draw_v38_soccer"):
-                if series in ("KXLALIGAGAME", "KXMLSGAME", "KXEPLGAME", "KXBUNDESLIGAGAME", "KXUCLGAME"):
-                    logger.info(
-                        f"[DEBUG-SOCCER-FETCH] {self.STRATEGY_NAME} series={series}: "
-                        f"markets_fetched={len(markets)} odds_games={len(all_odds.get(series, []))}"
-                    )
 
             odds_games = all_odds.get(series, [])
             for market in markets:
@@ -1372,22 +1365,10 @@ class SportsTraderStrategy:
                 # Match to odds data
                 matched_game = self._match_kalshi_to_odds(title, odds_games, kalshi_ticker=ticker)
                 if not matched_game:
-                    # DEBUG 2026-05-12: trace soccer pipeline silence
-                    if self.STRATEGY_NAME in ("sports_underdog_v37_soccer", "sports_draw_v38_soccer"):
-                        logger.info(
-                            f"[DEBUG-SOCCER] {self.STRATEGY_NAME} {ticker}: "
-                            f"match_failed title={title[:50]!r} odds_games_count={len(odds_games)}"
-                        )
                     continue
 
                 consensus = self._consensus_probability(matched_game)
                 if not consensus:
-                    # DEBUG 2026-05-12: trace soccer pipeline silence
-                    if self.STRATEGY_NAME in ("sports_underdog_v37_soccer", "sports_draw_v38_soccer"):
-                        logger.info(
-                            f"[DEBUG-SOCCER] {self.STRATEGY_NAME} {ticker}: "
-                            f"no_consensus matched_keys={list(matched_game.keys())[:5]}"
-                        )
                     continue
                 # Coverage gate: thin consensus (e.g., 2-3 books) is noisier
                 # than its numeric value implies. Skip when below the
@@ -1406,27 +1387,37 @@ class SportsTraderStrategy:
                 home = consensus["home_team"].lower()
                 away = consensus["away_team"].lower()
 
-                # First try exact short-name match for ambiguous cities (NY, LA, Chicago)
-                home_short = ODDS_TO_KALSHI_SHORT.get(home, "")
-                away_short = ODDS_TO_KALSHI_SHORT.get(away, "")
-                is_yes_home = False
-                if home_short and home_short == yes_team:
-                    fair_prob = consensus["home_prob"]
-                    is_yes_home = True
-                elif away_short and away_short == yes_team:
-                    fair_prob = consensus["away_prob"]
+                # Soccer 3-way DRAW outcome: ticker -TIE represents "draw happens".
+                # yes_sub_title is "Tie" — doesn't match home/away teams. Bypass
+                # team-matching and pass through to evaluate (v38_soccer_draw
+                # handles TIE side; other strategies skip via their own evaluate).
+                # fair_prob=0.25 (typical soccer draw prob) — safe sentinel for
+                # downstream _format_log formatting; v38 evaluate doesn't use it.
+                if ticker.endswith("-TIE"):
+                    fair_prob = 0.25
+                    is_yes_home = False
                 else:
-                    # Fallback: city name matching for non-ambiguous teams
-                    home_city = " ".join(home.split()[:-1]) if len(home.split()) > 1 else home
-                    away_city = " ".join(away.split()[:-1]) if len(away.split()) > 1 else away
-                    if home_city in yes_team or yes_team in home_city:
+                    # First try exact short-name match for ambiguous cities (NY, LA, Chicago)
+                    home_short = ODDS_TO_KALSHI_SHORT.get(home, "")
+                    away_short = ODDS_TO_KALSHI_SHORT.get(away, "")
+                    is_yes_home = False
+                    if home_short and home_short == yes_team:
                         fair_prob = consensus["home_prob"]
                         is_yes_home = True
-                    elif away_city in yes_team or yes_team in away_city:
+                    elif away_short and away_short == yes_team:
                         fair_prob = consensus["away_prob"]
                     else:
-                        logger.debug(f"[SPORTS] Can't match YES team '{yes_team}' to {home}/{away}")
-                        continue
+                        # Fallback: city name matching for non-ambiguous teams
+                        home_city = " ".join(home.split()[:-1]) if len(home.split()) > 1 else home
+                        away_city = " ".join(away.split()[:-1]) if len(away.split()) > 1 else away
+                        if home_city in yes_team or yes_team in home_city:
+                            fair_prob = consensus["home_prob"]
+                            is_yes_home = True
+                        elif away_city in yes_team or yes_team in away_city:
+                            fair_prob = consensus["away_prob"]
+                        else:
+                            logger.debug(f"[SPORTS] Can't match YES team '{yes_team}' to {home}/{away}")
+                            continue
 
                 # V2 signals
                 sport_key = sport_map.get(series, "")
@@ -1460,14 +1451,6 @@ class SportsTraderStrategy:
                 signal = self.evaluate(ya, na, fair_prob,
                                        line_movement=line_movement, home_adj=home_adj,
                                        ticker=ticker)
-                # DEBUG 2026-05-12: log soccer evaluate results
-                if self.STRATEGY_NAME in ("sports_underdog_v37_soccer", "sports_draw_v38_soccer"):
-                    if "KXLALIGAGAME" in ticker or "KXMLSGAME" in ticker or "KXEPLGAME" in ticker:
-                        sig_repr = f"side={signal['side']} price={signal['price']} payoff={signal['edge']:.2f}" if signal else "None"
-                        logger.info(
-                            f"[DEBUG-SOCCER-EVAL] {self.STRATEGY_NAME} {ticker}: "
-                            f"ya={ya:.3f} na={na:.3f} signal={sig_repr}"
-                        )
                 if not signal:
                     continue
 
