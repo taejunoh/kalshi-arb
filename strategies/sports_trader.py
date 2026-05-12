@@ -794,6 +794,27 @@ class SportsTraderStrategy:
             logger.exception(
                 f"[{self.STRATEGY_NAME}] entry dispatch failed for {ticker}: {e}"
             )
+            # 2026-05-11: fallback Telegram alert for any dispatch failure
+            # outside of record_trade (e.g., _record_entry_clv DB lock,
+            # network glitch). The order_manager already alerts on
+            # record_trade orphans; this catches the rest so a 5/9-style
+            # silent failure can't recur unnoticed.
+            notifier = getattr(self._order_manager, "_notifier", None)
+            if notifier:
+                text = (
+                    f"⚠️ <b>Dispatch failure</b>\n"
+                    f"Strategy: {self.STRATEGY_NAME}\n"
+                    f"Market: {ticker}\n"
+                    f"Side: {side} | Size: ${size:.2f} @ {limit_price:.3f}\n"
+                    f"Error: {type(e).__name__}: {e}\n"
+                    f"Check journalctl + trades table for this ticker."
+                )
+                try:
+                    asyncio.create_task(
+                        notifier.send(text, msg_type="dispatch_failure")
+                    )
+                except RuntimeError:
+                    pass
 
     async def _record_entry_clv(
         self,
