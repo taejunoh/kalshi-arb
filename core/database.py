@@ -376,6 +376,39 @@ class Database:
             await conn.execute("UPDATE orders SET status = ? WHERE order_id = ?", (status, order_id))
             await conn.commit()
 
+    async def update_trade_post_fill(
+        self, trade_id: int, *,
+        status: str,
+        size: Optional[float] = None,
+        fee: Optional[float] = None,
+        realized_fill_price: Optional[float] = None,
+    ) -> None:
+        """Update a 'placing' trade row to its final state (filled/cancelled).
+        Built 2026-05-11 for P2 write-before-place pattern: trade row is
+        INSERTed at status='placing' before the Kalshi order is sent, then
+        UPDATEd here when Kalshi confirms fill or TTL expires.
+
+        Only updates fields that are passed (non-None); status is mandatory.
+        """
+        sets = ["status = ?"]
+        params: list = [status]
+        if size is not None:
+            sets.append("size = ?")
+            params.append(size)
+        if fee is not None:
+            sets.append("fee = ?")
+            params.append(fee)
+        if realized_fill_price is not None:
+            sets.append("realized_fill_price = ?")
+            params.append(realized_fill_price)
+        params.append(trade_id)
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            await conn.execute(
+                f"UPDATE trades SET {', '.join(sets)} WHERE id = ?",
+                params,
+            )
+            await conn.commit()
+
     async def get_trades(self, strategy=None):
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row

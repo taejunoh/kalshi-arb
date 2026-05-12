@@ -608,12 +608,59 @@ class OrderManager:
         # Clamp to Kalshi's valid range [1, 99]
         yes_price_cents = max(1, min(99, yes_price_cents))
         buy_max_cost = price_cents + slippage
+        # P2 (2026-05-11): pre-record at status='placing' BEFORE Kalshi
+        # market-order placement. If pre-record fails, no Kalshi call.
+        trade_id = None
+        last_db_error = None
+        for attempt, delay in enumerate((0, 1, 2, 5)):
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                trade_id = await self._db.record_trade(
+                    strategy=strategy, market_id=market_id, direction=side,
+                    price=price, size=size_usdc, fee=fee,
+                    status="placing", minutes_to_start=minutes_to_start,
+                )
+                if attempt > 0:
+                    logger.warning(
+                        f"[LIVE] pre-record (market) succeeded on retry "
+                        f"#{attempt} for {strategy} {ticker}"
+                    )
+                break
+            except Exception as e:
+                last_db_error = e
+                logger.warning(
+                    f"[LIVE] pre-record (market) attempt #{attempt} failed "
+                    f"for {strategy} {ticker}: {e}"
+                )
+        if trade_id is None:
+            logger.error(
+                f"[LIVE] pre-record (market) exhausted for {strategy} "
+                f"{ticker}: {last_db_error}. Skipping Kalshi placement."
+            )
+            self._alert_dispatch_failure(
+                strategy=strategy, ticker=ticker, side=side,
+                order_id="not_placed", filled_count=0,
+                size_usdc=size_usdc, price=price,
+                error=f"pre-record failed: {last_db_error}",
+            )
+            return {"status": "failed", "reason": "pre_record_failed"}
+
         resp = self._client.place_market_order(
             ticker, side, count,
             yes_price_cents=yes_price_cents,
             buy_max_cost_cents=buy_max_cost,
         )
         if resp is None:
+            try:
+                await self._db.update_trade_post_fill(
+                    trade_id, status="cancelled"
+                )
+            except Exception as upd_err:
+                logger.warning(
+                    f"[LIVE] post-reject status update failed (market) for "
+                    f"{strategy} {ticker} trade={trade_id}: {upd_err}"
+                )
             return {"status": "failed"}
         self._client.invalidate_balance_cache()
         order_id = resp.get("id", "unknown")
@@ -623,39 +670,35 @@ class OrderManager:
         fill_count = resp.get("taker_fill_count")
         if fill_cost and fill_count and fill_count > 0:
             realized = (fill_cost / fill_count) / 100.0
-        # Same retry-on-DB-lock pattern as _live_limit_ttl_order. See note
-        # at L750 for rationale (2026-05-11 v37 orphan incident).
-        trade_id = None
+        # UPDATE the pre-recorded row to 'filled' with realized data.
         last_db_error = None
         for attempt, delay in enumerate((0, 1, 2, 5)):
             if delay:
                 await asyncio.sleep(delay)
             try:
-                trade_id = await self._db.record_trade(
-                    strategy=strategy, market_id=market_id, direction=side,
-                    price=price, size=size_usdc, fee=fee, status="filled",
-                    minutes_to_start=minutes_to_start,
+                await self._db.update_trade_post_fill(
+                    trade_id, status="filled",
                     realized_fill_price=realized,
                 )
                 last_db_error = None
                 if attempt > 0:
                     logger.warning(
-                        f"[LIVE] record_trade (market) succeeded on retry "
+                        f"[LIVE] post-fill update (market) succeeded on retry "
                         f"#{attempt} for {strategy} {ticker} order={order_id[:12]}"
                     )
                 break
             except Exception as e:
                 last_db_error = e
                 logger.warning(
-                    f"[LIVE] record_trade (market) attempt #{attempt} failed "
+                    f"[LIVE] post-fill update (market) attempt #{attempt} failed "
                     f"for {strategy} {ticker} order={order_id[:12]}: {e}"
                 )
-        if trade_id is None:
+        if last_db_error is not None:
             logger.critical(
-                f"[LIVE] ORPHAN MARKET ORDER: record_trade failed after Kalshi "
-                f"fill. strategy={strategy} ticker={ticker} side={side} "
-                f"size=${size_usdc:.2f} signal_price={price:.3f} "
-                f"order_id={order_id} error={last_db_error}"
+                f"[LIVE] STALE PLACING (market): post-fill update failed. "
+                f"strategy={strategy} ticker={ticker} side={side} "
+                f"trade_id={trade_id} size=${size_usdc:.2f} "
+                f"signal_price={price:.3f} order_id={order_id} error={last_db_error}"
             )
             self._alert_dispatch_failure(
                 strategy=strategy, ticker=ticker, side=side,
@@ -663,7 +706,7 @@ class OrderManager:
                 size_usdc=size_usdc, price=price,
                 error=str(last_db_error),
             )
-            raise last_db_error
+            # Don't raise — row exists as 'placing', recovery via orphan check.
         # Deduct cost + fee so local bankroll stays in sync with Kalshi's real
         # balance, which already reflects both. Matches paper order semantics.
         self.bankroll -= (size_usdc + fee)
@@ -729,14 +772,70 @@ class OrderManager:
             )
             return {"status": "failed", "reason": "insufficient_balance"}
 
+        # P2 (2026-05-11): pre-record the trade at status='placing' BEFORE
+        # sending to Kalshi. If the DB write fails, we never call Kalshi
+        # → no orphan risk. After fill/cancel, the same row is UPDATEd to
+        # its final status. has_existing_trade counts 'placing' as a live
+        # trade (it excludes only 'cancelled'/'failed'), preventing double
+        # fires during the brief in-flight window.
+        signal_size_usdc = count * price  # signal-price size for DB
+        signal_fee = self.config.estimate_fee(count, price_cents)
+        trade_id = None
+        last_db_error = None
+        for attempt, delay in enumerate((0, 1, 2, 5)):
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                trade_id = await self._db.record_trade(
+                    strategy=strategy, market_id=market_id, direction=side,
+                    price=price, size=signal_size_usdc, fee=signal_fee,
+                    status="placing", minutes_to_start=minutes_to_start,
+                )
+                if attempt > 0:
+                    logger.warning(
+                        f"[LIVE] pre-record succeeded on retry #{attempt} "
+                        f"for {strategy} {ticker}"
+                    )
+                break
+            except Exception as e:
+                last_db_error = e
+                logger.warning(
+                    f"[LIVE] pre-record attempt #{attempt} failed for "
+                    f"{strategy} {ticker}: {e}"
+                )
+        if trade_id is None:
+            logger.error(
+                f"[LIVE] pre-record exhausted for {strategy} {ticker}: "
+                f"{last_db_error}. Skipping Kalshi placement to avoid orphan."
+            )
+            self._alert_dispatch_failure(
+                strategy=strategy, ticker=ticker, side=side,
+                order_id="not_placed", filled_count=0,
+                size_usdc=signal_size_usdc, price=price,
+                error=f"pre-record failed: {last_db_error}",
+            )
+            return {"status": "failed", "reason": "pre_record_failed"}
+
         resp = self._client.place_limit_order(ticker, side, yes_price_cents, count)
         if resp is None:
+            # Kalshi rejected — mark the placeholder cancelled so dedup
+            # auto-clears and the next scan can retry.
+            try:
+                await self._db.update_trade_post_fill(
+                    trade_id, status="cancelled"
+                )
+            except Exception as upd_err:
+                logger.warning(
+                    f"[LIVE] post-reject status update failed for {strategy} "
+                    f"{ticker} trade={trade_id}: {upd_err}"
+                )
             return {"status": "failed"}
         self._client.invalidate_balance_cache()
         order_id = resp.get("order_id") or resp.get("id") or "unknown"
         logger.info(
             f"[LIVE] Limit placed {side} {count}x {ticker} @ {yes_price_cents}¢ "
-            f"(signal {price:.3f}) order={order_id[:12]} TTL={LIMIT_TTL_SECONDS}s"
+            f"(signal {price:.3f}) order={order_id[:12]} TTL={LIMIT_TTL_SECONDS}s "
+            f"trade={trade_id}"
         )
 
         filled_count = 0
@@ -798,6 +897,18 @@ class OrderManager:
                         pass
 
         if filled_count == 0:
+            # TTL expired unfilled — mark the pre-recorded trade row as
+            # cancelled so dedup auto-clears and the next scan can retry
+            # the signal at a fresh price.
+            try:
+                await self._db.update_trade_post_fill(
+                    trade_id, status="cancelled"
+                )
+            except Exception as upd_err:
+                logger.warning(
+                    f"[LIVE] cancelled-status update failed for {strategy} "
+                    f"{ticker} trade={trade_id}: {upd_err} (row stays at 'placing')"
+                )
             logger.info(
                 f"[LIVE] Limit TTL expired unfilled: {strategy} {ticker} {side} @ {price:.3f} (status={final_status})"
             )
@@ -809,52 +920,51 @@ class OrderManager:
         # reason (paper twin uses signal-based estimate).
         actual_size = filled_count * price
         actual_fee = self.config.estimate_fee(filled_count, price_cents)
-        # Retry record_trade on transient DB locks (3 attempts, 1s/2s/5s).
-        # 2026-05-11 v37 5/9 incident: a single locked-write left an orphan
-        # Kalshi fill with no DB record. WAL mode is on but writer-writer
-        # contention can still block past the 30s busy_timeout.
-        trade_id = None
+        # P2 (2026-05-11): pre-record row already exists at status='placing'
+        # — now UPDATE it to 'filled' with realized data. If this fails, the
+        # row stays at 'placing' (still a valid record), orphan_order_check
+        # cron + alert will catch the stale state. Retry the UPDATE since
+        # the row is small and the DB lock window should be brief.
         last_db_error = None
         for attempt, delay in enumerate((0, 1, 2, 5)):
             if delay:
                 await asyncio.sleep(delay)
             try:
-                trade_id = await self._db.record_trade(
-                    strategy=strategy, market_id=market_id, direction=side,
-                    price=price, size=actual_size, fee=actual_fee, status="filled",
-                    minutes_to_start=minutes_to_start,
+                await self._db.update_trade_post_fill(
+                    trade_id, status="filled",
+                    size=actual_size, fee=actual_fee,
                     realized_fill_price=realized,
                 )
                 last_db_error = None
                 if attempt > 0:
                     logger.warning(
-                        f"[LIVE] record_trade succeeded on retry #{attempt} "
+                        f"[LIVE] post-fill update succeeded on retry #{attempt} "
                         f"for {strategy} {ticker} order={order_id[:12]}"
                     )
                 break
             except Exception as e:
                 last_db_error = e
                 logger.warning(
-                    f"[LIVE] record_trade attempt #{attempt} failed for "
+                    f"[LIVE] post-fill update attempt #{attempt} failed for "
                     f"{strategy} {ticker} order={order_id[:12]}: {e}"
                 )
-        if trade_id is None:
-            # All retries exhausted — Kalshi has our fill but we have no
-            # DB record. Manual reconciliation required.
+        if last_db_error is not None:
+            # Row stuck at 'placing' but Kalshi has our fill. Orphan check
+            # cron will flag this; manual reconciliation needed.
             logger.critical(
-                f"[LIVE] ORPHAN ORDER: record_trade failed after Kalshi fill. "
+                f"[LIVE] STALE PLACING: post-fill update failed after Kalshi fill. "
                 f"strategy={strategy} ticker={ticker} side={side} "
-                f"filled_count={filled_count} signal_price={price:.3f} "
-                f"order_id={order_id} error={last_db_error}"
+                f"trade_id={trade_id} filled_count={filled_count} "
+                f"signal_price={price:.3f} order_id={order_id} error={last_db_error}"
             )
             self._alert_dispatch_failure(
                 strategy=strategy, ticker=ticker, side=side,
                 order_id=order_id, filled_count=filled_count,
                 size_usdc=actual_size, price=price,
-                error=str(last_db_error),
+                error=f"post-fill UPDATE failed: {last_db_error}",
             )
-            # Re-raise so upstream knows dispatch failed.
-            raise last_db_error
+            # Do NOT raise — Kalshi has the fill and we have a 'placing' row.
+            # Recovery path: orphan check cron + manual UPDATE.
         # Bankroll mirrors Kalshi's real debit. With marketable-limit
         # aggression, realized can exceed signal by up to LIMIT_AGGRESSION_CENTS;
         # deducting signal-based size here would drift bankroll above Kalshi.
