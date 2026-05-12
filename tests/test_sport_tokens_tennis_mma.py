@@ -3,6 +3,7 @@ from strategies.sports_trader import (
     SPORTS_SERIES,
     SPORT_GAME_TOKENS,
     SPORT_SHORT_BY_TOKEN,
+    SportsTraderStrategy,
 )
 
 
@@ -52,9 +53,6 @@ def test_no_substring_collision_in_sport_game_tokens():
                 f"Token order bug: '{ti}' at position {i} is substring of '{tj}' "
                 f"at later position — first-match extraction would misclassify"
             )
-
-
-from strategies.sports_trader import SportsTraderStrategy
 
 
 def test_atp_is_observation_only():
