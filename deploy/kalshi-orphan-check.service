@@ -1,0 +1,18 @@
+[Unit]
+Description=Kalshi orphan-fill detector — alerts when Kalshi has fills/positions with no trades-table row
+After=network.target kalshi-bot.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+EnvironmentFile=/home/ubuntu/kalshi-arb/.env
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/orphan_order_check.py
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+# Security (same pattern as kalshi-bot.service)
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs
