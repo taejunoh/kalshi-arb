@@ -22,6 +22,7 @@ import asyncio
 import logging
 from typing import Optional
 
+from core.starter_fetcher import get_starters
 from strategies.sports_trader import (
     SPORTS_SERIES,
     ODDS_TO_KALSHI_SHORT,
@@ -299,6 +300,21 @@ class SportsScanObserver(SportsTraderStrategy):
                 mts = _commence_time_to_minutes(matched_game.get("commence_time"))
                 phase = "pre" if (mts is not None and mts > 0) else "live"
 
+                # Capture starting pitcher/goalie for MLB/NHL (None for other sports).
+                # Uses the game's commence_time date in UTC (game day in API's calendar).
+                starter_home_name = None
+                starter_away_name = None
+                if sport_short in ("MLB", "NHL") and home_team and away_team:
+                    commence = matched_game.get("commence_time")
+                    if commence:
+                        date_str = commence[:10]
+                        try:
+                            starter_home_name, starter_away_name = get_starters(
+                                sport_short, date_str, home_team, away_team,
+                            )
+                        except Exception as e:
+                            logger.warning(f"[OBSERVER] starter fetch failed for {ticker}: {e}")
+
                 try:
                     await db.record_odds_observation(
                         kalshi_ticker=ticker,
@@ -329,6 +345,8 @@ class SportsScanObserver(SportsTraderStrategy):
                         kalshi_volume_24h=vol24,
                         kalshi_open_interest=oi,
                         tournament_slug=sport_key,
+                        starter_home=starter_home_name,
+                        starter_away=starter_away_name,
                     )
                 except Exception as e:
                     logger.warning(
