@@ -638,6 +638,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         base_sizes: dict = {}
         min_depths: dict = {}
         max_depths: dict = {}
+        depth_dead_zones: dict = {}
         try:
             from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
             from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
@@ -778,6 +779,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 max_d = getattr(cls, "MAX_DEPTH_USDC", None)
                 if max_d is not None:
                     max_depths[name] = float(max_d)
+                # DEPTH_DEAD_ZONE gate (2026-05-12). v31 family $2k-10k.
+                dz = getattr(cls, "DEPTH_DEAD_ZONE", None)
+                if dz is not None:
+                    depth_dead_zones[name] = list(dz)
         except Exception:
             pass  # best-effort — missing gate info shouldn't break the endpoint
 
@@ -839,7 +844,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                          "sport_phases": sport_phases_map.get(s),
                          "base_size": base_sizes.get(s),
                          "min_depth": min_depths.get(s),
-                         "max_depth": max_depths.get(s)}
+                         "max_depth": max_depths.get(s),
+                         "depth_dead_zone": depth_dead_zones.get(s)}
         return result
 
     @app.get("/api/settlement-history")

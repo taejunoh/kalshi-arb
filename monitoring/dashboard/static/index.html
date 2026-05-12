@@ -1250,13 +1250,16 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     // Strategies with per-depth-tier cap policies (see _get_trade_size override).
     const tieredLabels = {
       'sports_underdog_v37_soccer': 'tiered 2/4/8/24',
-      'sports_midshot_v31': '36 → 60 @ $10k+',
+      'sports_midshot_v31': '36 → 60 @ $500-2k & $10k+',
     };
     const sizeStr = (baseSize !== null && baseSize !== undefined)
       ? (tieredLabels[strat] || `${Math.round(baseSize)}${isV32Underdog ? ' ×0.5-2.0' : ''}`)
       : '';
+    const deadZone = status.depth_dead_zone;  // [lo, hi] or null
+    const dzStr = deadZone ? ` (skip $${Math.round(deadZone[0])}–${Math.round(deadZone[1])})` : '';
     const depthStr = `$${Math.round(minDepth || 0)}` +
-      (maxDepth ? `–$${Math.round(maxDepth)}` : '+');
+      (maxDepth ? `–$${Math.round(maxDepth)}` : '+') +
+      dzStr;
     // Region (sports strategies only) + per-sport phase view
     const region = status.region || '';
     const regionTag = region ? region.toUpperCase() : '';

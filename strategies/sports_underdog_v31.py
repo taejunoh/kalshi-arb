@@ -16,6 +16,14 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     # entry price ~60¢, peak stake = 30 × $0.60 = $18 → $30 keeps ~1.67×
     # cushion (matches the prior buffer ratio).
     MIN_DEPTH_USDC = 30.0
+    # 2026-05-12: $2k-10k depth dead-zone. Cross-strategy v31 family analysis
+    # (n=32 combined) shows consistent −60% ROI in this mid-depth band:
+    #   underdog_v31: n=13, ROI −62%
+    #   underdog_v32: n=13, ROI −62%
+    #   midshot_v31:  n= 6, ROI −59%
+    # Surrounding bands stay positive ($500-2k +22%, $10k+ +7% for underdog).
+    # Cascades to v32-v36; v37_soccer overrides None (sweet spot at $2k-10k).
+    DEPTH_DEAD_ZONE = (2000.0, 10000.0)
     # 2026-05-11: floor raised 0.20 → 0.30 from paired v31↔v32 bucket analysis.
     # Earlier 4/20 calibration (+95% at 20-25¢) has fully reversed in current
     # data — the universe-zero edge finding (memory: v31 underdog calibration

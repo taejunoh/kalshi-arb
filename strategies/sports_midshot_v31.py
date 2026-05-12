@@ -49,14 +49,14 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     PLAYOFF_BLOCKLIST = frozenset({"NBA", "NHL"})
 
     def _get_trade_size(self, signal: dict) -> float:
-        """Depth-tiered cap (2026-05-12). Base cap 36, raise to 60 for
-        thick books ($10k+).
+        """Depth-tiered cap (2026-05-12).
 
-        Rationale: actual fire data 4/24+ shows $10k+ book ROI consistent
-        positive across regimes (pre-sizeup +37% n=6 MLB regular, post +22%
-        n=8). Other tiers kept at cap 36 — small sample for stronger calls.
-        Cushion at tier6 cap 60 with max price 0.35 = $21 stake, depth $10k
-        = 476× cushion.
+        Cross-strategy tier ROI analysis (4/24+, MLB regular):
+          $500-2k:  +135% (n=7) ⭐ sweet spot — cap raised to 60
+          $2k-10k:  −59%  (n=6) — small sample, cap unchanged (no dead-zone
+                                  unlike v31 underdog where n=13/13 stronger)
+          $10k+:    +26%  (n=23) — cap raised to 60
+          Other:    insufficient sample — cap unchanged at 36
         """
         ticker = signal.get("ticker", "")
         side = signal.get("side", "yes")
@@ -67,5 +67,14 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
                 depth = yd if side == "yes" else nd
             except Exception:
                 pass
-        cap = 60.0 if (depth is not None and depth >= 10000) else 36.0
+        if depth is None:
+            cap = 36.0
+        elif depth >= 10000:
+            cap = 60.0        # thick book +26% (n=23)
+        elif depth >= 2000:
+            cap = 36.0        # mid-thick −59% (sample 6, kept default — see DEPTH_DEAD_ZONE TODO)
+        elif depth >= 500:
+            cap = 60.0        # SWEET SPOT +135% (n=7) — cap raised
+        else:
+            cap = 36.0
         return min(cap, self._order_manager.bankroll * 0.02)
