@@ -44,6 +44,12 @@ SPORT_MAP = {
     "KXLALIGAGAME": "soccer_spain_la_liga",
     "KXUCLGAME": "soccer_uefa_champs_league",
     "KXBUNDESLIGAGAME": "soccer_germany_bundesliga",
+    # 2026-05-11: Individual-sport observers. Tennis slug rotates per
+    # currently-active tournament (manually updated; rotation cron in Task 9
+    # alerts when active slug returns 0 events). Verified slugs from Task 0:
+    "KXATPMATCH": "tennis_atp_italian_open",  # active 5/11; rotate per tour calendar
+    "KXWTAMATCH": "tennis_wta_italian_open",  # active 5/11; rotate per tour calendar
+    "KXUFCFIGHT": "mma_mixed_martial_arts",   # year-round single endpoint
 }
 SPORT_SHORT = {
     "KXNBAGAME": "NBA",
@@ -57,6 +63,9 @@ SPORT_SHORT = {
     "KXLALIGAGAME": "LAL",
     "KXUCLGAME": "UCL",
     "KXBUNDESLIGAGAME": "BUN",
+    "KXATPMATCH": "ATP",
+    "KXWTAMATCH": "WTA",
+    "KXUFCFIGHT": "UFC",
 }
 
 
