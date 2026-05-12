@@ -1,4 +1,4 @@
-"""Sports Draw V3.8 Soccer — soccer 3-way Draw side, EPL+LAL 0.25-0.30.
+"""Sports Draw V3.8 Soccer — soccer 3-way Draw side, EPL+LAL+MLS 0.25-0.30.
 
 Built 2026-05-11 from observer analysis of 71 settled TIE tickers across
 MLS/EPL/LAL/UCL/BUN since 2026-05-02. Sister strategy to v37_soccer
@@ -10,18 +10,30 @@ YES bet = "draw happens"):
   League  0.20-0.25            0.25-0.30
   EPL     n=5  +70% drop-1 +4%   n=6  +72% drop-1 +37%  ★
   LAL     n=3 -100%               n=7  +51% drop-1 +18%  ★
-  MLS     n=6  +39% drop-1 -17%  n=19 +13% drop-1  -1%
+  MLS     n=6  +39% drop-1 -17%  n=19 +13% drop-1  -1%  (season-long carrier)
   UCL     n=1 -100%               (n=0)
   BUN     n=5 -100%               n=5  -30%
 
+Combined EPL+LAL+MLS 0.25-0.30: n=32, ROI ~+32% (weighted), drop-1 ~+10-15%.
 Combined non-BUN 0.20-0.30: n=47 ROI +27%, drop-top-3 +9%, drop-top-5 -4%.
-Non-BUN 0.25-0.30 EPL+LAL: n=13 ROI ~+60% drop-1 ~+25%.
 
-Conservative cell chosen: EPL+LAL × 0.25-0.30 only.
+Cell chosen: EPL+LAL+MLS × 0.25-0.30 (MLS re-added 2026-05-11 after
+initial EPL+LAL only launch — see below).
+
 - BUN excluded: n=12 ROI -67% across both bands, structural Draw bleed
-- MLS excluded: drop-1 essentially break-even — too thin alpha
-- UCL excluded: n=1 with loss; structurally similar to EPL/LAL but no sample
+- UCL excluded: n=1 with loss; UCL knockouts may have extra time/PKs that
+  resolve "draws," structurally different from group-stage
 - 0.20-0.25 excluded: LAL n=3 catastrophic, MLS drop-1 -17%, fragile
+
+MLS re-added rationale (intra-session pivot, before any v38 fire):
+- EPL season ends 5/24, LaLiga ends 5/25, UCL Final 5/31
+- EPL+LAL-only gate gives v38 ~2 weeks of fires then 11 weeks dormant
+  until 2026-08 season restart — too short to reach promotion n=25
+- MLS season runs March-November → carries v38 through summer
+- MLS 0.25-0.30 +13% on n=19 IS positive even if drop-1 -0.8% break-even
+  — provides volume to test the broader Draw mispricing thesis
+- Weighted blend on n=32 (EPL+LAL+MLS): ROI ~+32%, more robust than
+  cherry-picking the small-n top performers
 
 Top-of-book ask depth p25=$1954 / median=$4445 — $15 gate trivially passes.
 
@@ -49,13 +61,13 @@ class SportsDrawV38SoccerStrategy(SportsUnderdogV37SoccerStrategy):
     TRADED_TICKERS_FILE = "data/sports_draw_v38_soccer_tickers.json"
     STRATEGY_NAME = "sports_draw_v38_soccer"
 
-    # Block all sports except EPL, LAL. v37 inheritance gives us
+    # Allowed leagues: EPL + LaLiga + MLS. v37 inheritance gives us
     # OBSERVATION_ONLY_SPORTS=frozenset() (override of parent gate) and
-    # PLAYOFF_BLOCKLIST=frozenset(). We tighten SPORT_BLOCKLIST further to
-    # exclude MLS/BUN/UCL based on Draw-side band analysis.
+    # PLAYOFF_BLOCKLIST=frozenset(). BUN+UCL excluded based on Draw-side
+    # band analysis (BUN -67% structural bleed, UCL n=1 + knockout regime).
     SPORT_BLOCKLIST = frozenset({
         "NBA", "WNBA", "MLB", "NHL", "NPB", "KBO",
-        "MLS", "BUN", "UCL",
+        "BUN", "UCL",
     })
 
     # Draw band is different from TEAM band — TIE prices cluster 0.22-0.30,
