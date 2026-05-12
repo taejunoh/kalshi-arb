@@ -8,7 +8,7 @@ Strategy gates mirror the actual live-strategy class attributes verified
   - sports_longshot      (V3 baseline, US, no PRE_GAME_ONLY, no DEAD_ZONE)
   - sports_longshot_v31  (eu, PRE_GAME_ONLY, DEAD_ZONE 0.10-0.20)
   - sports_midshot       (V3 baseline, US)
-  - sports_midshot_v31   (eu, PRE_GAME_ONLY, MIN_ENTRY_PRICE 0.20)
+  - sports_midshot_v31   (eu, PRE_GAME_ONLY, MIN_ENTRY_PRICE 0.20, dead_zone 0.25-0.30)
   - sports_underdog      (V3 baseline, US)
   - sports_underdog_v31  (eu, PRE_GAME_ONLY, MIN_ENTRY_PRICE 0.20)
   - sports_underdog_v32  (v31 + edge-scaled sizing — same gate as v31 for replay)
@@ -87,6 +87,7 @@ def replay_midshot(e: dict, *, min_entry_price: float = 0.05,
                    pre_game_only: bool = False,
                    min_payoff: float = 2.5,
                    price_min: float = 0.05, price_max: float = 0.35,
+                   dead_zone: tuple | None = None,
                    base_size: float = 4.0) -> Optional[dict]:
     """Midshot: 5-35¢ + payoff ≥ 2.5x. Tries YES then NO."""
     if pre_game_only and (e.get("minutes_to_start") or 0) <= 0:
@@ -96,6 +97,8 @@ def replay_midshot(e: dict, *, min_entry_price: float = 0.05,
     best_payoff = 0.0
     for side, price in (("yes", yes_ask), ("no", no_ask)):
         if not _clip_price_band(price, max(price_min, min_entry_price), price_max):
+            continue
+        if _in_dead_zone(price, dead_zone):
             continue
         p = _payoff(price)
         if p >= min_payoff and p > best_payoff:
@@ -203,7 +206,8 @@ STRATEGIES = {
         e, dead_zone=(0.10, 0.20), pre_game_only=True, base_size=12.0,
     ),
     "midshot_v31": lambda e: replay_midshot(
-        e, min_entry_price=0.20, pre_game_only=True, base_size=16.0,
+        e, min_entry_price=0.20, dead_zone=(0.25, 0.30),
+        pre_game_only=True, base_size=16.0,
     ),
     "underdog_v31": lambda e: replay_underdog(
         e, min_entry_price=0.20, pre_game_only=True, base_size=20.0,

@@ -24,6 +24,14 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     #   ≥20¢:    ROI positive (+27% at 20-25¢, +27% at 30-35¢)
     # 20¢ simple floor — sub-20¢ loses systematically, no sub-band exception.
     MIN_ENTRY_PRICE = 0.20
+    # 25–30¢ dead zone (2026-05-12). 30d settled trades n=55, ROI −30.6%
+    # (MLB regular −52%, NHL playoff −100%, NBA playoff −2.5% — all sports
+    # negative). Time-series shows 4/20+ entries almost all −100%; 5/8
+    # post-sizeup first $35.84 trade also −100%. Observer last-obs base rate
+    # confirms negative alpha at this band (n=4, 0% win vs 27.5% expected).
+    # Surrounding bands kept: 20-25¢ marginal positive (+8.5%), 30-35¢ strong
+    # carrier (+35.6%). Re-eval 5/25 with bigger post-sizeup n.
+    ENTRY_PRICE_DEAD_ZONE = (0.25, 0.30)
     # Pre-game-only (2026-04-21). Phase split shows live-game v31 entries
     # systematically lose (-6% ROI live, paper+live n=252) while pre-game
     # wins (+25% ROI, n=57). Same pattern confirmed on longshot (2026-04-20)
