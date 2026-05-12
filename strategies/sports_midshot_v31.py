@@ -47,6 +47,11 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     # playoff's 50/50 matchup distribution puts almost no underdogs in the
     # 5-30c sweet spot. Cascades to v34, v35.
     PLAYOFF_BLOCKLIST = frozenset({"NBA", "NHL"})
+    # 2026-05-12 v31 family $2k-10k dead-zone (commit ca971d5 extended).
+    # underdog_v31 n=13 −62%, underdog_v32 n=13 −62%, midshot n=6 −59%.
+    # Combined family n=32 ROI −61% systematic. Cascade not automatic
+    # (midshot doesn't inherit underdog_v31), so set explicitly here.
+    DEPTH_DEAD_ZONE = (2000.0, 10000.0)
 
     def _get_trade_size(self, signal: dict) -> float:
         """Depth-tiered cap (2026-05-12).
@@ -72,7 +77,7 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
         elif depth >= 10000:
             cap = 60.0        # thick book +26% (n=23)
         elif depth >= 2000:
-            cap = 36.0        # mid-thick −59% (sample 6, kept default — see DEPTH_DEAD_ZONE TODO)
+            cap = 36.0        # UNREACHABLE — DEPTH_DEAD_ZONE skips $2k-10k
         elif depth >= 500:
             cap = 60.0        # SWEET SPOT +135% (n=7) — cap raised
         else:
