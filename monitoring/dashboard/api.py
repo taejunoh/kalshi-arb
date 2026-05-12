@@ -720,10 +720,17 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 p_max = getattr(cls, "PRICE_MAX", None)
                 if floor is not None and ceiling is not None:
                     price_gates[name] = {"type": "band", "floor": floor, "ceiling": ceiling}
+                    if dz is not None:
+                        price_gates[name]["dead_zone"] = list(dz)
                 elif floor is not None:
                     price_gates[name] = {"type": "floor", "floor": floor}
+                    if dz is not None:
+                        price_gates[name]["type"] = "floor_with_dead_zone"
+                        price_gates[name]["dead_zone"] = list(dz)
                 elif ceiling is not None:
                     price_gates[name] = {"type": "ceiling", "ceiling": ceiling}
+                    if dz is not None:
+                        price_gates[name]["dead_zone"] = list(dz)
                 elif dz is not None:
                     price_gates[name] = {"type": "dead_zone", "dead_zone": list(dz)}
                 elif p_min is not None and p_max is not None:
