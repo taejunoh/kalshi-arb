@@ -82,6 +82,49 @@ def _matcher_for_series(series: str):
     return None
 
 
+def _name_overlap_score(yes_lc: str, name_lc: str) -> float:
+    """How well does `yes_lc` match `name_lc`?
+
+    Returns a score in [0.0, 1.0]:
+      1.0   = exact (case-insensitive) match
+      0.5-0.99 = token-set subset match (one is a subset of the other);
+                 higher when token-count difference is smaller
+      0.0   = no overlap
+
+    Used by `_individual_yes_is_home` to pick the better side when both
+    home and away token-overlap with `yes_sub_title` (e.g., "Diaz vs Diaz").
+    """
+    if not yes_lc or not name_lc:
+        return 0.0
+    if yes_lc == name_lc:
+        return 1.0
+    yes_tok = set(yes_lc.split())
+    name_tok = set(name_lc.split())
+    if not yes_tok or not name_tok:
+        return 0.0
+    if not (yes_tok.issubset(name_tok) or name_tok.issubset(yes_tok)):
+        return 0.0
+    # Subset match — score by token-count ratio (closer = better)
+    smaller, larger = min(len(yes_tok), len(name_tok)), max(len(yes_tok), len(name_tok))
+    return 0.5 + 0.5 * (smaller / larger)
+
+
+def _individual_yes_is_home(yes_sub_title: str, home_lc: str, away_lc: str) -> Optional[bool]:
+    """Decide which side (home vs away) of the matched game `yes_sub_title`
+    refers to. Returns None if neither side overlaps (defensive — by the
+    time we reach here, the matcher already picked this game).
+
+    For collisions (e.g., "Diaz vs Diaz" where both fighters share a token),
+    pick the side with the higher overlap score. Equal scores → home wins
+    (mirrors the existing soccer fallback).
+    """
+    home_score = _name_overlap_score(yes_sub_title, home_lc)
+    away_score = _name_overlap_score(yes_sub_title, away_lc)
+    if home_score == 0.0 and away_score == 0.0:
+        return None
+    return home_score >= away_score
+
+
 class SportsScanObserver(SportsTraderStrategy):
     """Read-only observer that snapshots consensus + Kalshi prices per scan.
 
@@ -180,17 +223,16 @@ class SportsScanObserver(SportsTraderStrategy):
                 is_yes_draw: Optional[bool] = None
 
                 if series in INDIVIDUAL_SPORT_SERIES:
-                    # Already matched by yes_sub_title; set is_yes_home by
-                    # which side of the matched game corresponds.
-                    home_lc = (matched_game.get("home_team") or "").lower()
-                    yes_tok = set(yes_sub_title.split())
-                    home_tok = set(home_lc.split())
-                    if yes_sub_title == home_lc or (yes_tok and home_tok and (
-                        yes_tok.issubset(home_tok) or home_tok.issubset(yes_tok)
-                    )):
-                        is_yes_home = True
-                    else:
-                        is_yes_home = False
+                    # The matcher already picked the right game; this block
+                    # decides which side (home vs away) yes_sub_title is on.
+                    # Score both sides so common-token collisions (e.g.,
+                    # "Diaz" present in both fighter names) resolve to the
+                    # tighter match rather than defaulting to home.
+                    is_yes_home = _individual_yes_is_home(
+                        yes_sub_title,
+                        (matched_game.get("home_team") or "").lower(),
+                        (matched_game.get("away_team") or "").lower(),
+                    )
                     is_yes_draw = False
                 else:
                     # Three-way leg detection. TIE leg appears in soccer with

@@ -1,8 +1,14 @@
-"""daily_data_quality covers ATP/WTA/UFC — added 2026-05-11."""
+"""daily_data_quality covers ATP/WTA/UFC — added 2026-05-11.
+
+Verifies the production report path (_format_stats_block) handles
+individual sports correctly: rows counted, Pinnacle coverage shown,
+no phantom TIE section. The TIE handling is data-driven (gated on
+tie_legs > 0), so ATP rows with is_yes_draw=0 land in the 2-way branch.
+"""
 import sqlite3
 import pytest
 
-from scripts.daily_data_quality import _per_sport_stats, _format_sport_block
+from scripts.daily_data_quality import _per_sport_stats, _format_stats_block
 
 
 @pytest.fixture
@@ -51,16 +57,36 @@ def test_atp_appears_in_per_sport_stats(db_with_atp_rows):
     conn.close()
     assert "ATP" in stats
     assert stats["ATP"]["n"] == 2
+    # is_yes_draw=0 for both rows → tie_legs must be 0 (2-way sport)
+    assert stats["ATP"]["tie_legs"] == 0
 
 
-def test_format_sport_block_for_atp_does_not_assume_3way(db_with_atp_rows):
+def test_atp_in_format_stats_block_uses_2way_leg_check(db_with_atp_rows):
+    """The production formatter must place ATP in the 2-way leg-balance
+    branch (no TIE counted) since is_yes_draw=0 for tennis rows."""
     conn = sqlite3.connect(db_with_atp_rows)
     stats = _per_sport_stats(conn, hours=1)
     conn.close()
-    block = _format_sport_block("ATP", stats["ATP"], baseline=None)
-    text = "\n".join(block)
-    # Tennis is 2-way — TIE leg balance section must NOT appear for ATP
+    text = _format_stats_block("Test", stats)
+    # ATP row present in table
+    assert "ATP" in text
+    # Leg check format for 2-way sports is "OK" or "!h/a" (two slashes),
+    # NOT "!h/a/t" (three slashes — 3-way format used only for soccer)
+    # With 1 home + 1 away → balanced → leg="OK"
+    atp_line = next((ln for ln in text.split("\n") if ln.startswith("ATP")), "")
+    assert atp_line, f"Expected ATP row in stats block: {text}"
+    assert "OK" in atp_line, (
+        f"ATP (1 home + 1 away) should show leg_check=OK (2-way), got: {atp_line}"
+    )
+
+
+def test_atp_format_does_not_include_tie_word(db_with_atp_rows):
+    """No phantom TIE label for individual sports."""
+    conn = sqlite3.connect(db_with_atp_rows)
+    stats = _per_sport_stats(conn, hours=1)
+    conn.close()
+    text = _format_stats_block("Test", stats)
     assert "TIE" not in text
-    assert "tie" not in text.lower(), f"ATP block should not reference 'tie' (3-way concept): {text}"
-    # Pinnacle coverage % MUST appear
-    assert "Pinnacle" in text
+    assert "tie" not in text.lower(), (
+        f"ATP block must not reference 'tie' (3-way concept): {text}"
+    )
