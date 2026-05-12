@@ -328,6 +328,7 @@ class SportsScanObserver(SportsTraderStrategy):
                         kalshi_no_ask_size=nas,
                         kalshi_volume_24h=vol24,
                         kalshi_open_interest=oi,
+                        tournament_slug=sport_key,
                     )
                 except Exception as e:
                     logger.warning(

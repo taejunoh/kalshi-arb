@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -230,6 +231,92 @@ SPORT_SHORT_BY_TOKEN = {
     "UCLGAME": "UCL", "BUNDESLIGAGAME": "BUN",
     "ATPMATCH": "ATP", "WTAMATCH": "WTA", "UFCFIGHT": "UFC",  # NEW 2026-05-11
 }
+
+# Tennis tournament metadata for cell-expansion analysis. Keys are Odds API
+# endpoint slugs (matches tournament_slug column in odds_observations).
+# Values document tier (GS/M1000/500/250), surface (clay/grass/hard),
+# and match format (BO3/BO5). MMA has no equivalent — UFC card position
+# is not derivable from Odds API alone.
+TENNIS_SLUG_META = {
+    # Grand Slams (Best of 5 for ATP men, Best of 3 for WTA women)
+    "tennis_atp_aus_open_singles":    {"tier": "GS",      "surface": "hard",  "format": "BO5"},
+    "tennis_atp_french_open":         {"tier": "GS",      "surface": "clay",  "format": "BO5"},
+    "tennis_atp_wimbledon":           {"tier": "GS",      "surface": "grass", "format": "BO5"},
+    "tennis_atp_us_open":             {"tier": "GS",      "surface": "hard",  "format": "BO5"},
+    "tennis_wta_aus_open_singles":    {"tier": "GS",      "surface": "hard",  "format": "BO3"},
+    "tennis_wta_french_open":         {"tier": "GS",      "surface": "clay",  "format": "BO3"},
+    "tennis_wta_wimbledon":           {"tier": "GS",      "surface": "grass", "format": "BO3"},
+    "tennis_wta_us_open":             {"tier": "GS",      "surface": "hard",  "format": "BO3"},
+    # ATP Masters 1000 (all BO3)
+    "tennis_atp_indian_wells":        {"tier": "M1000",   "surface": "hard",  "format": "BO3"},
+    "tennis_atp_miami_open":          {"tier": "M1000",   "surface": "hard",  "format": "BO3"},
+    "tennis_atp_monte_carlo_masters": {"tier": "M1000",   "surface": "clay",  "format": "BO3"},
+    "tennis_atp_madrid_open":         {"tier": "M1000",   "surface": "clay",  "format": "BO3"},
+    "tennis_atp_italian_open":        {"tier": "M1000",   "surface": "clay",  "format": "BO3"},
+    "tennis_atp_canadian_open":       {"tier": "M1000",   "surface": "hard",  "format": "BO3"},
+    "tennis_atp_cincinnati_open":     {"tier": "M1000",   "surface": "hard",  "format": "BO3"},
+    "tennis_atp_shanghai_masters":    {"tier": "M1000",   "surface": "hard",  "format": "BO3"},
+    "tennis_atp_paris_masters":       {"tier": "M1000",   "surface": "hard",  "format": "BO3"},
+    # WTA 1000 (all BO3)
+    "tennis_wta_indian_wells":        {"tier": "WTA1000", "surface": "hard",  "format": "BO3"},
+    "tennis_wta_miami_open":          {"tier": "WTA1000", "surface": "hard",  "format": "BO3"},
+    "tennis_wta_madrid_open":         {"tier": "WTA1000", "surface": "clay",  "format": "BO3"},
+    "tennis_wta_italian_open":        {"tier": "WTA1000", "surface": "clay",  "format": "BO3"},
+    "tennis_wta_canadian_open":       {"tier": "WTA1000", "surface": "hard",  "format": "BO3"},
+    "tennis_wta_cincinnati_open":     {"tier": "WTA1000", "surface": "hard",  "format": "BO3"},
+    "tennis_wta_china_open":          {"tier": "WTA1000", "surface": "hard",  "format": "BO3"},
+    "tennis_wta_wuhan_open":          {"tier": "WTA1000", "surface": "hard",  "format": "BO3"},
+    # ATP 500 / 250 + smaller WTA — populate as encountered. For now in-scope:
+    "tennis_atp_barcelona_open":      {"tier": "ATP500",  "surface": "clay",  "format": "BO3"},
+    "tennis_atp_dubai":               {"tier": "ATP500",  "surface": "hard",  "format": "BO3"},
+    "tennis_atp_qatar_open":          {"tier": "ATP500",  "surface": "hard",  "format": "BO3"},
+    "tennis_atp_munich":              {"tier": "ATP250",  "surface": "clay",  "format": "BO3"},
+    "tennis_atp_china_open":          {"tier": "ATP500",  "surface": "hard",  "format": "BO3"},
+    "tennis_wta_charleston_open":     {"tier": "WTA500",  "surface": "clay",  "format": "BO3"},
+    "tennis_wta_stuttgart_open":      {"tier": "WTA500",  "surface": "clay",  "format": "BO3"},
+    "tennis_wta_dubai":               {"tier": "WTA500",  "surface": "hard",  "format": "BO3"},
+    "tennis_wta_qatar_open":          {"tier": "WTA500",  "surface": "hard",  "format": "BO3"},
+}
+
+# Regex for extracting round from a Kalshi tennis market title.
+# Titles follow: "Will <player> win the <Last1> vs <Last2>: <Round> match?"
+_TENNIS_ROUND_RE = re.compile(
+    r":\s*(Round Of \d+|Quarterfinal|Semifinal|Final)\s*match\?",
+    re.IGNORECASE,
+)
+
+
+def parse_tennis_round(kalshi_title: str) -> Optional[str]:
+    """Extract round name from a tennis Kalshi market title.
+
+    Tennis Kalshi titles follow the pattern:
+        "Will <player> win the <Last1> vs <Last2>: <Round> match?"
+    where <Round> is "Round Of 128/64/32/16", "Quarterfinal",
+    "Semifinal", or "Final".
+
+    Returns a normalized round code: "R128", "R64", "R32", "R16",
+    "QF", "SF", "F", or None if no round token matches.
+    """
+    if not kalshi_title:
+        return None
+    m = _TENNIS_ROUND_RE.search(kalshi_title)
+    if not m:
+        return None
+    raw = m.group(1).strip().lower()
+    if raw.startswith("round of "):
+        try:
+            n = int(raw.split()[-1])
+            return f"R{n}"
+        except ValueError:
+            return None
+    if raw == "quarterfinal":
+        return "QF"
+    if raw == "semifinal":
+        return "SF"
+    if raw == "final":
+        return "F"
+    return None
+
 
 # Sports whose Pinnacle h2h market includes a "Draw" outcome. Probability
 # helpers normalize home + away + draw to sum=1 for these.

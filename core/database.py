@@ -248,6 +248,10 @@ class Database:
             await self._add_column_if_missing(conn, "odds_observations", "kalshi_no_ask_size", "REAL")
             await self._add_column_if_missing(conn, "odds_observations", "kalshi_volume_24h", "REAL")
             await self._add_column_if_missing(conn, "odds_observations", "kalshi_open_interest", "REAL")
+            # Odds API endpoint slug at scan time (2026-05-11). Enables
+            # differentiation of Italian Open (clay M1000) from French Open
+            # (clay GS BO5) etc. — both appear with sport=ATP otherwise.
+            await self._add_column_if_missing(conn, "odds_observations", "tournament_slug", "TEXT")
             await self._add_column_if_missing(conn, "clv_snapshots", "us_consensus_prob", "REAL")
             await self._add_column_if_missing(conn, "trades", "realized_fill_price", "REAL")
             await self._add_column_if_missing(conn, "clv_snapshots", "eu_consensus_prob", "REAL")
@@ -875,6 +879,7 @@ class Database:
         kalshi_no_ask_size: Optional[float] = None,
         kalshi_volume_24h: Optional[float] = None,
         kalshi_open_interest: Optional[float] = None,
+        tournament_slug: Optional[str] = None,
     ):
         now = datetime.now(timezone.utc).isoformat()
         playoff = is_playoff(kalshi_ticker, now)
@@ -894,9 +899,10 @@ class Database:
                     kalshi_yes_bid, kalshi_no_bid,
                     kalshi_yes_bid_size, kalshi_yes_ask_size,
                     kalshi_no_bid_size, kalshi_no_ask_size,
-                    kalshi_volume_24h, kalshi_open_interest)
+                    kalshi_volume_24h, kalshi_open_interest,
+                    tournament_slug)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (now, kalshi_ticker, series, sport, phase, minutes_to_start,
                  home_team, away_team, yes_sub_title, is_yes_home_int, is_yes_draw_int,
                  kalshi_yes_ask, kalshi_no_ask,
@@ -906,7 +912,8 @@ class Database:
                  kalshi_yes_bid, kalshi_no_bid,
                  kalshi_yes_bid_size, kalshi_yes_ask_size,
                  kalshi_no_bid_size, kalshi_no_ask_size,
-                 kalshi_volume_24h, kalshi_open_interest),
+                 kalshi_volume_24h, kalshi_open_interest,
+                 tournament_slug),
             )
             await conn.commit()
 
