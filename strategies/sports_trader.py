@@ -95,7 +95,7 @@ def _parse_kalshi_ticker_datetime(ticker: str) -> Optional[datetime]:
     series (NHL/NBA playoff best-of-7, MLB 3-game home stands) where
     the odds API returns multiple commence_times for the same matchup."""
     import re
-    m = re.match(r"^KX[A-Z]+GAME-(\d{2})([A-Z]{3})(\d{2})(\d{4})?", ticker or "")
+    m = re.match(r"^KX[A-Z]+-(\d{2})([A-Z]{3})(\d{2})(\d{4})?", ticker or "")
     if not m:
         return None
     yy, mmm, dd, hhmm = m.groups()
@@ -114,6 +114,69 @@ def _parse_kalshi_ticker_datetime(ticker: str) -> Optional[datetime]:
         return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
     except (ValueError, KeyError):
         return None
+
+
+def _match_individual_sport_to_odds(
+    yes_sub_title: str,
+    odds_games: list[dict],
+    kalshi_ticker: Optional[str] = None,
+) -> Optional[dict]:
+    """Match a Kalshi individual-sport market to Odds API game data.
+
+    Kalshi yes_sub_title is the full player/fighter name (e.g.,
+    'Carlos Alcaraz', 'Jeremiah Wells'). Match by:
+      1. Exact (case-insensitive) match against home_team or away_team
+      2. Token-overlap fallback: every space-token of the SHORTER name must
+         appear in the LONGER name (handles 'Carlos Alcaraz' vs
+         'Carlos Alcaraz Garfia' both directions)
+
+    When the same player has multiple matches on different dates, the
+    kalshi_ticker date disambiguates — same logic as _match_kalshi_to_odds.
+    """
+    if not yes_sub_title or not odds_games:
+        return None
+    yes_lc = yes_sub_title.strip().lower()
+    if not yes_lc:
+        return None
+    yes_tokens = set(yes_lc.split())
+
+    def _name_matches(odds_name: str) -> bool:
+        if not odds_name:
+            return False
+        on_lc = odds_name.strip().lower()
+        if on_lc == yes_lc:
+            return True
+        on_tokens = set(on_lc.split())
+        if not on_tokens:
+            return False
+        if len(yes_tokens) <= len(on_tokens):
+            return yes_tokens.issubset(on_tokens)
+        return on_tokens.issubset(yes_tokens)
+
+    candidates = [
+        g for g in odds_games
+        if _name_matches(g.get("home_team") or "")
+        or _name_matches(g.get("away_team") or "")
+    ]
+    if not candidates:
+        return None
+    if len(candidates) == 1 or not kalshi_ticker:
+        return candidates[0]
+    ticker_dt = _parse_kalshi_ticker_datetime(kalshi_ticker)
+    if not ticker_dt:
+        return candidates[0]
+
+    def _delta_seconds(g: dict) -> float:
+        ct = g.get("commence_time")
+        if not ct:
+            return float("inf")
+        try:
+            game_dt = datetime.fromisoformat(ct.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return float("inf")
+        return abs((game_dt - ticker_dt).total_seconds())
+
+    return min(candidates, key=_delta_seconds)
 
 
 def _odds_cache_ttl(region: str) -> float:
