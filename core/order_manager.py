@@ -69,6 +69,19 @@ LIMIT_AGGRESSION_CENTS_BY_STRATEGY = {
     "sports_midshot_v31": 25,
     "sports_underdog_v36_playoff": 25,
     "sports_underdog_v36_us": 25,
+    # 2026-05-11 v37 unfilled analysis: 2/17 paper trades did not fill live.
+    # Paper-only cohort: 1W (+$18.61 ATMRCC) / 1L (-$8.00 SEVESP) = +$10.61
+    # net, explains 87% of live-vs-paper $10.38 gap. Not the unanimous
+    # 100% paper-win signal that other 25c overrides had — applied based on
+    # user judgment that the structural pattern (60s TTL leaving alpha) likely
+    # repeats. Re-eval at ~2026-05-25 with more data.
+    "sports_underdog_v37_soccer": 25,
+    # 2026-05-11 launch-time defensive override. v38 inherits v37's
+    # execution mechanics (same MAX_MTS_AT_ENTRY, same depth gate, same
+    # 0.25-0.30 band). No v38 fills yet to measure unfilled-cohort
+    # directly, but if v37 leaks alpha through 15c ceiling at this band,
+    # v38 likely does too. Re-eval at ~2026-05-25 alongside v37.
+    "sports_draw_v38_soccer": 25,
 }
 
 
