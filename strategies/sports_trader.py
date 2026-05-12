@@ -387,6 +387,11 @@ class SportsTraderStrategy:
                  # on women's basketball historically thinner than men's.
         "NPB", "KBO",
         "MLS", "EPL", "LAL", "UCL", "BUN",
+        # 2026-05-11: Individual-sport observers. ATP/WTA tennis + UFC MMA.
+        # 14-day data window → promotion_eval bucket-replay decides archetype
+        # (longshot 5-25¢ / underdog 25-39¢ / mid-fav 39-75¢ / chalk 75+).
+        # No strategy file yet — that's the follow-up spec.
+        "ATP", "WTA", "UFC",
     })
     # Minimum bookmaker count required in the consensus before evaluating a
     # signal. None = no gate (legacy behavior). Recommended for newly-added
