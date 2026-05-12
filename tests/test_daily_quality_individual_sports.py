@@ -61,6 +61,6 @@ def test_format_sport_block_for_atp_does_not_assume_3way(db_with_atp_rows):
     text = "\n".join(block)
     # Tennis is 2-way — TIE leg balance section must NOT appear for ATP
     assert "TIE" not in text
-    assert "tie" not in text.lower() or "tiebreaker" in text.lower()  # allow "tiebreaker" if used somewhere
+    assert "tie" not in text.lower(), f"ATP block should not reference 'tie' (3-way concept): {text}"
     # Pinnacle coverage % MUST appear
     assert "Pinnacle" in text
