@@ -3,9 +3,10 @@
 Verifies 4-archetype bucket boundaries and per-bucket replay computation
 (n, win-rate, ROI) for synthetic ATP entries.
 
-Field-name note: _load_entries produces entries with `result` ('yes'/'no')
-not `settled_yes` (0/1).  _replay_archetype_buckets reads `result` directly.
-Synthetic test entries use `result: 'yes'/'no'` to match the actual schema.
+Field-name note: _load_entries produces entries with `yes_ask`, `eu_prob`,
+and `result` ('yes'/'no') — NOT `kalshi_yes_ask`/`eu_yes_prob`/`settled_yes`.
+_replay_archetype_buckets reads these field names directly.
+Synthetic test entries use the same schema to match real _load_entries output.
 """
 import pytest
 
@@ -46,15 +47,15 @@ def test_replay_archetype_buckets_computes_per_bucket_stats():
     """Synthetic entries: 3 longshot wins, 1 longshot loss; 2 underdog losses.
 
     Uses `result: 'yes'/'no'` to match the actual schema from _load_entries.
-    The eu_yes_prob >= ask + 0.05 gate is satisfied for all entries here.
+    The eu_prob >= ask + 0.05 gate is satisfied for all entries here.
     """
     entries = [
-        {"kalshi_yes_ask": 0.10, "eu_prob": 0.20, "result": "yes"},
-        {"kalshi_yes_ask": 0.12, "eu_prob": 0.25, "result": "yes"},
-        {"kalshi_yes_ask": 0.15, "eu_prob": 0.22, "result": "yes"},
-        {"kalshi_yes_ask": 0.20, "eu_prob": 0.30, "result": "no"},
-        {"kalshi_yes_ask": 0.30, "eu_prob": 0.40, "result": "no"},
-        {"kalshi_yes_ask": 0.35, "eu_prob": 0.45, "result": "no"},
+        {"yes_ask": 0.10, "eu_prob": 0.20, "result": "yes"},
+        {"yes_ask": 0.12, "eu_prob": 0.25, "result": "yes"},
+        {"yes_ask": 0.15, "eu_prob": 0.22, "result": "yes"},
+        {"yes_ask": 0.20, "eu_prob": 0.30, "result": "no"},
+        {"yes_ask": 0.30, "eu_prob": 0.40, "result": "no"},
+        {"yes_ask": 0.35, "eu_prob": 0.45, "result": "no"},
     ]
     out = _replay_archetype_buckets(entries, n_boot=100)
     longshot = out["longshot"]
