@@ -132,6 +132,7 @@ SPORTS_SERIES = [
     "KXNBAGAME", "KXWNBAGAME", "KXMLBGAME", "KXNHLGAME",
     "KXNPBGAME", "KXKBOGAME",
     "KXMLSGAME", "KXEPLGAME", "KXLALIGAGAME", "KXUCLGAME", "KXBUNDESLIGAGAME",
+    "KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT",  # NEW 2026-05-11 — individual-sport h2h match markets
 ]
 
 # Game-suffix tokens used to extract a sport short code from a ticker.
@@ -151,6 +152,7 @@ SPORT_GAME_TOKENS = (
     "NBAGAME", "MLBGAME", "NHLGAME",
     "NPBGAME", "KBOGAME",
     "MLSGAME", "EPLGAME", "LALIGAGAME", "UCLGAME", "BUNDESLIGAGAME",
+    "ATPMATCH", "WTAMATCH", "UFCFIGHT",  # NEW 2026-05-11 — individual-sport h2h
 )
 
 # Token → short sport code. Most tokens use the first 3 chars (NBA, MLB, NHL,
@@ -163,6 +165,7 @@ SPORT_SHORT_BY_TOKEN = {
     "NPBGAME": "NPB", "KBOGAME": "KBO",
     "MLSGAME": "MLS", "EPLGAME": "EPL", "LALIGAGAME": "LAL",
     "UCLGAME": "UCL", "BUNDESLIGAGAME": "BUN",
+    "ATPMATCH": "ATP", "WTAMATCH": "WTA", "UFCFIGHT": "UFC",  # NEW 2026-05-11
 }
 
 # Sports whose Pinnacle h2h market includes a "Draw" outcome. Probability
