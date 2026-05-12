@@ -141,14 +141,14 @@ def _replay_archetype_buckets(entries: list[dict], n_boot: int = 1000) -> dict:
     """Replay synthetic 'buy YES if eu_prob >= yes_ask + ARCHETYPE_EDGE_GATE'
     across 4 archetype buckets.
 
-    Field-name note: entries produced by _load_entries use `kalshi_yes_ask`
+    Field-name note: entries produced by _load_entries use `yes_ask`
     (float), `eu_prob` (float), and `result` ('yes'/'no') — NOT `settled_yes`.
     _replay_archetype_buckets reads these actual field names so it works
     correctly both with live entries from _load_entries and with synthetic
     test entries that use the same schema.
 
     Each entry must have:
-      kalshi_yes_ask (float), eu_prob (float), result ('yes'|'no')
+      yes_ask (float), eu_prob (float), result ('yes'|'no')
 
     Returns dict[label] = {n, wins, roi, ci_lo, ci_hi}. ROI is
     contracts-equivalent (win pays (1-ask)/ask, lose pays -1).
@@ -157,10 +157,10 @@ def _replay_archetype_buckets(entries: list[dict], n_boot: int = 1000) -> dict:
     for lo, hi, label in ARCHETYPE_BUCKETS:
         bucket_entries = [
             e for e in entries
-            if e.get("kalshi_yes_ask") is not None
-            and lo <= e["kalshi_yes_ask"] < hi
+            if e.get("yes_ask") is not None
+            and lo <= e["yes_ask"] < hi
             and e.get("eu_prob") is not None
-            and e["eu_prob"] >= e["kalshi_yes_ask"] + ARCHETYPE_EDGE_GATE
+            and e["eu_prob"] >= e["yes_ask"] + ARCHETYPE_EDGE_GATE
             and e.get("result") in ("yes", "no")
         ]
         n = len(bucket_entries)
@@ -169,7 +169,7 @@ def _replay_archetype_buckets(entries: list[dict], n_boot: int = 1000) -> dict:
             continue
         wins = sum(1 for e in bucket_entries if e["result"] == "yes")
         rois = [
-            ((1.0 - e["kalshi_yes_ask"]) / e["kalshi_yes_ask"])
+            ((1.0 - e["yes_ask"]) / e["yes_ask"])
             if e["result"] == "yes" else -1.0
             for e in bucket_entries
         ]
