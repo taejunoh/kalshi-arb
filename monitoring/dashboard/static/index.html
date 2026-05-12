@@ -1302,6 +1302,7 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     const v36Strats = new Set(['sports_underdog_v36_playoff', 'sports_underdog_v36_us']);
     const v37Strats = new Set(['sports_underdog_v37_soccer']);
     const v38Strats = new Set(['sports_draw_v38_soccer']);
+    const v40Strats = new Set(['sports_favorite_v40']);
     const v4Strats = new Set(['sports_pinnacle_edge', 'sports_v4_edge', 'sports_consolidated']);
     let versionBadge = '';
     if (v3Strats.has(strat)) versionBadge = '<span class="version-badge v3">V3</span>';
@@ -1313,6 +1314,7 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     else if (v36Strats.has(strat)) versionBadge = '<span class="version-badge v36">V3.6</span>';
     else if (v37Strats.has(strat)) versionBadge = '<span class="version-badge v37">V3.7</span>';
     else if (v38Strats.has(strat)) versionBadge = '<span class="version-badge v38">V3.8</span>';
+    else if (v40Strats.has(strat)) versionBadge = '<span class="version-badge v40">V4.0</span>';
     else if (v4Strats.has(strat)) versionBadge = '<span class="version-badge v4">V4</span>';
 
     return `

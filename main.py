@@ -36,6 +36,7 @@ from strategies.sports_underdog_v36_playoff import SportsUnderdogV36PlayoffStrat
 from strategies.sports_underdog_v36_us import SportsUnderdogV36USStrategy
 from strategies.sports_underdog_v37_soccer import SportsUnderdogV37SoccerStrategy
 from strategies.sports_draw_v38_soccer import SportsDrawV38SoccerStrategy
+from strategies.sports_favorite_v40 import SportsFavoriteV40Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
@@ -184,6 +185,14 @@ class Bot:
         # ~+25%. Non-BUN 0.20-0.30 sample n=47, ROI +27%, drop-3 +9%.
         # LIVE at launch (size 12). Eval gate: n>=25, ROI>=+30%, drop-3>0 by ~6/22.
         self.sports_draw_v38_soccer = SportsDrawV38SoccerStrategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # V4.0 Favorite — slight-favorite YES/NO bets on MLB 0.50-0.55 +
+        # NPB 0.55-0.65. Built 2026-05-12 from observer scan. MLB n=65 +8%,
+        # NPB n=28 +13%. First non-underdog/non-longshot/non-midshot family.
+        # PAPER-ONLY size 4 at launch. Drop-top-5 break-even — needs n=120+ for
+        # robust read. Promotion gate ROI>=+5% + drop-5>0 by ~6/9.
+        self.sports_favorite_v40 = SportsFavoriteV40Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
@@ -461,6 +470,8 @@ class Bot:
             ("sports_underdog_v37_soccer", self.sports_underdog_v37_soccer),
             # V3.8 Soccer Draw — DRAW side, EPL+LAL 0.25-0.30 YES only.
             ("sports_draw_v38_soccer", self.sports_draw_v38_soccer),
+            # V4.0 Favorite — MLB 0.50-0.55 + NPB 0.55-0.65 paper-only.
+            ("sports_favorite_v40", self.sports_favorite_v40),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
             # -37.5% ROI. Freshness gate was added 2026-04-16 (80ad42e) but
             # only a handful of post-gate entries accumulated before shutdown;
