@@ -88,12 +88,14 @@ class SportsUnderdogV37SoccerStrategy(SportsUnderdogV31Strategy):
           tier5 ($2000-10k, cap 24): cushion ≥287× — sweet spot, cap raised 3×
         """
         ticker = signal.get("ticker", "")
-        try:
-            yd, nd = self._client.get_order_book_depth(ticker)
-        except Exception:
-            yd, nd = None, None
-        side = signal["side"]
-        depth = yd if side == "yes" else nd
+        side = signal.get("side", "yes")
+        depth = None
+        if ticker:
+            try:
+                yd, nd = self._client.get_order_book_depth(ticker)
+                depth = yd if side == "yes" else nd
+            except Exception:
+                pass
         if depth is None:
             cap = 8.0  # fallback to pre-tier cap
         elif depth >= 2000:

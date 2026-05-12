@@ -637,6 +637,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         sport_phases_map: dict = {}
         base_sizes: dict = {}
         min_depths: dict = {}
+        max_depths: dict = {}
         try:
             from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
             from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
@@ -773,6 +774,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 except Exception:
                     base_sizes[name] = None
                 min_depths[name] = float(getattr(cls, "MIN_DEPTH_USDC", 0) or 0)
+                # MAX_DEPTH_USDC gate (2026-05-12). Thick-book block.
+                max_d = getattr(cls, "MAX_DEPTH_USDC", None)
+                if max_d is not None:
+                    max_depths[name] = float(max_d)
         except Exception:
             pass  # best-effort — missing gate info shouldn't break the endpoint
 
@@ -833,7 +838,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                          "allowed_cells": allowed_cells.get(s),
                          "sport_phases": sport_phases_map.get(s),
                          "base_size": base_sizes.get(s),
-                         "min_depth": min_depths.get(s)}
+                         "min_depth": min_depths.get(s),
+                         "max_depth": max_depths.get(s)}
         return result
 
     @app.get("/api/settlement-history")
