@@ -141,6 +141,13 @@ def get_starters(sport: str, date_str: str, home_team: str, away_team: str) -> t
 
     `sport` is "MLB" or "NHL". Other sports return (None, None).
     Team names are matched case-insensitively against the API's team-name fields.
+
+    Home/away mismatch handling: NHL playoff series alternate venues, and
+    Odds API may label a team as "home" differently than NHL Stats API on
+    the same date (the latter reflects actual venue). When the (home, away)
+    direct lookup misses, try (away, home) and swap the returned starters
+    so the caller still receives (home_starter, away_starter) by their
+    own home/away convention.
     """
     if sport not in ("MLB", "NHL"):
         return (None, None)
@@ -152,7 +159,16 @@ def get_starters(sport: str, date_str: str, home_team: str, away_team: str) -> t
             _CACHE[cache_key] = _fetch_nhl_starters(date_str)
         _CACHE_TIMESTAMPS[cache_key] = time.time()
     day_map = _CACHE.get(cache_key, {})
-    return day_map.get((home_team.lower(), away_team.lower()), (None, None))
+    home_lc = home_team.lower()
+    away_lc = away_team.lower()
+    if (home_lc, away_lc) in day_map:
+        return day_map[(home_lc, away_lc)]
+    # Try the reversed orientation — the API's home/away may differ from
+    # the caller's. If a hit, swap so caller's home gets caller's starter_home.
+    if (away_lc, home_lc) in day_map:
+        api_home_starter, api_away_starter = day_map[(away_lc, home_lc)]
+        return (api_away_starter, api_home_starter)
+    return (None, None)
 
 
 def invalidate_cache() -> None:
