@@ -1365,10 +1365,22 @@ class SportsTraderStrategy:
                 # Match to odds data
                 matched_game = self._match_kalshi_to_odds(title, odds_games, kalshi_ticker=ticker)
                 if not matched_game:
+                    # DEBUG 2026-05-12: trace soccer pipeline silence
+                    if self.STRATEGY_NAME in ("sports_underdog_v37_soccer", "sports_draw_v38_soccer"):
+                        logger.info(
+                            f"[DEBUG-SOCCER] {self.STRATEGY_NAME} {ticker}: "
+                            f"match_failed title={title[:50]!r} odds_games_count={len(odds_games)}"
+                        )
                     continue
 
                 consensus = self._consensus_probability(matched_game)
                 if not consensus:
+                    # DEBUG 2026-05-12: trace soccer pipeline silence
+                    if self.STRATEGY_NAME in ("sports_underdog_v37_soccer", "sports_draw_v38_soccer"):
+                        logger.info(
+                            f"[DEBUG-SOCCER] {self.STRATEGY_NAME} {ticker}: "
+                            f"no_consensus matched_keys={list(matched_game.keys())[:5]}"
+                        )
                     continue
                 # Coverage gate: thin consensus (e.g., 2-3 books) is noisier
                 # than its numeric value implies. Skip when below the
