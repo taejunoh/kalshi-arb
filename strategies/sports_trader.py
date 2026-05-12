@@ -1297,6 +1297,13 @@ class SportsTraderStrategy:
             except Exception as e:
                 logger.error(f"Failed to fetch {series}: {e}")
                 continue
+            # DEBUG 2026-05-12: trace per-series market count for soccer strategies
+            if self.STRATEGY_NAME in ("sports_underdog_v37_soccer", "sports_draw_v38_soccer"):
+                if series in ("KXLALIGAGAME", "KXMLSGAME", "KXEPLGAME", "KXBUNDESLIGAGAME", "KXUCLGAME"):
+                    logger.info(
+                        f"[DEBUG-SOCCER-FETCH] {self.STRATEGY_NAME} series={series}: "
+                        f"markets_fetched={len(markets)} odds_games={len(all_odds.get(series, []))}"
+                    )
 
             odds_games = all_odds.get(series, [])
             for market in markets:
