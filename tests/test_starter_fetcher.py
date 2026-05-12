@@ -153,6 +153,54 @@ def test_nhl_returns_goalies_from_landing(monkeypatch):
     assert a == "Ukko-Pekka Luukkonen"
 
 
+def test_reversed_home_away_lookup_swaps_result(monkeypatch):
+    """NHL playoff: Odds API may have home=Wild, away=Avalanche, but the
+    NHL Stats API for the same date has home=Avalanche, away=Wild (actual
+    venue). get_starters must still return (wild_starter, avalanche_starter)
+    by the caller's convention."""
+    sched_resp = MagicMock()
+    sched_resp.raise_for_status = lambda: None
+    sched_resp.json = lambda: {
+        "gameWeek": [{
+            "date": "2026-05-13",
+            "games": [{
+                "id": 2025030235,
+                "homeTeam": {"placeName": {"default": "Colorado"},
+                             "commonName": {"default": "Avalanche"}},
+                "awayTeam": {"placeName": {"default": "Minnesota"},
+                             "commonName": {"default": "Wild"}},
+            }],
+        }],
+    }
+    landing_resp = MagicMock()
+    landing_resp.status_code = 200
+    landing_resp.json = lambda: {
+        "matchup": {
+            "goalieComparison": {
+                "homeTeam": {"leaders": [{
+                    "firstName": {"default": "Scott"},
+                    "lastName": {"default": "Wedgewood"},
+                }]},
+                "awayTeam": {"leaders": [{
+                    "firstName": {"default": "Jesper"},
+                    "lastName": {"default": "Wallstedt"},
+                }]},
+            },
+        },
+    }
+    def fake_get(url, *a, **k):
+        return sched_resp if "schedule" in url else landing_resp
+    with patch("core.starter_fetcher.httpx.get", side_effect=fake_get):
+        # Caller (Odds API): home=Wild, away=Avalanche (opposite of NHL API)
+        h, a = get_starters(
+            "NHL", "2026-05-13", "Minnesota Wild", "Colorado Avalanche",
+        )
+    # Caller's home (Wild) is NHL API's away → should get away-side
+    # starter (Wallstedt). Caller's away should get home-side (Wedgewood).
+    assert h == "Jesper Wallstedt"
+    assert a == "Scott Wedgewood"
+
+
 def test_nhl_empty_leaders_returns_none(monkeypatch):
     sched_resp = MagicMock()
     sched_resp.raise_for_status = lambda: None
