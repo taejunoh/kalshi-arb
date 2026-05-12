@@ -452,6 +452,15 @@ class SportsTraderStrategy:
     REGION_OVERRIDE: Optional[str] = None  # subclass can pin a specific Odds API region
     SCAN_INTERVAL_OVERRIDE: Optional[float] = None  # subclass can override scan cadence (us retail books tick faster)
     MIN_DEPTH_USDC = 0.0  # Subclasses override to enforce orderbook depth before market order
+    # Thin-book early-fire gate (2026-05-11). Skip when (mts >= threshold)
+    # AND (book depth < threshold). Mechanism: trades placed >=12h before
+    # game start with book depth <$500 USD show consistent loss across
+    # underdog family — Kalshi price hasn't found consensus yet that early
+    # on thin books. Both attrs must be set; None disables. Enabled in
+    # sports_underdog.py base only (cascades v31-v35); v36/v37/v38 inherit
+    # but never trigger (deeper books or MAX_MTS_AT_ENTRY caps).
+    THIN_BOOK_EARLY_GATE_MTS_MIN_MINUTES: Optional[float] = None
+    THIN_BOOK_EARLY_GATE_DEPTH_MAX_USDC: Optional[float] = None
     # Minimum entry price (0–1). Used by variants whose paper-settled data
     # shows a structural dead zone below some floor (e.g. underdog/midshot
     # v31 at sub-20¢: 0% win on 27/36 trades). Subclasses set to e.g. 0.20;
@@ -1524,6 +1533,23 @@ class SportsTraderStrategy:
                         f"on {signal['side']}, skip"
                     )
                     continue
+
+                # Thin-book early-fire gate (2026-05-11). Drop trades placed
+                # too early on thin books — consensus hasn't formed yet.
+                # See THIN_BOOK_EARLY_GATE_* attrs above for rationale.
+                if (self.THIN_BOOK_EARLY_GATE_MTS_MIN_MINUTES is not None
+                        and self.THIN_BOOK_EARLY_GATE_DEPTH_MAX_USDC is not None):
+                    mts_te = _commence_time_to_minutes(matched_game.get("commence_time"))
+                    if mts_te is not None and mts_te >= self.THIN_BOOK_EARLY_GATE_MTS_MIN_MINUTES:
+                        yes_depth, no_depth = self._client.get_order_book_depth(ticker)
+                        side_depth = yes_depth if signal["side"] == "yes" else no_depth
+                        if side_depth is not None and side_depth < self.THIN_BOOK_EARLY_GATE_DEPTH_MAX_USDC:
+                            logger.debug(
+                                f"[{self.STRATEGY_NAME}] {ticker}: thin-book early gate "
+                                f"(mts={mts_te:.0f}min ≥ {self.THIN_BOOK_EARLY_GATE_MTS_MIN_MINUTES:.0f}, "
+                                f"depth=${side_depth:.0f} < ${self.THIN_BOOK_EARLY_GATE_DEPTH_MAX_USDC:.0f}), skip"
+                            )
+                            continue
 
                 limit_price = self._get_limit_price(signal, fair_prob)
                 limit_price = max(0.01, min(0.99, limit_price))
