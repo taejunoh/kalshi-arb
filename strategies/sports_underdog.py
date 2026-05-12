@@ -18,6 +18,14 @@ class SportsUnderdogStrategy(SportsTraderStrategy):
     STRATEGY_NAME = "sports_underdog"
     REGION_OVERRIDE = "us"  # V3 baseline stays on US retail books for continuity
     SCAN_INTERVAL_OVERRIDE = 120.0  # us retail books tick 60-90s; 120s scan captures movement
+    # 2026-05-11: Thin-book early-fire gate. Drops trades placed >=12h
+    # before game with book depth <$500 USD. Empirical 4/15-5/11 across
+    # underdog family: 12-24h × <500 ROI -100%, >24h × <500 ROI -250%.
+    # Cascades to v31, v32, v34, v35, v36_*, v37, v38; only v31/v32/v34
+    # actually drop trades (1-3 each) in current data; v36/v37/v38 inherit
+    # but their universes have deeper books → 0 drops.
+    THIN_BOOK_EARLY_GATE_MTS_MIN_MINUTES = 720.0  # 12 hours
+    THIN_BOOK_EARLY_GATE_DEPTH_MAX_USDC = 500.0
 
     def __init__(self, config, order_manager, kalshi_client):
         super().__init__(config, order_manager, kalshi_client)
