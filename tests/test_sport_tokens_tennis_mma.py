@@ -52,3 +52,18 @@ def test_no_substring_collision_in_sport_game_tokens():
                 f"Token order bug: '{ti}' at position {i} is substring of '{tj}' "
                 f"at later position — first-match extraction would misclassify"
             )
+
+
+from strategies.sports_trader import SportsTraderStrategy
+
+
+def test_atp_is_observation_only():
+    assert "ATP" in SportsTraderStrategy.OBSERVATION_ONLY_SPORTS
+
+
+def test_wta_is_observation_only():
+    assert "WTA" in SportsTraderStrategy.OBSERVATION_ONLY_SPORTS
+
+
+def test_ufc_is_observation_only():
+    assert "UFC" in SportsTraderStrategy.OBSERVATION_ONLY_SPORTS
