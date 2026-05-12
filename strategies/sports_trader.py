@@ -1460,6 +1460,14 @@ class SportsTraderStrategy:
                 signal = self.evaluate(ya, na, fair_prob,
                                        line_movement=line_movement, home_adj=home_adj,
                                        ticker=ticker)
+                # DEBUG 2026-05-12: log soccer evaluate results
+                if self.STRATEGY_NAME in ("sports_underdog_v37_soccer", "sports_draw_v38_soccer"):
+                    if "KXLALIGAGAME" in ticker or "KXMLSGAME" in ticker or "KXEPLGAME" in ticker:
+                        sig_repr = f"side={signal['side']} price={signal['price']} payoff={signal['edge']:.2f}" if signal else "None"
+                        logger.info(
+                            f"[DEBUG-SOCCER-EVAL] {self.STRATEGY_NAME} {ticker}: "
+                            f"ya={ya:.3f} na={na:.3f} signal={sig_repr}"
+                        )
                 if not signal:
                     continue
 
