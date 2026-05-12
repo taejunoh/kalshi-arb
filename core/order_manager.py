@@ -295,6 +295,37 @@ class OrderManager:
 
     # ── Order execution ────────────────────────────────────────────
 
+    def _alert_dispatch_failure(
+        self, *, strategy: str, ticker: str, side: str,
+        order_id: str, filled_count: int, size_usdc: float, price: float,
+        error: str,
+    ) -> None:
+        """Fire critical alert when record_trade fails after a Kalshi
+        fill — orphan order risk. Built 2026-05-11 after 5/9 v37 incident
+        where 2 trades (ATMRCC + SEVESP) filled on Kalshi but DB writes
+        failed with 'database is locked', leaving no trade records. Without
+        this alert, the issue wasn't discovered for 2+ days.
+        """
+        if not self._notifier:
+            return
+        text = (
+            f"🚨 <b>ORPHAN ORDER RISK: record_trade failed after fill</b>\n"
+            f"Strategy: {strategy}\n"
+            f"Market: {ticker}\n"
+            f"Side: {side} | Filled: {filled_count} contracts | "
+            f"Signal: ${size_usdc:.2f} @ {price:.3f}\n"
+            f"Kalshi order_id: {order_id}\n"
+            f"Error: {error}\n"
+            f"<b>Manual reconciliation needed</b>: check Kalshi fills "
+            f"vs trades table for this ticker."
+        )
+        try:
+            asyncio.create_task(
+                self._notifier.send(text, msg_type="dispatch_failure")
+            )
+        except RuntimeError:
+            pass
+
     def _alert_balance_reject(
         self, *, strategy: str, ticker: str, reason: str,
         balance: Optional[float] = None, required: Optional[float] = None,
@@ -592,12 +623,47 @@ class OrderManager:
         fill_count = resp.get("taker_fill_count")
         if fill_cost and fill_count and fill_count > 0:
             realized = (fill_cost / fill_count) / 100.0
-        trade_id = await self._db.record_trade(
-            strategy=strategy, market_id=market_id, direction=side,
-            price=price, size=size_usdc, fee=fee, status="filled",
-            minutes_to_start=minutes_to_start,
-            realized_fill_price=realized,
-        )
+        # Same retry-on-DB-lock pattern as _live_limit_ttl_order. See note
+        # at L750 for rationale (2026-05-11 v37 orphan incident).
+        trade_id = None
+        last_db_error = None
+        for attempt, delay in enumerate((0, 1, 2, 5)):
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                trade_id = await self._db.record_trade(
+                    strategy=strategy, market_id=market_id, direction=side,
+                    price=price, size=size_usdc, fee=fee, status="filled",
+                    minutes_to_start=minutes_to_start,
+                    realized_fill_price=realized,
+                )
+                last_db_error = None
+                if attempt > 0:
+                    logger.warning(
+                        f"[LIVE] record_trade (market) succeeded on retry "
+                        f"#{attempt} for {strategy} {ticker} order={order_id[:12]}"
+                    )
+                break
+            except Exception as e:
+                last_db_error = e
+                logger.warning(
+                    f"[LIVE] record_trade (market) attempt #{attempt} failed "
+                    f"for {strategy} {ticker} order={order_id[:12]}: {e}"
+                )
+        if trade_id is None:
+            logger.critical(
+                f"[LIVE] ORPHAN MARKET ORDER: record_trade failed after Kalshi "
+                f"fill. strategy={strategy} ticker={ticker} side={side} "
+                f"size=${size_usdc:.2f} signal_price={price:.3f} "
+                f"order_id={order_id} error={last_db_error}"
+            )
+            self._alert_dispatch_failure(
+                strategy=strategy, ticker=ticker, side=side,
+                order_id=order_id, filled_count=count,
+                size_usdc=size_usdc, price=price,
+                error=str(last_db_error),
+            )
+            raise last_db_error
         # Deduct cost + fee so local bankroll stays in sync with Kalshi's real
         # balance, which already reflects both. Matches paper order semantics.
         self.bankroll -= (size_usdc + fee)
@@ -743,12 +809,52 @@ class OrderManager:
         # reason (paper twin uses signal-based estimate).
         actual_size = filled_count * price
         actual_fee = self.config.estimate_fee(filled_count, price_cents)
-        trade_id = await self._db.record_trade(
-            strategy=strategy, market_id=market_id, direction=side,
-            price=price, size=actual_size, fee=actual_fee, status="filled",
-            minutes_to_start=minutes_to_start,
-            realized_fill_price=realized,
-        )
+        # Retry record_trade on transient DB locks (3 attempts, 1s/2s/5s).
+        # 2026-05-11 v37 5/9 incident: a single locked-write left an orphan
+        # Kalshi fill with no DB record. WAL mode is on but writer-writer
+        # contention can still block past the 30s busy_timeout.
+        trade_id = None
+        last_db_error = None
+        for attempt, delay in enumerate((0, 1, 2, 5)):
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                trade_id = await self._db.record_trade(
+                    strategy=strategy, market_id=market_id, direction=side,
+                    price=price, size=actual_size, fee=actual_fee, status="filled",
+                    minutes_to_start=minutes_to_start,
+                    realized_fill_price=realized,
+                )
+                last_db_error = None
+                if attempt > 0:
+                    logger.warning(
+                        f"[LIVE] record_trade succeeded on retry #{attempt} "
+                        f"for {strategy} {ticker} order={order_id[:12]}"
+                    )
+                break
+            except Exception as e:
+                last_db_error = e
+                logger.warning(
+                    f"[LIVE] record_trade attempt #{attempt} failed for "
+                    f"{strategy} {ticker} order={order_id[:12]}: {e}"
+                )
+        if trade_id is None:
+            # All retries exhausted — Kalshi has our fill but we have no
+            # DB record. Manual reconciliation required.
+            logger.critical(
+                f"[LIVE] ORPHAN ORDER: record_trade failed after Kalshi fill. "
+                f"strategy={strategy} ticker={ticker} side={side} "
+                f"filled_count={filled_count} signal_price={price:.3f} "
+                f"order_id={order_id} error={last_db_error}"
+            )
+            self._alert_dispatch_failure(
+                strategy=strategy, ticker=ticker, side=side,
+                order_id=order_id, filled_count=filled_count,
+                size_usdc=actual_size, price=price,
+                error=str(last_db_error),
+            )
+            # Re-raise so upstream knows dispatch failed.
+            raise last_db_error
         # Bankroll mirrors Kalshi's real debit. With marketable-limit
         # aggression, realized can exceed signal by up to LIMIT_AGGRESSION_CENTS;
         # deducting signal-based size here would drift bankroll above Kalshi.
