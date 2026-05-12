@@ -65,19 +65,48 @@ class SportsUnderdogV37SoccerStrategy(SportsUnderdogV31Strategy):
     MIN_ENTRY_PRICE = 0.20
     MAX_ENTRY_PRICE = 0.29
 
-    # Depth gate. Peak stake at price 0.29 × size 8 = $2.32, so $15 keeps
-    # ~6.5× cushion. Lowered from $20 (2026-05-06 same-day) to capture more
-    # BUN candidates — per npb_kbo_soccer_observers memory, BUN top-of-book
-    # depth p50 ≈ $20 (51% pass rate at $20). $15 gate captures ~80% of BUN
-    # markets while still keeping >5× cushion.
-    MIN_DEPTH_USDC = 15.0
+    # Depth gates (2026-05-12). Tier-based sizing entry/exit thresholds.
+    # MIN $5 enables thin-book entries (observer replay tier1 $15-30 +142%
+    # n=3, tier2 $30-100 +68% n=2). MAX $10k blocks thick-book bleed
+    # (observer tier $10k+ -100% n=4 — cross-validated against
+    # midshot/underdog same pattern).
+    MIN_DEPTH_USDC = 5.0
+    MAX_DEPTH_USDC = 10000.0
 
     def _get_trade_size(self, signal: dict) -> float:
-        # Live launch size 8 (2x bumped from initial 4 same-day on 2026-05-06).
-        # Matches v36 NBA launch pattern (size 8 starter for n borderline
-        # strategies). Peak stake at 0.29 × 8 = $2.32; depth $20 keeps ~8.6×
-        # cushion which is still generous for soccer book sizes.
-        return min(8.0, self._order_manager.bankroll * 0.02)
+        """Tier-based cap policy by depth (2026-05-12).
+
+        Observer replay (n=34, 4/24+ MLS/EPL/LAL/BUN/UCL) shows depth-tier
+        ROI variance: thin (cap 2-4 for cushion), mid (cap 8), sweet spot
+        $2000-10k (cap 24, ROI +97% n=4). >$10k blocked at gate.
+
+        Per-tier cushion ratio kept ≥4× by sizing cap to depth tier:
+          tier1 ($15-30, cap 2): stake $0.58, cushion ≥26×
+          tier2 ($30-100, cap 4): stake $1.16, cushion ≥26×
+          tier3 ($100-500, cap 8): cushion ≥43×
+          tier4 ($500-2000, cap 8): cushion ≥215×
+          tier5 ($2000-10k, cap 24): cushion ≥287× — sweet spot, cap raised 3×
+        """
+        ticker = signal.get("ticker", "")
+        try:
+            yd, nd = self._client.get_order_book_depth(ticker)
+        except Exception:
+            yd, nd = None, None
+        side = signal["side"]
+        depth = yd if side == "yes" else nd
+        if depth is None:
+            cap = 8.0  # fallback to pre-tier cap
+        elif depth >= 2000:
+            cap = 24.0
+        elif depth >= 100:
+            cap = 8.0
+        elif depth >= 30:
+            cap = 4.0
+        elif depth >= 15:
+            cap = 2.0
+        else:
+            cap = 2.0  # very thin (5-15) — same as tier1 floor
+        return min(cap, self._order_manager.bankroll * 0.02)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
@@ -118,6 +147,7 @@ class SportsUnderdogV37SoccerStrategy(SportsUnderdogV31Strategy):
                     "price": price,
                     "edge": payoff,
                     "strategy": "v37_soccer",
+                    "ticker": ticker,
                 }
                 best_payoff = payoff
 
