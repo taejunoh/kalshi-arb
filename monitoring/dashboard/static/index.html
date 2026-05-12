@@ -1242,12 +1242,18 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     const phaseLabel = status.phase_gate || '';
     // Sizing — base contracts + MIN_DEPTH_USDC. v32 underdog applies a
     // 0.5x-2.0x multiplier on top of base via edge-scaling, so we annotate.
+    // v37 soccer uses tier-based cap by depth (see _get_trade_size override).
     const baseSize = status.base_size;
     const minDepth = status.min_depth;
+    const maxDepth = status.max_depth;
     const isV32Underdog = strat === 'sports_underdog_v32';
-    const sizingLabel = (baseSize !== null && baseSize !== undefined)
-      ? `${Math.round(baseSize)}${isV32Underdog ? ' ×0.5-2.0' : ''} · depth $${Math.round(minDepth || 0)}`
+    const isTieredSize = strat === 'sports_underdog_v37_soccer';
+    const sizeStr = (baseSize !== null && baseSize !== undefined)
+      ? (isTieredSize ? 'tiered 2/4/8/24' : `${Math.round(baseSize)}${isV32Underdog ? ' ×0.5-2.0' : ''}`)
       : '';
+    const depthStr = `depth $${Math.round(minDepth || 0)}` +
+      (maxDepth ? `–$${Math.round(maxDepth)}` : '+');
+    const sizingLabel = sizeStr ? `${sizeStr} · ${depthStr}` : '';
     // Region (sports strategies only) + per-sport phase view
     const region = status.region || '';
     const regionTag = region ? region.toUpperCase() : '';
