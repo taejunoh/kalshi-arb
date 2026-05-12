@@ -27,6 +27,7 @@ from strategies.sports_trader import (
     ODDS_TO_KALSHI_SHORT,
     SportsTraderStrategy,
     _commence_time_to_minutes,
+    _match_individual_sport_to_odds,
 )
 
 logger = logging.getLogger("sports_scan_observer")
@@ -67,6 +68,18 @@ SPORT_SHORT = {
     "KXWTAMATCH": "WTA",
     "KXUFCFIGHT": "UFC",
 }
+
+INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
+
+
+def _matcher_for_series(series: str):
+    """Return the matcher function for `series`, or None for team-sport
+    series (which use the instance method self._match_kalshi_to_odds).
+    Team-sport matcher cannot be returned because it's a method that
+    needs `self`; this dispatch sentinel keeps the call site simple."""
+    if series in INDIVIDUAL_SPORT_SERIES:
+        return _match_individual_sport_to_odds
+    return None
 
 
 class SportsScanObserver(SportsTraderStrategy):
@@ -141,9 +154,16 @@ class SportsScanObserver(SportsTraderStrategy):
                 vol24 = _f("volume_24h_fp")
                 oi = _f("open_interest_fp")
 
-                matched_game = self._match_kalshi_to_odds(
-                    title, odds_games, kalshi_ticker=ticker
-                )
+                ind_matcher = _matcher_for_series(series)
+                if ind_matcher is not None:
+                    yes_sub_for_match = market.get("yes_sub_title") or ""
+                    matched_game = ind_matcher(
+                        yes_sub_for_match, odds_games, kalshi_ticker=ticker,
+                    )
+                else:
+                    matched_game = self._match_kalshi_to_odds(
+                        title, odds_games, kalshi_ticker=ticker,
+                    )
                 if not matched_game:
                     continue
 
@@ -156,37 +176,52 @@ class SportsScanObserver(SportsTraderStrategy):
                 away_team = matched_game.get("away_team")
                 yes_sub_title = (market.get("yes_sub_title") or "").lower()
 
-                # Three-way leg detection. TIE leg appears in soccer with
-                # yes_sub_title='tie'; otherwise standard home/away.
                 is_yes_home: Optional[bool] = None
                 is_yes_draw: Optional[bool] = None
-                if yes_sub_title == "tie":
-                    is_yes_home = False
-                    is_yes_draw = True
-                elif home_team and away_team:
-                    home_lc = home_team.lower()
-                    away_lc = away_team.lower()
-                    home_short = ODDS_TO_KALSHI_SHORT.get(home_lc, "")
-                    away_short = ODDS_TO_KALSHI_SHORT.get(away_lc, "")
-                    if home_short and home_short == yes_sub_title:
+
+                if series in INDIVIDUAL_SPORT_SERIES:
+                    # Already matched by yes_sub_title; set is_yes_home by
+                    # which side of the matched game corresponds.
+                    home_lc = (matched_game.get("home_team") or "").lower()
+                    yes_tok = set(yes_sub_title.split())
+                    home_tok = set(home_lc.split())
+                    if yes_sub_title == home_lc or (yes_tok and home_tok and (
+                        yes_tok.issubset(home_tok) or home_tok.issubset(yes_tok)
+                    )):
                         is_yes_home = True
-                    elif away_short and away_short == yes_sub_title:
-                        is_yes_home = False
                     else:
-                        home_city = " ".join(home_lc.split()[:-1]) if len(home_lc.split()) > 1 else home_lc
-                        away_city = " ".join(away_lc.split()[:-1]) if len(away_lc.split()) > 1 else away_lc
-                        if home_city and (home_city in yes_sub_title or yes_sub_title in home_city):
+                        is_yes_home = False
+                    is_yes_draw = False
+                else:
+                    # Three-way leg detection. TIE leg appears in soccer with
+                    # yes_sub_title='tie'; otherwise standard home/away.
+                    if yes_sub_title == "tie":
+                        is_yes_home = False
+                        is_yes_draw = True
+                    elif home_team and away_team:
+                        home_lc = home_team.lower()
+                        away_lc = away_team.lower()
+                        home_short = ODDS_TO_KALSHI_SHORT.get(home_lc, "")
+                        away_short = ODDS_TO_KALSHI_SHORT.get(away_lc, "")
+                        if home_short and home_short == yes_sub_title:
                             is_yes_home = True
-                        elif away_city and (away_city in yes_sub_title or yes_sub_title in away_city):
+                        elif away_short and away_short == yes_sub_title:
                             is_yes_home = False
-                    # 3-way sport but neither home/away nor tie matched —
-                    # mark as draw if any draw_prob present so downstream
-                    # never falsely attributes draw_prob to the away leg.
-                    if is_yes_home is None and (eu_dict and "draw_prob" in eu_dict):
-                        # Unknown leg — leave both flags None so the row
-                        # records yes_sub_title for manual inspection but
-                        # does not corrupt the home/away/draw partition.
-                        pass
+                        else:
+                            home_city = " ".join(home_lc.split()[:-1]) if len(home_lc.split()) > 1 else home_lc
+                            away_city = " ".join(away_lc.split()[:-1]) if len(away_lc.split()) > 1 else away_lc
+                            if home_city and (home_city in yes_sub_title or yes_sub_title in home_city):
+                                is_yes_home = True
+                            elif away_city and (away_city in yes_sub_title or yes_sub_title in away_city):
+                                is_yes_home = False
+                        # 3-way sport but neither home/away nor tie matched —
+                        # mark as draw if any draw_prob present so downstream
+                        # never falsely attributes draw_prob to the away leg.
+                        if is_yes_home is None and (eu_dict and "draw_prob" in eu_dict):
+                            # Unknown leg — leave both flags None so the row
+                            # records yes_sub_title for manual inspection but
+                            # does not corrupt the home/away/draw partition.
+                            pass
 
                 def _yes_side(probs: Optional[dict]) -> Optional[float]:
                     """Select YES-side probability based on detected leg.
