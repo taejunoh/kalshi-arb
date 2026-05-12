@@ -1247,13 +1247,16 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     const minDepth = status.min_depth;
     const maxDepth = status.max_depth;
     const isV32Underdog = strat === 'sports_underdog_v32';
-    const isTieredSize = strat === 'sports_underdog_v37_soccer';
+    // Strategies with per-depth-tier cap policies (see _get_trade_size override).
+    const tieredLabels = {
+      'sports_underdog_v37_soccer': 'tiered 2/4/8/24',
+      'sports_midshot_v31': '36 → 60 @ $10k+',
+    };
     const sizeStr = (baseSize !== null && baseSize !== undefined)
-      ? (isTieredSize ? 'tiered 2/4/8/24' : `${Math.round(baseSize)}${isV32Underdog ? ' ×0.5-2.0' : ''}`)
+      ? (tieredLabels[strat] || `${Math.round(baseSize)}${isV32Underdog ? ' ×0.5-2.0' : ''}`)
       : '';
-    const depthStr = `depth $${Math.round(minDepth || 0)}` +
+    const depthStr = `$${Math.round(minDepth || 0)}` +
       (maxDepth ? `–$${Math.round(maxDepth)}` : '+');
-    const sizingLabel = sizeStr ? `${sizeStr} · ${depthStr}` : '';
     // Region (sports strategies only) + per-sport phase view
     const region = status.region || '';
     const regionTag = region ? region.toUpperCase() : '';
@@ -1365,10 +1368,14 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
           <span class="perf-val" style="font-variant-numeric:tabular-nums;">${gateLabel}</span>
         </div>
         ` : ''}
-        ${sizingLabel ? `
+        ${sizeStr ? `
         <div class="perf-row">
-          <span class="perf-key">Sizing</span>
-          <span class="perf-val" style="font-variant-numeric:tabular-nums;">${sizingLabel}</span>
+          <span class="perf-key">Size</span>
+          <span class="perf-val" style="font-variant-numeric:tabular-nums;">${sizeStr}</span>
+        </div>
+        <div class="perf-row">
+          <span class="perf-key">Depth</span>
+          <span class="perf-val" style="font-variant-numeric:tabular-nums;">${depthStr}</span>
         </div>
         ` : ''}
         ${sportRows ? `
