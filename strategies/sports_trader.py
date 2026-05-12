@@ -461,6 +461,12 @@ class SportsTraderStrategy:
     # but never trigger (deeper books or MAX_MTS_AT_ENTRY caps).
     THIN_BOOK_EARLY_GATE_MTS_MIN_MINUTES: Optional[float] = None
     THIN_BOOK_EARLY_GATE_DEPTH_MAX_USDC: Optional[float] = None
+    # Maximum entry depth (USDC). Block fires on books deeper than this
+    # threshold — empirically thick books (>$10k) show systematic negative
+    # ROI across midshot/underdog/v37 (-100% on n=4 each in observer replay).
+    # Hypothesis: very thick = popular/arb'd markets where Kalshi already
+    # matches consensus. None = no upper cap.
+    MAX_DEPTH_USDC: Optional[float] = None
     # Minimum entry price (0–1). Used by variants whose paper-settled data
     # shows a structural dead zone below some floor (e.g. underdog/midshot
     # v31 at sub-20¢: 0% win on 27/36 trades). Subclasses set to e.g. 0.20;
@@ -1543,6 +1549,18 @@ class SportsTraderStrategy:
                         f"on {signal['side']}, skip"
                     )
                     continue
+
+                # MAX_DEPTH gate (2026-05-12). Thick book block — empirically
+                # >$10k depth shows systematic negative ROI on midshot/underdog/v37.
+                if self.MAX_DEPTH_USDC is not None:
+                    yd, nd = self._client.get_order_book_depth(ticker)
+                    avail = yd if signal["side"] == "yes" else nd
+                    if avail is not None and avail >= self.MAX_DEPTH_USDC:
+                        logger.debug(
+                            f"[{self.STRATEGY_NAME}] {ticker}: depth ${avail:.0f} "
+                            f">= MAX ${self.MAX_DEPTH_USDC:.0f}, skip"
+                        )
+                        continue
 
                 # Thin-book early-fire gate (2026-05-11). Drop trades placed
                 # too early on thin books — consensus hasn't formed yet.
