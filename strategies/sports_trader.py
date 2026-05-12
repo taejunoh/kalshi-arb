@@ -467,6 +467,11 @@ class SportsTraderStrategy:
     # Hypothesis: very thick = popular/arb'd markets where Kalshi already
     # matches consensus. None = no upper cap.
     MAX_DEPTH_USDC: Optional[float] = None
+    # Depth dead-zone (lo, hi): block fires on books in [lo, hi). Used when
+    # a mid-range depth band shows consistent negative ROI while surrounding
+    # bands stay positive — v31 underdog/midshot show $2k-10k −60% (n=32
+    # combined) while $500-2k +22% and $10k+ +7%. None = no dead-zone.
+    DEPTH_DEAD_ZONE: Optional[tuple[float, float]] = None
     # Minimum entry price (0–1). Used by variants whose paper-settled data
     # shows a structural dead zone below some floor (e.g. underdog/midshot
     # v31 at sub-20¢: 0% win on 27/36 trades). Subclasses set to e.g. 0.20;
@@ -1552,15 +1557,24 @@ class SportsTraderStrategy:
 
                 # MAX_DEPTH gate (2026-05-12). Thick book block — empirically
                 # >$10k depth shows systematic negative ROI on midshot/underdog/v37.
-                if self.MAX_DEPTH_USDC is not None:
+                if self.MAX_DEPTH_USDC is not None or self.DEPTH_DEAD_ZONE is not None:
                     yd, nd = self._client.get_order_book_depth(ticker)
                     avail = yd if signal["side"] == "yes" else nd
-                    if avail is not None and avail >= self.MAX_DEPTH_USDC:
-                        logger.debug(
-                            f"[{self.STRATEGY_NAME}] {ticker}: depth ${avail:.0f} "
-                            f">= MAX ${self.MAX_DEPTH_USDC:.0f}, skip"
-                        )
-                        continue
+                    if avail is not None:
+                        if self.MAX_DEPTH_USDC is not None and avail >= self.MAX_DEPTH_USDC:
+                            logger.debug(
+                                f"[{self.STRATEGY_NAME}] {ticker}: depth ${avail:.0f} "
+                                f">= MAX ${self.MAX_DEPTH_USDC:.0f}, skip"
+                            )
+                            continue
+                        if self.DEPTH_DEAD_ZONE is not None:
+                            dz_lo, dz_hi = self.DEPTH_DEAD_ZONE
+                            if dz_lo <= avail < dz_hi:
+                                logger.debug(
+                                    f"[{self.STRATEGY_NAME}] {ticker}: depth ${avail:.0f} "
+                                    f"in dead-zone [${dz_lo:.0f},${dz_hi:.0f}), skip"
+                                )
+                                continue
 
                 # Thin-book early-fire gate (2026-05-11). Drop trades placed
                 # too early on thin books — consensus hasn't formed yet.

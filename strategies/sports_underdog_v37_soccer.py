@@ -72,6 +72,10 @@ class SportsUnderdogV37SoccerStrategy(SportsUnderdogV31Strategy):
     # midshot/underdog same pattern).
     MIN_DEPTH_USDC = 5.0
     MAX_DEPTH_USDC = 10000.0
+    # Override v31 DEPTH_DEAD_ZONE — soccer data shows $2k-10k is the SWEET
+    # SPOT (+115% n=7, observer Plan A tier5), not a dead-zone. v31 cascade
+    # would incorrectly block this band.
+    DEPTH_DEAD_ZONE = None
 
     def _get_trade_size(self, signal: dict) -> float:
         """Tier-based cap policy by depth (2026-05-12).
