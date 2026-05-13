@@ -217,6 +217,33 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_cvs_ticker_ts "
                 "ON cross_venue_signals(ticker, ts)"
             )
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS crypto_observer_signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts TEXT NOT NULL,
+                    observer TEXT NOT NULL,
+                    series TEXT NOT NULL,
+                    event_key TEXT NOT NULL,
+                    market_id TEXT NOT NULL,
+                    predicted_outcome TEXT NOT NULL,
+                    features_json TEXT NOT NULL,
+                    actual_outcome TEXT,
+                    resolution_ts TEXT
+                )
+            """)
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cos_observer_ts "
+                "ON crypto_observer_signals(observer, ts)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cos_market_ts "
+                "ON crypto_observer_signals(market_id, ts)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cos_unsettled "
+                "ON crypto_observer_signals(actual_outcome) "
+                "WHERE actual_outcome IS NULL"
+            )
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_status_pnl ON trades(status, pnl)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_trade ON clv_snapshots(trade_id)")
@@ -670,6 +697,45 @@ class Database:
                 "SELECT * FROM cross_venue_signals ORDER BY ts DESC LIMIT ?",
                 (limit,),
             )
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
+    async def record_crypto_observer_signal(
+        self, *, observer: str, series: str, event_key: str,
+        market_id: str, predicted_outcome: str, features_json: str,
+    ) -> int:
+        """Insert a crypto observer signal. actual_outcome / resolution_ts
+        are filled later by the settlement backfill cron."""
+        ts = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                "INSERT INTO crypto_observer_signals "
+                "(ts, observer, series, event_key, market_id, "
+                " predicted_outcome, features_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (ts, observer, series, event_key, market_id,
+                 predicted_outcome, features_json),
+            )
+            await conn.commit()
+            return cur.lastrowid
+
+    async def fetch_recent_crypto_observer_signals(
+        self, observer: str | None = None, limit: int = 100,
+    ) -> list[dict]:
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            if observer:
+                cur = await conn.execute(
+                    "SELECT * FROM crypto_observer_signals WHERE observer = ? "
+                    "ORDER BY ts DESC LIMIT ?",
+                    (observer, limit),
+                )
+            else:
+                cur = await conn.execute(
+                    "SELECT * FROM crypto_observer_signals "
+                    "ORDER BY ts DESC LIMIT ?",
+                    (limit,),
+                )
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
 

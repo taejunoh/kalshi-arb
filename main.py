@@ -42,7 +42,7 @@ from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
 from strategies.sports_scan_observer import SportsScanObserver
 from strategies.econ_trader import EconTraderStrategy
-from strategies.ladder_crypto import LadderCryptoStrategy
+from strategies.crypto_observer import CryptoObserverStrategy
 from strategies.ladder_fed import LadderFedStrategy
 from strategies.ladder_approval import LadderApprovalStrategy
 from strategies.ladder_shutdown import LadderShutdownStrategy
@@ -213,8 +213,14 @@ class Bot:
         self.ladder_fed = LadderFedStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client
         )
-        self.ladder_crypto = LadderCryptoStrategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client
+        # ladder_crypto retired 2026-05-13: n=54 paper / -77.5% ROI. Root
+        # cause was B-bucketed vs T-cumulative mismatch (commit d30efb5);
+        # post-fix the strategy was structurally silent (phantom-quote
+        # pollution made sum_mid gate impossible). Replaced by
+        # crypto_observer (8-hypothesis Phase 0 prevalence scanner).
+        self.crypto_observer = CryptoObserverStrategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client,
+            price_feed=self.price_feed,
         )
         # Macro Event Trader (C1) — paper-only at launch.
         # Requires scripts/macro_consensus_cron.py to populate consensus
@@ -501,7 +507,10 @@ class Bot:
             ("ladder_shutdown", self.ladder_shutdown),
             ("ladder_approval", self.ladder_approval),
             ("ladder_fed", self.ladder_fed),
-            ("ladder_crypto", self.ladder_crypto),
+            # ladder_crypto retired 2026-05-13 — see CryptoObserverStrategy
+            # init for full postmortem. Replacement runs 8 hypothesis-based
+            # observers in parallel; first promotion eval in ~1 week.
+            ("crypto_observer", self.crypto_observer),
             # Macro Event Trader (C1) — paper-only. Requires consensus cron.
             ("macro_event", self.macro_event),
             # Cross-Venue Polymarket Trader (B1) — paper-only. Requires
