@@ -34,6 +34,12 @@ class SportsUnderdogV37Strategy(SportsSoccerUnderdogV1Strategy):
     # → already allows WNBA + all other sports. Combined with SPORT_BLOCKLIST
     # above, only WNBA reaches evaluate().
 
+    # Override soccer parent's 24h pre-game cap. WNBA observations regularly
+    # span >24h (e.g. 2026-05-13: NYP@PDX evaluated at mts=2030, blocked
+    # silently — would have fired YES@0.26 in band with payoff 3.2x). Match
+    # v36 / v31 family (no cap).
+    MAX_MTS_AT_ENTRY = None
+
     def _get_trade_size(self, signal: dict) -> float:
         # 2026-05-13: override parent's depth-tiered soccer caps (2-24 by tier)
         # with fixed size 12. WNBA depth p50 $567 (tier4 territory) → 12 USDC
