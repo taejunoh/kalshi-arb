@@ -635,16 +635,6 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "Demoted historical: CPI/GDP/FED 계열 전략 비활성화 (loop 에서 제거). "
                 "기존 settled trades 만 DB 에 남음, 신규 entry 없음.",
         }
-        # Sleeping live strategies — in LIVE_STRATEGIES env but firing rate
-        # very low due to gate stack. Not demoted, but shouldn't be treated as
-        # active baseline for new-sport comparison decisions.
-        sleeping_detail = {
-            "sports_v4_edge":
-                "Sleeping despite LIVE: 게이트가 너무 빡세서 주 1-2회만 fire. "
-                "(a) ALLOWED_CELLS=5 cells (b) MIN_SIDE_PROB=0.50 (c) CELL_PRICE_BANDS "
-                "narrowing (4/26) (d) NBA playoff cascade. 4/30 20:50 잠시 demote 됐다 "
-                "20:57 복귀 (7분 window). 7d ROI -3.2% n=18 — 작은 sample 이라 noise 처리.",
-        }
         # Per-strategy gate config (entry-price + game phase + region +
         # sport blocklist). Read class-level attributes so frontend renders
         # what's actually in effect without drift risk.
@@ -908,7 +898,6 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "econ_trader",
             }
             is_demoted = s in DEMOTED_FROM_LIVE
-            sleeping_msg = sleeping_detail.get(s)
             # Paper-twin flag: LIVE strategies that ALSO record paper-twin
             # trades (1:1 alongside every live entry). Dashboard uses this
             # to render the strategy in BOTH the LIVE and PAPER perf
@@ -922,8 +911,6 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                          "reason_detail": reason_detail, "archived": s in archived_set,
                          "demoted": is_demoted,
                          "demotion_detail": demotion_detail.get(s) if is_demoted else None,
-                         "sleeping": sleeping_msg is not None,
-                         "sleeping_detail": sleeping_msg,
                          "has_paper_twin": has_paper_twin,
                          "price_gate": price_gates.get(s),
                          "phase_gate": phase_gates.get(s),

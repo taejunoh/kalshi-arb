@@ -220,11 +220,6 @@
       color: #f59e0b;
       border: 1px solid rgba(245, 158, 11, 0.35);
     }
-    .status-badge.sleeping {
-      background: rgba(139, 92, 246, 0.15);
-      color: #a78bfa;
-      border: 1px solid rgba(139, 92, 246, 0.35);
-    }
     .status-badge.muted {
       background: rgba(120, 130, 145, 0.15);
       color: #94a3b8;
@@ -1237,12 +1232,9 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     // ACTIVE badge is suppressed for demoted cards because they're not actually
     // placing trades; the DEMOTED badge alone communicates the state.
     const isDemoted = !!status.demoted;
-    // Sleeping: in LIVE_STRATEGIES env but firing rate effectively zero due to
-    // tight gate stack (e.g. v4_edge). Active but not productive.
-    const isSleeping = !!status.sleeping;
-    const statusCls = !isActive ? 'disabled' : (isDemoted || isSleeping ? 'muted' : 'active');
-    const statusLabel = !isActive ? 'DISABLED' : (isDemoted ? '' : (isSleeping ? '' : 'ACTIVE'));
-    const cardCls = !isActive ? 'perf-card disabled' : (isDemoted || isSleeping ? 'perf-card' : 'perf-card');
+    const statusCls = !isActive ? 'disabled' : (isDemoted ? 'muted' : 'active');
+    const statusLabel = !isActive ? 'DISABLED' : (isDemoted ? '' : 'ACTIVE');
+    const cardCls = !isActive ? 'perf-card disabled' : 'perf-card';
 
     // Entry-price gate — render a compact label when set (sports only)
     const gate = status.price_gate;
@@ -1368,7 +1360,7 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
         <div class="strategy-header">
           <div class="strategy-badges">
             ${sportsBadge}${versionBadge}${playoffOnlyBadge}
-            ${statusLabel ? `<span class="status-badge ${statusCls}">${statusLabel}</span>` : ''}${isDemoted ? `<span class="status-badge demoted" title="${(status.demotion_detail || 'Demoted — no new live entries').replace(/"/g, '&quot;')}">DEMOTED</span>` : ''}${isSleeping ? `<span class="status-badge sleeping" title="${(status.sleeping_detail || 'Sleeping — gate stack blocks most signals').replace(/"/g, '&quot;')}">SLEEPING</span>` : ''}${idleBadge}${infoIcon}
+            ${statusLabel ? `<span class="status-badge ${statusCls}">${statusLabel}</span>` : ''}${isDemoted ? `<span class="status-badge demoted" title="${(status.demotion_detail || 'Demoted — no new live entries').replace(/"/g, '&quot;')}">DEMOTED</span>` : ''}${idleBadge}${infoIcon}
           </div>
           <div class="strategy-name">${displayName}</div>
         </div>
