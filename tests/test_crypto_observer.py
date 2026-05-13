@@ -236,6 +236,7 @@ def test_bvt_consistency_fires_on_misaligned_t_vs_b_sum():
     assert len(sigs) == 1
     assert sigs[0].predicted_outcome == "yes"
     assert sigs[0].features["deviation"] > 0
+    assert sigs[0].features["n_active_b"] == 3
 
 
 def test_bvt_consistency_skips_when_aligned():
@@ -243,6 +244,24 @@ def test_bvt_consistency_skips_when_aligned():
     b_legs = [_b(89800, 0.20, 0.18), _b(89900, 0.10, 0.09)]
     t_legs = [_t(89800, ya=0.28, yb=0.26)]  # Σ B = 0.30, diff = 0.02 < 0.05
     assert obs.evaluate(_ctx(b_legs=b_legs, t_legs=t_legs)) == []
+
+
+def test_bvt_consistency_excludes_phantom_quoted_legs():
+    """Inactive tail buckets quote ya=$0.99/yb=$0. Summing them would
+    blow past $1.0 and trigger false positives — same failure mode that
+    retired ladder_crypto. Filter requires yb > 0."""
+    obs = BvTConsistencyObserver()
+    # 2 active legs ya=0.10+0.05 = 0.15. Plus 10 phantom legs at ya=0.99
+    # that should be excluded. T_X = 0.18 → diff with active legs = 0.03
+    # (< MIN), so should NOT fire. If phantoms were included, diff = 9.9+,
+    # which would trigger.
+    b_legs = (
+        [_b(89800, 0.10, 0.09), _b(89900, 0.05, 0.04)]
+        + [_b(90000 + i * 100, 0.99, 0.00) for i in range(10)]
+    )
+    t_legs = [_t(89800, ya=0.18, yb=0.16)]
+    sigs = obs.evaluate(_ctx(b_legs=b_legs, t_legs=t_legs, close_s=300.0))
+    assert sigs == []
 
 
 # ── 5. SpotDriftMomentum ───────────────────────────────────────────
