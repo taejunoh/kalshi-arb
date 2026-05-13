@@ -207,3 +207,52 @@ def test_v36_wnba_size_8():
     from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
     strat, _ = _make(SportsUnderdogV36WNBAStrategy)
     assert strat._get_trade_size({"side": "yes", "price": 0.54}) == 8.0
+
+
+# ---------------------------------------------------------------------------
+# Task 8: v37_wnba — TEAM 20-29c band, sibling of sports_soccer_underdog_v1
+# ---------------------------------------------------------------------------
+
+def test_v37_wnba_class_attributes():
+    from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
+    assert SportsUnderdogV37WNBAStrategy.STRATEGY_NAME == "sports_underdog_v37_wnba"
+    # Block everything except WNBA — soccer also blocked here
+    blocklist = SportsUnderdogV37WNBAStrategy.SPORT_BLOCKLIST
+    for sport in ("NBA", "MLB", "NHL", "NPB", "KBO"):
+        assert sport in blocklist, f"{sport} should be in v37_wnba blocklist"
+    assert "WNBA" not in blocklist
+    # OBSERVATION_ONLY override — WNBA tradeable
+    assert "WNBA" not in SportsUnderdogV37WNBAStrategy.OBSERVATION_ONLY_SPORTS
+
+
+def test_v37_wnba_fires_on_20_29c_team():
+    from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
+    strat, _ = _make(SportsUnderdogV37WNBAStrategy)
+    # WNBA-formatted ticker, price 0.22 — in 20-29c band, payoff >= 2.0
+    sig = strat.evaluate(0.22, 0.79, 0.22, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
+    assert sig is not None
+    assert sig["side"] == "yes"
+    assert sig["price"] == 0.22
+
+
+def test_v37_wnba_skips_outside_band():
+    from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
+    strat, _ = _make(SportsUnderdogV37WNBAStrategy)
+    # 0.30 — above 0.29 cap
+    sig = strat.evaluate(0.30, 0.71, 0.30, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
+    assert sig is None
+
+
+def test_v37_wnba_pair_fire_dedup():
+    from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
+    strat, _ = _make(SportsUnderdogV37WNBAStrategy)
+    strat._traded_tickers = {WNBA_TICKER_A: 1234567890.0}
+    sig = strat.evaluate(0.22, 0.79, 0.22, ticker=WNBA_TICKER_B)
+    assert sig is None
+
+
+def test_v37_soccer_still_blocks_wnba():
+    """Renamed v37 soccer parent (SportsSoccerUnderdogV1Strategy) must still
+    contain WNBA in SPORT_BLOCKLIST — sibling separation."""
+    from strategies.sports_soccer_underdog_v1 import SportsSoccerUnderdogV1Strategy
+    assert "WNBA" in SportsSoccerUnderdogV1Strategy.SPORT_BLOCKLIST
