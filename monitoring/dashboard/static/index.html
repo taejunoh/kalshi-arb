@@ -1324,11 +1324,11 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
             ? '<span style="color:var(--text-dim);">—</span>'
             : phase;
           const poTag = playoffBlocklist.has(sport)
-            ? ` <span style="color:#fbbf24;font-size:9px;letter-spacing:0.5px;" title="Suspended during this sport playoff window (auto-resumes in regular season)">PO-SUSPEND</span>`
+            ? `<span style="color:#fbbf24;font-size:9px;letter-spacing:0.5px;" title="Suspended during this sport playoff window (auto-resumes in regular season)">PO-SUSPEND</span> <span style="color:var(--text-dim);">·</span> `
             : '';
           return `<div class="perf-row" style="font-size:11px;">
             <span class="perf-key">${sport}</span>
-            <span class="perf-val">${phaseStr}${regionTag ? ` <span style="color:var(--text-dim);font-size:10px;">· ${regionTag}</span>` : ''}${poTag}</span>
+            <span class="perf-val">${poTag}${phaseStr}${regionTag ? ` <span style="color:var(--text-dim);font-size:10px;">· ${regionTag}</span>` : ''}</span>
           </div>`;
         }).join('')
       : '';
