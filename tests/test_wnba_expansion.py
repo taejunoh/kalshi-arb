@@ -154,3 +154,56 @@ def test_v32_v33_family_blocks_wnba():
                 SportsLongshotV33Strategy, SportsMidshotV33Strategy,
                 SportsUnderdogV33Strategy):
         assert "WNBA" in cls.OBSERVATION_ONLY_SPORTS, f"{cls.__name__} did not re-block WNBA"
+
+
+# ---------------------------------------------------------------------------
+# Task 7: v36_wnba — chalk-favorite YES/NO at 35-55c, fair_prob > 0.55
+# ---------------------------------------------------------------------------
+
+def test_v36_wnba_class_attributes():
+    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
+    assert SportsUnderdogV36WNBAStrategy.STRATEGY_NAME == "sports_underdog_v36_wnba"
+    assert SportsUnderdogV36WNBAStrategy.ALLOWED_CELLS == frozenset({("WNBA", "pre")})
+    assert SportsUnderdogV36WNBAStrategy.PLAYOFF_ONLY is False
+    assert SportsUnderdogV36WNBAStrategy.MIN_ENTRY_PRICE == 0.35
+    assert SportsUnderdogV36WNBAStrategy.MAX_ENTRY_PRICE == 0.55
+    assert "WNBA" not in SportsUnderdogV36WNBAStrategy.OBSERVATION_ONLY_SPORTS
+
+
+def test_v36_wnba_fires_on_favorite_in_band():
+    """v36_wnba fires when YES is the favorite (fair > 0.55) priced at 35-55c."""
+    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
+    strat, _ = _make(SportsUnderdogV36WNBAStrategy)
+    # SEA-CONN: SEA yes_ask 0.55, eu 0.534 — should NOT fire (eu < 0.55)
+    sig = strat.evaluate(0.55, 0.46, 0.534, ticker="KXWNBAGAME-26MAY14SEA-SEA")
+    assert sig is None
+    # PHX-GS: GS yes 0.54, eu 0.555 — eu > 0.55 → fire YES
+    sig = strat.evaluate(0.54, 0.47, 0.555, ticker="KXWNBAGAME-26MAY14PHXGS-GS")
+    assert sig is not None
+    assert sig["side"] == "yes"
+    assert sig["price"] == 0.54
+
+
+def test_v36_wnba_no_fire_outside_band():
+    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
+    strat, _ = _make(SportsUnderdogV36WNBAStrategy)
+    # price 0.30 — below 0.35 floor
+    sig = strat.evaluate(0.30, 0.71, 0.55, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
+    assert sig is None
+    # price 0.60 — above 0.55 cap
+    sig = strat.evaluate(0.60, 0.41, 0.65, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
+    assert sig is None
+
+
+def test_v36_wnba_pair_fire_dedup():
+    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
+    strat, _ = _make(SportsUnderdogV36WNBAStrategy)
+    strat._traded_tickers = {WNBA_TICKER_A: 1234567890.0}
+    sig = strat.evaluate(0.54, 0.47, 0.56, ticker=WNBA_TICKER_B)
+    assert sig is None  # paired sibling already fired
+
+
+def test_v36_wnba_size_8():
+    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
+    strat, _ = _make(SportsUnderdogV36WNBAStrategy)
+    assert strat._get_trade_size({"side": "yes", "price": 0.54}) == 8.0
