@@ -80,3 +80,28 @@ def test_longshot_v31_no_dedup_on_non_wnba():
     strat, _ = _make(SportsLongshotV31Strategy)
     src = inspect.getsource(strat.evaluate)
     assert "WNBAGAME" in src, "Expected WNBA-only dedup branch"
+
+
+# ---------------------------------------------------------------------------
+# Task 3: midshot_v31 — OBSERVATION_ONLY override + WNBA pair-fire dedup
+# ---------------------------------------------------------------------------
+
+def test_midshot_v31_unblocks_wnba():
+    from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
+    assert "WNBA" not in SportsMidshotV31Strategy.OBSERVATION_ONLY_SPORTS
+
+
+def test_midshot_v31_pair_fire_dedup():
+    from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
+    strat, _ = _make(SportsMidshotV31Strategy)
+    strat._traded_tickers = {WNBA_TICKER_A: 1234567890.0}
+    sig = strat.evaluate(0.25, 0.76, 0.25, ticker=WNBA_TICKER_B)
+    assert sig is None
+
+
+def test_midshot_v31_wnba_only_dedup_branch():
+    from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
+    import inspect
+    strat, _ = _make(SportsMidshotV31Strategy)
+    src = inspect.getsource(strat.evaluate)
+    assert "WNBAGAME" in src
