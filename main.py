@@ -36,6 +36,8 @@ from strategies.sports_playoff_underdog_v1 import SportsPlayoffUnderdogV1Strateg
 from strategies.sports_playoff_underdog_v1_us import SportsPlayoffUnderdogV1USStrategy
 from strategies.sports_soccer_underdog_v1 import SportsSoccerUnderdogV1Strategy
 from strategies.sports_soccer_draw_v1 import SportsSoccerDrawV1Strategy
+from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
+from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
 from strategies.sports_favorite_v40 import SportsFavoriteV40Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
@@ -185,6 +187,20 @@ class Bot:
         # ~+25%. Non-BUN 0.20-0.30 sample n=47, ROI +27%, drop-3 +9%.
         # LIVE at launch (size 12). Eval gate: n>=25, ROI>=+30%, drop-3>0 by ~6/22.
         self.sports_soccer_draw_v1 = SportsSoccerDrawV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # V3.6 WNBA — chalk-favorite YES/NO at 35-55c with fair_prob > 0.55.
+        # Built 2026-05-13 from WNBA observer replay (n=3, +73% ROI). Sibling
+        # to v36_playoff/v36_us; fresh evaluate() (chalk-favorite, not v36
+        # underdog floor35). Live launch size 8. First eval 5/23 at n>=25.
+        self.sports_underdog_v36_wnba = SportsUnderdogV36WNBAStrategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # V3.7 WNBA — TEAM 20-29c band, payoff>=2x. Thin sibling of v37 soccer
+        # (sports_soccer_underdog_v1) with SPORT_BLOCKLIST allowing WNBA +
+        # blocking soccer/other sports. Replay n=2, +118% ROI. Live launch
+        # size 8. First eval 5/23 at n>=25.
+        self.sports_underdog_v37_wnba = SportsUnderdogV37WNBAStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
         # V4.0 Favorite — slight-favorite YES/NO bets on MLB 0.50-0.55 +
@@ -476,6 +492,10 @@ class Bot:
             ("sports_soccer_underdog_v1", self.sports_soccer_underdog_v1),
             # V3.8 Soccer Draw — DRAW side, EPL+LAL 0.25-0.30 YES only.
             ("sports_soccer_draw_v1", self.sports_soccer_draw_v1),
+            # V3.6 WNBA — chalk-favorite 35-55c, WNBA-only.
+            ("sports_underdog_v36_wnba", self.sports_underdog_v36_wnba),
+            # V3.7 WNBA — TEAM 20-29c band, WNBA-only.
+            ("sports_underdog_v37_wnba", self.sports_underdog_v37_wnba),
             # V4.0 Favorite — MLB 0.50-0.55 + NPB 0.55-0.65 paper-only.
             ("sports_favorite_v40", self.sports_favorite_v40),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
