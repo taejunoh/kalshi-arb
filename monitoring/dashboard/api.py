@@ -1173,6 +1173,60 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "as_of": datetime.now(timezone.utc).isoformat(),
                 "window_minutes": 60}
 
+    @app.get("/api/crypto-observer")
+    async def get_crypto_observer(hours: int = Query(168, ge=1, le=720)):
+        """Per-observer fire rate, settled count, WR + 95% binomial CI.
+
+        Phase 0 prevalence scanner for the 8-hypothesis crypto observer
+        portfolio ([[crypto_observer_portfolio_2026-05-13]]). Looks back
+        `hours` (default 168 = 7 days). actual_outcome is populated by
+        scripts/crypto_observer_settlement_backfill.py — rows still NULL
+        are "open" (market hasn't settled yet).
+        """
+        import aiosqlite
+        import math
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        async with aiosqlite.connect(database.db_path, timeout=30.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """SELECT observer,
+                          COUNT(*) AS n_total,
+                          SUM(CASE WHEN actual_outcome IS NULL THEN 1 ELSE 0 END) AS n_open,
+                          SUM(CASE WHEN actual_outcome IS NOT NULL THEN 1 ELSE 0 END) AS n_settled,
+                          SUM(CASE WHEN actual_outcome = predicted_outcome THEN 1 ELSE 0 END) AS wins,
+                          MAX(ts) AS last_ts
+                   FROM crypto_observer_signals
+                   WHERE ts >= ?
+                   GROUP BY observer
+                   ORDER BY n_total DESC""",
+                (cutoff,),
+            )
+            rows = [dict(r) for r in await cur.fetchall()]
+        for r in rows:
+            settled = r["n_settled"] or 0
+            wins = r["wins"] or 0
+            if settled > 0:
+                wr = wins / settled
+                # Wilson 95% CI — better than normal approximation at small n.
+                z = 1.96
+                denom = 1.0 + z * z / settled
+                center = (wr + z * z / (2.0 * settled)) / denom
+                margin = (z * math.sqrt(
+                    (wr * (1.0 - wr) + z * z / (4.0 * settled)) / settled
+                )) / denom
+                r["wr"] = round(wr, 4)
+                r["wr_ci_lo"] = round(max(0.0, center - margin), 4)
+                r["wr_ci_hi"] = round(min(1.0, center + margin), 4)
+            else:
+                r["wr"] = None
+                r["wr_ci_lo"] = None
+                r["wr_ci_hi"] = None
+        return {
+            "observers": rows,
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            "window_hours": hours,
+        }
+
     @app.get("/api/odds-usage")
     async def get_odds_usage():
         # Read from the shared module-level cache: every sports_* subclass
