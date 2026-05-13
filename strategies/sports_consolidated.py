@@ -23,6 +23,8 @@ logger = logging.getLogger("sports_consolidated")
 class SportsConsolidatedStrategy(SportsTraderStrategy):
     TRADED_TICKERS_FILE = "data/sports_consolidated_tickers.json"
     STRATEGY_NAME = "sports_consolidated"
+    BADGE_LABEL = "V4"
+    BADGE_COLOR = "#3b82f6"
     PRICE_MIN = 0.05
     PRICE_MAX = 0.40
     PAYOFF_MIN = 2.0

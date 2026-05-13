@@ -37,6 +37,8 @@ class SportsPlayoffUnderdogV1Strategy(SportsUnderdogV31Strategy):
 
     TRADED_TICKERS_FILE = "data/sports_playoff_underdog_v1_tickers.json"
     STRATEGY_NAME = "sports_playoff_underdog_v1"
+    BADGE_LABEL = "V1"
+    BADGE_COLOR = "#f472b6"
     REGION_OVERRIDE = "eu"  # observer eu and us nearly identical (+135% vs +134%)
     ALLOWED_CELLS = frozenset({("NBA", "pre")})
     PLAYOFF_ONLY = True

@@ -19,6 +19,8 @@ logger = logging.getLogger("sports_longshot_v33")
 class SportsLongshotV33Strategy(SportsLongshotV31Strategy):
     TRADED_TICKERS_FILE = "data/sports_longshot_v33_tickers.json"
     STRATEGY_NAME = "sports_longshot_v33"
+    BADGE_LABEL = "V3.3"
+    BADGE_COLOR = "#f59e0b"
     PER_GAME_CAP_USDC = 12.0
     # 2026-05-13 (WNBA expansion cascade): parent v31 trio removed WNBA from
     # OBSERVATION_ONLY_SPORTS. v32/v33 are out of scope for that expansion;

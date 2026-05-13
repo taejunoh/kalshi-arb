@@ -12,6 +12,8 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
 
     TRADED_TICKERS_FILE = "data/sports_midshot_v31_tickers.json"
     STRATEGY_NAME = "sports_midshot_v31"
+    BADGE_LABEL = "V3.1"
+    BADGE_COLOR = "#ec4899"
     REGION_OVERRIDE = "eu"
     # Depth gate scaled to size 36 (2026-05-02 second pass). At max midshot
     # entry price ~80¢, peak stake = 36 × $0.80 = $28.80 → $45 keeps the

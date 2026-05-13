@@ -25,6 +25,9 @@ class SportsUnderdogV36Strategy(SportsUnderdogV31Strategy):
 
     TRADED_TICKERS_FILE = "data/sports_underdog_v36_tickers.json"
     STRATEGY_NAME = "sports_underdog_v36"
+    BADGE_LABEL = "V3.6"
+    BADGE_COLOR = "#06b6d4"
+    DISPLAY_SPORTS = ("NBA", "MLB", "NHL", "WNBA")
     REGION_OVERRIDE = "eu"
 
     # WNBA pre-game only

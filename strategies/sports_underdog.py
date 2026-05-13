@@ -16,6 +16,8 @@ class SportsUnderdogStrategy(SportsTraderStrategy):
 
     TRADED_TICKERS_FILE = "data/sports_underdog_tickers.json"
     STRATEGY_NAME = "sports_underdog"
+    BADGE_LABEL = "V3"
+    BADGE_COLOR = "#a855f7"
     REGION_OVERRIDE = "us"  # V3 baseline stays on US retail books for continuity
     SCAN_INTERVAL_OVERRIDE = 120.0  # us retail books tick 60-90s; 120s scan captures movement
     # 2026-05-11: Thin-book early-fire gate. Drops trades placed >=12h

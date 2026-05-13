@@ -61,6 +61,8 @@ class SportsSoccerDrawV1Strategy(SportsSoccerUnderdogV1Strategy):
     TRADED_TICKERS_FILE = "data/sports_soccer_draw_v1_tickers.json"
     STRATEGY_NAME = "sports_soccer_draw_v1"
 
+    BADGE_LABEL = "V1"
+    BADGE_COLOR = "#4ade80"
     # Allowed leagues: EPL + LaLiga + MLS. v37 inheritance gives us
     # OBSERVATION_ONLY_SPORTS=frozenset() (override of parent gate) and
     # PLAYOFF_BLOCKLIST=frozenset(). BUN+UCL excluded based on Draw-side

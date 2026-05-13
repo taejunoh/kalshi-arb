@@ -11,6 +11,8 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
 
     TRADED_TICKERS_FILE = "data/sports_underdog_v31_tickers.json"
     STRATEGY_NAME = "sports_underdog_v31"
+    BADGE_LABEL = "V3.1"
+    BADGE_COLOR = "#ec4899"
     REGION_OVERRIDE = "eu"
     # Depth gate scaled to size 30 (2026-05-02 second pass). At max underdog
     # entry price ~60¢, peak stake = 30 × $0.60 = $18 → $30 keeps ~1.67×
