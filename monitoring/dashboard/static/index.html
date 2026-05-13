@@ -344,6 +344,16 @@
       color: #818cf8;
       border: 1px solid rgba(99, 102, 241, 0.35);
     }
+    .version-badge.v36 {
+      background: rgba(6, 182, 212, 0.12);
+      color: #06b6d4;
+      border: 1px solid rgba(6, 182, 212, 0.35);
+    }
+    .version-badge.v37 {
+      background: rgba(249, 115, 22, 0.12);
+      color: #f97316;
+      border: 1px solid rgba(249, 115, 22, 0.35);
+    }
     .version-badge.playoff-only {
       background: rgba(239, 68, 68, 0.12);
       color: #ef4444;
@@ -1367,6 +1377,8 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     const v33Strats = new Set(['sports_longshot_v33', 'sports_midshot_v33', 'sports_underdog_v33']);
     const v34Strats = new Set(['sports_longshot_v34', 'sports_midshot_v34', 'sports_underdog_v34']);
     const v35Strats = new Set(['sports_longshot_v35', 'sports_midshot_v35', 'sports_underdog_v35']);
+    const v36Strats = new Set(['sports_underdog_v36']);
+    const v37Strats = new Set(['sports_underdog_v37']);
     const playoffUnderdogV1Strats = new Set(['sports_playoff_underdog_v1', 'sports_playoff_underdog_v1_us']);
     const soccerUnderdogV1Strats = new Set(['sports_soccer_underdog_v1']);
     const soccerDrawV1Strats = new Set(['sports_soccer_draw_v1']);
@@ -1379,6 +1391,8 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     else if (v33Strats.has(strat)) versionBadge = '<span class="version-badge v33">V3.3</span>';
     else if (v34Strats.has(strat)) versionBadge = '<span class="version-badge v34">V3.4</span>';
     else if (v35Strats.has(strat)) versionBadge = '<span class="version-badge v35">V3.5</span>';
+    else if (v36Strats.has(strat)) versionBadge = '<span class="version-badge v36">V3.6</span>';
+    else if (v37Strats.has(strat)) versionBadge = '<span class="version-badge v37">V3.7</span>';
     else if (playoffUnderdogV1Strats.has(strat)) versionBadge = '<span class="version-badge playoff-v1">V1</span>';
     else if (soccerUnderdogV1Strats.has(strat)) versionBadge = '<span class="version-badge soccer-v1">V1</span>';
     else if (soccerDrawV1Strats.has(strat)) versionBadge = '<span class="version-badge soccer-v1">V1</span>';

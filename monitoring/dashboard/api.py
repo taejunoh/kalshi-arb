@@ -737,8 +737,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     return out
                 # Legacy path: PRE_GAME_ONLY + SPORT_BLOCKLIST
                 block = getattr(cls, "SPORT_BLOCKLIST", frozenset())
-                # Soccer detection: blocks all 3 US majors (and typically NPB/KBO/WNBA too).
-                is_soccer = all(s in block for s in _US_MAJOR_SPORTS)
+                # Soccer detection: blocks all 3 US majors AND blocks WNBA.
+                # WNBA-focused strategies (e.g., v37) block US majors too but
+                # leave WNBA tradeable — those should show US majors, not soccer.
+                is_soccer = (all(s in block for s in _US_MAJOR_SPORTS)
+                             and not _wnba_tradeable(cls))
                 shown = _SOCCER_LEAGUES if is_soccer else _US_MAJOR_SPORTS
                 legacy: dict[str, Optional[str]] = {}
                 for s in shown:
