@@ -1310,14 +1310,15 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     // Region (sports strategies only) + per-sport phase view
     const region = status.region || '';
     const regionTag = region ? region.toUpperCase() : '';
-    const sportPhases = status.sport_phases || null;  // {NBA:'pre', MLB:'live', NHL:null}
+    const sportPhases = status.sport_phases || null;  // {NBA:'pre', MLB:'live', NHL:null} or {MLS, EPL, LAL} for soccer
     const playoffBlocklist = new Set(status.playoff_blocklist || []);
     const playoffOnly = !!status.playoff_only;
     // Renders a per-sport line like "NBA  pre  · US" (or "—" when blocked).
     // Adds [PO suspend] tag when sport is in PLAYOFF_BLOCKLIST.
-    // Only shown when the strategy has sport_phases (i.e. a sports strategy).
+    // Iterates whatever keys backend provides — soccer strategies get
+    // MLS/EPL/LAL while US-sport strategies get NBA/MLB/NHL.
     const sportRows = sportPhases
-      ? ['NBA', 'MLB', 'NHL'].map(sport => {
+      ? Object.keys(sportPhases).map(sport => {
           const phase = sportPhases[sport];
           const phaseStr = phase === null
             ? '<span style="color:var(--text-dim);">—</span>'

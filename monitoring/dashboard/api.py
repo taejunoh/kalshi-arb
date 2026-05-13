@@ -690,18 +690,34 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             # Derive a unified per-sport "NBA: pre, MLB: live" view from
             # whichever gate system the strategy uses. Sports ordered NBA,
             # MLB, NHL for consistent display. None = blocked/not traded.
+            # Soccer leagues — used as the displayed sport list when the strategy
+            # blocks all major US sports (the strategy is soccer-focused).
+            _SOCCER_LEAGUES = ("MLS", "EPL", "LAL", "UCL", "BUN")
+            _US_MAJOR_SPORTS = ("NBA", "MLB", "NHL")
+
             def _sport_phases(cls) -> dict[str, Optional[str]]:
                 cells = getattr(cls, "ALLOWED_CELLS", None)
                 if cells is not None:
-                    out: dict[str, Optional[str]] = {"NBA": None, "MLB": None, "NHL": None}
+                    # Derive base sport list from the cells' sports + US majors
+                    # so a soccer-cell strategy shows MLS/EPL/LAL.
+                    cell_sports = {s for s, _ in cells}
+                    if cell_sports.issubset(set(_SOCCER_LEAGUES)):
+                        base = _SOCCER_LEAGUES
+                    else:
+                        base = _US_MAJOR_SPORTS
+                    out: dict[str, Optional[str]] = {s: None for s in base}
                     for sport, phase in cells:
+                        out.setdefault(sport, None)
                         out[sport] = phase if out[sport] is None else "pre+live"
                     return out
                 # Legacy path: PRE_GAME_ONLY + SPORT_BLOCKLIST
                 block = getattr(cls, "SPORT_BLOCKLIST", frozenset())
                 pre_only = getattr(cls, "PRE_GAME_ONLY", False)
+                # Soccer detection: blocks all 3 US majors (and typically NPB/KBO/WNBA too).
+                is_soccer = all(s in block for s in _US_MAJOR_SPORTS)
+                shown = _SOCCER_LEAGUES if is_soccer else _US_MAJOR_SPORTS
                 legacy: dict[str, Optional[str]] = {}
-                for s in ("NBA", "MLB", "NHL"):
+                for s in shown:
                     if s in block:
                         legacy[s] = None
                     elif pre_only:
