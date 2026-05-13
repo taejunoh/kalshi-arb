@@ -1,4 +1,5 @@
-"""Sports Underdog V3.6 US — us region companion to sports_underdog_v36_playoff (eu).
+"""Sports Playoff Underdog V1 US (renamed 2026-05-13 from sports_underdog_v36_us)
+— us region companion to sports_playoff_underdog_v1 (eu). Renamed 2026-05-13.
 
 Built 2026-04-30 alongside v36_playoff to cover the NBA playoff 35¢+ underdog
 alpha in both regions. Observer / trades evidence at 35¢+ floor:
@@ -20,14 +21,14 @@ import logging
 
 from strategies.sports_underdog_v31 import SportsUnderdogV31Strategy
 
-logger = logging.getLogger("sports_underdog_v36_us")
+logger = logging.getLogger("sports_playoff_underdog_v1_us")
 
 
-class SportsUnderdogV36USStrategy(SportsUnderdogV31Strategy):
-    """V3.1 underdog logic restricted to NBA playoff pre-game with 35¢+ floor (us region)."""
+class SportsPlayoffUnderdogV1USStrategy(SportsUnderdogV31Strategy):
+    """V3.1 underdog logic restricted to NBA playoff pre-game with 30¢+ floor (us region)."""
 
-    TRADED_TICKERS_FILE = "data/sports_underdog_v36_us_tickers.json"
-    STRATEGY_NAME = "sports_underdog_v36_us"
+    TRADED_TICKERS_FILE = "data/sports_playoff_underdog_v1_us_tickers.json"
+    STRATEGY_NAME = "sports_playoff_underdog_v1_us"
     REGION_OVERRIDE = "us"
     ALLOWED_CELLS = frozenset({("NBA", "pre")})
     PLAYOFF_ONLY = True
