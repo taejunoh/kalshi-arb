@@ -57,6 +57,9 @@ CLUSTER_SUM_UNDERPRICED_MAX = 0.95    # Σ ya ≤ 0.95 → buy-yes arb
 CLUSTER_SUM_OVERPRICED_MIN = 1.05     # Σ yb ≥ 1.05 → buy-no arb
 
 BVT_MISALIGN_MIN = 0.05               # |Σya(B≥X) - ya(T_X)| ≥ $0.05
+BVT_T_YA_MIN = 0.05                   # skip T markets quoted at extreme prices —
+BVT_T_YA_MAX = 0.95                   # these are usually phantom-quoted illiquids
+                                       # whose resolution is trivially predictable.
 
 SPOT_DRIFT_LOOKBACK_S = 60
 SPOT_DRIFT_PCT_MIN = 0.003            # ≥ 0.3% move in 60s
@@ -380,7 +383,11 @@ class BvTConsistencyObserver(BaseObserver):
             return []
         out: list[Signal] = []
         for t in ctx.t_legs:
-            if t.ya <= 0 or t.ya >= 1:
+            # Extreme-price T quotes (e.g. T1530 ya=$0.01 with spot $2267)
+            # are themselves phantom-quoted illiquids; firing on them
+            # yields trivially-predictable signals that don't represent
+            # alpha. Restrict to T markets whose ya looks live.
+            if t.ya < BVT_T_YA_MIN or t.ya > BVT_T_YA_MAX:
                 continue
             active = [l for l in ctx.b_legs
                       if l.threshold >= t.threshold and l.yb > 0]

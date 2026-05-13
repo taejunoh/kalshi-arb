@@ -246,6 +246,17 @@ def test_bvt_consistency_skips_when_aligned():
     assert obs.evaluate(_ctx(b_legs=b_legs, t_legs=t_legs)) == []
 
 
+def test_bvt_consistency_excludes_phantom_quoted_t_market():
+    """T markets quoted at extreme prices (≤$0.05 or ≥$0.95) are typically
+    phantom illiquids — firing on them yields trivially-predictable signals.
+    E.g., T1530 with ETH spot $2267 quoted at ya=$0.01: bucket sum is
+    obviously much higher, but the 'predict yes' resolution is trivial."""
+    obs = BvTConsistencyObserver()
+    b_legs = [_b(2280, 0.50, 0.48), _b(2300, 0.30, 0.28)]
+    t_legs = [_t(1530, ya=0.01, yb=0.0)]  # phantom ya
+    assert obs.evaluate(_ctx(b_legs=b_legs, t_legs=t_legs)) == []
+
+
 def test_bvt_consistency_excludes_phantom_quoted_legs():
     """Inactive tail buckets quote ya=$0.99/yb=$0. Summing them would
     blow past $1.0 and trigger false positives — same failure mode that
