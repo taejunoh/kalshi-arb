@@ -51,8 +51,10 @@ class SportsUnderdogV36Strategy(SportsUnderdogV31Strategy):
     FAIR_PROB_MIN_FAVORITE = 0.55
 
     def _get_trade_size(self, signal: dict) -> float:
-        # Launch size 8 (paper-tested in replay; matches v37 launch size).
-        return min(8.0, self._order_manager.bankroll * 0.02)
+        # 2026-05-13: launched at 8, bumped to 12 same-day per user direction.
+        # WNBA depth p50 $567 supports 12 USDC peak stake at 0.55 = $6.60
+        # → 86× cushion at tier4 depth.
+        return min(12.0, self._order_manager.bankroll * 0.02)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float,
                  fair_prob: float, ticker: str = "", **kwargs) -> Optional[dict]:
