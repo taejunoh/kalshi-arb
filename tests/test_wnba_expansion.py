@@ -47,3 +47,36 @@ def _make(klass):
     om = _make_order_manager()
     strat = klass(_make_config(), om, _make_kalshi_client())
     return strat, om
+
+
+# ---------------------------------------------------------------------------
+# Task 2: longshot_v31 — OBSERVATION_ONLY override + WNBA pair-fire dedup
+# ---------------------------------------------------------------------------
+
+def test_longshot_v31_unblocks_wnba():
+    """v31 longshot must remove WNBA from OBSERVATION_ONLY_SPORTS so
+    scan_and_execute reaches its evaluate() for WNBA tickers."""
+    from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
+    assert "WNBA" not in SportsLongshotV31Strategy.OBSERVATION_ONLY_SPORTS
+    # Parent set still has WNBA — only this subclass removed it
+    assert "WNBA" in SportsTraderStrategy.OBSERVATION_ONLY_SPORTS
+
+
+def test_longshot_v31_pair_fire_dedup_wnba_only():
+    """evaluate() returns None on a 2nd WNBA fire when sibling already fired."""
+    from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
+    strat, _ = _make(SportsLongshotV31Strategy)
+    # Simulate sibling already fired
+    strat._traded_tickers = {WNBA_TICKER_A: 1234567890.0}
+    # 2nd fire on paired ticker — should be deduped
+    sig = strat.evaluate(0.18, 0.83, 0.18, ticker=WNBA_TICKER_B)
+    assert sig is None, "WNBA pair-fire dedup did not block sibling fire"
+
+
+def test_longshot_v31_no_dedup_on_non_wnba():
+    """NBA tickers still allow pair-fire (P2 cleanup not part of this expansion)."""
+    from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
+    import inspect
+    strat, _ = _make(SportsLongshotV31Strategy)
+    src = inspect.getsource(strat.evaluate)
+    assert "WNBAGAME" in src, "Expected WNBA-only dedup branch"

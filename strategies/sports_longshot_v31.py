@@ -1,5 +1,6 @@
 """Sports Longshot V3.1 — V3 longshot logic against EU sharp-book consensus."""
 import logging
+from typing import Optional
 
 from strategies.sports_longshot import SportsLongshotStrategy
 
@@ -48,6 +49,13 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
     # empty) but every fire so far lost. Auto-resumes regular season ~Oct.
     PLAYOFF_BLOCKLIST = frozenset({"NBA", "NHL"})
 
+    # 2026-05-13 (WNBA expansion): override parent OBSERVATION_ONLY_SPORTS
+    # to remove WNBA. v31 trio is multi-sport by design — WNBA fits the
+    # same longshot 5-25c band logic. NBA/MLB/NHL behavior unchanged.
+    OBSERVATION_ONLY_SPORTS = (
+        SportsLongshotStrategy.OBSERVATION_ONLY_SPORTS - {"WNBA"}
+    )
+
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 4→12 on 2026-04-25. LIVE −53% (n=140) was the biggest
         # selection-bias victim; SOLO_PAPER post-promo +71% (n=17) suggests
@@ -55,3 +63,19 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
         # than midshot/underdog because the LIVE gap is largest, so fix
         # uncertainty is highest. v34/v35 longshot use their own overrides.
         return min(12.0, self._order_manager.bankroll * 0.02)
+
+    def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
+                 line_movement: float = 0.0, home_adj: float = 0.0,
+                 ticker: str = "") -> Optional[dict]:
+        """WNBA-only pair-fire dedup at entry (matches v40 d036f07 pattern).
+        Non-WNBA tickers fall through to parent logic unchanged."""
+        if "WNBAGAME" in ticker:
+            game_key = ticker.rsplit("-", 1)[0]
+            for traded in self._traded_tickers:
+                if traded != ticker and traded.rsplit("-", 1)[0] == game_key:
+                    return None
+        return super().evaluate(
+            kalshi_yes, kalshi_no, fair_prob,
+            line_movement=line_movement, home_adj=home_adj,
+            ticker=ticker,
+        )
