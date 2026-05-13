@@ -130,3 +130,27 @@ def test_underdog_v31_dedup_branch_is_wnba_only():
     strat, _ = _make(SportsUnderdogV31Strategy)
     src = inspect.getsource(strat.evaluate)
     assert "WNBAGAME" in src
+
+
+# ---------------------------------------------------------------------------
+# Tasks 5+6: v32 + v33 family — must re-block WNBA after v31 trio cascade
+# ---------------------------------------------------------------------------
+
+def test_v32_blocks_wnba_via_parent_restore():
+    """v32 inherits from v31 underdog — must NOT inherit the WNBA unblock."""
+    from strategies.sports_underdog_v32 import SportsUnderdogV32Strategy
+    assert "WNBA" in SportsUnderdogV32Strategy.OBSERVATION_ONLY_SPORTS
+
+
+def test_v32_v33_family_blocks_wnba():
+    """All v32 + v33 variants must re-block WNBA after v31 trio cascade."""
+    from strategies.sports_longshot_v32 import SportsLongshotV32Strategy
+    from strategies.sports_midshot_v32 import SportsMidshotV32Strategy
+    from strategies.sports_longshot_v33 import SportsLongshotV33Strategy
+    from strategies.sports_midshot_v33 import SportsMidshotV33Strategy
+    from strategies.sports_underdog_v33 import SportsUnderdogV33Strategy
+
+    for cls in (SportsLongshotV32Strategy, SportsMidshotV32Strategy,
+                SportsLongshotV33Strategy, SportsMidshotV33Strategy,
+                SportsUnderdogV33Strategy):
+        assert "WNBA" in cls.OBSERVATION_ONLY_SPORTS, f"{cls.__name__} did not re-block WNBA"
