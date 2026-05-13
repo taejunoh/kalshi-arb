@@ -344,6 +344,11 @@
       color: #818cf8;
       border: 1px solid rgba(99, 102, 241, 0.35);
     }
+    .version-badge.playoff-only {
+      background: rgba(239, 68, 68, 0.12);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.35);
+    }
     .version-badge.playoff-v1 {
       background: rgba(236, 72, 153, 0.12);
       color: #f472b6;
@@ -1334,7 +1339,7 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
       : '';
     // Playoff-only badge (e.g., v36_playoff): show in header alongside version.
     const playoffOnlyBadge = playoffOnly
-      ? `<span class="version-badge v36" title="Playoff-only strategy — fires only when ticker is in its sport playoff window">PLAYOFF</span>`
+      ? `<span class="version-badge playoff-only" title="Playoff-only strategy — fires only when ticker is in its sport playoff window">PLAYOFF</span>`
       : '';
     // Sports badge — shown for any sports_* strategy. Pairs with display
     // name that strips the sports_ prefix (badge conveys the family).
