@@ -790,28 +790,34 @@
 
     <!-- ── Settlement History ── -->
     <section id="settlement-history-section">
-      <div class="section-title">Settlement History (Kalshi)</div>
-      <div class="perf-grid" id="settlement-grid">
-        <div class="perf-card" style="color:var(--text-dim);font-size:12px;">Loading…</div>
+      <div id="settlement-history-toggle"
+           style="display:flex;align-items:center;gap:10px;margin-bottom:12px;cursor:pointer;user-select:none;">
+        <span id="settlement-history-chevron" style="color:var(--text-dim);font-size:10px;width:10px;display:inline-block;">▶</span>
+        <div class="section-title" style="margin-bottom:0">Settlement History (Kalshi)</div>
       </div>
-      <div class="table-wrap" style="margin-top:14px;">
-        <div class="table-scroll">
-          <table id="settlement-table">
-            <thead>
-              <tr>
-                <th>Settled</th>
-                <th>Market</th>
-                <th>Result</th>
-                <th>Cost</th>
-                <th>Revenue</th>
-                <th>Fees</th>
-                <th>Net</th>
-              </tr>
-            </thead>
-            <tbody id="settlement-body">
-              <tr class="empty-row"><td colspan="7">Loading…</td></tr>
-            </tbody>
-          </table>
+      <div id="settlement-history-body" style="display:none;">
+        <div class="perf-grid" id="settlement-grid">
+          <div class="perf-card" style="color:var(--text-dim);font-size:12px;">Loading…</div>
+        </div>
+        <div class="table-wrap" style="margin-top:14px;">
+          <div class="table-scroll">
+            <table id="settlement-table">
+              <thead>
+                <tr>
+                  <th>Settled</th>
+                  <th>Market</th>
+                  <th>Result</th>
+                  <th>Cost</th>
+                  <th>Revenue</th>
+                  <th>Fees</th>
+                  <th>Net</th>
+                </tr>
+              </thead>
+              <tbody id="settlement-body">
+                <tr class="empty-row"><td colspan="7">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>
@@ -2018,6 +2024,22 @@ document.getElementById('perf-archived-toggle').addEventListener('click', () => 
   applyArchivedCollapse(!cur);
 });
 applyArchivedCollapse(localStorage.getItem(ARCHIVED_OPEN_KEY) === '1');
+
+// Settlement History — Kalshi data, collapse by default (large + auxiliary info)
+const SETTLEMENT_HISTORY_OPEN_KEY = 'arb_dashboard_settlement_history_open';
+function applySettlementHistoryCollapse(open) {
+  const body = document.getElementById('settlement-history-body');
+  const chev = document.getElementById('settlement-history-chevron');
+  if (!body || !chev) return;
+  body.style.display = open ? '' : 'none';
+  chev.textContent = open ? '▼' : '▶';
+  localStorage.setItem(SETTLEMENT_HISTORY_OPEN_KEY, open ? '1' : '0');
+}
+document.getElementById('settlement-history-toggle').addEventListener('click', () => {
+  const cur = localStorage.getItem(SETTLEMENT_HISTORY_OPEN_KEY) === '1';
+  applySettlementHistoryCollapse(!cur);
+});
+applySettlementHistoryCollapse(localStorage.getItem(SETTLEMENT_HISTORY_OPEN_KEY) === '1');
 
 // ─────────────────────────────────────────────
 //  Initialise & schedule
