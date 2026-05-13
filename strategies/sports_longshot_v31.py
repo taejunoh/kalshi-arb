@@ -15,6 +15,8 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
 
     TRADED_TICKERS_FILE = "data/sports_longshot_v31_tickers.json"
     STRATEGY_NAME = "sports_longshot_v31"
+    BADGE_LABEL = "V3.1"
+    BADGE_COLOR = "#ec4899"
     REGION_OVERRIDE = "eu"
     # Depth gate scaled to base 12: peak stake ~$5.10 → 3× buffer = $15.
     MIN_DEPTH_USDC = 15.0

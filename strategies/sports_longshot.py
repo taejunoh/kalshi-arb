@@ -15,6 +15,8 @@ class SportsLongshotStrategy(SportsTraderStrategy):
 
     TRADED_TICKERS_FILE = "data/sports_longshot_tickers.json"
     STRATEGY_NAME = "sports_longshot"
+    BADGE_LABEL = "V3"
+    BADGE_COLOR = "#a855f7"
     REGION_OVERRIDE = "us"  # V3 baseline stays on US retail books for continuity
     SCAN_INTERVAL_OVERRIDE = 120.0  # us retail books tick 60-90s; 120s scan captures movement
 

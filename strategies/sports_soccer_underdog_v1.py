@@ -38,6 +38,8 @@ class SportsSoccerUnderdogV1Strategy(SportsUnderdogV31Strategy):
 
     TRADED_TICKERS_FILE = "data/sports_soccer_underdog_v1_tickers.json"
     STRATEGY_NAME = "sports_soccer_underdog_v1"
+    BADGE_LABEL = "V1"
+    BADGE_COLOR = "#4ade80"
     REGION_OVERRIDE = "eu"  # arbitrary — soccer eu/us consensus aligned
 
     # Soccer leagues only — block all non-soccer sports.

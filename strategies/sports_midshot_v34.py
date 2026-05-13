@@ -23,6 +23,8 @@ class SportsMidshotV34Strategy(SportsMidshotV31Strategy):
 
     TRADED_TICKERS_FILE = "data/sports_midshot_v34_tickers.json"
     STRATEGY_NAME = "sports_midshot_v34"
+    BADGE_LABEL = "V3.4"
+    BADGE_COLOR = "#14b8a6"
     REGION_OVERRIDE = "us"
     # Defensive override — v31 raised to base 16 / depth 20 on 2026-04-25;
     # v34/v35 stay at base 4 / depth 5 until their own paper alpha justifies.

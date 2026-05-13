@@ -18,6 +18,8 @@ class SportsLongshotV35Strategy(SportsLongshotV34Strategy):
 
     TRADED_TICKERS_FILE = "data/sports_longshot_v35_tickers.json"
     STRATEGY_NAME = "sports_longshot_v35"
+    BADGE_LABEL = "V3.5"
+    BADGE_COLOR = "#818cf8"
     # Depth gate scaled to base 8: peak stake ~$3.40 → 3× buffer = $10.
     MIN_DEPTH_USDC = 10.0
     ALLOWED_CELLS = frozenset({("NBA", "pre")})

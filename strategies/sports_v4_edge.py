@@ -25,6 +25,8 @@ class SportsV4EdgeStrategy(SportsTraderStrategy):
 
     TRADED_TICKERS_FILE = "data/sports_v4_edge_tickers.json"
     STRATEGY_NAME = "sports_v4_edge"
+    BADGE_LABEL = "V4"
+    BADGE_COLOR = "#3b82f6"
     MIN_EDGE = 0.03
     PRICE_MIN = 0.05
     PRICE_MAX = 0.35

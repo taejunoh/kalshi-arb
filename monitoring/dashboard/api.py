@@ -444,6 +444,21 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
     @app.get("/api/strategy-status")
     async def get_strategy_status():
         live_strategies = list(config.LIVE_STRATEGIES) if config else []
+        # Last fire (ISO UTC) per strategy — used to render idle warnings
+        # in the dashboard card header. NULL for strategies that never fired.
+        last_fire_at: dict = {}
+        try:
+            import aiosqlite
+            async with aiosqlite.connect(database.db_path, timeout=30.0) as conn:
+                cur = await conn.execute(
+                    "SELECT strategy, MAX(timestamp) FROM trades "
+                    "WHERE strategy IS NOT NULL GROUP BY strategy"
+                )
+                for s, ts in await cur.fetchall():
+                    if s and ts:
+                        last_fire_at[s] = ts
+        except Exception:
+            last_fire_at = {}
         all_strategies = [
             "maker_preorder", "market_maker", "shutdown_fade",
             "spread_scanner", "mentions_trader",
@@ -645,6 +660,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         min_depths: dict = {}
         max_depths: dict = {}
         depth_dead_zones: dict = {}
+        badges: dict = {}  # BADGE_LABEL + BADGE_COLOR class attrs (display config)
         try:
             from strategies.sports_longshot_v31 import SportsLongshotV31Strategy
             from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
@@ -717,8 +733,31 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 return True
 
             def _sport_phases(cls) -> dict[str, Optional[str]]:
-                cells = getattr(cls, "ALLOWED_CELLS", None)
                 pre_only = getattr(cls, "PRE_GAME_ONLY", False)
+                # Explicit DISPLAY_SPORTS override (preferred path — no heuristic).
+                # Each entry: blocked if in SPORT_BLOCKLIST, else pre/pre+live.
+                # ALLOWED_CELLS narrows phases (e.g. ("WNBA","pre")).
+                display = getattr(cls, "DISPLAY_SPORTS", None)
+                if display is not None:
+                    block = getattr(cls, "SPORT_BLOCKLIST", frozenset())
+                    obs_only = getattr(cls, "OBSERVATION_ONLY_SPORTS", frozenset())
+                    cells = getattr(cls, "ALLOWED_CELLS", None)
+                    cell_map: dict[str, str] = {}
+                    if cells is not None:
+                        for sport, phase in cells:
+                            cell_map[sport] = (phase if sport not in cell_map
+                                               else "pre+live")
+                    out: dict[str, Optional[str]] = {}
+                    for sport in display:
+                        if sport in block or sport in obs_only:
+                            out[sport] = None
+                        elif cells is not None:
+                            out[sport] = cell_map.get(sport)  # None if not in cells
+                        else:
+                            out[sport] = "pre" if pre_only else "pre+live"
+                    return out
+                # Fallback: heuristic derivation from ALLOWED_CELLS / SPORT_BLOCKLIST.
+                cells = getattr(cls, "ALLOWED_CELLS", None)
                 if cells is not None:
                     # Derive base sport list from the cells' sports + US majors
                     # so a soccer-cell strategy shows MLS/EPL/LAL.
@@ -808,6 +847,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     )
                 # Unified per-sport phase view for the dashboard.
                 sport_phases_map[name] = _sport_phases(cls)
+                # Badge config: BADGE_LABEL + BADGE_COLOR class attrs.
+                # Each strategy declares its own; eliminates frontend CSS+JS drift.
+                badge_label = getattr(cls, "BADGE_LABEL", None)
+                badge_color = getattr(cls, "BADGE_COLOR", None)
+                if badge_label and badge_color:
+                    badges[name] = {"label": badge_label, "color": badge_color}
                 # Sizing introspection — base contracts (unscaled) + depth gate.
                 # _get_trade_size needs an instance + a fake order_manager. Use
                 # signal edge=2.0 so v32's payoff multiplier is exactly 1.0,
@@ -891,7 +936,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                          "base_size": base_sizes.get(s),
                          "min_depth": min_depths.get(s),
                          "max_depth": max_depths.get(s),
-                         "depth_dead_zone": depth_dead_zones.get(s)}
+                         "depth_dead_zone": depth_dead_zones.get(s),
+                         "badge": badges.get(s),
+                         "last_fire_at": last_fire_at.get(s)}
         return result
 
     @app.get("/api/settlement-history")

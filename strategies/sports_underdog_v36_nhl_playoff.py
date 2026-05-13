@@ -45,6 +45,8 @@ class SportsUnderdogV36NHLPlayoffStrategy(SportsUnderdogV31Strategy):
 
     TRADED_TICKERS_FILE = "data/sports_underdog_v36_nhl_playoff_tickers.json"
     STRATEGY_NAME = "sports_underdog_v36_nhl_playoff"
+    BADGE_LABEL = "V3.6"
+    BADGE_COLOR = "#06b6d4"
     REGION_OVERRIDE = "eu"
 
     # NHL only — block NBA/MLB

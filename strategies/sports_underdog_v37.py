@@ -23,6 +23,9 @@ class SportsUnderdogV37Strategy(SportsSoccerUnderdogV1Strategy):
     TRADED_TICKERS_FILE = "data/sports_underdog_v37_tickers.json"
     STRATEGY_NAME = "sports_underdog_v37"
 
+    BADGE_LABEL = "V3.7"
+    BADGE_COLOR = "#f97316"
+    DISPLAY_SPORTS = ("NBA", "MLB", "NHL", "WNBA")
     # Block everything except WNBA (soccer blocked here too)
     SPORT_BLOCKLIST = frozenset({"NBA", "MLB", "NHL", "NPB", "KBO",
                                   "MLS", "EPL", "LAL", "UCL", "BUN"})

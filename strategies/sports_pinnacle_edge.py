@@ -17,6 +17,8 @@ class SportsPinnacleEdgeStrategy(SportsTraderStrategy):
 
     TRADED_TICKERS_FILE = "data/sports_pinnacle_edge_tickers.json"
     STRATEGY_NAME = "sports_pinnacle_edge"
+    BADGE_LABEL = "V4"
+    BADGE_COLOR = "#3b82f6"
     MIN_EDGE = 0.05
     # Max accepted age of the eu odds payload (seconds). Production measurement
     # showed upstream Pinnacle gaps around 880s, during which the "edge" we

@@ -53,6 +53,8 @@ class SportsFavoriteV40Strategy(SportsTraderStrategy):
 
     TRADED_TICKERS_FILE = "data/sports_favorite_v40_tickers.json"
     STRATEGY_NAME = "sports_favorite_v40"
+    BADGE_LABEL = "V4.0"
+    BADGE_COLOR = "#c084fc"
     REGION_OVERRIDE = "eu"  # observer used eu_yes_prob; matches data
 
     # Cell matrix — MLB pre + NPB pre only.

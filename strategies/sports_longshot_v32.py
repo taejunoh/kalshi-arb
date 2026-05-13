@@ -21,6 +21,8 @@ _PAYOFF_THRESHOLD = 3.0
 class SportsLongshotV32Strategy(SportsLongshotV31Strategy):
     TRADED_TICKERS_FILE = "data/sports_longshot_v32_tickers.json"
     STRATEGY_NAME = "sports_longshot_v32"
+    BADGE_LABEL = "V3.2"
+    BADGE_COLOR = "#10b981"
     # 2026-05-13 (WNBA expansion cascade): parent v31 trio removed WNBA from
     # OBSERVATION_ONLY_SPORTS. v32/v33 are out of scope for that expansion;
     # restore parent default to keep WNBA blocked here.
