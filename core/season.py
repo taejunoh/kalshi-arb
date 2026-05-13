@@ -15,12 +15,20 @@ from typing import Optional
 
 
 # (month_start, day_start, month_end, day_end) inclusive window per sport.
-# Update each Jan when MLB / NBA / NHL announce next year's schedule.
+# Update each Jan when MLB / NBA / NHL / WNBA announce next year's schedule.
+# Order matters: WNBAGAME must be checked BEFORE NBAGAME because the
+# substring `NBAGAME` matches inside `WNBAGAME` (2026-05-13 incident —
+# WNBA observations incorrectly tagged as NBA playoff for ~3 days).
 _PLAYOFF_WINDOWS = {
-    "NBAGAME": (4, 14, 6, 25),   # NBA playoffs: mid-April to mid-late June
-    "NHLGAME": (4, 14, 6, 25),   # NHL playoffs: mid-April to mid-late June
-    "MLBGAME": (10, 1, 11, 5),   # MLB postseason: Oct 1 to ~Nov 5
+    "WNBAGAME": (9, 21, 10, 19),  # WNBA playoffs: late Sep - mid Oct
+    "NBAGAME":  (4, 14, 6, 25),   # NBA playoffs: mid-April to mid-late June
+    "NHLGAME":  (4, 14, 6, 25),   # NHL playoffs: mid-April to mid-late June
+    "MLBGAME":  (10, 1, 11, 5),   # MLB postseason: Oct 1 to ~Nov 5
 }
+
+# Iterate longer keys first so WNBAGAME wins the substring match against
+# NBAGAME (Python dict preserves insertion order, but be explicit).
+_PLAYOFF_WINDOW_KEYS_BY_LEN = sorted(_PLAYOFF_WINDOWS, key=len, reverse=True)
 
 
 def is_playoff(ticker: str, timestamp_iso: Optional[str]) -> Optional[bool]:
@@ -30,7 +38,9 @@ def is_playoff(ticker: str, timestamp_iso: Optional[str]) -> Optional[bool]:
     season" (False) from "unknown" (None) if they care)."""
     if not ticker or not timestamp_iso:
         return None
-    sport_key = next((s for s in _PLAYOFF_WINDOWS if s in ticker), None)
+    sport_key = next(
+        (s for s in _PLAYOFF_WINDOW_KEYS_BY_LEN if s in ticker), None
+    )
     if not sport_key:
         return None
     try:
