@@ -842,6 +842,35 @@
       </div>
     </section>
 
+    <!-- ── Crypto observer Phase 0 (per-hypothesis WR) ── -->
+    <section id="crypto-observer-section">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div class="section-title" style="margin-bottom:0">Crypto observer Phase 0 — last 7 days</div>
+        <span style="color:var(--text-dim);font-size:11px;">8 hypotheses on KXBTC/KXETH. WR 95% CI (Wilson). First eval ~5/20.</span>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll" style="max-height:280px;">
+          <table id="crypto-observer-table">
+            <thead>
+              <tr>
+                <th>Observer</th>
+                <th>Total</th>
+                <th>Open</th>
+                <th>Settled</th>
+                <th>Wins</th>
+                <th>WR</th>
+                <th>95% CI</th>
+                <th>Last fire</th>
+              </tr>
+            </thead>
+            <tbody id="crypto-observer-body">
+              <tr class="empty-row"><td colspan="8">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- ── Observer high-edge signals ── -->
     <section id="observer-section">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
@@ -1764,6 +1793,46 @@ async function refreshRegime() {
 }
 
 // ─────────────────────────────────────────────
+//  Crypto observer Phase 0 — per-hypothesis WR
+// ─────────────────────────────────────────────
+async function refreshCryptoObserver() {
+  try {
+    const data = await apiFetch('/api/crypto-observer?hours=168');
+    const tbody = document.getElementById('crypto-observer-body');
+    const rows = (data && data.observers) || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No signals yet — Phase 0 just started.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => {
+      const wrTxt = r.wr == null ? '—' : (r.wr * 100).toFixed(1) + '%';
+      const ciTxt = r.wr_ci_lo == null ? '—'
+        : `[${(r.wr_ci_lo * 100).toFixed(0)}, ${(r.wr_ci_hi * 100).toFixed(0)}]%`;
+      // Highlight observers with promotion-grade signal: n_settled ≥ 30 and
+      // 95% CI lower bound ≥ 60%
+      const promoCand = (r.n_settled >= 30 && r.wr_ci_lo != null && r.wr_ci_lo >= 0.60);
+      const wrBadge = promoCand
+        ? `<span class="badge badge-green">${wrTxt}</span>`
+        : wrTxt;
+      return `
+        <tr>
+          <td class="td-mono">${r.observer}</td>
+          <td class="td-mono">${r.n_total}</td>
+          <td class="td-mono">${r.n_open}</td>
+          <td class="td-mono">${r.n_settled}</td>
+          <td class="td-mono">${r.wins}</td>
+          <td class="td-mono">${wrBadge}</td>
+          <td class="td-mono">${ciTxt}</td>
+          <td class="td-mono">${fmtTs(r.last_ts)}</td>
+        </tr>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('crypto-observer-body').innerHTML =
+      `<tr class="empty-row"><td colspan="8">Error: ${e.message}</td></tr>`;
+  }
+}
+
+// ─────────────────────────────────────────────
 //  Observer high-edge signals
 // ─────────────────────────────────────────────
 async function refreshObserverSignals() {
@@ -1990,6 +2059,7 @@ async function fullRefresh() {
     refreshPositions(),
     refreshRegime(),
     refreshObserverSignals(),
+    refreshCryptoObserver(),
   ]);
 }
 
