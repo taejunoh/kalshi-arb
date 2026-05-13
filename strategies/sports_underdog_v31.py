@@ -68,3 +68,18 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
         # destabilize anything. Modest extra bump to harvest the larger
         # capital base before bankroll constrains us further.
         return min(30.0, self._order_manager.bankroll * 0.02)
+
+    # 2026-05-13 (WNBA expansion): unblock WNBA, add pair-fire dedup
+    OBSERVATION_ONLY_SPORTS = (
+        SportsUnderdogStrategy.OBSERVATION_ONLY_SPORTS - {"WNBA"}
+    )
+
+    def evaluate(self, kalshi_yes, kalshi_no, fair_prob, ticker="", **kwargs):
+        if "WNBAGAME" in ticker:
+            game_key = ticker.rsplit("-", 1)[0]
+            for traded in self._traded_tickers:
+                if traded != ticker and traded.rsplit("-", 1)[0] == game_key:
+                    return None
+        return super().evaluate(
+            kalshi_yes, kalshi_no, fair_prob, ticker=ticker, **kwargs
+        )
