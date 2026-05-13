@@ -111,6 +111,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_playoff_underdog_v1", "sports_playoff_underdog_v1_us",
             "sports_soccer_underdog_v1",
             "sports_soccer_draw_v1",
+            "sports_underdog_v36_wnba",
+            "sports_underdog_v37_wnba",
             "sports_favorite_v40",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Archived — historical data surfaced in dashboard's Archived section.
@@ -454,6 +456,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_playoff_underdog_v1", "sports_playoff_underdog_v1_us",
             "sports_soccer_underdog_v1",
             "sports_soccer_draw_v1",
+            "sports_underdog_v36_wnba",
+            "sports_underdog_v37_wnba",
             "sports_favorite_v40",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Archived — surfaced in dashboard Archived section with reason.
@@ -521,6 +525,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_playoff_underdog_v1_us": "SPORTS_ENABLED",
             "sports_soccer_underdog_v1": "SPORTS_ENABLED",
             "sports_soccer_draw_v1": "SPORTS_ENABLED",
+            "sports_underdog_v36_wnba": "SPORTS_ENABLED",
+            "sports_underdog_v37_wnba": "SPORTS_ENABLED",
             "sports_favorite_v40": "SPORTS_ENABLED",
             "sports_pinnacle_edge": "SPORTS_ENABLED",
             "sports_v4_edge": "SPORTS_ENABLED",
@@ -659,6 +665,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             from strategies.sports_playoff_underdog_v1_us import SportsPlayoffUnderdogV1USStrategy
             from strategies.sports_soccer_underdog_v1 import SportsSoccerUnderdogV1Strategy
             from strategies.sports_soccer_draw_v1 import SportsSoccerDrawV1Strategy
+            from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
+            from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
             from strategies.sports_favorite_v40 import SportsFavoriteV40Strategy
             from strategies.sports_v4_edge import SportsV4EdgeStrategy
             from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
@@ -682,6 +690,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "sports_playoff_underdog_v1_us": SportsPlayoffUnderdogV1USStrategy,
                 "sports_soccer_underdog_v1": SportsSoccerUnderdogV1Strategy,
                 "sports_soccer_draw_v1": SportsSoccerDrawV1Strategy,
+                "sports_underdog_v36_wnba": SportsUnderdogV36WNBAStrategy,
+                "sports_underdog_v37_wnba": SportsUnderdogV37WNBAStrategy,
                 "sports_favorite_v40": SportsFavoriteV40Strategy,
                 "sports_v4_edge":      SportsV4EdgeStrategy,
                 "sports_chalk_shadow": SportsChalkShadowStrategy,
