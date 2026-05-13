@@ -95,8 +95,23 @@ class SportsFavoriteV40Strategy(SportsTraderStrategy):
                  ticker: str = "") -> Optional[dict]:
         """Fire on YES (consensus favorite YES team) or NO (consensus
         favorite NO team) when price is in sport-specific slight-favorite
-        band. Both sides checked; pair-fire avoided naturally because the
-        OTHER side's price would not be in the band (they sum to ~1.0)."""
+        band.
+
+        Pair-fire dedup (2026-05-12): Kalshi issues 2 paired tickers per
+        game (one per team perspective). At slight-favorite prices both
+        tickers' in-band side often fires on the SAME outcome — e.g.,
+        DETNYM-NYM yes @ 0.53 ("NYM win") AND DETNYM-DET no @ 0.53 ("DET
+        loses" = "NYM win"). Without this guard, every game gets 2x
+        effective size on the same bet. Original docstring claim that
+        "pair-fire avoided naturally" was wrong — that only holds within
+        one ticker (yes+no sum to 1), not across paired tickers."""
+        # Pair-fire dedup at game level — skip if any sibling ticker
+        # from same game already fired this session/window.
+        game_key = ticker.rsplit("-", 1)[0]
+        for traded in self._traded_tickers:
+            if traded != ticker and traded.rsplit("-", 1)[0] == game_key:
+                return None
+
         cfg = self._band_for_ticker(ticker)
         if cfg is None:
             return None
