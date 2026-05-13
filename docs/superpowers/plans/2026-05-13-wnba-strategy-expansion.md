@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Activate 5 strategies (v31 trio + v36_wnba + v37_wnba) on WNBA markets to start accumulating live data toward 2026-05-23 promotion eval.
+**Goal:** Activate 5 strategies (v31 trio + v36 + v37) on WNBA markets to start accumulating live data toward 2026-05-23 promotion eval.
 
-**Architecture:** v31 trio (longshot/midshot/underdog) modified in place via OBSERVATION_ONLY_SPORTS override + WNBA-only pair-fire dedup at evaluate() entry. v36_wnba and v37_wnba created as new sibling classes (v36 inheriting SportsUnderdogV31Strategy with a fresh chalk-favorite evaluate(); v37 inheriting SportsUnderdogV37SoccerStrategy with SPORT_BLOCKLIST adjusted). v32 + v33 paper variants re-block WNBA via parent default restore (cascade prevention). Registration wires into PAPER_TWIN_STRATEGIES, main.py scan loop, and dashboard; live trading enabled via prod `.env` LIVE_STRATEGIES env edit.
+**Architecture:** v31 trio (longshot/midshot/underdog) modified in place via OBSERVATION_ONLY_SPORTS override + WNBA-only pair-fire dedup at evaluate() entry. v36 and v37 created as new sibling classes (v36 inheriting SportsUnderdogV31Strategy with a fresh chalk-favorite evaluate(); v37 inheriting SportsUnderdogV37SoccerStrategy with SPORT_BLOCKLIST adjusted). v32 + v33 paper variants re-block WNBA via parent default restore (cascade prevention). Registration wires into PAPER_TWIN_STRATEGIES, main.py scan loop, and dashboard; live trading enabled via prod `.env` LIVE_STRATEGIES env edit.
 
 **Tech Stack:** Python 3.11, sqlite, pytest, systemd-managed kalshi-bot on EC2 (18.117.216.224). Run via `venv/bin/python`. Test via `venv/bin/pytest`.
 
@@ -34,7 +34,7 @@ Note the import path, fixture pattern, and `_make` helper convention.
 - [ ] **Step 2: Create scaffold with shared fixture builders**
 
 ```python
-"""WNBA strategy expansion — verify v31 trio + v36_wnba + v37_wnba fire on
+"""WNBA strategy expansion — verify v31 trio + v36 + v37 fire on
 WNBA tickers; v32 + v33 paper + v37_soccer remain blocked; v34/v35 naturally
 blocked by ALLOWED_CELLS; pair-fire dedup works.
 
@@ -488,31 +488,31 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ## Phase D — New sibling classes
 
-### Task 7: Create `sports_underdog_v36_wnba.py` (chalk-favorite logic)
+### Task 7: Create `sports_underdog_v36.py` (chalk-favorite logic)
 
 **Files:**
-- Create: `strategies/sports_underdog_v36_wnba.py`
+- Create: `strategies/sports_underdog_v36.py`
 - Test: `tests/test_wnba_expansion.py`
 
-> **NOTE on evaluate() logic mismatch with v36_playoff:** The spec specifies "35-55c band with fair_prob>0.55". This is a NEW chalk-favorite evaluate() — not a copy of v36_playoff's inherited underdog logic. v36_wnba name follows the spec convention but the class implements its own `evaluate()`.
+> **NOTE on evaluate() logic mismatch with v36_playoff:** The spec specifies "35-55c band with fair_prob>0.55". This is a NEW chalk-favorite evaluate() — not a copy of v36_playoff's inherited underdog logic. v36 name follows the spec convention but the class implements its own `evaluate()`.
 
 - [ ] **Step 1: Add tests**
 
 ```python
-def test_v36_wnba_class_attributes():
-    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
-    assert SportsUnderdogV36WNBAStrategy.STRATEGY_NAME == "sports_underdog_v36_wnba"
-    assert SportsUnderdogV36WNBAStrategy.ALLOWED_CELLS == frozenset({("WNBA", "pre")})
-    assert SportsUnderdogV36WNBAStrategy.PLAYOFF_ONLY is False
-    assert SportsUnderdogV36WNBAStrategy.MIN_ENTRY_PRICE == 0.35
-    assert SportsUnderdogV36WNBAStrategy.MAX_ENTRY_PRICE == 0.55
-    assert "WNBA" not in SportsUnderdogV36WNBAStrategy.OBSERVATION_ONLY_SPORTS
+def test_v36_class_attributes():
+    from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
+    assert SportsUnderdogV36Strategy.STRATEGY_NAME == "sports_underdog_v36"
+    assert SportsUnderdogV36Strategy.ALLOWED_CELLS == frozenset({("WNBA", "pre")})
+    assert SportsUnderdogV36Strategy.PLAYOFF_ONLY is False
+    assert SportsUnderdogV36Strategy.MIN_ENTRY_PRICE == 0.35
+    assert SportsUnderdogV36Strategy.MAX_ENTRY_PRICE == 0.55
+    assert "WNBA" not in SportsUnderdogV36Strategy.OBSERVATION_ONLY_SPORTS
 
 
-def test_v36_wnba_fires_on_favorite_in_band():
-    """v36_wnba fires when YES is the favorite (fair > 0.55) priced at 35-55c."""
-    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
-    strat, _ = _make(SportsUnderdogV36WNBAStrategy)
+def test_v36_fires_on_favorite_in_band():
+    """v36 fires when YES is the favorite (fair > 0.55) priced at 35-55c."""
+    from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
+    strat, _ = _make(SportsUnderdogV36Strategy)
     # SEA-CONN: SEA yes_ask 0.55, eu 0.534 — should NOT fire (eu < 0.55)
     sig = strat.evaluate(0.55, 0.46, 0.534, ticker="KXWNBAGAME-26MAY14SEA-SEA")
     assert sig is None
@@ -523,9 +523,9 @@ def test_v36_wnba_fires_on_favorite_in_band():
     assert sig["price"] == 0.54
 
 
-def test_v36_wnba_no_fire_outside_band():
-    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
-    strat, _ = _make(SportsUnderdogV36WNBAStrategy)
+def test_v36_no_fire_outside_band():
+    from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
+    strat, _ = _make(SportsUnderdogV36Strategy)
     # price 0.30 — below 0.35 floor
     sig = strat.evaluate(0.30, 0.71, 0.55, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
     assert sig is None
@@ -534,26 +534,26 @@ def test_v36_wnba_no_fire_outside_band():
     assert sig is None
 
 
-def test_v36_wnba_pair_fire_dedup():
-    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
-    strat, _ = _make(SportsUnderdogV36WNBAStrategy)
+def test_v36_pair_fire_dedup():
+    from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
+    strat, _ = _make(SportsUnderdogV36Strategy)
     strat._traded_tickers = {WNBA_TICKER_A: 1234567890.0}
     sig = strat.evaluate(0.54, 0.47, 0.56, ticker=WNBA_TICKER_B)
     assert sig is None  # paired sibling already fired
 
 
-def test_v36_wnba_size_8():
-    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
-    strat, _ = _make(SportsUnderdogV36WNBAStrategy)
+def test_v36_size_8():
+    from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
+    strat, _ = _make(SportsUnderdogV36Strategy)
     assert strat._get_trade_size({"side": "yes", "price": 0.54}) == 8.0
 ```
 
 - [ ] **Step 2: Run, verify fail**
 
-Run: `venv/bin/pytest tests/test_wnba_expansion.py -v -k v36_wnba`
-Expected: `ImportError: cannot import name 'SportsUnderdogV36WNBAStrategy'`
+Run: `venv/bin/pytest tests/test_wnba_expansion.py -v -k v36`
+Expected: `ImportError: cannot import name 'SportsUnderdogV36Strategy'`
 
-- [ ] **Step 3: Create `strategies/sports_underdog_v36_wnba.py`**
+- [ ] **Step 3: Create `strategies/sports_underdog_v36.py`**
 
 ```python
 """Sports v36 WNBA — slight-favorite YES at 35-55c with fair_prob > 0.55.
@@ -562,7 +562,7 @@ Built 2026-05-13 from WNBA observer replay (n=3 settled games, ROI +73%,
 WR 100%). Per spec docs/superpowers/specs/2026-05-13-wnba-strategy-expansion-design.md.
 
 This is a NEW strategy class — NOT a port of v36_playoff. v36_playoff is
-NBA underdog 30¢+ floor; v36_wnba is WNBA chalk-favorite (price < fair).
+NBA underdog 30¢+ floor; v36 is WNBA chalk-favorite (price < fair).
 The "v36" naming follows user spec convention but evaluate() logic is
 fresh.
 
@@ -575,14 +575,14 @@ from typing import Optional
 from strategies.sports_trader import SportsTraderStrategy
 from strategies.sports_underdog_v31 import SportsUnderdogV31Strategy
 
-logger = logging.getLogger("sports_underdog_v36_wnba")
+logger = logging.getLogger("sports_underdog_v36")
 
 
-class SportsUnderdogV36WNBAStrategy(SportsUnderdogV31Strategy):
+class SportsUnderdogV36Strategy(SportsUnderdogV31Strategy):
     """Bet the slight-favorite side (fair > 0.55) at 0.35-0.55 YES on WNBA pre-game."""
 
-    TRADED_TICKERS_FILE = "data/sports_underdog_v36_wnba_tickers.json"
-    STRATEGY_NAME = "sports_underdog_v36_wnba"
+    TRADED_TICKERS_FILE = "data/sports_underdog_v36_tickers.json"
+    STRATEGY_NAME = "sports_underdog_v36"
     REGION_OVERRIDE = "eu"
 
     # WNBA pre-game only
@@ -595,7 +595,7 @@ class SportsUnderdogV36WNBAStrategy(SportsUnderdogV31Strategy):
     PLAYOFF_BLOCKLIST = frozenset()
 
     # Restore parent default (parent removed WNBA in v31 trio mods,
-    # but v36_wnba IS the WNBA strategy — must override to remove again)
+    # but v36 IS the WNBA strategy — must override to remove again)
     OBSERVATION_ONLY_SPORTS = (
         SportsTraderStrategy.OBSERVATION_ONLY_SPORTS - {"WNBA"}
     )
@@ -638,7 +638,7 @@ class SportsUnderdogV36WNBAStrategy(SportsUnderdogV31Strategy):
             payoff = 1.0 / (kalshi_yes * (1 + fee_pct))
             return {
                 "side": "yes", "price": kalshi_yes,
-                "edge": payoff, "strategy": "v36_wnba",
+                "edge": payoff, "strategy": "v36",
             }
 
         # NO side: NO team is favorite (fair_yes < 0.45 → fair_no > 0.55),
@@ -649,7 +649,7 @@ class SportsUnderdogV36WNBAStrategy(SportsUnderdogV31Strategy):
             payoff = 1.0 / (kalshi_no * (1 + fee_pct))
             return {
                 "side": "no", "price": kalshi_no,
-                "edge": payoff, "strategy": "v36_wnba",
+                "edge": payoff, "strategy": "v36",
             }
 
         return None
@@ -657,14 +657,14 @@ class SportsUnderdogV36WNBAStrategy(SportsUnderdogV31Strategy):
 
 - [ ] **Step 4: Run tests, verify pass**
 
-Run: `venv/bin/pytest tests/test_wnba_expansion.py -v -k v36_wnba`
+Run: `venv/bin/pytest tests/test_wnba_expansion.py -v -k v36`
 Expected: 5 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add strategies/sports_underdog_v36_wnba.py tests/test_wnba_expansion.py
-git commit -m "feat(strategy): add sports_underdog_v36_wnba (paper+live launch)
+git add strategies/sports_underdog_v36.py tests/test_wnba_expansion.py
+git commit -m "feat(strategy): add sports_underdog_v36 (paper+live launch)
 
 WNBA chalk-favorite YES/NO bets at 35-55c with fair_prob > 0.55.
 Sibling class to v36_playoff/v36_us — different evaluate() logic
@@ -678,30 +678,30 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 8: Create `sports_underdog_v37_wnba.py` (inherit v37_soccer evaluate)
+### Task 8: Create `sports_underdog_v37.py` (inherit v37_soccer evaluate)
 
 **Files:**
-- Create: `strategies/sports_underdog_v37_wnba.py`
+- Create: `strategies/sports_underdog_v37.py`
 - Test: `tests/test_wnba_expansion.py`
 
 - [ ] **Step 1: Add tests**
 
 ```python
-def test_v37_wnba_class_attributes():
-    from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
-    assert SportsUnderdogV37WNBAStrategy.STRATEGY_NAME == "sports_underdog_v37_wnba"
+def test_v37_class_attributes():
+    from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
+    assert SportsUnderdogV37Strategy.STRATEGY_NAME == "sports_underdog_v37"
     # Block everything except WNBA — soccer also blocked here
-    blocklist = SportsUnderdogV37WNBAStrategy.SPORT_BLOCKLIST
+    blocklist = SportsUnderdogV37Strategy.SPORT_BLOCKLIST
     for sport in ("NBA", "MLB", "NHL", "NPB", "KBO"):
-        assert sport in blocklist, f"{sport} should be in v37_wnba blocklist"
+        assert sport in blocklist, f"{sport} should be in v37 blocklist"
     assert "WNBA" not in blocklist
     # OBSERVATION_ONLY override — WNBA tradeable
-    assert "WNBA" not in SportsUnderdogV37WNBAStrategy.OBSERVATION_ONLY_SPORTS
+    assert "WNBA" not in SportsUnderdogV37Strategy.OBSERVATION_ONLY_SPORTS
 
 
-def test_v37_wnba_fires_on_20_29c_team():
-    from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
-    strat, _ = _make(SportsUnderdogV37WNBAStrategy)
+def test_v37_fires_on_20_29c_team():
+    from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
+    strat, _ = _make(SportsUnderdogV37Strategy)
     # WNBA-formatted ticker, price 0.22 — in 20-29c band, payoff >= 2.0
     sig = strat.evaluate(0.22, 0.79, 0.22, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
     assert sig is not None
@@ -709,17 +709,17 @@ def test_v37_wnba_fires_on_20_29c_team():
     assert sig["price"] == 0.22
 
 
-def test_v37_wnba_skips_outside_band():
-    from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
-    strat, _ = _make(SportsUnderdogV37WNBAStrategy)
+def test_v37_skips_outside_band():
+    from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
+    strat, _ = _make(SportsUnderdogV37Strategy)
     # 0.30 — above 0.29 cap
     sig = strat.evaluate(0.30, 0.71, 0.30, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
     assert sig is None
 
 
-def test_v37_wnba_pair_fire_dedup():
-    from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
-    strat, _ = _make(SportsUnderdogV37WNBAStrategy)
+def test_v37_pair_fire_dedup():
+    from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
+    strat, _ = _make(SportsUnderdogV37Strategy)
     strat._traded_tickers = {WNBA_TICKER_A: 1234567890.0}
     sig = strat.evaluate(0.22, 0.79, 0.22, ticker=WNBA_TICKER_B)
     assert sig is None
@@ -733,9 +733,9 @@ def test_v37_soccer_still_blocks_wnba():
 
 - [ ] **Step 2: Run, verify fail**
 
-Run: `venv/bin/pytest tests/test_wnba_expansion.py -v -k v37_wnba`
+Run: `venv/bin/pytest tests/test_wnba_expansion.py -v -k v37`
 
-- [ ] **Step 3: Create `strategies/sports_underdog_v37_wnba.py`**
+- [ ] **Step 3: Create `strategies/sports_underdog_v37.py`**
 
 ```python
 """Sports v37 WNBA — TEAM-only deep-underdog 20-29c band, payoff >= 2.0x.
@@ -753,14 +753,14 @@ from typing import Optional
 
 from strategies.sports_underdog_v37_soccer import SportsUnderdogV37SoccerStrategy
 
-logger = logging.getLogger("sports_underdog_v37_wnba")
+logger = logging.getLogger("sports_underdog_v37")
 
 
-class SportsUnderdogV37WNBAStrategy(SportsUnderdogV37SoccerStrategy):
+class SportsUnderdogV37Strategy(SportsUnderdogV37SoccerStrategy):
     """v37 TEAM 20-29c band applied to WNBA only."""
 
-    TRADED_TICKERS_FILE = "data/sports_underdog_v37_wnba_tickers.json"
-    STRATEGY_NAME = "sports_underdog_v37_wnba"
+    TRADED_TICKERS_FILE = "data/sports_underdog_v37_tickers.json"
+    STRATEGY_NAME = "sports_underdog_v37"
 
     # Block everything except WNBA (soccer blocked here too)
     SPORT_BLOCKLIST = frozenset({"NBA", "MLB", "NHL", "NPB", "KBO",
@@ -785,14 +785,14 @@ class SportsUnderdogV37WNBAStrategy(SportsUnderdogV37SoccerStrategy):
 
 - [ ] **Step 4: Run tests, verify pass**
 
-Run: `venv/bin/pytest tests/test_wnba_expansion.py -v -k v37_wnba`
+Run: `venv/bin/pytest tests/test_wnba_expansion.py -v -k v37`
 Expected: 5 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add strategies/sports_underdog_v37_wnba.py tests/test_wnba_expansion.py
-git commit -m "feat(strategy): add sports_underdog_v37_wnba (paper+live launch)
+git add strategies/sports_underdog_v37.py tests/test_wnba_expansion.py
+git commit -m "feat(strategy): add sports_underdog_v37 (paper+live launch)
 
 WNBA TEAM 20-29c band, payoff>=2.0x. Thin sibling of v37_soccer with
 SPORT_BLOCKLIST flipped to allow WNBA + block soccer/other sports.
@@ -818,8 +818,8 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```python
 def test_paper_twin_registration():
     from core.order_manager import PAPER_TWIN_STRATEGIES
-    assert "sports_underdog_v36_wnba" in PAPER_TWIN_STRATEGIES
-    assert "sports_underdog_v37_wnba" in PAPER_TWIN_STRATEGIES
+    assert "sports_underdog_v36" in PAPER_TWIN_STRATEGIES
+    assert "sports_underdog_v37" in PAPER_TWIN_STRATEGIES
 ```
 
 - [ ] **Step 2: Run, verify fail**
@@ -831,8 +831,8 @@ Run: `venv/bin/pytest tests/test_wnba_expansion.py -v -k paper_twin_registration
 Find `PAPER_TWIN_STRATEGIES = {` (around line 60). Add the two new entries before the closing brace, matching the existing comment style:
 
 ```python
-    "sports_underdog_v36_wnba",   # 2026-05-13 WNBA expansion — chalk-favorite
-    "sports_underdog_v37_wnba",   # 2026-05-13 WNBA expansion — 20-29c TEAM band
+    "sports_underdog_v36",   # 2026-05-13 WNBA expansion — chalk-favorite
+    "sports_underdog_v37",   # 2026-05-13 WNBA expansion — 20-29c TEAM band
 ```
 
 - [ ] **Step 4: Run test, verify pass**
@@ -843,7 +843,7 @@ Run: `venv/bin/pytest tests/test_wnba_expansion.py -v -k paper_twin_registration
 
 ```bash
 git add core/order_manager.py tests/test_wnba_expansion.py
-git commit -m "feat(order_manager): register v36_wnba + v37_wnba as paper-twin strategies
+git commit -m "feat(order_manager): register v36 + v37 as paper-twin strategies
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -867,8 +867,8 @@ Confirm import line ~37, instantiation ~179, scan_loop registration ~476.
 After line 38 (`from strategies.sports_draw_v38_soccer import SportsDrawV38SoccerStrategy`):
 
 ```python
-from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
-from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
+from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
+from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
 ```
 
 - [ ] **Step 3: Add instantiation**
@@ -880,13 +880,13 @@ After `self.sports_draw_v38_soccer = SportsDrawV38SoccerStrategy(...)` block (ar
         # Built 2026-05-13 from WNBA observer replay (n=3, +73% ROI). Sibling
         # to v36_playoff/v36_us; fresh evaluate() (chalk-favorite, not v36
         # underdog floor35). Live launch size 8. First eval 5/23 at n>=25.
-        self.sports_underdog_v36_wnba = SportsUnderdogV36WNBAStrategy(
+        self.sports_underdog_v36 = SportsUnderdogV36Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         # V3.7 WNBA — TEAM 20-29c band, payoff>=2x. Thin sibling of v37_soccer
         # with SPORT_BLOCKLIST allowing WNBA + blocking soccer/other sports.
         # Replay n=2, +118% ROI. Live launch size 8. First eval 5/23 at n>=25.
-        self.sports_underdog_v37_wnba = SportsUnderdogV37WNBAStrategy(
+        self.sports_underdog_v37 = SportsUnderdogV37Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
 ```
@@ -896,8 +896,8 @@ After `self.sports_draw_v38_soccer = SportsDrawV38SoccerStrategy(...)` block (ar
 Find the strategies iteration list around line 476 (`("sports_underdog_v37_soccer", self.sports_underdog_v37_soccer),`). Add after the v38 entry:
 
 ```python
-            ("sports_underdog_v36_wnba", self.sports_underdog_v36_wnba),
-            ("sports_underdog_v37_wnba", self.sports_underdog_v37_wnba),
+            ("sports_underdog_v36", self.sports_underdog_v36),
+            ("sports_underdog_v37", self.sports_underdog_v37),
 ```
 
 - [ ] **Step 5: Dry-run boot to verify imports + instantiation**
@@ -911,7 +911,7 @@ If import fails, re-check imports + class names + indentation in main.py.
 
 ```bash
 git add main.py
-git commit -m "feat(main): register v36_wnba + v37_wnba in scan_loop
+git commit -m "feat(main): register v36 + v37 in scan_loop
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -927,15 +927,15 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 Run: `grep -n "sports_underdog_v37_soccer" monitoring/dashboard/api.py`
 
-This will find 3+ locations (strategy list, SPORTS_ENABLED config, dashboard helper). Each needs v36_wnba + v37_wnba added.
+This will find 3+ locations (strategy list, SPORTS_ENABLED config, dashboard helper). Each needs v36 + v37 added.
 
-- [ ] **Step 2: Add `sports_underdog_v36_wnba` + `sports_underdog_v37_wnba` to `all_strategy_names` list**
+- [ ] **Step 2: Add `sports_underdog_v36` + `sports_underdog_v37` to `all_strategy_names` list**
 
 Find the list around line 102-119. After `"sports_underdog_v37_soccer",` add:
 
 ```python
-            "sports_underdog_v36_wnba",
-            "sports_underdog_v37_wnba",
+            "sports_underdog_v36",
+            "sports_underdog_v37",
 ```
 
 - [ ] **Step 3: Add to any strategy display config / live-strategy mapping**
@@ -951,7 +951,7 @@ Expected: `dashboard import OK`.
 
 ```bash
 git add monitoring/dashboard/api.py
-git commit -m "feat(dashboard): show v36_wnba + v37_wnba in strategy lists
+git commit -m "feat(dashboard): show v36 + v37 in strategy lists
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -960,7 +960,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ## Phase F — Validation
 
-### Task 12: Extend `scripts/strategy_replay.py` with v36_wnba + v37_wnba callables
+### Task 12: Extend `scripts/strategy_replay.py` with v36 + v37 callables
 
 **Files:**
 - Modify: `scripts/strategy_replay.py`
@@ -976,8 +976,8 @@ The dict is around line 201. Each entry maps a name → lambda.
 At the bottom of the file, before `STRATEGIES = {`, add:
 
 ```python
-def replay_v36_wnba(e, *, lo=0.35, hi=0.55, fair_min=0.55, base_size=8.0):
-    """v36_wnba chalk-favorite at 35-55c with fair_prob > 0.55."""
+def replay_v36(e, *, lo=0.35, hi=0.55, fair_min=0.55, base_size=8.0):
+    """v36 chalk-favorite at 35-55c with fair_prob > 0.55."""
     ya, na = e["yes_ask"], e.get("no_ask", 1 - e["yes_ask"])
     eu = e.get("eu_prob")
     if eu is None:
@@ -991,7 +991,7 @@ def replay_v36_wnba(e, *, lo=0.35, hi=0.55, fair_min=0.55, base_size=8.0):
     return None
 
 
-def replay_v37_wnba(e):
+def replay_v37(e):
     """Same gate as v37_soccer (TEAM 20-29c payoff>=2)."""
     return replay_v37_edge(e)  # if v37 helper named differently, use that
 ```
@@ -999,8 +999,8 @@ def replay_v37_wnba(e):
 Then add to STRATEGIES dict (just before the V3 baseline entries):
 
 ```python
-    "v36_wnba": replay_v36_wnba,
-    "v37_wnba": replay_v37_wnba,
+    "v36": replay_v36,
+    "v37": replay_v37,
 ```
 
 If a v37-style helper doesn't already exist in strategy_replay.py, define it inline (TEAM 20-29c payoff>=2.0).
@@ -1027,7 +1027,7 @@ for ticker, result in settled:
                         FROM odds_observations WHERE kalshi_ticker=?
                           AND minutes_to_start BETWEEN 60 AND 1440
                         ORDER BY timestamp''', (ticker,)).fetchall()
-    for strat in ('longshot_v31', 'midshot_v31', 'underdog_v31', 'v36_wnba', 'v37_wnba'):
+    for strat in ('longshot_v31', 'midshot_v31', 'underdog_v31', 'v36', 'v37'):
         for ya, na, mts, eu, pin, books in rows:
             if eu is None or books is None or books < 5: continue
             if ya is None or na is None: continue
@@ -1049,8 +1049,8 @@ Expected output (approximate, matching prior session):
 - longshot_v31: n=1 games, ROI ≈ +335%
 - midshot_v31: n=4, ≈ +84%
 - underdog_v31: n=7, ≈ +41%
-- v36_wnba: n=3, ≈ +73%
-- v37_wnba: n=2, ≈ +118%
+- v36: n=3, ≈ +73%
+- v37: n=2, ≈ +118%
 
 If results diverge by >20pp from prior session, investigate before deploying.
 
@@ -1058,7 +1058,7 @@ If results diverge by >20pp from prior session, investigate before deploying.
 
 ```bash
 git add scripts/strategy_replay.py
-git commit -m "test(replay): add v36_wnba + v37_wnba to STRATEGIES dict
+git commit -m "test(replay): add v36 + v37 to STRATEGIES dict
 
 For dry-run validation against WNBA observer data ahead of live deploy.
 
@@ -1105,7 +1105,7 @@ If diff: fix new regressions before proceeding.
 - [ ] **Step 1: Verify commit list**
 
 Run: `git log --oneline origin/master..HEAD`
-Expected: ~10 commits from Phases A-F (test scaffold, longshot_v31, midshot_v31, underdog_v31, v32/v33 re-block, v36_wnba, v37_wnba, paper_twin reg, main.py, dashboard, replay).
+Expected: ~10 commits from Phases A-F (test scaffold, longshot_v31, midshot_v31, underdog_v31, v32/v33 re-block, v36, v37, paper_twin reg, main.py, dashboard, replay).
 
 - [ ] **Step 2: Push**
 
@@ -1130,12 +1130,12 @@ Expected: `Fast-forward` to most recent commit hash.
 ⚠️ This step requires user permission to edit prod `.env` (writes are gated per memory `feedback_prod_db_read_authorization`).
 
 Ask user:
-> "Need to edit `/home/ubuntu/kalshi-arb/.env` on prod to append `sports_underdog_v36_wnba,sports_underdog_v37_wnba` to `LIVE_STRATEGIES`. v31 trio (`sports_longshot_v31, sports_midshot_v31, sports_underdog_v31`) should already be in the env. Confirm before I proceed."
+> "Need to edit `/home/ubuntu/kalshi-arb/.env` on prod to append `sports_underdog_v36,sports_underdog_v37` to `LIVE_STRATEGIES`. v31 trio (`sports_longshot_v31, sports_midshot_v31, sports_underdog_v31`) should already be in the env. Confirm before I proceed."
 
 After user confirms:
 ```bash
 ssh -i /Users/taejunoh/Desktop/LFG/pem/kalshi-bot.pem -o StrictHostKeyChecking=no ubuntu@18.117.216.224 \
-  "sed -i 's/^LIVE_STRATEGIES=\\(.*\\)$/LIVE_STRATEGIES=\\1,sports_underdog_v36_wnba,sports_underdog_v37_wnba/' /home/ubuntu/kalshi-arb/.env && grep LIVE_STRATEGIES /home/ubuntu/kalshi-arb/.env"
+  "sed -i 's/^LIVE_STRATEGIES=\\(.*\\)$/LIVE_STRATEGIES=\\1,sports_underdog_v36,sports_underdog_v37/' /home/ubuntu/kalshi-arb/.env && grep LIVE_STRATEGIES /home/ubuntu/kalshi-arb/.env"
 ```
 
 Expected: grep shows updated line with both new tokens present.
@@ -1160,7 +1160,7 @@ Expected:
 - `Application startup complete` (clean boot)
 - `Targeted scan: ... strategy markets from 16 series` (KXWNBAGAME included since 5/9 wiring)
 - NO Tracebacks involving new strategies
-- (Eventually) fires of form `[LIVE] sports_underdog_v36_wnba ...` or `sports_underdog_v37_wnba ...` on WNBA tickers when next WNBA slate opens (5/14)
+- (Eventually) fires of form `[LIVE] sports_underdog_v36 ...` or `sports_underdog_v37 ...` on WNBA tickers when next WNBA slate opens (5/14)
 
 - [ ] **Step 5: Capture deploy snapshot for memory**
 
@@ -1174,7 +1174,7 @@ Note the deploy commit hash + time. Memory updates (per spec "Memory Updates Req
 |------|----------------|
 | n=11 small sample → first-week ROI dominated by noise | Spec callout; accepted by user; 5/23 eval defers promotion/retire |
 | v32/v33 cascade fires on WNBA undesired | Task 5 + 6 explicit re-block + tests |
-| v36_wnba evaluate() != v36_playoff logic (chalk-favorite vs underdog) | Task 7 docstring + spec NOTE |
+| v36 evaluate() != v36_playoff logic (chalk-favorite vs underdog) | Task 7 docstring + spec NOTE |
 | Pair-fire dedup blocks valid 2nd signal on game later | Acceptable — game-level cap aligns with v40 d036f07 already in prod 24h+ |
 | `.env` edit fails or misses tokens | Task 15 step 2 grep verifies |
 | Restart fails after `.env` edit | Task 15 step 3 `is-active` check; revert by removing tokens + restart |
@@ -1188,8 +1188,8 @@ Note the deploy commit hash + time. Memory updates (per spec "Memory Updates Req
 
 - "v31 trio modify-in-place" → Tasks 2, 3, 4 ✓
 - "v32 + v33 paper variants cascade re-block" → Tasks 5, 6 ✓
-- "v36_wnba new sibling, 35-55c band, fair > 0.55, size 8" → Task 7 ✓
-- "v37_wnba sibling inheriting v37_soccer evaluate" → Task 8 ✓
+- "v36 new sibling, 35-55c band, fair > 0.55, size 8" → Task 7 ✓
+- "v37 sibling inheriting v37_soccer evaluate" → Task 8 ✓
 - "Registration: PAPER_TWIN + main.py + dashboard + .env" → Tasks 9, 10, 11, 15 ✓
 - "Validation: pytest + strategy_replay" → Tasks 1 (scaffold) + per-task tests + 12 (replay) + 13 (full suite) ✓
 - "Rollout: 3 commits..." → Multiple atomic commits across tasks (per-task TDD pattern; ~10 commits total; spec's "3 commits" was illustrative — atomic is better) ✓
@@ -1203,6 +1203,6 @@ Note the deploy commit hash + time. Memory updates (per spec "Memory Updates Req
 
 **Open items from spec**:
 - "Exact location of pair-fire dedup helper (per-class duplicate vs base class method)" → Resolved as per-class duplicate (more surgical, minimal blast radius)
-- "v36_wnba evaluate() — verify exact thresholds against v36_us source" → Resolved as new evaluate() (Task 7 NOTE)
+- "v36 evaluate() — verify exact thresholds against v36_us source" → Resolved as new evaluate() (Task 7 NOTE)
 - "v33 paper variants: enumerate which paper-twin files exist" → Resolved in Task 6 file list
-- "Existing strategy_replay.py needs v36_wnba and v37_wnba helpers added" → Task 12 ✓
+- "Existing strategy_replay.py needs v36 and v37 helpers added" → Task 12 ✓

@@ -1,4 +1,4 @@
-"""WNBA strategy expansion — verify v31 trio + v36_wnba + v37_wnba fire on
+"""WNBA strategy expansion — verify v31 trio + v36 + v37 fire on
 WNBA tickers; v32 + v33 paper + v37_soccer remain blocked; v34/v35 naturally
 blocked by ALLOWED_CELLS; pair-fire dedup works.
 
@@ -157,23 +157,23 @@ def test_v32_v33_family_blocks_wnba():
 
 
 # ---------------------------------------------------------------------------
-# Task 7: v36_wnba — chalk-favorite YES/NO at 35-55c, fair_prob > 0.55
+# Task 7: v36 — chalk-favorite YES/NO at 35-55c, fair_prob > 0.55
 # ---------------------------------------------------------------------------
 
-def test_v36_wnba_class_attributes():
-    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
-    assert SportsUnderdogV36WNBAStrategy.STRATEGY_NAME == "sports_underdog_v36_wnba"
-    assert SportsUnderdogV36WNBAStrategy.ALLOWED_CELLS == frozenset({("WNBA", "pre")})
-    assert SportsUnderdogV36WNBAStrategy.PLAYOFF_ONLY is False
-    assert SportsUnderdogV36WNBAStrategy.MIN_ENTRY_PRICE == 0.35
-    assert SportsUnderdogV36WNBAStrategy.MAX_ENTRY_PRICE == 0.55
-    assert "WNBA" not in SportsUnderdogV36WNBAStrategy.OBSERVATION_ONLY_SPORTS
+def test_v36_class_attributes():
+    from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
+    assert SportsUnderdogV36Strategy.STRATEGY_NAME == "sports_underdog_v36"
+    assert SportsUnderdogV36Strategy.ALLOWED_CELLS == frozenset({("WNBA", "pre")})
+    assert SportsUnderdogV36Strategy.PLAYOFF_ONLY is False
+    assert SportsUnderdogV36Strategy.MIN_ENTRY_PRICE == 0.35
+    assert SportsUnderdogV36Strategy.MAX_ENTRY_PRICE == 0.55
+    assert "WNBA" not in SportsUnderdogV36Strategy.OBSERVATION_ONLY_SPORTS
 
 
-def test_v36_wnba_fires_on_favorite_in_band():
-    """v36_wnba fires when YES is the favorite (fair > 0.55) priced at 35-55c."""
-    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
-    strat, _ = _make(SportsUnderdogV36WNBAStrategy)
+def test_v36_fires_on_favorite_in_band():
+    """v36 fires when YES is the favorite (fair > 0.55) priced at 35-55c."""
+    from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
+    strat, _ = _make(SportsUnderdogV36Strategy)
     # SEA-CONN: SEA yes_ask 0.55, eu 0.534 — should NOT fire (eu < 0.55)
     sig = strat.evaluate(0.55, 0.46, 0.534, ticker="KXWNBAGAME-26MAY14SEA-SEA")
     assert sig is None
@@ -184,9 +184,9 @@ def test_v36_wnba_fires_on_favorite_in_band():
     assert sig["price"] == 0.54
 
 
-def test_v36_wnba_no_fire_outside_band():
-    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
-    strat, _ = _make(SportsUnderdogV36WNBAStrategy)
+def test_v36_no_fire_outside_band():
+    from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
+    strat, _ = _make(SportsUnderdogV36Strategy)
     # price 0.30 — below 0.35 floor
     sig = strat.evaluate(0.30, 0.71, 0.55, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
     assert sig is None
@@ -195,39 +195,39 @@ def test_v36_wnba_no_fire_outside_band():
     assert sig is None
 
 
-def test_v36_wnba_pair_fire_dedup():
-    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
-    strat, _ = _make(SportsUnderdogV36WNBAStrategy)
+def test_v36_pair_fire_dedup():
+    from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
+    strat, _ = _make(SportsUnderdogV36Strategy)
     strat._traded_tickers = {WNBA_TICKER_A: 1234567890.0}
     sig = strat.evaluate(0.54, 0.47, 0.56, ticker=WNBA_TICKER_B)
     assert sig is None  # paired sibling already fired
 
 
-def test_v36_wnba_size_8():
-    from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
-    strat, _ = _make(SportsUnderdogV36WNBAStrategy)
+def test_v36_size_8():
+    from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
+    strat, _ = _make(SportsUnderdogV36Strategy)
     assert strat._get_trade_size({"side": "yes", "price": 0.54}) == 8.0
 
 
 # ---------------------------------------------------------------------------
-# Task 8: v37_wnba — TEAM 20-29c band, sibling of sports_soccer_underdog_v1
+# Task 8: v37 — TEAM 20-29c band, sibling of sports_soccer_underdog_v1
 # ---------------------------------------------------------------------------
 
-def test_v37_wnba_class_attributes():
-    from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
-    assert SportsUnderdogV37WNBAStrategy.STRATEGY_NAME == "sports_underdog_v37_wnba"
+def test_v37_class_attributes():
+    from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
+    assert SportsUnderdogV37Strategy.STRATEGY_NAME == "sports_underdog_v37"
     # Block everything except WNBA — soccer also blocked here
-    blocklist = SportsUnderdogV37WNBAStrategy.SPORT_BLOCKLIST
+    blocklist = SportsUnderdogV37Strategy.SPORT_BLOCKLIST
     for sport in ("NBA", "MLB", "NHL", "NPB", "KBO"):
-        assert sport in blocklist, f"{sport} should be in v37_wnba blocklist"
+        assert sport in blocklist, f"{sport} should be in v37 blocklist"
     assert "WNBA" not in blocklist
     # OBSERVATION_ONLY override — WNBA tradeable
-    assert "WNBA" not in SportsUnderdogV37WNBAStrategy.OBSERVATION_ONLY_SPORTS
+    assert "WNBA" not in SportsUnderdogV37Strategy.OBSERVATION_ONLY_SPORTS
 
 
-def test_v37_wnba_fires_on_20_29c_team():
-    from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
-    strat, _ = _make(SportsUnderdogV37WNBAStrategy)
+def test_v37_fires_on_20_29c_team():
+    from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
+    strat, _ = _make(SportsUnderdogV37Strategy)
     # WNBA-formatted ticker, price 0.22 — in 20-29c band, payoff >= 2.0
     sig = strat.evaluate(0.22, 0.79, 0.22, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
     assert sig is not None
@@ -235,17 +235,17 @@ def test_v37_wnba_fires_on_20_29c_team():
     assert sig["price"] == 0.22
 
 
-def test_v37_wnba_skips_outside_band():
-    from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
-    strat, _ = _make(SportsUnderdogV37WNBAStrategy)
+def test_v37_skips_outside_band():
+    from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
+    strat, _ = _make(SportsUnderdogV37Strategy)
     # 0.30 — above 0.29 cap
     sig = strat.evaluate(0.30, 0.71, 0.30, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
     assert sig is None
 
 
-def test_v37_wnba_pair_fire_dedup():
-    from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
-    strat, _ = _make(SportsUnderdogV37WNBAStrategy)
+def test_v37_pair_fire_dedup():
+    from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
+    strat, _ = _make(SportsUnderdogV37Strategy)
     strat._traded_tickers = {WNBA_TICKER_A: 1234567890.0}
     sig = strat.evaluate(0.22, 0.79, 0.22, ticker=WNBA_TICKER_B)
     assert sig is None

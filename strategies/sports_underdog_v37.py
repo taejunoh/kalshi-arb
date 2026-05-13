@@ -14,14 +14,14 @@ from typing import Optional
 
 from strategies.sports_soccer_underdog_v1 import SportsSoccerUnderdogV1Strategy
 
-logger = logging.getLogger("sports_underdog_v37_wnba")
+logger = logging.getLogger("sports_underdog_v37")
 
 
-class SportsUnderdogV37WNBAStrategy(SportsSoccerUnderdogV1Strategy):
+class SportsUnderdogV37Strategy(SportsSoccerUnderdogV1Strategy):
     """v37 TEAM 20-29c band applied to WNBA only."""
 
-    TRADED_TICKERS_FILE = "data/sports_underdog_v37_wnba_tickers.json"
-    STRATEGY_NAME = "sports_underdog_v37_wnba"
+    TRADED_TICKERS_FILE = "data/sports_underdog_v37_tickers.json"
+    STRATEGY_NAME = "sports_underdog_v37"
 
     # Block everything except WNBA (soccer blocked here too)
     SPORT_BLOCKLIST = frozenset({"NBA", "MLB", "NHL", "NPB", "KBO",
