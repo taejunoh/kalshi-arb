@@ -203,10 +203,17 @@ def test_v36_pair_fire_dedup():
     assert sig is None  # paired sibling already fired
 
 
-def test_v36_size_8():
+def test_v36_size_12():
     from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
     strat, _ = _make(SportsUnderdogV36Strategy)
-    assert strat._get_trade_size({"side": "yes", "price": 0.54}) == 8.0
+    assert strat._get_trade_size({"side": "yes", "price": 0.54}) == 12.0
+
+
+def test_v37_size_12():
+    """v37 overrides parent's depth-tiered caps with fixed 12 (symmetric with v36)."""
+    from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
+    strat, _ = _make(SportsUnderdogV37Strategy)
+    assert strat._get_trade_size({"side": "yes", "price": 0.22, "ticker": "KXWNBAGAME-26MAY14NYWSH-NY"}) == 12.0
 
 
 # ---------------------------------------------------------------------------

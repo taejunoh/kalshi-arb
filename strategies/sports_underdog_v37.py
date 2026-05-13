@@ -31,6 +31,12 @@ class SportsUnderdogV37Strategy(SportsSoccerUnderdogV1Strategy):
     # → already allows WNBA + all other sports. Combined with SPORT_BLOCKLIST
     # above, only WNBA reaches evaluate().
 
+    def _get_trade_size(self, signal: dict) -> float:
+        # 2026-05-13: override parent's depth-tiered soccer caps (2-24 by tier)
+        # with fixed size 12. WNBA depth p50 $567 (tier4 territory) → 12 USDC
+        # peak stake at 0.29 = $3.48 → 163× cushion. Sized symmetric with v36.
+        return min(12.0, self._order_manager.bankroll * 0.02)
+
     def evaluate(self, kalshi_yes: float, kalshi_no: float,
                  fair_prob: float, ticker: str = "", **kwargs) -> Optional[dict]:
         """Pair-fire dedup, then delegate to parent evaluate (20-29c TEAM)."""
