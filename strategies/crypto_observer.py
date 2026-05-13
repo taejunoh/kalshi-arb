@@ -359,11 +359,17 @@ class ClusterSumObserver(BaseObserver):
 
 class BvTConsistencyObserver(BaseObserver):
     """For each T-threshold market (T_X = 'close ≥ X'), compare its ya
-    against Σ ya(B_i) for all B-buckets with center ≥ X. They should
-    be equal. ≥ $0.05 deviation suggests T or B sum is mispriced.
+    against Σ ya(B_i) over ACTIVELY-QUOTED B-buckets with center ≥ X.
+    They should be equal. ≥ $0.05 deviation suggests one side mispriced.
+
+    Phantom-quote filter: Kalshi maintains a default ya≈$0.99/yb=$0 on
+    inactive tail buckets. Summing those into Σ B trivially blows past
+    $1.0 and yields false positives (same failure mode that retired
+    ladder_crypto — see [[ladder-crypto-retired-2026-05-13]]). Require
+    yb > 0 to count a leg as active.
 
     Prediction: if Σ B(≥X) > T_X (B sum says higher prob than T),
-    predict T resolves YES (which favors the B sum). Vice versa.
+    predict T resolves YES (B sum is the more-reliable signal). Vice versa.
     """
     name = "bvt_consistency"
 
@@ -376,8 +382,11 @@ class BvTConsistencyObserver(BaseObserver):
         for t in ctx.t_legs:
             if t.ya <= 0 or t.ya >= 1:
                 continue
-            # Sum ya over B-buckets whose center is ≥ T threshold
-            sum_b = sum(l.ya for l in ctx.b_legs if l.threshold >= t.threshold)
+            active = [l for l in ctx.b_legs
+                      if l.threshold >= t.threshold and l.yb > 0]
+            if not active:
+                continue
+            sum_b = sum(l.ya for l in active)
             if sum_b <= 0:
                 continue
             dev = sum_b - t.ya
@@ -390,6 +399,7 @@ class BvTConsistencyObserver(BaseObserver):
                 predicted_outcome=predicted,
                 features={"t_ya": t.ya, "sum_b_ya": round(sum_b, 3),
                           "deviation": round(dev, 3),
+                          "n_active_b": len(active),
                           "t_threshold": t.threshold,
                           "spot": ctx.spot,
                           "mts_s": round(ctx.close_time_secs, 1)},
@@ -651,6 +661,15 @@ class CryptoObserverStrategy:
         return best
 
     async def _deribit_iv(self, asset: str) -> Optional[float]:
+        """Return ATM IV as a decimal (e.g. 0.60 for 60% annualized).
+
+        Deribit /public/get_book_summary_by_currency returns mark_iv as a
+        percentage (e.g. 60.0 means 60%). The deribit_iv_cron stores that
+        raw value in crypto_iv.atm_iv, so the observer divides by 100 here.
+        Note: B2 `crypto_fair_value` reads the same column without dividing,
+        which is a known issue tracked separately — observer-side fix is
+        independent.
+        """
         db = getattr(self._order_manager, "_db", None)
         if db is None:
             return None
@@ -660,7 +679,10 @@ class CryptoObserverStrategy:
             return None
         if not row:
             return None
-        return _safe_float(row.get("atm_iv"))
+        raw = _safe_float(row.get("atm_iv"))
+        if raw is None or raw <= 0:
+            return None
+        return raw / 100.0
 
     def _build_contexts(self, markets: list[dict], now: datetime,
                         now_epoch: float) -> list[EventContext]:
