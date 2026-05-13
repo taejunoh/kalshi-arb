@@ -756,11 +756,13 @@
 
     <!-- ── Performance Cards (Demoted) ── -->
     <section id="perf-demoted-section">
-      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+      <div id="perf-demoted-toggle"
+           style="display:flex;align-items:center;gap:10px;margin-bottom:12px;cursor:pointer;user-select:none;">
+        <span id="perf-demoted-chevron" style="color:var(--text-dim);font-size:10px;width:10px;display:inline-block;">▶</span>
         <div class="section-title" style="margin-bottom:0">Strategy Performance (Demoted)</div>
         <span style="color:var(--text-dim);font-size:11px;">Removed from LIVE_STRATEGIES env or scan loop — historical live trades shown, no new live entries</span>
       </div>
-      <div class="perf-grid" id="perf-demoted-grid">
+      <div class="perf-grid" id="perf-demoted-grid" style="display:none;">
         <div class="perf-card" style="color:var(--text-dim);font-size:12px;">Loading…</div>
       </div>
     </section>
@@ -2024,6 +2026,22 @@ document.getElementById('perf-archived-toggle').addEventListener('click', () => 
   applyArchivedCollapse(!cur);
 });
 applyArchivedCollapse(localStorage.getItem(ARCHIVED_OPEN_KEY) === '1');
+
+// Demoted strategies — historical only, collapse by default (matches Archived pattern)
+const DEMOTED_OPEN_KEY = 'arb_dashboard_demoted_open';
+function applyDemotedCollapse(open) {
+  const grid = document.getElementById('perf-demoted-grid');
+  const chev = document.getElementById('perf-demoted-chevron');
+  if (!grid || !chev) return;
+  grid.style.display = open ? '' : 'none';
+  chev.textContent = open ? '▼' : '▶';
+  localStorage.setItem(DEMOTED_OPEN_KEY, open ? '1' : '0');
+}
+document.getElementById('perf-demoted-toggle').addEventListener('click', () => {
+  const cur = localStorage.getItem(DEMOTED_OPEN_KEY) === '1';
+  applyDemotedCollapse(!cur);
+});
+applyDemotedCollapse(localStorage.getItem(DEMOTED_OPEN_KEY) === '1');
 
 // Settlement History — Kalshi data, collapse by default (large + auxiliary info)
 const SETTLEMENT_HISTORY_OPEN_KEY = 'arb_dashboard_settlement_history_open';
