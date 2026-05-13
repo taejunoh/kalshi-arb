@@ -1286,7 +1286,7 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     const isV32Underdog = strat === 'sports_underdog_v32';
     // Strategies with per-depth-tier cap policies (see _get_trade_size override).
     const tieredLabels = {
-      'sports_underdog_v37_soccer': 'tiered 2/4/8/24',
+      'sports_soccer_underdog_v1': 'tiered 2/4/8/24',
       'sports_midshot_v31': '36 → 60 @ $500-2k & $10k+',
     };
     const sizeStr = (baseSize !== null && baseSize !== undefined)
@@ -1351,9 +1351,9 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     const v33Strats = new Set(['sports_longshot_v33', 'sports_midshot_v33', 'sports_underdog_v33']);
     const v34Strats = new Set(['sports_longshot_v34', 'sports_midshot_v34', 'sports_underdog_v34']);
     const v35Strats = new Set(['sports_longshot_v35', 'sports_midshot_v35', 'sports_underdog_v35']);
-    const v36Strats = new Set(['sports_underdog_v36_playoff', 'sports_underdog_v36_us']);
-    const v37Strats = new Set(['sports_underdog_v37_soccer']);
-    const v38Strats = new Set(['sports_draw_v38_soccer']);
+    const v36Strats = new Set(['sports_playoff_underdog_v1', 'sports_playoff_underdog_v1_us']);
+    const v37Strats = new Set(['sports_soccer_underdog_v1']);
+    const v38Strats = new Set(['sports_soccer_draw_v1']);
     const v40Strats = new Set(['sports_favorite_v40']);
     const v4Strats = new Set(['sports_pinnacle_edge', 'sports_v4_edge', 'sports_consolidated']);
     let versionBadge = '';

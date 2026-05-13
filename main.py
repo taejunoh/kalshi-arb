@@ -32,10 +32,10 @@ from strategies.sports_underdog_v34 import SportsUnderdogV34Strategy
 from strategies.sports_longshot_v35 import SportsLongshotV35Strategy
 from strategies.sports_midshot_v35 import SportsMidshotV35Strategy
 from strategies.sports_underdog_v35 import SportsUnderdogV35Strategy
-from strategies.sports_underdog_v36_playoff import SportsUnderdogV36PlayoffStrategy
-from strategies.sports_underdog_v36_us import SportsUnderdogV36USStrategy
-from strategies.sports_underdog_v37_soccer import SportsUnderdogV37SoccerStrategy
-from strategies.sports_draw_v38_soccer import SportsDrawV38SoccerStrategy
+from strategies.sports_playoff_underdog_v1 import SportsPlayoffUnderdogV1Strategy
+from strategies.sports_playoff_underdog_v1_us import SportsPlayoffUnderdogV1USStrategy
+from strategies.sports_soccer_underdog_v1 import SportsSoccerUnderdogV1Strategy
+from strategies.sports_soccer_draw_v1 import SportsSoccerDrawV1Strategy
 from strategies.sports_favorite_v40 import SportsFavoriteV40Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
@@ -163,20 +163,20 @@ class Bot:
         # Built 2026-04-30 from sub-bucket analysis showing 35-45¢ band has
         # +135% observer ROI while 20-30¢ band loses -178%/-102% in NBA
         # playoffs. See strategy file docstring for the band-by-band data.
-        self.sports_underdog_v36_playoff = SportsUnderdogV36PlayoffStrategy(
+        self.sports_playoff_underdog_v1 = SportsPlayoffUnderdogV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         # V3.6 Playoff US — companion to v36_playoff (eu) covering us region.
         # Same 35¢+ floor + PLAYOFF_ONLY logic. Evidence: trade-level us 35¢+
         # n=12 +88-189% across underdog_v34 paper + v35 LIVE+twin.
-        self.sports_underdog_v36_us = SportsUnderdogV36USStrategy(
+        self.sports_playoff_underdog_v1_us = SportsPlayoffUnderdogV1USStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
         # V3.7 Soccer — soccer-only deep-underdog 20-29c TEAM-only.
         # Built 2026-05-06 from observer analysis of MLS/EPL/LAL/BUN/UCL.
         # Paper-twin only at launch. n=13 games / +120% ROI / drop-top-3 +55%.
         # Promotion gate: n>=25 + ROI>=+30% + drop-3 > 0.
-        self.sports_underdog_v37_soccer = SportsUnderdogV37SoccerStrategy(
+        self.sports_soccer_underdog_v1 = SportsSoccerUnderdogV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         # V3.8 Soccer Draw — DRAW side of soccer 3-way markets.
@@ -184,7 +184,7 @@ class Bot:
         # EPL+LAL only, 0.25-0.30 YES band. n=13 baseline ROI ~+60%/drop-1
         # ~+25%. Non-BUN 0.20-0.30 sample n=47, ROI +27%, drop-3 +9%.
         # LIVE at launch (size 12). Eval gate: n>=25, ROI>=+30%, drop-3>0 by ~6/22.
-        self.sports_draw_v38_soccer = SportsDrawV38SoccerStrategy(
+        self.sports_soccer_draw_v1 = SportsSoccerDrawV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         # V4.0 Favorite — slight-favorite YES/NO bets on MLB 0.50-0.55 +
@@ -470,12 +470,12 @@ class Bot:
             # Targets the 35-45¢ band where observer + trades both showed
             # +135% / +153% ROI while 20-30¢ loses catastrophically. Promotion
             # gate: n_games ≥ 25 with ROI ≥ +30%.
-            ("sports_underdog_v36_playoff", self.sports_underdog_v36_playoff),
-            ("sports_underdog_v36_us", self.sports_underdog_v36_us),
+            ("sports_playoff_underdog_v1", self.sports_playoff_underdog_v1),
+            ("sports_playoff_underdog_v1_us", self.sports_playoff_underdog_v1_us),
             # V3.7 Soccer — paper-twin only at launch. Soccer 20-29c TEAM.
-            ("sports_underdog_v37_soccer", self.sports_underdog_v37_soccer),
+            ("sports_soccer_underdog_v1", self.sports_soccer_underdog_v1),
             # V3.8 Soccer Draw — DRAW side, EPL+LAL 0.25-0.30 YES only.
-            ("sports_draw_v38_soccer", self.sports_draw_v38_soccer),
+            ("sports_soccer_draw_v1", self.sports_soccer_draw_v1),
             # V4.0 Favorite — MLB 0.50-0.55 + NPB 0.55-0.65 paper-only.
             ("sports_favorite_v40", self.sports_favorite_v40),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at

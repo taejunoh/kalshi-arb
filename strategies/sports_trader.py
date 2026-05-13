@@ -543,7 +543,7 @@ class SportsTraderStrategy:
     CELL_PRICE_BANDS: Optional[dict[tuple[str, str], list[tuple[float, float]]]] = None
     # Playoff-only gate. When True, skip entries on regular-season tickers
     # (using core.season.is_playoff classifier). Additive with ALLOWED_CELLS —
-    # both must pass. Built 2026-04-30 for sports_underdog_v36_playoff which
+    # both must pass. Built 2026-04-30 for sports_playoff_underdog_v1 which
     # targets NBA playoff-specific underdog mispricing (35¢+ floor cell).
     PLAYOFF_ONLY: bool = False
     # Sports added to sport_map for data collection (observer + odds_observations)

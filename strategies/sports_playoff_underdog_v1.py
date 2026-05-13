@@ -1,4 +1,8 @@
-"""Sports Underdog V3.6 Playoff — NBA-playoff-only underdog with 35¢ floor.
+"""Sports Playoff Underdog V1 (renamed 2026-05-13 from sports_underdog_v36_playoff)
+— NBA-playoff-only underdog with 30¢ floor.
+
+Prior numeric suffix (v36) suggested underdog family iteration, but this
+is its own cell (playoff regime).
 
 Built 2026-04-30 from a sub-bucket analysis of NBA playoff underdog cells:
 
@@ -25,14 +29,14 @@ import logging
 
 from strategies.sports_underdog_v31 import SportsUnderdogV31Strategy
 
-logger = logging.getLogger("sports_underdog_v36_playoff")
+logger = logging.getLogger("sports_playoff_underdog_v1")
 
 
-class SportsUnderdogV36PlayoffStrategy(SportsUnderdogV31Strategy):
-    """V3.1 underdog logic restricted to NBA playoff pre-game with 35¢ floor."""
+class SportsPlayoffUnderdogV1Strategy(SportsUnderdogV31Strategy):
+    """V3.1 underdog logic restricted to NBA playoff pre-game with 30¢ floor."""
 
-    TRADED_TICKERS_FILE = "data/sports_underdog_v36_playoff_tickers.json"
-    STRATEGY_NAME = "sports_underdog_v36_playoff"
+    TRADED_TICKERS_FILE = "data/sports_playoff_underdog_v1_tickers.json"
+    STRATEGY_NAME = "sports_playoff_underdog_v1"
     REGION_OVERRIDE = "eu"  # observer eu and us nearly identical (+135% vs +134%)
     ALLOWED_CELLS = frozenset({("NBA", "pre")})
     PLAYOFF_ONLY = True

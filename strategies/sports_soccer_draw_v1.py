@@ -1,4 +1,5 @@
-"""Sports Draw V3.8 Soccer — soccer 3-way Draw side, EPL+LAL+MLS 0.25-0.30.
+"""Sports Soccer Draw V1 (renamed 2026-05-13 from sports_draw_v38_soccer)
+— soccer 3-way Draw side, EPL+LAL+MLS 0.25-0.30. Renamed 2026-05-13.
 
 Built 2026-05-11 from observer analysis of 71 settled TIE tickers across
 MLS/EPL/LAL/UCL/BUN since 2026-05-02. Sister strategy to v37_soccer
@@ -49,16 +50,16 @@ per-trade edge × size profile is comparable.
 import logging
 from typing import Optional
 
-from strategies.sports_underdog_v37_soccer import SportsUnderdogV37SoccerStrategy
+from strategies.sports_soccer_underdog_v1 import SportsSoccerUnderdogV1Strategy
 
-logger = logging.getLogger("sports_draw_v38_soccer")
+logger = logging.getLogger("sports_soccer_draw_v1")
 
 
-class SportsDrawV38SoccerStrategy(SportsUnderdogV37SoccerStrategy):
-    """Soccer 3-way DRAW side, EPL+LAL only, 0.25-0.30 YES band."""
+class SportsSoccerDrawV1Strategy(SportsSoccerUnderdogV1Strategy):
+    """Soccer 3-way DRAW side, EPL+LAL+MLS, 0.25-0.30 YES band."""
 
-    TRADED_TICKERS_FILE = "data/sports_draw_v38_soccer_tickers.json"
-    STRATEGY_NAME = "sports_draw_v38_soccer"
+    TRADED_TICKERS_FILE = "data/sports_soccer_draw_v1_tickers.json"
+    STRATEGY_NAME = "sports_soccer_draw_v1"
 
     # Allowed leagues: EPL + LaLiga + MLS. v37 inheritance gives us
     # OBSERVATION_ONLY_SPORTS=frozenset() (override of parent gate) and
@@ -112,5 +113,5 @@ class SportsDrawV38SoccerStrategy(SportsUnderdogV37SoccerStrategy):
             "side": "yes",
             "price": price,
             "edge": payoff,
-            "strategy": "v38_soccer_draw",
+            "strategy": "soccer_draw_v1",
         }

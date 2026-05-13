@@ -1,4 +1,5 @@
-"""Sports Underdog V3.7 Soccer — soccer-only deep-underdog 20-29c TEAM-only.
+"""Sports Soccer Underdog V1 (renamed 2026-05-13 from sports_underdog_v37_soccer)
+— soccer-only deep-underdog 20-29c TEAM-only. Renamed 2026-05-13.
 
 Built 2026-05-06 from observer analysis of MLS/EPL/LAL/BUN/UCL pre-game data
 collected since 2026-05-02. Pure price-band gate; TIE outcomes excluded.
@@ -29,14 +30,14 @@ from typing import Optional
 
 from strategies.sports_underdog_v31 import SportsUnderdogV31Strategy
 
-logger = logging.getLogger("sports_underdog_v37_soccer")
+logger = logging.getLogger("sports_soccer_underdog_v1")
 
 
-class SportsUnderdogV37SoccerStrategy(SportsUnderdogV31Strategy):
+class SportsSoccerUnderdogV1Strategy(SportsUnderdogV31Strategy):
     """Soccer-only deep-underdog (20-29c TEAM, payoff>=2x)."""
 
-    TRADED_TICKERS_FILE = "data/sports_underdog_v37_soccer_tickers.json"
-    STRATEGY_NAME = "sports_underdog_v37_soccer"
+    TRADED_TICKERS_FILE = "data/sports_soccer_underdog_v1_tickers.json"
+    STRATEGY_NAME = "sports_soccer_underdog_v1"
     REGION_OVERRIDE = "eu"  # arbitrary — soccer eu/us consensus aligned
 
     # Soccer leagues only — block all non-soccer sports.
@@ -152,7 +153,7 @@ class SportsUnderdogV37SoccerStrategy(SportsUnderdogV31Strategy):
                     "side": side,
                     "price": price,
                     "edge": payoff,
-                    "strategy": "v37_soccer",
+                    "strategy": "soccer_underdog_v1",
                     "ticker": ticker,
                 }
                 best_payoff = payoff

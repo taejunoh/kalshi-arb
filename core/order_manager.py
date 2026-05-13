@@ -22,10 +22,10 @@ LIMIT_TTL_STRATEGIES = {
     "sports_longshot_v35",  # 2026-04-23 live-promoted (NBA, pre) us cell from v34
     "sports_midshot_v35",
     "sports_underdog_v35",
-    "sports_underdog_v36_playoff",  # 2026-04-30 live-promoted on observer +135% n=10 + trades +153% n=9
-    "sports_underdog_v36_us",  # 2026-04-30 us companion to v36_playoff
-    "sports_underdog_v37_soccer",  # 2026-05-06 paper-twin launch — soccer 20-29c TEAM
-    "sports_draw_v38_soccer",  # 2026-05-11 live launch — soccer DRAW EPL+LAL 0.25-0.30
+    "sports_playoff_underdog_v1",  # 2026-04-30 live-promoted on observer +135% n=10 + trades +153% n=9
+    "sports_playoff_underdog_v1_us",  # 2026-04-30 us companion to v36_playoff
+    "sports_soccer_underdog_v1",  # 2026-05-06 paper-twin launch — soccer 20-29c TEAM
+    "sports_soccer_draw_v1",  # 2026-05-11 live launch — soccer DRAW EPL+LAL 0.25-0.30
 }
 LIMIT_TTL_SECONDS = 60
 LIMIT_TTL_POLL_INTERVAL = 5
@@ -59,29 +59,29 @@ LIMIT_AGGRESSION_CENTS = 15
 # other v3X strategies had unfilled cohorts dominated by losers (TTL acted
 # as an adverse-selection shield) — those keep the 15¢ default.
 #   sports_midshot_v31:         2/2 wins, paper +$103
-#   sports_underdog_v36_playoff: 4/4 wins, paper +$22
-#   sports_underdog_v36_us:     1/1 win,  paper +$12
+#   sports_playoff_underdog_v1: 4/4 wins, paper +$22
+#   sports_playoff_underdog_v1_us:     1/1 win,  paper +$12
 # Bump from 15→25 captures asks in the +15-25¢ band without affecting the
 # full-fill cohort (avg realized slip 0.98¢ — depth is in book front, the
 # wider cap only matters when book has moved past +15¢).
 # Re-eval ~2026-05-25 (1 month at current ~1 unfilled / 2 days pace).
 LIMIT_AGGRESSION_CENTS_BY_STRATEGY = {
     "sports_midshot_v31": 25,
-    "sports_underdog_v36_playoff": 25,
-    "sports_underdog_v36_us": 25,
+    "sports_playoff_underdog_v1": 25,
+    "sports_playoff_underdog_v1_us": 25,
     # 2026-05-11 v37 unfilled analysis: 2/17 paper trades did not fill live.
     # Paper-only cohort: 1W (+$18.61 ATMRCC) / 1L (-$8.00 SEVESP) = +$10.61
     # net, explains 87% of live-vs-paper $10.38 gap. Not the unanimous
     # 100% paper-win signal that other 25c overrides had — applied based on
     # user judgment that the structural pattern (60s TTL leaving alpha) likely
     # repeats. Re-eval at ~2026-05-25 with more data.
-    "sports_underdog_v37_soccer": 25,
+    "sports_soccer_underdog_v1": 25,
     # 2026-05-11 launch-time defensive override. v38 inherits v37's
     # execution mechanics (same MAX_MTS_AT_ENTRY, same depth gate, same
     # 0.25-0.30 band). No v38 fills yet to measure unfilled-cohort
     # directly, but if v37 leaks alpha through 15c ceiling at this band,
     # v38 likely does too. Re-eval at ~2026-05-25 alongside v37.
-    "sports_draw_v38_soccer": 25,
+    "sports_soccer_draw_v1": 25,
 }
 
 
@@ -103,10 +103,10 @@ PAPER_TWIN_STRATEGIES = {
     "sports_longshot_v35",  # 2026-04-23 live-promoted — keep paper twin alongside live
     "sports_midshot_v35",
     "sports_underdog_v35",
-    "sports_underdog_v36_playoff",  # 2026-04-30 live-promoted — keep paper twin for slippage A/B
-    "sports_underdog_v36_us",  # 2026-04-30 us companion
-    "sports_underdog_v37_soccer",  # 2026-05-06 paper-twin launch — soccer 20-29c TEAM
-    "sports_draw_v38_soccer",  # 2026-05-11 live launch — soccer DRAW EPL+LAL 0.25-0.30
+    "sports_playoff_underdog_v1",  # 2026-04-30 live-promoted — keep paper twin for slippage A/B
+    "sports_playoff_underdog_v1_us",  # 2026-04-30 us companion
+    "sports_soccer_underdog_v1",  # 2026-05-06 paper-twin launch — soccer 20-29c TEAM
+    "sports_soccer_draw_v1",  # 2026-05-11 live launch — soccer DRAW EPL+LAL 0.25-0.30
 }
 
 

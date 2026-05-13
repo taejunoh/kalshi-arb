@@ -108,9 +108,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v33", "sports_midshot_v33", "sports_underdog_v33",
             "sports_longshot_v34", "sports_midshot_v34", "sports_underdog_v34",
             "sports_longshot_v35", "sports_midshot_v35", "sports_underdog_v35",
-            "sports_underdog_v36_playoff", "sports_underdog_v36_us",
-            "sports_underdog_v37_soccer",
-            "sports_draw_v38_soccer",
+            "sports_playoff_underdog_v1", "sports_playoff_underdog_v1_us",
+            "sports_soccer_underdog_v1",
+            "sports_soccer_draw_v1",
             "sports_favorite_v40",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Archived — historical data surfaced in dashboard's Archived section.
@@ -451,9 +451,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v33", "sports_midshot_v33", "sports_underdog_v33",
             "sports_longshot_v34", "sports_midshot_v34", "sports_underdog_v34",
             "sports_longshot_v35", "sports_midshot_v35", "sports_underdog_v35",
-            "sports_underdog_v36_playoff", "sports_underdog_v36_us",
-            "sports_underdog_v37_soccer",
-            "sports_draw_v38_soccer",
+            "sports_playoff_underdog_v1", "sports_playoff_underdog_v1_us",
+            "sports_soccer_underdog_v1",
+            "sports_soccer_draw_v1",
             "sports_favorite_v40",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Archived — surfaced in dashboard Archived section with reason.
@@ -517,10 +517,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v35": "SPORTS_ENABLED",
             "sports_midshot_v35": "SPORTS_ENABLED",
             "sports_underdog_v35": "SPORTS_ENABLED",
-            "sports_underdog_v36_playoff": "SPORTS_ENABLED",
-            "sports_underdog_v36_us": "SPORTS_ENABLED",
-            "sports_underdog_v37_soccer": "SPORTS_ENABLED",
-            "sports_draw_v38_soccer": "SPORTS_ENABLED",
+            "sports_playoff_underdog_v1": "SPORTS_ENABLED",
+            "sports_playoff_underdog_v1_us": "SPORTS_ENABLED",
+            "sports_soccer_underdog_v1": "SPORTS_ENABLED",
+            "sports_soccer_draw_v1": "SPORTS_ENABLED",
             "sports_favorite_v40": "SPORTS_ENABLED",
             "sports_pinnacle_edge": "SPORTS_ENABLED",
             "sports_v4_edge": "SPORTS_ENABLED",
@@ -655,10 +655,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             from strategies.sports_longshot_v35 import SportsLongshotV35Strategy
             from strategies.sports_midshot_v35 import SportsMidshotV35Strategy
             from strategies.sports_underdog_v35 import SportsUnderdogV35Strategy
-            from strategies.sports_underdog_v36_playoff import SportsUnderdogV36PlayoffStrategy
-            from strategies.sports_underdog_v36_us import SportsUnderdogV36USStrategy
-            from strategies.sports_underdog_v37_soccer import SportsUnderdogV37SoccerStrategy
-            from strategies.sports_draw_v38_soccer import SportsDrawV38SoccerStrategy
+            from strategies.sports_playoff_underdog_v1 import SportsPlayoffUnderdogV1Strategy
+            from strategies.sports_playoff_underdog_v1_us import SportsPlayoffUnderdogV1USStrategy
+            from strategies.sports_soccer_underdog_v1 import SportsSoccerUnderdogV1Strategy
+            from strategies.sports_soccer_draw_v1 import SportsSoccerDrawV1Strategy
             from strategies.sports_favorite_v40 import SportsFavoriteV40Strategy
             from strategies.sports_v4_edge import SportsV4EdgeStrategy
             from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
@@ -678,10 +678,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "sports_longshot_v35": SportsLongshotV35Strategy,
                 "sports_midshot_v35":  SportsMidshotV35Strategy,
                 "sports_underdog_v35": SportsUnderdogV35Strategy,
-                "sports_underdog_v36_playoff": SportsUnderdogV36PlayoffStrategy,
-                "sports_underdog_v36_us": SportsUnderdogV36USStrategy,
-                "sports_underdog_v37_soccer": SportsUnderdogV37SoccerStrategy,
-                "sports_draw_v38_soccer": SportsDrawV38SoccerStrategy,
+                "sports_playoff_underdog_v1": SportsPlayoffUnderdogV1Strategy,
+                "sports_playoff_underdog_v1_us": SportsPlayoffUnderdogV1USStrategy,
+                "sports_soccer_underdog_v1": SportsSoccerUnderdogV1Strategy,
+                "sports_soccer_draw_v1": SportsSoccerDrawV1Strategy,
                 "sports_favorite_v40": SportsFavoriteV40Strategy,
                 "sports_v4_edge":      SportsV4EdgeStrategy,
                 "sports_chalk_shadow": SportsChalkShadowStrategy,
@@ -750,7 +750,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 pb_list = getattr(cls, "PLAYOFF_BLOCKLIST", frozenset())
                 if pb_list:
                     playoff_blocks[name] = sorted(pb_list)
-                # Playoff-only marker (e.g., sports_underdog_v36_playoff).
+                # Playoff-only marker (e.g., sports_playoff_underdog_v1).
                 if getattr(cls, "PLAYOFF_ONLY", False):
                     playoff_only_set[name] = True
                 # Allowed cells matrix (V3.4+). Sorted for stable rendering.

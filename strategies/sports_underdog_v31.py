@@ -49,8 +49,8 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     # NBA playoff suspend (2026-04-30). Game-level analysis: NBA pre eu
     # underdog -36% n=32 in playoff regime; V3 baseline pre-playoff was
     # +236% n=12 (regime mismatch confirmed). The 35¢+ alpha sub-cell of
-    # NBA playoff is captured by sports_underdog_v36_playoff (eu) and
-    # sports_underdog_v36_us (us), both override this to empty.
+    # NBA playoff is captured by sports_playoff_underdog_v1 (eu) and
+    # sports_playoff_underdog_v1_us (us), both override this to empty.
     # Cascades to v33, v34, v35 — all show same NBA playoff bleed pattern.
     # v32 already has its own explicit PLAYOFF_BLOCKLIST. Auto-resumes when
     # NBA returns to regular season (~2026-10).
