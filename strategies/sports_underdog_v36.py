@@ -4,7 +4,7 @@ Built 2026-05-13 from WNBA observer replay (n=3 settled games, ROI +73%,
 WR 100%). Per spec docs/superpowers/specs/2026-05-13-wnba-strategy-expansion-design.md.
 
 This is a NEW strategy class — NOT a port of v36_playoff. v36_playoff is
-NBA underdog 30c+ floor; v36_wnba is WNBA chalk-favorite (price < fair).
+NBA underdog 30c+ floor; v36 is WNBA chalk-favorite (price < fair).
 The "v36" naming follows user spec convention but evaluate() logic is
 fresh.
 
@@ -17,14 +17,14 @@ from typing import Optional
 from strategies.sports_trader import SportsTraderStrategy
 from strategies.sports_underdog_v31 import SportsUnderdogV31Strategy
 
-logger = logging.getLogger("sports_underdog_v36_wnba")
+logger = logging.getLogger("sports_underdog_v36")
 
 
-class SportsUnderdogV36WNBAStrategy(SportsUnderdogV31Strategy):
+class SportsUnderdogV36Strategy(SportsUnderdogV31Strategy):
     """Bet the slight-favorite side (fair > 0.55) at 0.35-0.55 YES on WNBA pre-game."""
 
-    TRADED_TICKERS_FILE = "data/sports_underdog_v36_wnba_tickers.json"
-    STRATEGY_NAME = "sports_underdog_v36_wnba"
+    TRADED_TICKERS_FILE = "data/sports_underdog_v36_tickers.json"
+    STRATEGY_NAME = "sports_underdog_v36"
     REGION_OVERRIDE = "eu"
 
     # WNBA pre-game only
@@ -36,7 +36,7 @@ class SportsUnderdogV36WNBAStrategy(SportsUnderdogV31Strategy):
     SPORT_BLOCKLIST = frozenset()
     PLAYOFF_BLOCKLIST = frozenset()
 
-    # v31 underdog removed WNBA from OBSERVATION_ONLY in Task 4 — v36_wnba
+    # v31 underdog removed WNBA from OBSERVATION_ONLY in Task 4 — v36
     # inherits that override. Re-apply explicitly for clarity / robustness:
     OBSERVATION_ONLY_SPORTS = (
         SportsTraderStrategy.OBSERVATION_ONLY_SPORTS - {"WNBA"}
@@ -76,7 +76,7 @@ class SportsUnderdogV36WNBAStrategy(SportsUnderdogV31Strategy):
             payoff = 1.0 / (kalshi_yes * (1 + fee_pct))
             return {
                 "side": "yes", "price": kalshi_yes,
-                "edge": payoff, "strategy": "v36_wnba",
+                "edge": payoff, "strategy": "v36",
             }
 
         # NO side: NO team is favorite (fair_yes < 0.45 → fair_no > 0.55),
@@ -87,7 +87,7 @@ class SportsUnderdogV36WNBAStrategy(SportsUnderdogV31Strategy):
             payoff = 1.0 / (kalshi_no * (1 + fee_pct))
             return {
                 "side": "no", "price": kalshi_no,
-                "edge": payoff, "strategy": "v36_wnba",
+                "edge": payoff, "strategy": "v36",
             }
 
         return None

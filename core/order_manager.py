@@ -107,8 +107,8 @@ PAPER_TWIN_STRATEGIES = {
     "sports_playoff_underdog_v1_us",  # 2026-04-30 us companion
     "sports_soccer_underdog_v1",  # 2026-05-06 paper-twin launch — soccer 20-29c TEAM
     "sports_soccer_draw_v1",  # 2026-05-11 live launch — soccer DRAW EPL+LAL 0.25-0.30
-    "sports_underdog_v36_wnba",   # 2026-05-13 WNBA expansion — chalk-favorite
-    "sports_underdog_v37_wnba",   # 2026-05-13 WNBA expansion — 20-29c TEAM band
+    "sports_underdog_v36",   # 2026-05-13 WNBA expansion — chalk-favorite
+    "sports_underdog_v37",   # 2026-05-13 WNBA expansion — 20-29c TEAM band
 }
 
 

@@ -111,8 +111,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_playoff_underdog_v1", "sports_playoff_underdog_v1_us",
             "sports_soccer_underdog_v1",
             "sports_soccer_draw_v1",
-            "sports_underdog_v36_wnba",
-            "sports_underdog_v37_wnba",
+            "sports_underdog_v36",
+            "sports_underdog_v37",
             "sports_favorite_v40",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Archived — historical data surfaced in dashboard's Archived section.
@@ -456,8 +456,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_playoff_underdog_v1", "sports_playoff_underdog_v1_us",
             "sports_soccer_underdog_v1",
             "sports_soccer_draw_v1",
-            "sports_underdog_v36_wnba",
-            "sports_underdog_v37_wnba",
+            "sports_underdog_v36",
+            "sports_underdog_v37",
             "sports_favorite_v40",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Archived — surfaced in dashboard Archived section with reason.
@@ -525,8 +525,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_playoff_underdog_v1_us": "SPORTS_ENABLED",
             "sports_soccer_underdog_v1": "SPORTS_ENABLED",
             "sports_soccer_draw_v1": "SPORTS_ENABLED",
-            "sports_underdog_v36_wnba": "SPORTS_ENABLED",
-            "sports_underdog_v37_wnba": "SPORTS_ENABLED",
+            "sports_underdog_v36": "SPORTS_ENABLED",
+            "sports_underdog_v37": "SPORTS_ENABLED",
             "sports_favorite_v40": "SPORTS_ENABLED",
             "sports_pinnacle_edge": "SPORTS_ENABLED",
             "sports_v4_edge": "SPORTS_ENABLED",
@@ -665,8 +665,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             from strategies.sports_playoff_underdog_v1_us import SportsPlayoffUnderdogV1USStrategy
             from strategies.sports_soccer_underdog_v1 import SportsSoccerUnderdogV1Strategy
             from strategies.sports_soccer_draw_v1 import SportsSoccerDrawV1Strategy
-            from strategies.sports_underdog_v36_wnba import SportsUnderdogV36WNBAStrategy
-            from strategies.sports_underdog_v37_wnba import SportsUnderdogV37WNBAStrategy
+            from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
+            from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
             from strategies.sports_favorite_v40 import SportsFavoriteV40Strategy
             from strategies.sports_v4_edge import SportsV4EdgeStrategy
             from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
@@ -690,8 +690,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "sports_playoff_underdog_v1_us": SportsPlayoffUnderdogV1USStrategy,
                 "sports_soccer_underdog_v1": SportsSoccerUnderdogV1Strategy,
                 "sports_soccer_draw_v1": SportsSoccerDrawV1Strategy,
-                "sports_underdog_v36_wnba": SportsUnderdogV36WNBAStrategy,
-                "sports_underdog_v37_wnba": SportsUnderdogV37WNBAStrategy,
+                "sports_underdog_v36": SportsUnderdogV36Strategy,
+                "sports_underdog_v37": SportsUnderdogV37Strategy,
                 "sports_favorite_v40": SportsFavoriteV40Strategy,
                 "sports_v4_edge":      SportsV4EdgeStrategy,
                 "sports_chalk_shadow": SportsChalkShadowStrategy,
@@ -705,8 +705,20 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             _SOCCER_LEAGUES = ("MLS", "EPL", "LAL", "UCL", "BUN")
             _US_MAJOR_SPORTS = ("NBA", "MLB", "NHL")
 
+            def _wnba_tradeable(cls) -> bool:
+                """WNBA tradeable iff no gate blocks it (2026-05-13 expansion)."""
+                obs_only = getattr(cls, "OBSERVATION_ONLY_SPORTS", frozenset())
+                block = getattr(cls, "SPORT_BLOCKLIST", frozenset())
+                cells = getattr(cls, "ALLOWED_CELLS", None)
+                if "WNBA" in obs_only or "WNBA" in block:
+                    return False
+                if cells is not None:
+                    return any(s == "WNBA" for s, _ in cells)
+                return True
+
             def _sport_phases(cls) -> dict[str, Optional[str]]:
                 cells = getattr(cls, "ALLOWED_CELLS", None)
+                pre_only = getattr(cls, "PRE_GAME_ONLY", False)
                 if cells is not None:
                     # Derive base sport list from the cells' sports + US majors
                     # so a soccer-cell strategy shows MLS/EPL/LAL.
@@ -719,10 +731,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     for sport, phase in cells:
                         out.setdefault(sport, None)
                         out[sport] = phase if out[sport] is None else "pre+live"
+                    # WNBA awareness — surface if tradeable but not already in cells.
+                    if _wnba_tradeable(cls) and "WNBA" not in out:
+                        out["WNBA"] = "pre" if pre_only else "pre+live"
                     return out
                 # Legacy path: PRE_GAME_ONLY + SPORT_BLOCKLIST
                 block = getattr(cls, "SPORT_BLOCKLIST", frozenset())
-                pre_only = getattr(cls, "PRE_GAME_ONLY", False)
                 # Soccer detection: blocks all 3 US majors (and typically NPB/KBO/WNBA too).
                 is_soccer = all(s in block for s in _US_MAJOR_SPORTS)
                 shown = _SOCCER_LEAGUES if is_soccer else _US_MAJOR_SPORTS
@@ -734,6 +748,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                         legacy[s] = "pre"
                     else:
                         legacy[s] = "pre+live"
+                # WNBA awareness — surface if tradeable per its gates.
+                if _wnba_tradeable(cls):
+                    legacy["WNBA"] = "pre" if pre_only else "pre+live"
                 return legacy
 
             for name, cls in _gate_classes.items():
