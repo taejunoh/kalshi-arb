@@ -195,6 +195,42 @@ def sim_cost(price: float, size_usdc: float) -> float:
     return size_usdc + fee
 
 
+def replay_v36_wnba(e: dict, *, lo: float = 0.35, hi: float = 0.55,
+                    fair_min: float = 0.55, base_size: float = 8.0) -> Optional[dict]:
+    """v36_wnba chalk-favorite at 35-55c with fair_prob > 0.55."""
+    ya, na = e["yes_ask"], e.get("no_ask", 1 - e["yes_ask"])
+    eu = e.get("eu_prob")
+    if eu is None:
+        return None
+    # YES favorite path
+    if eu > fair_min and lo <= ya <= hi:
+        return {"side": "yes", "price": ya, "size_usdc": base_size}
+    # NO favorite path
+    if eu < (1 - fair_min) and lo <= na <= hi:
+        return {"side": "no", "price": na, "size_usdc": base_size}
+    return None
+
+
+def replay_v37_wnba(e: dict, *, lo: float = 0.20, hi: float = 0.29,
+                    payoff_min: float = 2.0, base_size: float = 8.0) -> Optional[dict]:
+    """v37_wnba TEAM 20-29c band, payoff >= 2.0x. Identical mechanism to v37_soccer."""
+    ya, na = e["yes_ask"], e.get("no_ask", 1 - e["yes_ask"])
+    fee = 0.07
+    best = None
+    best_payoff = 0.0
+    for side, price in (("yes", ya), ("no", na)):
+        if not (lo <= price <= hi):
+            continue
+        fee_pct = min(fee, price, 1 - price) / price if price > 0 else 0
+        payoff = 1.0 / (price * (1 + fee_pct))
+        if payoff < payoff_min:
+            continue
+        if payoff > best_payoff:
+            best = {"side": side, "price": price, "size_usdc": base_size, "payoff": payoff}
+            best_payoff = payoff
+    return best
+
+
 # ----------------------------------------------------------------------
 # Strategy registry — exposed for promotion_eval.
 # Each entry: (display_name, callable_with_entry_dict)
@@ -216,6 +252,8 @@ STRATEGIES = {
         replay_underdog(e, min_entry_price=0.20, pre_game_only=True, base_size=20.0)
     ),
     "v4_edge": lambda e: replay_v4_edge(e),
+    "v36_wnba": replay_v36_wnba,
+    "v37_wnba": replay_v37_wnba,
     # Legacy V3 baselines (US region) — useful for comparing eu vs us
     "longshot_v3": lambda e: replay_longshot(e, base_size=4.0),
     "midshot_v3": lambda e: replay_midshot(e, base_size=4.0),
