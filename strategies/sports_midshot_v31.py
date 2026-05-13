@@ -1,5 +1,6 @@
 """Sports Midshot V3.1 — V3 midshot logic against EU sharp-book consensus."""
 import logging
+from typing import Optional
 
 from strategies.sports_midshot import SportsMidshotStrategy
 
@@ -52,6 +53,26 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     # Combined family n=32 ROI −61% systematic. Cascade not automatic
     # (midshot doesn't inherit underdog_v31), so set explicitly here.
     DEPTH_DEAD_ZONE = (2000.0, 10000.0)
+    # 2026-05-13 (WNBA expansion): unblock WNBA, add pair-fire dedup
+    OBSERVATION_ONLY_SPORTS = (
+        SportsMidshotStrategy.OBSERVATION_ONLY_SPORTS - {"WNBA"}
+    )
+
+    def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
+                 line_movement: float = 0.0, home_adj: float = 0.0,
+                 ticker: str = "") -> Optional[dict]:
+        """WNBA-only pair-fire dedup at entry (matches longshot_v31 pattern).
+        Non-WNBA tickers fall through to parent logic unchanged."""
+        if "WNBAGAME" in ticker:
+            game_key = ticker.rsplit("-", 1)[0]
+            for traded in self._traded_tickers:
+                if traded != ticker and traded.rsplit("-", 1)[0] == game_key:
+                    return None
+        return super().evaluate(
+            kalshi_yes, kalshi_no, fair_prob,
+            line_movement=line_movement, home_adj=home_adj,
+            ticker=ticker,
+        )
 
     def _get_trade_size(self, signal: dict) -> float:
         """Depth-tiered cap (2026-05-12).
