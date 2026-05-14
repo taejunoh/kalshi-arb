@@ -180,6 +180,12 @@ class OpenNoTouchV1Strategy(_Phase1Base):
     80% WR, +30% paper ROI. Sources signals from the `open_no_touch`
     observer (which emits flipped open_widening predictions) and BUYs
     NO at current no_ask.
+
+    First 37 paper trades hit -10.3% ROI despite 90% Phase 0 WR — fee
+    asymmetry on tail buckets (ya < 0.20 → no_ask > 0.80 → max profit
+    < $5/$20 stake eaten by fee). 587-signal cohort breakdown shows EV
+    concentrated in ya ≥ 0.20 (40% / 180% ROI bands). MIN_YA filter
+    drops the tail-bucket fires.
     """
     STRATEGY_NAME = "open_no_touch_v1"
     OBSERVER_NAME = "open_no_touch"
@@ -188,12 +194,21 @@ class OpenNoTouchV1Strategy(_Phase1Base):
         super().__init__(config, order_manager, market_scanner, kalshi_client)
         self.SIGNAL_FRESHNESS_S = config.OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S
         self.SIZE_USDC = config.OPEN_NO_TOUCH_SIZE_USDC
+        self._min_ya = config.OPEN_NO_TOUCH_MIN_YA
 
     def _select_side_and_price(self, sig, market):
         if sig["predicted_outcome"] != "no":
             return None
+        ya = _safe_float(market.get("yes_ask_dollars"))
         no_ask = _safe_float(market.get("no_ask_dollars"))
-        if no_ask is None or no_ask <= 0 or no_ask >= 1:
+        if ya is None or no_ask is None:
+            return None
+        if no_ask <= 0 or no_ask >= 1:
+            return None
+        # Tail buckets (low ya = high no_ask) have payoff/fee asymmetry
+        # that kills EV even at 90%+ WR. Restrict to ya ≥ MIN_YA so
+        # max-profit-per-trade overcomes Kalshi's per-contract fee.
+        if ya < self._min_ya:
             return None
         return ("no", no_ask)
 
