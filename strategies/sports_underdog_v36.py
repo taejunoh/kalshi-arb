@@ -45,9 +45,18 @@ class SportsUnderdogV36Strategy(SportsUnderdogV31Strategy):
         SportsTraderStrategy.OBSERVATION_ONLY_SPORTS - {"WNBA"}
     )
 
-    # Chalk-favorite price band — matches replay n=3 ROI +73%
+    # Chalk-favorite price band. Launch (5/13): 0.35-0.55 based on replay
+    # n=3 ROI +73%. Re-tuned 2026-05-14 to 0.35-0.65 after WNBA observer
+    # recon (n=15 settled): WNBA chalks rarely land in 0.35-0.55 — most
+    # cluster at 0.60+. Extending the cap to 0.65 captures the FAV
+    # 0.60-0.65 bucket (n=2 +43%) while excluding 0.65+ where chalks
+    # systematically bleed (FAV 0.65-0.70 n=4 -33%, 0.70+ all -100%).
+    # CAVEAT: n=2 in the new 0.60-0.65 zone is fragile; re-eval at 5/23
+    # gate (n>=25) — concept may need redesign if WNBA chalk-fav
+    # continues underperforming "deep-underdog/fair-against" which showed
+    # stronger signal in the same recon (0.20-0.25 n=2 +251%).
     MIN_ENTRY_PRICE = 0.35
-    MAX_ENTRY_PRICE = 0.55
+    MAX_ENTRY_PRICE = 0.65
     MIN_DEPTH_USDC = 20.0
 
     # Slight-favorite confidence threshold
