@@ -855,11 +855,12 @@
                 <th>P-Settled</th>
                 <th>P-Wins</th>
                 <th>P-PnL</th>
+                <th>P-ROI</th>
                 <th>Last fire</th>
               </tr>
             </thead>
             <tbody id="crypto-observer-body">
-              <tr class="empty-row"><td colspan="12">Loading…</td></tr>
+              <tr class="empty-row"><td colspan="13">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -1803,7 +1804,7 @@ async function refreshCryptoObserver() {
     const tbody = document.getElementById('crypto-observer-body');
     const rows = (data && data.observers) || [];
     if (rows.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="12">No signals yet — Phase 0 just started.</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="13">No signals yet — Phase 0 just started.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(r => {
@@ -1828,6 +1829,13 @@ async function refreshCryptoObserver() {
         const s = (v >= 0 ? '+' : '') + '$' + v.toFixed(2);
         ph1Pnl = `<span class="${cls}">${s}</span>`;
       }
+      let ph1Roi = '—';
+      if (r.phase1_strategy && r.phase1_paper_roi != null) {
+        const v = r.phase1_paper_roi;
+        const cls = v >= 0 ? 'edge-pos' : 'edge-neg';
+        const s = (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+        ph1Roi = `<span class="${cls}">${s}</span>`;
+      }
       return `
         <tr>
           <td class="td-mono">${r.observer}</td>
@@ -1841,12 +1849,13 @@ async function refreshCryptoObserver() {
           <td class="td-mono">${ph1Settled}</td>
           <td class="td-mono">${ph1Wins}</td>
           <td class="td-mono">${ph1Pnl}</td>
+          <td class="td-mono">${ph1Roi}</td>
           <td class="td-mono">${fmtTs(r.last_ts)}</td>
         </tr>`;
     }).join('');
   } catch (e) {
     document.getElementById('crypto-observer-body').innerHTML =
-      `<tr class="empty-row"><td colspan="12">Error: ${e.message}</td></tr>`;
+      `<tr class="empty-row"><td colspan="13">Error: ${e.message}</td></tr>`;
   }
 }
 
