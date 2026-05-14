@@ -1,0 +1,19 @@
+[Unit]
+Description=Hourly crypto observer settlement backfill
+Requires=kalshi-crypto-observer-backfill.service
+
+[Timer]
+# Run hourly at HH:20 UTC. KXBTC/KXETH events close on the hour (HH:00),
+# so by HH:15 most close-time settlements are available from Kalshi. Use
+# :20 to give a 5-min buffer for finalization. Crypto observer + Phase 1
+# data needs prompt actual_outcome population so the dashboard's WR/ROI
+# columns stay in sync with the trader's pnl-based stats (which settle
+# in real time via SettlementChecker, not via this script).
+OnCalendar=*-*-* *:20:00 UTC
+Persistent=true
+# Small random delay so multiple instances (if ever) don't hammer Kalshi
+# at the same instant.
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target
