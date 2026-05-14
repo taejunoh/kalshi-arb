@@ -1245,6 +1245,10 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     let gateLabel = '';
     if (gate && gate.type === 'band') {
       gateLabel = `${(gate.floor * 100).toFixed(0)}–${(gate.ceiling * 100).toFixed(0)}¢`;
+      if (gate.dead_zone) {
+        const [lo, hi] = gate.dead_zone;
+        gateLabel += `, skip ${(lo * 100).toFixed(0)}–${(hi * 100).toFixed(0)}¢`;
+      }
     } else if (gate && gate.type === 'floor') {
       gateLabel = `≥${(gate.floor * 100).toFixed(0)}¢`;
     } else if (gate && gate.type === 'floor_with_dead_zone') {
