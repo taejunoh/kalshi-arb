@@ -836,8 +836,8 @@
     <!-- ── Crypto observer Phase 0 (per-hypothesis WR) ── -->
     <section id="crypto-observer-section">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
-        <div class="section-title" style="margin-bottom:0">Crypto observer Phase 0 — last 7 days</div>
-        <span style="color:var(--text-dim);font-size:11px;">8 hypotheses on KXBTC/KXETH. WR 95% CI (Wilson). First eval ~5/20.</span>
+        <div class="section-title" style="margin-bottom:0">Crypto observer Phase 0 + Phase 1 paper — last 7 days</div>
+        <span style="color:var(--text-dim);font-size:11px;">8 hypotheses on KXBTC/KXETH. Phase 0 = signal-only WR (Wilson 95% CI). Phase 1 = promoted paper trader P&amp;L.</span>
       </div>
       <div class="table-wrap">
         <div class="table-scroll" style="max-height:280px;">
@@ -845,17 +845,21 @@
             <thead>
               <tr>
                 <th>Observer</th>
-                <th>Total</th>
+                <th>Sig</th>
                 <th>Open</th>
                 <th>Settled</th>
-                <th>Wins</th>
                 <th>WR</th>
                 <th>95% CI</th>
+                <th>Phase 1 strat</th>
+                <th>Paper</th>
+                <th>P-Settled</th>
+                <th>P-Wins</th>
+                <th>P-PnL</th>
                 <th>Last fire</th>
               </tr>
             </thead>
             <tbody id="crypto-observer-body">
-              <tr class="empty-row"><td colspan="8">Loading…</td></tr>
+              <tr class="empty-row"><td colspan="12">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -1795,34 +1799,50 @@ async function refreshCryptoObserver() {
     const tbody = document.getElementById('crypto-observer-body');
     const rows = (data && data.observers) || [];
     if (rows.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No signals yet — Phase 0 just started.</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="12">No signals yet — Phase 0 just started.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(r => {
       const wrTxt = r.wr == null ? '—' : (r.wr * 100).toFixed(1) + '%';
       const ciTxt = r.wr_ci_lo == null ? '—'
         : `[${(r.wr_ci_lo * 100).toFixed(0)}, ${(r.wr_ci_hi * 100).toFixed(0)}]%`;
-      // Highlight observers with promotion-grade signal: n_settled ≥ 30 and
-      // 95% CI lower bound ≥ 60%
       const promoCand = (r.n_settled >= 30 && r.wr_ci_lo != null && r.wr_ci_lo >= 0.60);
       const wrBadge = promoCand
         ? `<span class="badge badge-green">${wrTxt}</span>`
         : wrTxt;
+      // Phase 1 cells — only populated for observers with a promoted strategy.
+      const ph1Strat = r.phase1_strategy
+        ? `<span class="badge badge-blue">${r.phase1_strategy}</span>`
+        : '—';
+      const ph1Trades = r.phase1_strategy ? r.phase1_paper_trades : '—';
+      const ph1Settled = r.phase1_strategy ? r.phase1_paper_settled : '—';
+      const ph1Wins = r.phase1_strategy ? r.phase1_paper_wins : '—';
+      let ph1Pnl = '—';
+      if (r.phase1_strategy) {
+        const v = r.phase1_paper_pnl || 0;
+        const cls = v >= 0 ? 'edge-pos' : 'edge-neg';
+        const s = (v >= 0 ? '+' : '') + '$' + v.toFixed(2);
+        ph1Pnl = `<span class="${cls}">${s}</span>`;
+      }
       return `
         <tr>
           <td class="td-mono">${r.observer}</td>
           <td class="td-mono">${r.n_total}</td>
           <td class="td-mono">${r.n_open}</td>
           <td class="td-mono">${r.n_settled}</td>
-          <td class="td-mono">${r.wins}</td>
           <td class="td-mono">${wrBadge}</td>
           <td class="td-mono">${ciTxt}</td>
+          <td class="td-mono">${ph1Strat}</td>
+          <td class="td-mono">${ph1Trades}</td>
+          <td class="td-mono">${ph1Settled}</td>
+          <td class="td-mono">${ph1Wins}</td>
+          <td class="td-mono">${ph1Pnl}</td>
           <td class="td-mono">${fmtTs(r.last_ts)}</td>
         </tr>`;
     }).join('');
   } catch (e) {
     document.getElementById('crypto-observer-body').innerHTML =
-      `<tr class="empty-row"><td colspan="8">Error: ${e.message}</td></tr>`;
+      `<tr class="empty-row"><td colspan="12">Error: ${e.message}</td></tr>`;
   }
 }
 

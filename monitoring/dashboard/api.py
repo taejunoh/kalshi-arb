@@ -475,6 +475,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_underdog_v37",
             "sports_favorite_v40",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
+            # Phase 1 paper traders promoted from crypto_observer 2026-05-14.
+            "deribit_tail_fade_v1", "bid_imbalance_v1",
             # Archived — surfaced in dashboard Archived section with reason.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
@@ -1262,9 +1264,20 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         `hours` (default 168 = 7 days). actual_outcome is populated by
         scripts/crypto_observer_settlement_backfill.py — rows still NULL
         are "open" (market hasn't settled yet).
+
+        For observers promoted to Phase 1 (paper traders that emit real
+        paper market_orders), each row also includes `phase1_strategy`,
+        `phase1_paper_trades`, `phase1_paper_settled`, `phase1_paper_wins`,
+        `phase1_paper_pnl`. See [[crypto_observer_phase1_promotion_2026-05-14]].
         """
         import aiosqlite
         import math
+        # Observer name → Phase 1 strategy name mapping. Add new
+        # promotions here as they happen.
+        PHASE1_BY_OBSERVER = {
+            "deribit_tail_skew": "deribit_tail_fade_v1",
+            "bid_imbalance":     "bid_imbalance_v1",
+        }
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         async with aiosqlite.connect(database.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
@@ -1282,6 +1295,26 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 (cutoff,),
             )
             rows = [dict(r) for r in await cur.fetchall()]
+
+            # Per-Phase-1-strategy paper trade stats from trades table.
+            phase1_stats: dict = {}
+            if PHASE1_BY_OBSERVER:
+                placeholders = ",".join("?" * len(PHASE1_BY_OBSERVER))
+                strat_names = list(PHASE1_BY_OBSERVER.values())
+                cur2 = await conn.execute(
+                    f"""SELECT strategy,
+                              COUNT(*) AS n_trades,
+                              SUM(CASE WHEN status='paper_settled' THEN 1 ELSE 0 END) AS n_settled,
+                              SUM(CASE WHEN status='paper_settled' AND pnl > 0 THEN 1 ELSE 0 END) AS wins,
+                              ROUND(COALESCE(SUM(pnl), 0), 2) AS pnl_sum
+                       FROM trades
+                       WHERE strategy IN ({placeholders}) AND timestamp >= ?
+                       GROUP BY strategy""",
+                    (*strat_names, cutoff),
+                )
+                for r in await cur2.fetchall():
+                    phase1_stats[r["strategy"]] = dict(r)
+
         for r in rows:
             settled = r["n_settled"] or 0
             wins = r["wins"] or 0
@@ -1301,6 +1334,21 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 r["wr"] = None
                 r["wr_ci_lo"] = None
                 r["wr_ci_hi"] = None
+
+            strat_name = PHASE1_BY_OBSERVER.get(r["observer"])
+            r["phase1_strategy"] = strat_name
+            if strat_name:
+                st = phase1_stats.get(strat_name)
+                if st:
+                    r["phase1_paper_trades"] = st["n_trades"]
+                    r["phase1_paper_settled"] = st["n_settled"]
+                    r["phase1_paper_wins"] = st["wins"]
+                    r["phase1_paper_pnl"] = st["pnl_sum"]
+                else:
+                    r["phase1_paper_trades"] = 0
+                    r["phase1_paper_settled"] = 0
+                    r["phase1_paper_wins"] = 0
+                    r["phase1_paper_pnl"] = 0.0
         return {
             "observers": rows,
             "as_of": datetime.now(timezone.utc).isoformat(),
