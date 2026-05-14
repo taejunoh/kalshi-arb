@@ -163,6 +163,17 @@ def test_atm_fade_skips_when_ya_too_low():
     assert obs.evaluate(_ctx(b_legs=legs, close_s=180.0)) == []
 
 
+def test_atm_fade_skips_when_ya_already_at_99_percent():
+    """If MM has the ATM bucket at ya=0.99, the market is already pricing
+    it as certain-YES — fading isn't alpha, it's just betting against
+    correctly-priced markets. Observed pre-fix: n=15 / 0% WR."""
+    obs = AtmFadeObserver()
+    legs = [_b(89650, 0.01, 0.00),
+            _b(89750, 0.99, 0.97),
+            _b(89850, 0.01, 0.00)]
+    assert obs.evaluate(_ctx(b_legs=legs, spot=89750.0, close_s=180.0)) == []
+
+
 def test_atm_fade_skips_when_atm_bucket_off_center():
     """If best bucket is > 0.25 × grid from spot, skip."""
     obs = AtmFadeObserver()
@@ -219,6 +230,25 @@ def test_cluster_sum_skips_when_cluster_too_small():
             _b(89750, 0.40, 0.38),
             _b(89850, 0.10, 0.09)]  # only 3 legs < min 5
     assert obs.evaluate(_ctx(b_legs=legs, close_s=180.0)) == []
+
+
+def test_cluster_sum_skips_when_atm_not_covering_spot():
+    """Some Kalshi events list only far-OTM buckets. `atm_bucket_index`
+    picks the leg closest to spot, but if that leg is still 1%+ from
+    spot, the ±5 cluster is a far-OTM zone where sum-to-1 math is
+    meaningless. Pre-fix observed: 381 settled / 0% WR with target
+    buckets $1,000+ away from spot. Gate: ATM must be within 0.5% of spot."""
+    obs = ClusterSumObserver()
+    # Spot $79,300 but event buckets only span $80,400-$80,900 (1.4%+ above).
+    legs = [_b(80400, 0.01, 0.00),
+            _b(80500, 0.01, 0.00),
+            _b(80550, 0.02, 0.01),
+            _b(80600, 0.01, 0.00),
+            _b(80700, 0.01, 0.00),
+            _b(80800, 0.01, 0.00),
+            _b(80900, 0.01, 0.00)]
+    ctx = _ctx(b_legs=legs, spot=79300.0, close_s=180.0)
+    assert obs.evaluate(ctx) == []
 
 
 # ── 4. BvTConsistency ──────────────────────────────────────────────

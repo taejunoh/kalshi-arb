@@ -51,10 +51,16 @@ TAIL_DECAY_YB_SIZE_MIN = 50           # active bid present
 ATM_FADE_MTS_MAX_S = 300
 ATM_FADE_BUCKET_RADIUS = 0.25         # |bucket - spot| ≤ 0.25 × grid
 ATM_FADE_YA_MIN = 0.40
+ATM_FADE_YA_MAX = 0.65                # MM already pricing 99%+ correctly isn't
+                                       # alpha — restrict to mid-range overpricing.
 
 CLUSTER_RADIUS = 5                    # ATM ± 5 buckets
 CLUSTER_SUM_UNDERPRICED_MAX = 0.95    # Σ ya ≤ 0.95 → buy-yes arb
 CLUSTER_SUM_OVERPRICED_MIN = 1.05     # Σ yb ≥ 1.05 → buy-no arb
+CLUSTER_ATM_COVERAGE_MAX_PCT = 0.005  # ATM bucket must be within 0.5% of spot —
+                                       # otherwise the event's bucket range
+                                       # doesn't cover spot and the cluster is
+                                       # an OTM zone with meaningless math.
 
 BVT_MISALIGN_MIN = 0.05               # |Σya(B≥X) - ya(T_X)| ≥ $0.05
 BVT_T_YA_MIN = 0.05                   # skip T markets quoted at extreme prices —
@@ -285,7 +291,7 @@ class AtmFadeObserver(BaseObserver):
         if atm_idx is None:
             return []
         leg = ctx.b_legs[atm_idx]
-        if leg.ya < ATM_FADE_YA_MIN:
+        if leg.ya < ATM_FADE_YA_MIN or leg.ya > ATM_FADE_YA_MAX:
             return []
         if abs(leg.threshold - ctx.spot) > ATM_FADE_BUCKET_RADIUS * grid:
             return []
@@ -312,6 +318,13 @@ class ClusterSumObserver(BaseObserver):
             return []
         atm_idx = ctx.atm_bucket_index()
         if atm_idx is None:
+            return []
+        atm_leg = ctx.b_legs[atm_idx]
+        # Coverage gate: if the event's bucket range doesn't cover spot,
+        # `atm_idx` resolves to the leg merely closest to spot — which may
+        # still be far OTM. The resulting ±5 cluster is then an OTM zone
+        # whose sum-to-1 math is meaningless. n=381 / 0% WR observed pre-fix.
+        if abs(atm_leg.threshold - ctx.spot) / ctx.spot > CLUSTER_ATM_COVERAGE_MAX_PCT:
             return []
         lo = max(0, atm_idx - CLUSTER_RADIUS)
         hi = min(len(ctx.b_legs), atm_idx + CLUSTER_RADIUS + 1)
