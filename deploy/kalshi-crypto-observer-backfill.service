@@ -1,0 +1,20 @@
+[Unit]
+Description=Crypto observer settlement backfill (one-shot)
+After=network.target kalshi-bot.service
+# After= alone (not Requires=/Wants=) — backfill should not start before
+# kalshi-bot has finished its DB schema migrations to avoid SQLite
+# write-lock contention. Pattern mirrors kalshi-ticker-backfill.
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/crypto_observer_settlement_backfill.py --include-fetch
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+# Security (same pattern as kalshi-bot.service)
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs
