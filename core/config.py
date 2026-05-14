@@ -148,6 +148,12 @@ class Config:
         #   BUY NO at no_ask on each fresh signal.
         self.OPEN_NO_TOUCH_SIZE_USDC = float(os.getenv("OPEN_NO_TOUCH_SIZE_USDC", "20"))
         self.OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S = float(os.getenv("OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S", "15"))
+        # MIN_YA filter: tail buckets (ya < 0.20) have no_ask ≥ 0.80 → max
+        # profit < $5/$20 stake, eaten by fee. Cohort 587-signal breakdown
+        # showed EV concentrated in ya ≥ 0.20 (band 04+05 = +40%/+182% ROI).
+        # Set MIN_YA=0.20 so trader fires only on ATM-region buckets where
+        # the payoff multiplier overcomes fee asymmetry.
+        self.OPEN_NO_TOUCH_MIN_YA = float(os.getenv("OPEN_NO_TOUCH_MIN_YA", "0.20"))
         # ─ atm_hold_v1: ATM bucket holds (resolves YES) within 5min of close.
         #   BUY YES at ya on each fresh signal. Cohort tiny (n=10 pre-fix);
         #   relies on post-MAX-fix observer keeping ya in [0.40, 0.65].

@@ -24,6 +24,7 @@ def _cfg():
         BID_IMBALANCE_SIGNAL_FRESHNESS_S=15.0,
         OPEN_NO_TOUCH_SIZE_USDC=20.0,
         OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S=15.0,
+        OPEN_NO_TOUCH_MIN_YA=0.20,
         ATM_HOLD_SIZE_USDC=20.0,
         ATM_HOLD_SIGNAL_FRESHNESS_S=15.0,
     )
@@ -204,6 +205,37 @@ async def test_open_no_touch_buys_no_on_flipped_signal():
     assert args["side"] == "no"
     assert args["price"] == 0.60
     assert args["strategy"] == "open_no_touch_v1"
+
+
+@pytest.mark.asyncio
+async def test_open_no_touch_skips_low_ya_tail_bucket():
+    """MIN_YA filter: tail buckets (ya < 0.20 → no_ask > 0.80) have
+    payoff/fee asymmetry that kills EV even at 90%+ WR. First 37 paper
+    trades hit -10.3% ROI because 84% of fires landed in this band.
+    Filter drops them — only ATM-region (ya ≥ 0.20) fires."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2270",
+           "predicted_outcome": "no"}
+    markets = {"KXETH-26MAY1311-B2270": {
+        "yes_ask_dollars": 0.05, "no_ask_dollars": 0.95,
+    }}
+    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_open_no_touch_fires_at_ya_boundary():
+    """ya = MIN_YA exactly should fire (≥ comparison)."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2270",
+           "predicted_outcome": "no"}
+    markets = {"KXETH-26MAY1311-B2270": {
+        "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
+    }}
+    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
 
 
 @pytest.mark.asyncio
