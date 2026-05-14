@@ -47,6 +47,7 @@ from strategies.econ_trader import EconTraderStrategy
 from strategies.crypto_observer import CryptoObserverStrategy
 from strategies.crypto_observer_phase1 import (
     DeribitTailFadeV1Strategy, BidImbalanceV1Strategy,
+    OpenNoTouchV1Strategy, AtmHoldV1Strategy,
 )
 from strategies.ladder_fed import LadderFedStrategy
 from strategies.ladder_approval import LadderApprovalStrategy
@@ -250,6 +251,16 @@ class Bot:
             self.config, self.order_manager, self.scanner, self.kalshi_client,
         )
         self.bid_imbalance_v1 = BidImbalanceV1Strategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client,
+        )
+        # Flipped-prediction Phase 1 variants (2026-05-14). Phase 0 cohort
+        # showed original observers' WR ≪ 50% — flipping yields +30% / break-even
+        # ROI on n=325 / 10. New observers `open_no_touch` / `atm_hold` emit
+        # flipped predictions; these traders execute them as paper trades.
+        self.open_no_touch_v1 = OpenNoTouchV1Strategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client,
+        )
+        self.atm_hold_v1 = AtmHoldV1Strategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client,
         )
         # Macro Event Trader (C1) — paper-only at launch.
@@ -549,6 +560,8 @@ class Bot:
             # Paper-only until n ≥ 100 settled + ROI ≥ +5% for live promotion.
             ("deribit_tail_fade_v1", self.deribit_tail_fade_v1),
             ("bid_imbalance_v1", self.bid_imbalance_v1),
+            ("open_no_touch_v1", self.open_no_touch_v1),
+            ("atm_hold_v1", self.atm_hold_v1),
             # Macro Event Trader (C1) — paper-only. Requires consensus cron.
             ("macro_event", self.macro_event),
             # Cross-Venue Polymarket Trader (B1) — paper-only. Requires

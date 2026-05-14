@@ -172,3 +172,51 @@ class BidImbalanceV1Strategy(_Phase1Base):
         if price is None or price <= 0 or price >= 1:
             return None
         return (pred, price)
+
+
+class OpenNoTouchV1Strategy(_Phase1Base):
+    """Inverse of open_widening — predicts no-touch on ATM±1% buckets
+    within 10min of event open. Cohort evidence (24h, n=325 settled):
+    80% WR, +30% paper ROI. Sources signals from the `open_no_touch`
+    observer (which emits flipped open_widening predictions) and BUYs
+    NO at current no_ask.
+    """
+    STRATEGY_NAME = "open_no_touch_v1"
+    OBSERVER_NAME = "open_no_touch"
+
+    def __init__(self, config, order_manager, market_scanner, kalshi_client):
+        super().__init__(config, order_manager, market_scanner, kalshi_client)
+        self.SIGNAL_FRESHNESS_S = config.OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S
+        self.SIZE_USDC = config.OPEN_NO_TOUCH_SIZE_USDC
+
+    def _select_side_and_price(self, sig, market):
+        if sig["predicted_outcome"] != "no":
+            return None
+        no_ask = _safe_float(market.get("no_ask_dollars"))
+        if no_ask is None or no_ask <= 0 or no_ask >= 1:
+            return None
+        return ("no", no_ask)
+
+
+class AtmHoldV1Strategy(_Phase1Base):
+    """Inverse of atm_fade — predicts the ATM bucket holds (resolves YES)
+    when ya is in [0.40, 0.65] within 5min of close. Cohort evidence is
+    tiny (n=10 pre-fix all 0% on the no-touch direction = 100% if flipped)
+    but the post-MAX-fix observer restricts to mid-range ya so the bet is
+    "MM is right that ATM is the modal outcome".
+    """
+    STRATEGY_NAME = "atm_hold_v1"
+    OBSERVER_NAME = "atm_hold"
+
+    def __init__(self, config, order_manager, market_scanner, kalshi_client):
+        super().__init__(config, order_manager, market_scanner, kalshi_client)
+        self.SIGNAL_FRESHNESS_S = config.ATM_HOLD_SIGNAL_FRESHNESS_S
+        self.SIZE_USDC = config.ATM_HOLD_SIZE_USDC
+
+    def _select_side_and_price(self, sig, market):
+        if sig["predicted_outcome"] != "yes":
+            return None
+        ya = _safe_float(market.get("yes_ask_dollars"))
+        if ya is None or ya <= 0 or ya >= 1:
+            return None
+        return ("yes", ya)

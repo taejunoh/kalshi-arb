@@ -140,6 +140,20 @@ class Config:
         self.BID_IMBALANCE_SIZE_USDC = float(os.getenv("BID_IMBALANCE_SIZE_USDC", "20"))
         self.BID_IMBALANCE_SIGNAL_FRESHNESS_S = float(os.getenv("BID_IMBALANCE_SIGNAL_FRESHNESS_S", "15"))
 
+        # Flipped-prediction Phase 1 variants (2026-05-14).
+        # Phase 0 cohort showed original observers' WR ≪ 50% — the inverse
+        # is strongly +EV. New observers `open_no_touch` / `atm_hold` emit
+        # flipped predictions; these traders execute them as paper trades.
+        # ─ open_no_touch_v1: 80% WR / +30% ROI on n=325 cohort.
+        #   BUY NO at no_ask on each fresh signal.
+        self.OPEN_NO_TOUCH_SIZE_USDC = float(os.getenv("OPEN_NO_TOUCH_SIZE_USDC", "20"))
+        self.OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S = float(os.getenv("OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S", "15"))
+        # ─ atm_hold_v1: ATM bucket holds (resolves YES) within 5min of close.
+        #   BUY YES at ya on each fresh signal. Cohort tiny (n=10 pre-fix);
+        #   relies on post-MAX-fix observer keeping ya in [0.40, 0.65].
+        self.ATM_HOLD_SIZE_USDC = float(os.getenv("ATM_HOLD_SIZE_USDC", "20"))
+        self.ATM_HOLD_SIGNAL_FRESHNESS_S = float(os.getenv("ATM_HOLD_SIGNAL_FRESHNESS_S", "15"))
+
     @property
     def is_paper_mode(self) -> bool:
         return self.TRADING_MODE == "paper"
