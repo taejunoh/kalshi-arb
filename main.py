@@ -45,6 +45,9 @@ from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
 from strategies.sports_scan_observer import SportsScanObserver
 from strategies.econ_trader import EconTraderStrategy
 from strategies.crypto_observer import CryptoObserverStrategy
+from strategies.crypto_observer_phase1 import (
+    DeribitTailFadeV1Strategy, BidImbalanceV1Strategy,
+)
 from strategies.ladder_fed import LadderFedStrategy
 from strategies.ladder_approval import LadderApprovalStrategy
 from strategies.ladder_shutdown import LadderShutdownStrategy
@@ -237,6 +240,17 @@ class Bot:
         self.crypto_observer = CryptoObserverStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client,
             price_feed=self.price_feed,
+        )
+        # Phase 1 paper traders promoted from crypto_observer (2026-05-14).
+        # 24h cohort showed deribit_tail_skew 26/26 = 100% WR and
+        # bid_imbalance 18/26 = 69.2% WR — both above break-even at the
+        # observed price bands. Both paper-only at launch — no
+        # LIVE_STRATEGIES env entry. See [[crypto_observer_phase1_promotion_2026-05-14]].
+        self.deribit_tail_fade_v1 = DeribitTailFadeV1Strategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client,
+        )
+        self.bid_imbalance_v1 = BidImbalanceV1Strategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client,
         )
         # Macro Event Trader (C1) — paper-only at launch.
         # Requires scripts/macro_consensus_cron.py to populate consensus
@@ -531,6 +545,10 @@ class Bot:
             # init for full postmortem. Replacement runs 8 hypothesis-based
             # observers in parallel; first promotion eval in ~1 week.
             ("crypto_observer", self.crypto_observer),
+            # Phase 1 paper traders promoted from crypto_observer 2026-05-14.
+            # Paper-only until n ≥ 100 settled + ROI ≥ +5% for live promotion.
+            ("deribit_tail_fade_v1", self.deribit_tail_fade_v1),
+            ("bid_imbalance_v1", self.bid_imbalance_v1),
             # Macro Event Trader (C1) — paper-only. Requires consensus cron.
             ("macro_event", self.macro_event),
             # Cross-Venue Polymarket Trader (B1) — paper-only. Requires
