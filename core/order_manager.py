@@ -26,6 +26,13 @@ LIMIT_TTL_STRATEGIES = {
     "sports_playoff_underdog_v1_us",  # 2026-04-30 us companion to v36_playoff
     "sports_soccer_underdog_v1",  # 2026-05-06 paper-twin launch — soccer 20-29c TEAM
     "sports_soccer_draw_v1",  # 2026-05-11 live launch — soccer DRAW EPL+LAL 0.25-0.30
+    # 2026-05-13 WNBA expansion. Both fired correctly post-launch but live
+    # MARKET orders 409'd on Kalshi (`fill_or_kill_insufficient_resting_volume`)
+    # because WNBA early-pre-game books are thin (LV-CONN-CONN 23:51 UTC had
+    # <50 contracts at the YES 26c ask). Paper twins filled both; live didn't.
+    # Same failure mode that retired v36_nhl_playoff (5/3) — same fix.
+    "sports_underdog_v36",
+    "sports_underdog_v37",
 }
 LIMIT_TTL_SECONDS = 60
 LIMIT_TTL_POLL_INTERVAL = 5
@@ -82,6 +89,13 @@ LIMIT_AGGRESSION_CENTS_BY_STRATEGY = {
     # directly, but if v37 leaks alpha through 15c ceiling at this band,
     # v38 likely does too. Re-eval at ~2026-05-25 alongside v37.
     "sports_soccer_draw_v1": 25,
+    # 2026-05-13 WNBA launch-time defensive override. Same rationale as
+    # soccer_draw_v1 above: thin-book sport (WNBA depth p50 ~$567), no
+    # filled-cohort data yet to measure unfilled alpha. v37's 0.20-0.29
+    # band matches soccer_underdog_v1 exactly; v36's 0.35-0.55 chalk band
+    # similar thin-book regime. Re-eval at ~2026-05-25 with launch data.
+    "sports_underdog_v36": 25,
+    "sports_underdog_v37": 25,
 }
 
 
