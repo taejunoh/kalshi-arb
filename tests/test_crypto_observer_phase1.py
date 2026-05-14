@@ -11,6 +11,7 @@ import pytest
 
 from strategies.crypto_observer_phase1 import (
     DeribitTailFadeV1Strategy, BidImbalanceV1Strategy,
+    OpenNoTouchV1Strategy, AtmHoldV1Strategy,
 )
 
 
@@ -21,6 +22,10 @@ def _cfg():
         DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S=15.0,
         BID_IMBALANCE_SIZE_USDC=20.0,
         BID_IMBALANCE_SIGNAL_FRESHNESS_S=15.0,
+        OPEN_NO_TOUCH_SIZE_USDC=20.0,
+        OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S=15.0,
+        ATM_HOLD_SIZE_USDC=20.0,
+        ATM_HOLD_SIGNAL_FRESHNESS_S=15.0,
     )
 
 
@@ -175,5 +180,147 @@ async def test_circuit_breaker_blocks_fire():
     s, om = _build_strategy(BidImbalanceV1Strategy, signals=[sig],
                             market_lookup=markets.get)
     om.is_circuit_breaker_active = MagicMock(return_value=True)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+# ── OpenNoTouchV1 (flipped open_widening) ──────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_open_no_touch_buys_no_on_flipped_signal():
+    """Observer `open_no_touch` emits pred="no" (flipped from original
+    open_widening's pred="yes"). Trader buys NO at current no_ask."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2270",
+           "predicted_outcome": "no"}
+    markets = {"KXETH-26MAY1311-B2270": {
+        "yes_ask_dollars": 0.40, "no_ask_dollars": 0.60,
+    }}
+    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["side"] == "no"
+    assert args["price"] == 0.60
+    assert args["strategy"] == "open_no_touch_v1"
+
+
+@pytest.mark.asyncio
+async def test_open_no_touch_skips_yes_prediction():
+    """Defensive: if observer somehow emits pred="yes" on this stream,
+    the trader skips rather than buying."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2270",
+           "predicted_outcome": "yes"}
+    markets = {"KXETH-26MAY1311-B2270": {
+        "yes_ask_dollars": 0.40, "no_ask_dollars": 0.60,
+    }}
+    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+# ── AtmHoldV1 (flipped atm_fade) ───────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_atm_hold_buys_yes_on_flipped_signal():
+    """Observer `atm_hold` emits pred="yes" (flipped from original
+    atm_fade's pred="no"). Trader buys YES at current ya."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2270",
+           "predicted_outcome": "yes"}
+    markets = {"KXETH-26MAY1311-B2270": {
+        "yes_ask_dollars": 0.55, "no_ask_dollars": 0.45,
+    }}
+    s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["side"] == "yes"
+    assert args["price"] == 0.55
+    assert args["strategy"] == "atm_hold_v1"
+
+
+@pytest.mark.asyncio
+async def test_atm_hold_skips_no_prediction():
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2270",
+           "predicted_outcome": "no"}
+    markets = {"KXETH-26MAY1311-B2270": {
+        "yes_ask_dollars": 0.55, "no_ask_dollars": 0.45,
+    }}
+    s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+# ── OpenNoTouchV1 ──────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_open_no_touch_fires_no_at_no_ask():
+    from strategies.crypto_observer_phase1 import OpenNoTouchV1Strategy
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1410-B2200",
+           "predicted_outcome": "no"}
+    markets = {"KXETH-26MAY1410-B2200": {
+        "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
+    }}
+    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["side"] == "no"
+    assert args["price"] == 0.80
+    assert args["strategy"] == "open_no_touch_v1"
+
+
+@pytest.mark.asyncio
+async def test_open_no_touch_skips_if_predicted_yes():
+    from strategies.crypto_observer_phase1 import OpenNoTouchV1Strategy
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1410-B2200",
+           "predicted_outcome": "yes"}  # malformed for this trader
+    markets = {"KXETH-26MAY1410-B2200": {
+        "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
+    }}
+    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+# ── AtmHoldV1 ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_atm_hold_fires_yes_at_yes_ask():
+    from strategies.crypto_observer_phase1 import AtmHoldV1Strategy
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1410-B2270",
+           "predicted_outcome": "yes"}
+    markets = {"KXETH-26MAY1410-B2270": {
+        "yes_ask_dollars": 0.55, "no_ask_dollars": 0.45,
+    }}
+    s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["side"] == "yes"
+    assert args["price"] == 0.55
+    assert args["strategy"] == "atm_hold_v1"
+
+
+@pytest.mark.asyncio
+async def test_atm_hold_skips_if_predicted_no():
+    from strategies.crypto_observer_phase1 import AtmHoldV1Strategy
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1410-B2270",
+           "predicted_outcome": "no"}
+    markets = {"KXETH-26MAY1410-B2270": {
+        "yes_ask_dollars": 0.55, "no_ask_dollars": 0.45,
+    }}
+    s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
     await s.scan_and_execute()
     assert om.market_order.await_count == 0

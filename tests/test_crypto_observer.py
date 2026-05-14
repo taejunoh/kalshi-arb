@@ -13,8 +13,9 @@ from strategies.crypto_observer import (
     TailDecayObserver, AtmFadeObserver, ClusterSumObserver,
     BvTConsistencyObserver, SpotDriftMomentumObserver,
     OpenWideningObserver, DeribitTailSkewObserver, BidImbalanceObserver,
+    OpenNoTouchObserver, AtmHoldObserver,
     _parse_suffix_threshold, _suffix_kind, _event_key, _build_leg,
-    _lognormal_p_above,
+    _lognormal_p_above, _flip,
 )
 
 
@@ -429,3 +430,49 @@ def test_bid_imbalance_skips_when_balanced():
     legs = [_b(89750, 0.50, 0.48,
                yb_size=200, nb_size=200, ya_size=200, na_size=200)]
     assert obs.evaluate(_ctx(b_legs=legs, close_s=300.0)) == []
+
+
+# ── Flipped observers — OpenNoTouch / AtmHold ──────────────────────
+
+
+def test_flip_helper_swaps_yes_and_no():
+    assert _flip("yes") == "no"
+    assert _flip("no") == "yes"
+
+
+def test_open_no_touch_emits_flipped_predictions():
+    """For every signal OpenWideningObserver emits (pred=yes), the
+    OpenNoTouchObserver must emit the same market_id with pred=no."""
+    legs = [_b(87000, 0.01, 0.005),
+            _b(89700, 0.20, 0.18),
+            _b(89750, 0.50, 0.48),
+            _b(89800, 0.20, 0.18),
+            _b(92000, 0.01, 0.005)]
+    ctx = _ctx(b_legs=legs, open_s=300.0)
+
+    orig_sigs = OpenWideningObserver().evaluate(ctx)
+    flip_sigs = OpenNoTouchObserver().evaluate(ctx)
+
+    assert len(orig_sigs) == len(flip_sigs)
+    by_market_orig = {s.market_id: s.predicted_outcome for s in orig_sigs}
+    by_market_flip = {s.market_id: s.predicted_outcome for s in flip_sigs}
+    for mkt, pred in by_market_orig.items():
+        assert by_market_flip[mkt] == _flip(pred)
+    # And the observer name itself
+    assert all(s.observer == "open_no_touch" for s in flip_sigs)
+
+
+def test_atm_hold_emits_flipped_predictions():
+    legs = [_b(89650, 0.10, 0.09),
+            _b(89750, 0.50, 0.48),   # ATM, ya in [0.40, 0.65]
+            _b(89850, 0.10, 0.09)]
+    ctx = _ctx(b_legs=legs, close_s=180.0)
+
+    orig_sigs = AtmFadeObserver().evaluate(ctx)
+    flip_sigs = AtmHoldObserver().evaluate(ctx)
+
+    assert len(orig_sigs) == len(flip_sigs) == 1
+    assert flip_sigs[0].market_id == orig_sigs[0].market_id
+    assert flip_sigs[0].predicted_outcome == "yes"
+    assert orig_sigs[0].predicted_outcome == "no"
+    assert flip_sigs[0].observer == "atm_hold"

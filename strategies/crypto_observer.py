@@ -600,10 +600,73 @@ class BidImbalanceObserver(BaseObserver):
         return out
 
 
+# ── Flipped-prediction variants (2026-05-14) ───────────────────────
+#
+# Phase 0 cohort analysis on 24h data revealed that two observers' WR
+# was strongly under 50% — meaning the OPPOSITE prediction would have
+# been right most of the time. Rather than mutating the originals (which
+# would break the WR comparison data) we add flipped sibling observers
+# that share the trigger logic via delegation. Each emits its own row
+# in `crypto_observer_signals` with `predicted_outcome` flipped.
+#
+# - open_widening    (orig n=325, 20% WR) → open_no_touch (predict "no")
+# - atm_fade         (orig n=10,  0% WR)  → atm_hold      (predict "yes")
+#
+# Phase 1 paper traders for these live in crypto_observer_phase1.py.
+
+
+def _flip(outcome: str) -> str:
+    return "yes" if outcome == "no" else "no"
+
+
+class OpenNoTouchObserver(BaseObserver):
+    """Predicts no-touch on ATM±1% buckets within 10min of event open.
+    Inverse of OpenWideningObserver — 24h cohort showed 80% WR for this
+    direction. Reuses OpenWideningObserver's trigger logic via delegation."""
+    name = "open_no_touch"
+
+    def __init__(self):
+        self._inner = OpenWideningObserver()
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        return [
+            Signal(
+                observer=self.name, series=s.series,
+                event_key=s.event_key, market_id=s.market_id,
+                predicted_outcome=_flip(s.predicted_outcome),
+                features=s.features,
+            )
+            for s in self._inner.evaluate(ctx)
+        ]
+
+
+class AtmHoldObserver(BaseObserver):
+    """Predicts the ATM bucket holds (resolves YES) when ya is in the mid
+    band (0.40-0.65). Inverse of AtmFadeObserver — pre-fix cohort showed
+    0% WR for "no-touch", implying the ATM bucket actually does touch."""
+    name = "atm_hold"
+
+    def __init__(self):
+        self._inner = AtmFadeObserver()
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        return [
+            Signal(
+                observer=self.name, series=s.series,
+                event_key=s.event_key, market_id=s.market_id,
+                predicted_outcome=_flip(s.predicted_outcome),
+                features=s.features,
+            )
+            for s in self._inner.evaluate(ctx)
+        ]
+
+
 OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
     TailDecayObserver, AtmFadeObserver, ClusterSumObserver,
     BvTConsistencyObserver, SpotDriftMomentumObserver,
     OpenWideningObserver, DeribitTailSkewObserver, BidImbalanceObserver,
+    # Flipped siblings
+    OpenNoTouchObserver, AtmHoldObserver,
 )
 
 
