@@ -127,6 +127,19 @@ class Config:
         self.XVENUE_MIN_POLYMARKET_VOLUME = float(os.getenv("XVENUE_MIN_POLYMARKET_VOLUME", "5000"))
         self.XVENUE_RECENTLY_FIRED_SECS = float(os.getenv("XVENUE_RECENTLY_FIRED_SECS", "300"))
 
+        # Phase 1 promotions from crypto_observer (2026-05-14).
+        # Both paper-only at launch — no LIVE_STRATEGIES env entry.
+        # See [[crypto_observer_phase1_promotion_2026-05-14]].
+        # ─ deribit_tail_fade_v1: observer cohort showed 26/26 = 100% WR
+        #   across ya bands $0.03-$0.30. Fades tail (BUY NO).
+        self.DERIBIT_TAIL_FADE_SIZE_USDC = float(os.getenv("DERIBIT_TAIL_FADE_SIZE_USDC", "20"))
+        self.DERIBIT_TAIL_FADE_MAX_YA = float(os.getenv("DERIBIT_TAIL_FADE_MAX_YA", "0.35"))
+        self.DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S = float(os.getenv("DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S", "15"))
+        # ─ bid_imbalance_v1: 18/26 = 69.2% WR; mts<5min cohort 4/4 = 100%.
+        #   Acts on predicted side (BUY YES if pred=yes, BUY NO if pred=no).
+        self.BID_IMBALANCE_SIZE_USDC = float(os.getenv("BID_IMBALANCE_SIZE_USDC", "20"))
+        self.BID_IMBALANCE_SIGNAL_FRESHNESS_S = float(os.getenv("BID_IMBALANCE_SIGNAL_FRESHNESS_S", "15"))
+
     @property
     def is_paper_mode(self) -> bool:
         return self.TRADING_MODE == "paper"
