@@ -1,5 +1,7 @@
 """Sports Soccer Draw V1 (renamed 2026-05-13 from sports_draw_v38_soccer)
-— soccer 3-way Draw side, EPL+LAL+MLS 0.25-0.30. Renamed 2026-05-13.
+— soccer 3-way Draw side, EPL+LaLiga 0.25-0.30. MLS retired 2026-05-13
+after n=21 actual fires showed -64% ROI live / -29.5% observer-replay
+(structural draw underpricing — same pattern as BUN).
 
 Built 2026-05-11 from observer analysis of 71 settled TIE tickers across
 MLS/EPL/LAL/UCL/BUN since 2026-05-02. Sister strategy to v37_soccer
@@ -63,13 +65,23 @@ class SportsSoccerDrawV1Strategy(SportsSoccerUnderdogV1Strategy):
 
     BADGE_LABEL = "V1"
     BADGE_COLOR = "#4ade80"
-    # Allowed leagues: EPL + LaLiga + MLS. v37 inheritance gives us
+    # Allowed leagues: EPL + LaLiga only. v37 inheritance gives us
     # OBSERVATION_ONLY_SPORTS=frozenset() (override of parent gate) and
-    # PLAYOFF_BLOCKLIST=frozenset(). BUN+UCL excluded based on Draw-side
+    # PLAYOFF_BLOCKLIST=frozenset(). BUN+UCL+MLS excluded based on Draw-side
     # band analysis (BUN -67% structural bleed, UCL n=1 + knockout regime).
+    #
+    # MLS retired 2026-05-13 after live + observer divergence at n=21:
+    #   Live (5/12-5/13):     n=21 fires, 10% WR, -64% ROI ($-107)
+    #   Observer (5/7-5/13):  n=21 fires, 19% WR, -29.5% ROI ($-53)
+    #   Actual MLS draw rate 19% vs implied 25-30% at 0.25-0.30 band
+    #   → structural underpricing, same pattern as BUN.
+    # Original MLS re-add rationale (volume/season carrier) yields net bleed
+    # that wipes EPL+LAL alpha. With MLS excluded: EPL +194% / LAL +3% on
+    # observer 7d (n=19 combined). EPL season ends 5/24 → strategy goes
+    # dormant ~5/25; acceptable trade-off vs continued MLS bleed.
     SPORT_BLOCKLIST = frozenset({
         "NBA", "WNBA", "MLB", "NHL", "NPB", "KBO",
-        "BUN", "UCL",
+        "BUN", "UCL", "MLS",
     })
 
     # Draw band is different from TEAM band — TIE prices cluster 0.22-0.30,
