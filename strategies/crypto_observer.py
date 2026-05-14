@@ -349,6 +349,7 @@ class ClusterSumObserver(BaseObserver):
                           "sum_yb": round(sum_yb, 3),
                           "kind": "underpriced",
                           "n_cluster": len(cluster),
+                          "ya": target.ya, "na": target.na,
                           "spot": ctx.spot,
                           "mts_s": round(ctx.close_time_secs, 1)},
             ))
@@ -364,6 +365,7 @@ class ClusterSumObserver(BaseObserver):
                           "sum_yb": round(sum_yb, 3),
                           "kind": "overpriced",
                           "n_cluster": len(cluster),
+                          "ya": target.ya, "na": target.na,
                           "spot": ctx.spot,
                           "mts_s": round(ctx.close_time_secs, 1)},
             ))
@@ -591,6 +593,7 @@ class BidImbalanceObserver(BaseObserver):
                 features={"yb_size": leg.yb_size, "nb_size": leg.nb_size,
                           "ya_size": leg.ya_size, "na_size": leg.na_size,
                           "ratio": round(ratio, 2),
+                          "ya": leg.ya, "na": leg.na,
                           "spot": ctx.spot, "strike": leg.threshold,
                           "mts_s": round(ctx.close_time_secs, 1)},
             ))
