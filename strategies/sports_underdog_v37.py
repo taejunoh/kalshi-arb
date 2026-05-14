@@ -40,6 +40,16 @@ class SportsUnderdogV37Strategy(SportsSoccerUnderdogV1Strategy):
     # v36 / v31 family (no cap).
     MAX_MTS_AT_ENTRY = None
 
+    # 2026-05-14 band extension: 0.29 → 0.32 based on WNBA observer recon
+    # (n=15 settled games since 5/9). Per-2c bucket scan showed clean cliff
+    # at 0.32: TEAM 0.30-0.32 = 2/2 WR ROI +163%, TEAM 0.32-0.40 = 0/6
+    # ROI -100%. WNBA underdog distribution is bimodal — most fall outside
+    # the soccer-inherited 0.20-0.29 band; extending to 0.32 captures the
+    # 0.30-0.32 boundary cluster without entering the catastrophic 0.32+
+    # zone. CAVEAT: n=2 sample at 0.30-0.32 is fragile; re-evaluate at
+    # 5/23 first eval gate (n>=25).
+    MAX_ENTRY_PRICE = 0.32
+
     def _get_trade_size(self, signal: dict) -> float:
         # 2026-05-13: override parent's depth-tiered soccer caps (2-24 by tier)
         # with fixed size 12. WNBA depth p50 $567 (tier4 territory) → 12 USDC
