@@ -1309,7 +1309,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                               COUNT(*) AS n_trades,
                               SUM(CASE WHEN status='paper_settled' THEN 1 ELSE 0 END) AS n_settled,
                               SUM(CASE WHEN status='paper_settled' AND pnl > 0 THEN 1 ELSE 0 END) AS wins,
-                              ROUND(COALESCE(SUM(pnl), 0), 2) AS pnl_sum
+                              ROUND(COALESCE(SUM(pnl), 0), 2) AS pnl_sum,
+                              ROUND(COALESCE(SUM(CASE WHEN status='paper_settled' THEN size ELSE 0 END), 0), 2) AS settled_stake
                        FROM trades
                        WHERE strategy IN ({placeholders}) AND timestamp >= ?
                        GROUP BY strategy""",
@@ -1347,11 +1348,18 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     r["phase1_paper_settled"] = st["n_settled"]
                     r["phase1_paper_wins"] = st["wins"]
                     r["phase1_paper_pnl"] = st["pnl_sum"]
+                    stake = st["settled_stake"] or 0.0
+                    r["phase1_paper_stake"] = stake
+                    r["phase1_paper_roi"] = (
+                        round(100.0 * st["pnl_sum"] / stake, 2) if stake > 0 else None
+                    )
                 else:
                     r["phase1_paper_trades"] = 0
                     r["phase1_paper_settled"] = 0
                     r["phase1_paper_wins"] = 0
                     r["phase1_paper_pnl"] = 0.0
+                    r["phase1_paper_stake"] = 0.0
+                    r["phase1_paper_roi"] = None
         return {
             "observers": rows,
             "as_of": datetime.now(timezone.utc).isoformat(),
