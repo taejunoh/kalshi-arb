@@ -1276,10 +1276,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         # Observer name → Phase 1 strategy name mapping. Add new
         # promotions here as they happen.
         PHASE1_BY_OBSERVER = {
-            "deribit_tail_skew": "deribit_tail_fade_v1",
-            "bid_imbalance":     "bid_imbalance_v1",
-            "open_no_touch":     "open_no_touch_v1",
-            "atm_hold":          "atm_hold_v1",
+            "deribit_tail_skew":  "deribit_tail_fade_v1",
+            "bid_imbalance":      "bid_imbalance_v1",
+            "bid_imbalance_fade": "bid_imbalance_fade_v1",
+            "open_no_touch":      "open_no_touch_v1",
+            "atm_hold":           "atm_hold_v1",
         }
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         async with aiosqlite.connect(database.db_path, timeout=30.0) as conn:
@@ -1294,7 +1295,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                    FROM crypto_observer_signals
                    WHERE ts >= ?
                    GROUP BY observer
-                   ORDER BY n_total DESC""",
+                   ORDER BY observer ASC""",
                 (cutoff,),
             )
             rows = [dict(r) for r in await cur.fetchall()]
