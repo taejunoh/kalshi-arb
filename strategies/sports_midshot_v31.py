@@ -1,6 +1,5 @@
 """Sports Midshot V3.1 — V3 midshot logic against EU sharp-book consensus."""
 import logging
-from typing import Optional
 
 from strategies.sports_midshot import SportsMidshotStrategy
 
@@ -55,26 +54,19 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     # Combined family n=32 ROI −61% systematic. Cascade not automatic
     # (midshot doesn't inherit underdog_v31), so set explicitly here.
     DEPTH_DEAD_ZONE = (2000.0, 10000.0)
-    # 2026-05-13 (WNBA expansion): unblock WNBA, add pair-fire dedup
+    # 2026-05-13 (WNBA expansion): unblock WNBA. Pair-fire dedup formerly
+    # WNBA-only (an explicit evaluate() override), generalized 2026-05-15
+    # to PAIR_FIRE_DEDUP=True below — base scan loop now blocks cross-scan
+    # same-game both-sides fires for every sport.
     OBSERVATION_ONLY_SPORTS = (
         SportsMidshotStrategy.OBSERVATION_ONLY_SPORTS - {"WNBA"}
     )
-
-    def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
-                 line_movement: float = 0.0, home_adj: float = 0.0,
-                 ticker: str = "") -> Optional[dict]:
-        """WNBA-only pair-fire dedup at entry (matches longshot_v31 pattern).
-        Non-WNBA tickers fall through to parent logic unchanged."""
-        if "WNBAGAME" in ticker:
-            game_key = ticker.rsplit("-", 1)[0]
-            for traded in self._traded_tickers:
-                if traded != ticker and traded.rsplit("-", 1)[0] == game_key:
-                    return None
-        return super().evaluate(
-            kalshi_yes, kalshi_no, fair_prob,
-            line_movement=line_movement, home_adj=home_adj,
-            ticker=ticker,
-        )
+    # Pair-fire dedup (2026-05-15). Lifetime LIVE analysis on n=221 settled
+    # trades / 121 games: 99 games (82%) saw both-sides fired across separate
+    # scan cycles, contributing -$76 of paired-bleed against +$192 from the
+    # 22 single-fire games. Game-level dedup simulation lifts ROI 22%→72%.
+    # See cross_strategy_tier_2026-05-12 memory for the per-strategy table.
+    PAIR_FIRE_DEDUP = True
 
     def _get_trade_size(self, signal: dict) -> float:
         """Depth-tiered cap (2026-05-12).
