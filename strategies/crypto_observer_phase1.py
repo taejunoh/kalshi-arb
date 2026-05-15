@@ -195,9 +195,22 @@ class OpenNoTouchV1Strategy(_Phase1Base):
         self.SIGNAL_FRESHNESS_S = config.OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S
         self.SIZE_USDC = config.OPEN_NO_TOUCH_SIZE_USDC
         self._min_ya = config.OPEN_NO_TOUCH_MIN_YA
+        self._max_fires_per_event = config.OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT
+        # event_key -> fire count (in-memory, resets on restart). All-event
+        # ATM±1% triggers correlate on the same close — cap fires/event so
+        # 50 trades reflect ~17 independent events instead of ~5.
+        self._fires_per_event: dict[str, int] = {}
 
     def _select_side_and_price(self, sig, market):
         if sig["predicted_outcome"] != "no":
+            return None
+        # Per-event cap. event_key is on the signal row (DB column), not
+        # in features_json; tolerate either source.
+        event_key = sig.get("event_key") or ""
+        if not event_key:
+            parts = sig.get("market_id", "").split("-")
+            event_key = "-".join(parts[1:-1]) if len(parts) >= 3 else ""
+        if event_key and self._fires_per_event.get(event_key, 0) >= self._max_fires_per_event:
             return None
         ya = _safe_float(market.get("yes_ask_dollars"))
         no_ask = _safe_float(market.get("no_ask_dollars"))
@@ -210,6 +223,17 @@ class OpenNoTouchV1Strategy(_Phase1Base):
         # max-profit-per-trade overcomes Kalshi's per-contract fee.
         if ya < self._min_ya:
             return None
+        # All gates passed — optimistically increment counter. If
+        # market_order then fails (rare), the counter is slightly over-
+        # counted, which only causes us to fire LESS for this event.
+        if event_key:
+            self._fires_per_event[event_key] = self._fires_per_event.get(event_key, 0) + 1
+            # Memory bound: keep dict size manageable across many events.
+            if len(self._fires_per_event) > 200:
+                # Drop the 100 oldest entries (oldest-by-insertion-order in
+                # Python 3.7+ dict).
+                for k in list(self._fires_per_event.keys())[:100]:
+                    del self._fires_per_event[k]
         return ("no", no_ask)
 
 

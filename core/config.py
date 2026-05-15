@@ -154,6 +154,12 @@ class Config:
         # Set MIN_YA=0.20 so trader fires only on ATM-region buckets where
         # the payoff multiplier overcomes fee asymmetry.
         self.OPEN_NO_TOUCH_MIN_YA = float(os.getenv("OPEN_NO_TOUCH_MIN_YA", "0.20"))
+        # Per-event cap: ATM±1% in KXBTC ($100 grid) yields 10-16 bucket
+        # signals per event open. Without a cap, a single event's outcome
+        # determines N trades' fate — same close = same direction = correlated
+        # samples. Cap at 3 trades/event so 50 trades = ~17 independent
+        # events instead of ~5. Counts reset on bot restart (in-memory).
+        self.OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT = int(os.getenv("OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT", "3"))
         # ─ atm_hold_v1: ATM bucket holds (resolves YES) within 5min of close.
         #   BUY YES at ya on each fresh signal. Cohort tiny (n=10 pre-fix);
         #   relies on post-MAX-fix observer keeping ya in [0.40, 0.65].
