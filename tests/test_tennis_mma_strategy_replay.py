@@ -1,8 +1,10 @@
 import sqlite3
-import tempfile
-from pathlib import Path
 
-from scripts.tennis_mma_strategy_replay import load_observations
+from scripts.tennis_mma_strategy_replay import (
+    load_observations,
+    resolve_settled_outcomes,
+    wilson_ci,
+)
 
 
 def _make_db(rows):
@@ -53,3 +55,70 @@ def test_load_observations_filters_sport_and_window():
     rows = load_observations(conn, sports=("ATP",), start="2026-05-11", end="2026-05-15")
     assert len(rows) == 1
     assert rows[0]["sport"] == "ATP"
+
+
+def test_load_observations_boundary_timestamps():
+    """Half-open window [start, end): start is INCLUDED, end is EXCLUDED."""
+    conn = _make_db([
+        # Exactly at start — should be INCLUDED.
+        {"timestamp": "2026-05-11T00:00:00+00:00", "kalshi_ticker": "KXATPMATCH-START",
+         "series": "KXATPMATCH", "sport": "ATP", "phase": "pre",
+         "minutes_to_start": 120.0, "kalshi_yes_ask": 0.55, "kalshi_no_ask": 0.45,
+         "is_yes_home": 1},
+        # Strictly inside — should be INCLUDED.
+        {"timestamp": "2026-05-12T10:00:00+00:00", "kalshi_ticker": "KXATPMATCH-MID",
+         "series": "KXATPMATCH", "sport": "ATP", "phase": "pre",
+         "minutes_to_start": 120.0, "kalshi_yes_ask": 0.55, "kalshi_no_ask": 0.45,
+         "is_yes_home": 1},
+        # Exactly at end — should be EXCLUDED (half-open).
+        {"timestamp": "2026-05-15T00:00:00+00:00", "kalshi_ticker": "KXATPMATCH-END",
+         "series": "KXATPMATCH", "sport": "ATP", "phase": "pre",
+         "minutes_to_start": 120.0, "kalshi_yes_ask": 0.55, "kalshi_no_ask": 0.45,
+         "is_yes_home": 1},
+    ])
+    rows = load_observations(
+        conn, sports=("ATP",),
+        start="2026-05-11T00:00:00+00:00",
+        end="2026-05-15T00:00:00+00:00",
+    )
+    tickers = {r["kalshi_ticker"] for r in rows}
+    assert tickers == {"KXATPMATCH-START", "KXATPMATCH-MID"}
+
+
+def test_wilson_ci_known_values():
+    # Known: 5/10 wins, z=1.96 → CI ~[0.237, 0.763]
+    lo, hi = wilson_ci(5, 10)
+    assert abs(lo - 0.237) < 0.01
+    assert abs(hi - 0.763) < 0.01
+
+
+def test_wilson_ci_zero_n():
+    lo, hi = wilson_ci(0, 0)
+    assert lo == 0.0 and hi == 0.0
+
+
+def test_resolve_settled_outcomes_returns_dict():
+    conn = sqlite3.connect(":memory:")
+    conn.execute("""
+        CREATE TABLE ticker_settlements (
+            kalshi_ticker TEXT PRIMARY KEY,
+            result TEXT NOT NULL,
+            close_yes_ask REAL,
+            close_no_ask REAL,
+            settled_at TEXT,
+            fetched_at TEXT NOT NULL
+        )
+    """)
+    conn.execute(
+        "INSERT INTO ticker_settlements (kalshi_ticker, result, fetched_at) "
+        "VALUES ('KXATPMATCH-1', 'yes', '2026-05-15T00:00:00+00:00')"
+    )
+    conn.execute(
+        "INSERT INTO ticker_settlements (kalshi_ticker, result, fetched_at) "
+        "VALUES ('KXATPMATCH-2', 'no', '2026-05-15T00:00:00+00:00')"
+    )
+    conn.commit()
+    out = resolve_settled_outcomes(
+        conn, ["KXATPMATCH-1", "KXATPMATCH-2", "KXATPMATCH-3"]
+    )
+    assert out == {"KXATPMATCH-1": 1.0, "KXATPMATCH-2": 0.0}

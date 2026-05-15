@@ -47,3 +47,44 @@ def load_observations(
     cur.execute(sql, (*sports, start, end))
     cols = [d[0] for d in cur.description]
     return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def wilson_ci(wins: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score interval for a binomial proportion."""
+    if n == 0:
+        return (0.0, 0.0)
+    phat = wins / n
+    denom = 1.0 + z**2 / n
+    center = (phat + z**2 / (2 * n)) / denom
+    half = z * math.sqrt(phat * (1 - phat) / n + z**2 / (4 * n**2)) / denom
+    return (max(0.0, center - half), min(1.0, center + half))
+
+
+def resolve_settled_outcomes(
+    conn: sqlite3.Connection, tickers: list[str]
+) -> dict[str, float]:
+    """Return {ticker: settle_value in [0,1]} for tickers that have settled.
+
+    Kalshi binary markets settle to 1.0 (YES side wins) or 0.0 (NO side
+    wins). Unknown / not-yet-settled tickers are omitted from the result.
+
+    Reads from `ticker_settlements` (kalshi_ticker, result) — see
+    `core/database.py` schema. `result` is the lowercase string "yes" or
+    "no"; this maps to 1.0 / 0.0. Any other value is treated as unsettled
+    and omitted.
+    """
+    if not tickers:
+        return {}
+    placeholders = ",".join(["?"] * len(tickers))
+    sql = f"""
+        SELECT kalshi_ticker, result
+          FROM ticker_settlements
+         WHERE kalshi_ticker IN ({placeholders})
+           AND result IN ('yes', 'no')
+    """
+    cur = conn.cursor()
+    cur.execute(sql, tickers)
+    return {
+        row[0]: (1.0 if row[1] == "yes" else 0.0)
+        for row in cur.fetchall()
+    }
