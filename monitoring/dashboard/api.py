@@ -114,6 +114,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_underdog_v36",
             "sports_underdog_v37",
             "sports_favorite_v40",
+            "sports_tennis_pinnacle_arb_v1",
+            "sports_atp_gs_bo5_chalk_v1",
+            "sports_tennis_bid_imbalance_v1",
+            "sports_ufc_chalk_fade_v1",
+            "sports_tennis_surface_skew_v1",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Archived — historical data surfaced in dashboard's Archived section.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
@@ -474,6 +479,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_underdog_v36",
             "sports_underdog_v37",
             "sports_favorite_v40",
+            "sports_tennis_pinnacle_arb_v1",
+            "sports_atp_gs_bo5_chalk_v1",
+            "sports_tennis_bid_imbalance_v1",
+            "sports_ufc_chalk_fade_v1",
+            "sports_tennis_surface_skew_v1",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Phase 1 paper traders promoted from crypto_observer 2026-05-14.
             "deribit_tail_fade_v1", "bid_imbalance_v1",
@@ -546,6 +556,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_underdog_v36": "SPORTS_ENABLED",
             "sports_underdog_v37": "SPORTS_ENABLED",
             "sports_favorite_v40": "SPORTS_ENABLED",
+            "sports_tennis_pinnacle_arb_v1": "SPORTS_ENABLED",
+            "sports_atp_gs_bo5_chalk_v1": "SPORTS_ENABLED",
+            "sports_tennis_bid_imbalance_v1": "SPORTS_ENABLED",
+            "sports_ufc_chalk_fade_v1": "SPORTS_ENABLED",
+            "sports_tennis_surface_skew_v1": "SPORTS_ENABLED",
             "sports_pinnacle_edge": "SPORTS_ENABLED",
             "sports_v4_edge": "SPORTS_ENABLED",
             "sports_consolidated": "SPORTS_ENABLED",
@@ -677,6 +692,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
             from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
             from strategies.sports_favorite_v40 import SportsFavoriteV40Strategy
+            from strategies.sports_tennis_pinnacle_arb_v1 import SportsTennisPinnacleArbV1Strategy
+            from strategies.sports_atp_gs_bo5_chalk_v1 import SportsAtpGsBo5ChalkV1Strategy
+            from strategies.sports_tennis_bid_imbalance_v1 import SportsTennisBidImbalanceV1Strategy
+            from strategies.sports_ufc_chalk_fade_v1 import SportsUfcChalkFadeV1Strategy
+            from strategies.sports_tennis_surface_skew_v1 import SportsTennisSurfaceSkewV1Strategy
             from strategies.sports_v4_edge import SportsV4EdgeStrategy
             from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
             _gate_classes = {
@@ -702,6 +722,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "sports_underdog_v36": SportsUnderdogV36Strategy,
                 "sports_underdog_v37": SportsUnderdogV37Strategy,
                 "sports_favorite_v40": SportsFavoriteV40Strategy,
+                "sports_tennis_pinnacle_arb_v1": SportsTennisPinnacleArbV1Strategy,
+                "sports_atp_gs_bo5_chalk_v1":    SportsAtpGsBo5ChalkV1Strategy,
+                "sports_tennis_bid_imbalance_v1": SportsTennisBidImbalanceV1Strategy,
+                "sports_ufc_chalk_fade_v1":      SportsUfcChalkFadeV1Strategy,
+                "sports_tennis_surface_skew_v1": SportsTennisSurfaceSkewV1Strategy,
                 "sports_v4_edge":      SportsV4EdgeStrategy,
                 "sports_chalk_shadow": SportsChalkShadowStrategy,
             }
