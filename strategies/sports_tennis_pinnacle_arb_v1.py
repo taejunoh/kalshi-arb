@@ -28,6 +28,15 @@ class SportsTennisPinnacleArbV1Strategy(SportsTraderStrategy):
         SportsTraderStrategy.OBSERVATION_ONLY_SPORTS - {"ATP", "WTA"}
     )
 
+    # Hard blocklist — OBSERVATION_ONLY_SPORTS subtraction only removes
+    # ATP/WTA from the observation set; team sports were never in that set
+    # so without this they'd flow through. Targets: ATP, WTA only.
+    SPORT_BLOCKLIST = frozenset({
+        "NBA", "WNBA", "MLB", "NHL", "NPB", "KBO",
+        "MLS", "EPL", "LAL", "UCL", "BUN",
+        "UFC",
+    })
+
     PRE_GAME_ONLY = True
     MAX_MTS_AT_ENTRY = 4320.0
     MIN_DEPTH_USDC = 50.0
