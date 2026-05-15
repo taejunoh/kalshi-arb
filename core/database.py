@@ -244,6 +244,37 @@ class Database:
                 "ON crypto_observer_signals(actual_outcome) "
                 "WHERE actual_outcome IS NULL"
             )
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS polymarket_totals_observations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    slug TEXT NOT NULL,
+                    sport TEXT NOT NULL,
+                    game_date TEXT,
+                    away_team_raw TEXT,
+                    home_team_raw TEXT,
+                    market_type TEXT NOT NULL,
+                    line REAL NOT NULL,
+                    spread_side TEXT,
+                    yes_price REAL,
+                    no_price REAL,
+                    volume_24h REAL,
+                    question TEXT,
+                    kalshi_event_ticker TEXT
+                )
+            """)
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ptot_slug_ts "
+                "ON polymarket_totals_observations(slug, timestamp)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ptot_sport_date "
+                "ON polymarket_totals_observations(sport, game_date)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ptot_kalshi_ts "
+                "ON polymarket_totals_observations(kalshi_event_ticker, timestamp)"
+            )
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_status_pnl ON trades(status, pnl)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_trade ON clv_snapshots(trade_id)")
@@ -668,6 +699,29 @@ class Database:
             )
             row = await cur.fetchone()
             return dict(row) if row else None
+
+    async def record_polymarket_totals_observation(
+        self, *, slug: str, sport: str, game_date: str | None,
+        away_team_raw: str | None, home_team_raw: str | None,
+        market_type: str, line: float, spread_side: str | None,
+        yes_price: float | None, no_price: float | None,
+        volume_24h: float | None, question: str | None,
+        kalshi_event_ticker: str | None,
+    ) -> int:
+        ts = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                "INSERT INTO polymarket_totals_observations "
+                "(timestamp, slug, sport, game_date, away_team_raw, home_team_raw, "
+                " market_type, line, spread_side, yes_price, no_price, volume_24h, "
+                " question, kalshi_event_ticker) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (ts, slug, sport, game_date, away_team_raw, home_team_raw,
+                 market_type, line, spread_side, yes_price, no_price, volume_24h,
+                 question, kalshi_event_ticker),
+            )
+            await conn.commit()
+            return cur.lastrowid
 
     async def record_cross_venue_signal(
         self, *, ticker: str, slug: str,
