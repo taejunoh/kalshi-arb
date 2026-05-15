@@ -159,18 +159,21 @@ class Config:
         #   BUY NO at no_ask on each fresh signal.
         self.OPEN_NO_TOUCH_SIZE_USDC = float(os.getenv("OPEN_NO_TOUCH_SIZE_USDC", "20"))
         self.OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S = float(os.getenv("OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S", "15"))
-        # MIN_YA filter: tail buckets (ya < 0.20) have no_ask ≥ 0.80 → max
-        # profit < $5/$20 stake, eaten by fee. Cohort 587-signal breakdown
-        # showed EV concentrated in ya ≥ 0.20 (band 04+05 = +40%/+182% ROI).
-        # Set MIN_YA=0.20 so trader fires only on ATM-region buckets where
-        # the payoff multiplier overcomes fee asymmetry.
-        self.OPEN_NO_TOUCH_MIN_YA = float(os.getenv("OPEN_NO_TOUCH_MIN_YA", "0.20"))
-        # Per-event cap: ATM±1% in KXBTC ($100 grid) yields 10-16 bucket
-        # signals per event open. Without a cap, a single event's outcome
-        # determines N trades' fate — same close = same direction = correlated
-        # samples. Cap at 3 trades/event so 50 trades = ~17 independent
-        # events instead of ~5. Counts reset on bot restart (in-memory).
-        self.OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT = int(os.getenv("OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT", "3"))
+        # ya window [MIN_YA, MAX_YA) — band D from 2026-05-15 Phase 0 re-analysis
+        # (n=928 settled, proper no_ask=1-yb + Kalshi fee). Original "+30% ROI"
+        # promotion claim used a flawed symmetric payoff model; corrected
+        # band ROI breakdown shows ya 0.30-0.45 is the only positive slice
+        # (+10% n=38) — all other bands are -3% to -44%. ya here is derived
+        # from no_ask (ya = 1 - no_ask), not from yes_ask_dollars (which
+        # diverges on wide crypto spreads).
+        self.OPEN_NO_TOUCH_MIN_YA = float(os.getenv("OPEN_NO_TOUCH_MIN_YA", "0.30"))
+        self.OPEN_NO_TOUCH_MAX_YA = float(os.getenv("OPEN_NO_TOUCH_MAX_YA", "0.45"))
+        # Per-event cap = 1: ATM±1% strikes all resolve on the same BTC/ETH
+        # hourly close (~100 signals/event observed in Phase 0). Multiple
+        # fires share one outcome → correlated samples that inflate n without
+        # adding information. Cap=1 + center-of-window strike picker keeps
+        # samples independent enough for promotion-gate statistics.
+        self.OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT = int(os.getenv("OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT", "1"))
         # ─ atm_hold_v1: ATM bucket holds (resolves YES) within 5min of close.
         #   BUY YES at ya on each fresh signal. Cohort tiny (n=10 pre-fix);
         #   relies on post-MAX-fix observer keeping ya in [0.40, 0.65].
