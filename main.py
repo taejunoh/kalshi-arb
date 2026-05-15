@@ -36,6 +36,7 @@ from strategies.sports_playoff_underdog_v1 import SportsPlayoffUnderdogV1Strateg
 from strategies.sports_playoff_underdog_v1_us import SportsPlayoffUnderdogV1USStrategy
 from strategies.sports_soccer_underdog_v1 import SportsSoccerUnderdogV1Strategy
 from strategies.sports_soccer_draw_v1 import SportsSoccerDrawV1Strategy
+from strategies.sports_mls_fade_favorite_v1 import SportsMLSFadeFavoriteV1Strategy
 from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
 from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
 from strategies.sports_favorite_v40 import SportsFavoriteV40Strategy
@@ -197,6 +198,14 @@ class Bot:
         # ~+25%. Non-BUN 0.20-0.30 sample n=47, ROI +27%, drop-3 +9%.
         # LIVE at launch (size 12). Eval gate: n>=25, ROI>=+30%, drop-3>0 by ~6/22.
         self.sports_soccer_draw_v1 = SportsSoccerDrawV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # MLS Fade-Favorite V1 — MLS reg-season TEAM no_ask 0.30-0.45 BUY NO.
+        # Built 2026-05-15 from cross-sport observer scan (n=1214 settled).
+        # MLS observer n=14, WR 57.1%, ROI +18.57% at fade-fav band.
+        # Paper-twin only at launch. Promotion gate: n>=25 + ROI>=+10% +
+        # drop-top-3 > 0 by ~6/22.
+        self.sports_mls_fade_favorite_v1 = SportsMLSFadeFavoriteV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         # V3.6 WNBA — chalk-favorite YES/NO at 35-55c with fair_prob > 0.55.
@@ -548,6 +557,9 @@ class Bot:
             ("sports_soccer_underdog_v1", self.sports_soccer_underdog_v1),
             # V3.8 Soccer Draw — DRAW side, EPL+LAL 0.25-0.30 YES only.
             ("sports_soccer_draw_v1", self.sports_soccer_draw_v1),
+            # MLS Fade-Favorite V1 — paper-twin only. MLS TEAM no_ask 30-45c
+            # BUY NO. Built 2026-05-15 from observer scan n=14 +18.6% ROI.
+            ("sports_mls_fade_favorite_v1", self.sports_mls_fade_favorite_v1),
             # V3.6 WNBA — chalk-favorite 35-55c, WNBA-only.
             ("sports_underdog_v36", self.sports_underdog_v36),
             # V3.7 WNBA — TEAM 20-29c band, WNBA-only.
