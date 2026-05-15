@@ -211,6 +211,95 @@ def simulate_tennis_surface_skew_v1(
     return fires
 
 
+def simulate_tennis_bid_imbalance_v1(
+    rows: list[dict], settled: dict[str, float]
+) -> list[dict]:
+    """A3 replay: bid-size skew predicts settlement direction.
+
+    Mirrors strategies/sports_tennis_bid_imbalance_v1.py evaluate() gates.
+    """
+    fires = []
+    seen = set()
+    for r in rows:
+        ticker = r["kalshi_ticker"]
+        if ticker in seen:
+            continue
+        if r.get("sport") not in {"ATP", "WTA"}:
+            continue
+        if not r.get("has_pinnacle"):
+            continue
+        if (r.get("pinnacle_age_s") or 1e9) > 600:
+            continue
+        mts = r.get("minutes_to_start")
+        if mts is None or mts < 60 or mts > 1440:
+            continue
+        yb = r.get("kalshi_yes_bid_size") or 0
+        nb = r.get("kalshi_no_bid_size") or 0
+        if (yb + nb) <= 0:
+            continue
+        imbalance = yb / (yb + nb)
+        ya = r["kalshi_yes_ask"]
+        pin = r["pinnacle_yes_prob"]
+        if imbalance > 0.65 and 0.50 <= ya <= 0.85 and pin > ya:
+            side, price = "yes", ya
+        elif imbalance < 0.35 and 0.15 <= ya <= 0.50 and pin < ya:
+            side, price = "no", r["kalshi_no_ask"]
+        else:
+            continue
+        if ticker not in settled:
+            continue
+        fires.append({
+            "strategy": "tennis_bid_imbalance_v1", "ticker": ticker, "side": side,
+            "price": price, "edge": imbalance, "settle": settled[ticker],
+        })
+        seen.add(ticker)
+    return fires
+
+
+def compute_imbalance_decile_baseline(
+    rows: list[dict], settled: dict[str, float]
+) -> dict[str, float]:
+    """Baseline WR per A3 price band, WITHOUT imbalance filter.
+
+    A3's promotion gate requires top-decile WR >= baseline + 6pp.
+    The baseline is the unconditional WR within the same price band the
+    strategy is firing in - without it we'd compare the imbalance cohort
+    to a global average that includes other bands.
+    """
+    yes_wins, yes_n = 0, 0
+    no_wins, no_n = 0, 0
+    seen = set()
+    for r in rows:
+        ticker = r["kalshi_ticker"]
+        if ticker in seen:
+            continue
+        if r.get("sport") not in {"ATP", "WTA"}:
+            continue
+        mts = r.get("minutes_to_start")
+        if mts is None or mts < 60 or mts > 1440:
+            continue
+        if ticker not in settled:
+            continue
+        ya = r["kalshi_yes_ask"]
+        s = settled[ticker]
+        if 0.50 <= ya <= 0.85:
+            yes_n += 1
+            if s == 1.0:
+                yes_wins += 1
+            seen.add(ticker)
+        elif 0.15 <= ya <= 0.50:
+            no_n += 1
+            if s == 0.0:
+                no_wins += 1
+            seen.add(ticker)
+    return {
+        "yes_band": yes_wins / yes_n if yes_n > 0 else 0.0,
+        "no_band": no_wins / no_n if no_n > 0 else 0.0,
+        "yes_n": yes_n,
+        "no_n": no_n,
+    }
+
+
 def _compute_summary(fires: list[dict], strategy: str) -> dict:
     if not fires:
         return {"strategy": strategy, "n": 0, "wr": 0.0, "roi": 0.0,
@@ -246,7 +335,8 @@ def main():
     parser.add_argument("--end", required=True)
     parser.add_argument("--strategy",
                         choices=["tennis_pinnacle_arb_v1", "ufc_chalk_fade_v1",
-                                 "tennis_surface_skew_v1", "all"],
+                                 "tennis_surface_skew_v1",
+                                 "tennis_bid_imbalance_v1", "all"],
                         default="all")
     args = parser.parse_args()
 
@@ -270,6 +360,16 @@ def main():
         settled = resolve_settled_outcomes(conn, [r["kalshi_ticker"] for r in rows])
         fires = simulate_tennis_surface_skew_v1(rows, settled, TENNIS_SLUG_META)
         print(_compute_summary(fires, "tennis_surface_skew_v1"))
+
+    if args.strategy in ("tennis_bid_imbalance_v1", "all"):
+        rows = load_observations(conn, sports=("ATP", "WTA"), start=args.start, end=args.end)
+        settled = resolve_settled_outcomes(conn, [r["kalshi_ticker"] for r in rows])
+        baseline = compute_imbalance_decile_baseline(rows, settled)
+        fires = simulate_tennis_bid_imbalance_v1(rows, settled)
+        summary = _compute_summary(fires, "tennis_bid_imbalance_v1")
+        summary["baseline_yes_wr"] = baseline["yes_band"]
+        summary["baseline_no_wr"] = baseline["no_band"]
+        print(summary)
 
 
 if __name__ == "__main__":
