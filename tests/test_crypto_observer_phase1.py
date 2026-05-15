@@ -28,8 +28,9 @@ def _cfg():
         BID_IMBALANCE_FADE_SIGNAL_FRESHNESS_S=15.0,
         OPEN_NO_TOUCH_SIZE_USDC=20.0,
         OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S=15.0,
-        OPEN_NO_TOUCH_MIN_YA=0.20,
-        OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT=3,
+        OPEN_NO_TOUCH_MIN_YA=0.30,
+        OPEN_NO_TOUCH_MAX_YA=0.45,
+        OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT=1,
         ATM_HOLD_SIZE_USDC=20.0,
         ATM_HOLD_SIGNAL_FRESHNESS_S=15.0,
     )
@@ -283,10 +284,9 @@ async def test_open_no_touch_buys_no_on_flipped_signal():
 
 @pytest.mark.asyncio
 async def test_open_no_touch_skips_low_ya_tail_bucket():
-    """MIN_YA filter: tail buckets (ya < 0.20 → no_ask > 0.80) have
-    payoff/fee asymmetry that kills EV even at 90%+ WR. First 37 paper
-    trades hit -10.3% ROI because 84% of fires landed in this band.
-    Filter drops them — only ATM-region (ya ≥ 0.20) fires."""
+    """Tail buckets (ya < MIN_YA → no_ask > 0.70) had -4 to -5% ROI in
+    Phase 0 re-analysis (n=628 across <0.30 bands) — fee asymmetry
+    kills EV even at 88-93% WR. Window gate drops them."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2270",
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2270": {
@@ -299,17 +299,53 @@ async def test_open_no_touch_skips_low_ya_tail_bucket():
 
 
 @pytest.mark.asyncio
-async def test_open_no_touch_fires_at_ya_boundary():
-    """ya = MIN_YA exactly should fire (≥ comparison)."""
+async def test_open_no_touch_skips_when_ya_above_max():
+    """Upper window gate: ya ≥ MAX_YA (no_ask ≤ 0.55) was -8% to -42%
+    ROI in Phase 0 — WR collapses to 45-72% once strikes get close
+    enough to ATM that the no-touch thesis fails."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2270",
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2270": {
-        "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
+        "yes_ask_dollars": 0.50, "no_ask_dollars": 0.50,
+    }}
+    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_open_no_touch_fires_at_ya_min_boundary():
+    """ya = MIN_YA exactly should fire (≥ on lower bound)."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2270",
+           "predicted_outcome": "no"}
+    # no_ask=0.70 → ya = 1 - 0.70 = 0.30 = MIN_YA
+    markets = {"KXETH-26MAY1311-B2270": {
+        "yes_ask_dollars": 0.25, "no_ask_dollars": 0.70,
     }}
     s, om = _build_strategy(OpenNoTouchV1Strategy, signals=[sig],
                             market_lookup=markets.get)
     await s.scan_and_execute()
     assert om.market_order.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_open_no_touch_uses_no_ask_not_yes_ask_for_window():
+    """Crypto books can have yes_ask + no_ask < 1 (wide spread). The
+    window gate must derive ya from no_ask, not read yes_ask_dollars
+    directly — otherwise tail strikes (no_ask > 0.70) slip past the
+    ya≥0.30 gate when yes_ask is misleadingly large."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2270",
+           "predicted_outcome": "no"}
+    # yes_ask 0.35 alone would pass a naive "ya >= 0.30" gate, but the
+    # real no_ask 0.85 means ya = 1 - 0.85 = 0.15 → should skip.
+    markets = {"KXETH-26MAY1311-B2270": {
+        "yes_ask_dollars": 0.35, "no_ask_dollars": 0.85,
+    }}
+    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
 
 
 @pytest.mark.asyncio
@@ -328,12 +364,11 @@ async def test_open_no_touch_skips_yes_prediction():
 
 
 @pytest.mark.asyncio
-async def test_open_no_touch_per_event_cap():
-    """ATM±1% trigger fires on every bucket within the radius — for a
-    KXBTC event that's 10-16 buckets. Without the cap, all 10+ trades
-    share the same close outcome (correlated). Cap=3 keeps trades
-    independent enough for statistical confidence."""
-    # 5 distinct buckets, all under the same event_key 26MAY1311.
+async def test_open_no_touch_caps_at_one_fire_per_event():
+    """ATM±1% strikes all resolve on the same BTC/ETH hourly close
+    (correlated samples). Cap=1 keeps samples independent — 5 eligible
+    strikes in one event = 1 fire, not 5."""
+    # 5 distinct buckets all in the ya band, same event_key.
     sigs = [
         {"id": i, "ts": _now_iso(2.0),
          "market_id": f"KXBTC-26MAY1311-B{82000 + i * 100}",
@@ -350,16 +385,18 @@ async def test_open_no_touch_per_event_cap():
     s, om = _build_strategy(OpenNoTouchV1Strategy, signals=sigs,
                             market_lookup=markets.get)
     await s.scan_and_execute()
-    # Cap=3 — only first 3 sigs fire, last 2 skipped.
-    assert om.market_order.await_count == 3
+    assert om.market_order.await_count == 1
 
 
 @pytest.mark.asyncio
-async def test_open_no_touch_cap_isolates_per_event():
-    """Cap counts are per-event_key — a different event resets the
-    counter, so different events can each get up to N fires."""
+async def test_open_no_touch_picks_band_center_strike_per_event():
+    """When multiple eligible strikes exist for one event, pick the one
+    whose ya is closest to the band center (MIN+MAX)/2 = 0.375 — that's
+    the EV maximum within the [0.30, 0.45) window."""
+    # Three eligible strikes within band, with ya = 0.32, 0.38, 0.44.
+    # Closest to 0.375 is strike B (ya 0.38 → distance 0.005). Should
+    # fire on B and skip A and C.
     sigs = [
-        # 3 trades on event A (hits cap)
         {"id": 1, "ts": _now_iso(2.0),
          "market_id": "KXBTC-26MAY1311-B82000", "event_key": "26MAY1311",
          "predicted_outcome": "no"},
@@ -369,8 +406,31 @@ async def test_open_no_touch_cap_isolates_per_event():
         {"id": 3, "ts": _now_iso(2.0),
          "market_id": "KXBTC-26MAY1311-B82200", "event_key": "26MAY1311",
          "predicted_outcome": "no"},
-        # 1 trade on event B (well under cap)
-        {"id": 4, "ts": _now_iso(2.0),
+    ]
+    markets = {
+        "KXBTC-26MAY1311-B82000": {"yes_ask_dollars": 0.30, "no_ask_dollars": 0.68},  # ya 0.32
+        "KXBTC-26MAY1311-B82100": {"yes_ask_dollars": 0.35, "no_ask_dollars": 0.62},  # ya 0.38
+        "KXBTC-26MAY1311-B82200": {"yes_ask_dollars": 0.40, "no_ask_dollars": 0.56},  # ya 0.44
+    }
+    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=sigs,
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    assert om.market_order.await_args.kwargs["ticker"] == "KXBTC-26MAY1311-B82100"
+
+
+@pytest.mark.asyncio
+async def test_open_no_touch_cap_isolates_per_event():
+    """Cap counts are per-event_key — different events each get their
+    own fire even with cap=1."""
+    sigs = [
+        {"id": 1, "ts": _now_iso(2.0),
+         "market_id": "KXBTC-26MAY1311-B82000", "event_key": "26MAY1311",
+         "predicted_outcome": "no"},
+        {"id": 2, "ts": _now_iso(2.0),
+         "market_id": "KXBTC-26MAY1311-B82100", "event_key": "26MAY1311",
+         "predicted_outcome": "no"},
+        {"id": 3, "ts": _now_iso(2.0),
          "market_id": "KXBTC-26MAY1312-B82000", "event_key": "26MAY1312",
          "predicted_outcome": "no"},
     ]
@@ -380,8 +440,8 @@ async def test_open_no_touch_cap_isolates_per_event():
     s, om = _build_strategy(OpenNoTouchV1Strategy, signals=sigs,
                             market_lookup=markets.get)
     await s.scan_and_execute()
-    # 3 fires on event A + 1 fire on event B = 4 total.
-    assert om.market_order.await_count == 4
+    # 1 fire on event A + 1 fire on event B = 2 total.
+    assert om.market_order.await_count == 2
 
 
 # ── AtmHoldV1 (flipped atm_fade) ───────────────────────────────────
@@ -414,41 +474,6 @@ async def test_atm_hold_skips_no_prediction():
         "yes_ask_dollars": 0.55, "no_ask_dollars": 0.45,
     }}
     s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
-                            market_lookup=markets.get)
-    await s.scan_and_execute()
-    assert om.market_order.await_count == 0
-
-
-# ── OpenNoTouchV1 ──────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_open_no_touch_fires_no_at_no_ask():
-    from strategies.crypto_observer_phase1 import OpenNoTouchV1Strategy
-    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1410-B2200",
-           "predicted_outcome": "no"}
-    markets = {"KXETH-26MAY1410-B2200": {
-        "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
-    }}
-    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=[sig],
-                            market_lookup=markets.get)
-    await s.scan_and_execute()
-    assert om.market_order.await_count == 1
-    args = om.market_order.await_args.kwargs
-    assert args["side"] == "no"
-    assert args["price"] == 0.80
-    assert args["strategy"] == "open_no_touch_v1"
-
-
-@pytest.mark.asyncio
-async def test_open_no_touch_skips_if_predicted_yes():
-    from strategies.crypto_observer_phase1 import OpenNoTouchV1Strategy
-    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1410-B2200",
-           "predicted_outcome": "yes"}  # malformed for this trader
-    markets = {"KXETH-26MAY1410-B2200": {
-        "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
-    }}
-    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=[sig],
                             market_lookup=markets.get)
     await s.scan_and_execute()
     assert om.market_order.await_count == 0

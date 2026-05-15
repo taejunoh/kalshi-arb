@@ -186,17 +186,24 @@ class BidImbalanceV1Strategy(_Phase1Base):
 
 
 class OpenNoTouchV1Strategy(_Phase1Base):
-    """Inverse of open_widening — predicts no-touch on ATM±1% buckets
-    within 10min of event open. Cohort evidence (24h, n=325 settled):
-    80% WR, +30% paper ROI. Sources signals from the `open_no_touch`
-    observer (which emits flipped open_widening predictions) and BUYs
-    NO at current no_ask.
+    """Inverse of open_widening — BUY NO on ATM±1% buckets at event open.
 
-    First 37 paper trades hit -10.3% ROI despite 90% Phase 0 WR — fee
-    asymmetry on tail buckets (ya < 0.20 → no_ask > 0.80 → max profit
-    < $5/$20 stake eaten by fee). 587-signal cohort breakdown shows EV
-    concentrated in ya ≥ 0.20 (40% / 180% ROI bands). MIN_YA filter
-    drops the tail-bucket fires.
+    2026-05-15 re-analysis (Phase 0 n=928 settled, no_ask=1-yb + Kalshi
+    fee): the original "+30% ROI" promotion used a symmetric payoff
+    model that overstated EV. Corrected band breakdown:
+
+        ya<0.10   n=190  WR 93%  ROI  -4.6%
+        0.10-0.20 n=438  WR 88%  ROI  -4.5%
+        0.20-0.30 n=109  WR 86%  ROI  -3.2%
+        0.30-0.45 n= 38  WR 87%  ROI +10.1%   ← only positive slice
+        0.45-0.55 n= 29  WR 72%  ROI  -8.6%
+        ≥0.55      n=124  WR 45%  ROI -42%
+
+    Narrowed to band D + per-event cap=1 with center-of-window strike
+    selector. ya is derived from no_ask (ya = 1 - no_ask). yes_ask is
+    NOT used: crypto spreads make yes_ask + no_ask < 1, so reading
+    yes_ask_dollars lets tail strikes (no_ask > 0.80) slip past a
+    "ya>=0.30" gate.
     """
     STRATEGY_NAME = "open_no_touch_v1"
     OBSERVER_NAME = "open_no_touch"
@@ -206,46 +213,105 @@ class OpenNoTouchV1Strategy(_Phase1Base):
         self.SIGNAL_FRESHNESS_S = config.OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S
         self.SIZE_USDC = config.OPEN_NO_TOUCH_SIZE_USDC
         self._min_ya = config.OPEN_NO_TOUCH_MIN_YA
+        self._max_ya = config.OPEN_NO_TOUCH_MAX_YA
+        self._target_ya = (self._min_ya + self._max_ya) / 2.0
         self._max_fires_per_event = config.OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT
-        # event_key -> fire count (in-memory, resets on restart). All-event
-        # ATM±1% triggers correlate on the same close — cap fires/event so
-        # 50 trades reflect ~17 independent events instead of ~5.
+        # event_key -> fire count (in-memory, resets on restart).
         self._fires_per_event: dict[str, int] = {}
 
+    def _event_key(self, sig) -> str:
+        ek = sig.get("event_key") or ""
+        if ek:
+            return ek
+        parts = sig.get("market_id", "").split("-")
+        return "-".join(parts[1:-1]) if len(parts) >= 3 else ""
+
     def _select_side_and_price(self, sig, market):
-        if sig["predicted_outcome"] != "no":
-            return None
-        # Per-event cap. event_key is on the signal row (DB column), not
-        # in features_json; tolerate either source.
-        event_key = sig.get("event_key") or ""
-        if not event_key:
-            parts = sig.get("market_id", "").split("-")
-            event_key = "-".join(parts[1:-1]) if len(parts) >= 3 else ""
-        if event_key and self._fires_per_event.get(event_key, 0) >= self._max_fires_per_event:
-            return None
-        ya = _safe_float(market.get("yes_ask_dollars"))
-        no_ask = _safe_float(market.get("no_ask_dollars"))
-        if ya is None or no_ask is None:
-            return None
-        if no_ask <= 0 or no_ask >= 1:
-            return None
-        # Tail buckets (low ya = high no_ask) have payoff/fee asymmetry
-        # that kills EV even at 90%+ WR. Restrict to ya ≥ MIN_YA so
-        # max-profit-per-trade overcomes Kalshi's per-contract fee.
-        if ya < self._min_ya:
-            return None
-        # All gates passed — optimistically increment counter. If
-        # market_order then fails (rare), the counter is slightly over-
-        # counted, which only causes us to fire LESS for this event.
-        if event_key:
-            self._fires_per_event[event_key] = self._fires_per_event.get(event_key, 0) + 1
-            # Memory bound: keep dict size manageable across many events.
-            if len(self._fires_per_event) > 200:
-                # Drop the 100 oldest entries (oldest-by-insertion-order in
-                # Python 3.7+ dict).
-                for k in list(self._fires_per_event.keys())[:100]:
-                    del self._fires_per_event[k]
-        return ("no", no_ask)
+        # Base-class abstract method. This subclass overrides scan_and_execute
+        # to pick the band-center strike per event, so this path is unused.
+        return None
+
+    async def scan_and_execute(self):
+        if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
+            return
+        db = getattr(self._order_manager, "_db", None)
+        if db is None:
+            return
+        try:
+            sigs = await db.fetch_recent_crypto_observer_signals(
+                observer=self.OBSERVER_NAME, limit=30
+            )
+        except Exception as e:
+            logger.error(f"{self.STRATEGY_NAME}: fetch signals failed: {e}")
+            return
+        if not sigs:
+            return
+
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.SIGNAL_FRESHNESS_S)
+        # Per scan: collect eligible signals, then pick the one closest to
+        # the band center for each event. Cap enforced via _fires_per_event.
+        best_per_event: dict[str, tuple[float, dict, float]] = {}
+
+        for sig in sigs:
+            sig_id = sig["id"]
+            if sig_id in self._processed:
+                continue
+            try:
+                ts = datetime.fromisoformat(sig["ts"])
+            except Exception:
+                self._processed.add(sig_id)
+                continue
+            if ts < cutoff:
+                self._processed.add(sig_id)
+                continue
+            if sig.get("predicted_outcome") != "no":
+                self._processed.add(sig_id)
+                continue
+            ticker = sig.get("market_id", "")
+            market = self._scanner.get_market(ticker)
+            if market is None:
+                self._processed.add(sig_id)
+                continue
+            no_ask = _safe_float(market.get("no_ask_dollars"))
+            if no_ask is None or no_ask <= 0 or no_ask >= 1:
+                self._processed.add(sig_id)
+                continue
+            ya = 1.0 - no_ask
+            if ya < self._min_ya or ya >= self._max_ya:
+                self._processed.add(sig_id)
+                continue
+            ek = self._event_key(sig)
+            if ek and self._fires_per_event.get(ek, 0) >= self._max_fires_per_event:
+                self._processed.add(sig_id)
+                continue
+            score = abs(ya - self._target_ya)
+            current = best_per_event.get(ek)
+            if current is None or score < current[0]:
+                best_per_event[ek] = (score, sig, no_ask)
+
+        for ek, (_, sig, no_ask) in best_per_event.items():
+            ticker = sig["market_id"]
+            try:
+                await self._order_manager.market_order(
+                    ticker=ticker, side="no", size_usdc=self.SIZE_USDC,
+                    price=no_ask, strategy=self.STRATEGY_NAME, market_id=ticker,
+                )
+                logger.info(
+                    f"[{self.STRATEGY_NAME}] FIRE {ticker} no "
+                    f"size=${self.SIZE_USDC:.0f} price={no_ask:.3f} "
+                    f"ya={1-no_ask:.3f} signal_id={sig['id']} event={ek}"
+                )
+                if ek:
+                    self._fires_per_event[ek] = self._fires_per_event.get(ek, 0) + 1
+            except Exception as e:
+                logger.error(f"{self.STRATEGY_NAME}: market_order failed: {e}")
+            self._processed.add(sig["id"])
+
+        if len(self._processed) > 500:
+            self._processed = set(list(self._processed)[-300:])
+        if len(self._fires_per_event) > 200:
+            for k in list(self._fires_per_event.keys())[:100]:
+                del self._fires_per_event[k]
 
 
 class BidImbalanceFadeV1Strategy(_Phase1Base):
