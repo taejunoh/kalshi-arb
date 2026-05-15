@@ -3,6 +3,7 @@ import sqlite3
 from scripts.tennis_mma_strategy_replay import (
     load_observations,
     resolve_settled_outcomes,
+    simulate_tennis_pinnacle_arb_v1,
     wilson_ci,
 )
 
@@ -122,3 +123,26 @@ def test_resolve_settled_outcomes_returns_dict():
         conn, ["KXATPMATCH-1", "KXATPMATCH-2", "KXATPMATCH-3"]
     )
     assert out == {"KXATPMATCH-1": 1.0, "KXATPMATCH-2": 0.0}
+
+
+def test_simulate_tennis_pinnacle_arb_fires_on_gap():
+    rows = [
+        # Should fire — 0.10 gap, fresh pin, eu within 3pp of pin
+        {"timestamp": "2026-05-12T10:00:00+00:00", "kalshi_ticker": "KXATPMATCH-1",
+         "sport": "ATP", "minutes_to_start": 120.0,
+         "kalshi_yes_ask": 0.55, "kalshi_no_ask": 0.45,
+         "eu_yes_prob": 0.63, "pinnacle_yes_prob": 0.65,
+         "pinnacle_age_s": 100, "has_pinnacle": 1, "n_books_eu": 20},
+        # Should NOT fire — gap only 2pp
+        {"timestamp": "2026-05-12T10:00:00+00:00", "kalshi_ticker": "KXATPMATCH-2",
+         "sport": "ATP", "minutes_to_start": 120.0,
+         "kalshi_yes_ask": 0.55, "kalshi_no_ask": 0.45,
+         "eu_yes_prob": 0.56, "pinnacle_yes_prob": 0.57,
+         "pinnacle_age_s": 100, "has_pinnacle": 1, "n_books_eu": 20},
+    ]
+    settled = {"KXATPMATCH-1": 1.0, "KXATPMATCH-2": 0.0}
+    fires = simulate_tennis_pinnacle_arb_v1(rows, settled)
+    assert len(fires) == 1
+    assert fires[0]["ticker"] == "KXATPMATCH-1"
+    assert fires[0]["side"] == "yes"
+    assert fires[0]["settle"] == 1.0
