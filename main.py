@@ -48,6 +48,7 @@ from strategies.crypto_observer import CryptoObserverStrategy
 from strategies.crypto_observer_phase1 import (
     DeribitTailFadeV1Strategy, BidImbalanceV1Strategy,
     OpenNoTouchV1Strategy, AtmHoldV1Strategy,
+    BidImbalanceFadeV1Strategy,
 )
 from strategies.ladder_fed import LadderFedStrategy
 from strategies.ladder_approval import LadderApprovalStrategy
@@ -261,6 +262,12 @@ class Bot:
             self.config, self.order_manager, self.scanner, self.kalshi_client,
         )
         self.atm_hold_v1 = AtmHoldV1Strategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client,
+        )
+        # bid_imbalance_fade_v1 (2026-05-15): conditional-flip sibling for
+        # ya<0.60. Full Phase 0 cohort (n=266) showed original 36% WR but
+        # flipped 64% WR; ya<0.60 sub-cohort flips at 83% WR. Paper-only.
+        self.bid_imbalance_fade_v1 = BidImbalanceFadeV1Strategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client,
         )
         # Macro Event Trader (C1) — paper-only at launch.
@@ -562,6 +569,7 @@ class Bot:
             ("bid_imbalance_v1", self.bid_imbalance_v1),
             ("open_no_touch_v1", self.open_no_touch_v1),
             ("atm_hold_v1", self.atm_hold_v1),
+            ("bid_imbalance_fade_v1", self.bid_imbalance_fade_v1),
             # Macro Event Trader (C1) — paper-only. Requires consensus cron.
             ("macro_event", self.macro_event),
             # Cross-Venue Polymarket Trader (B1) — paper-only. Requires

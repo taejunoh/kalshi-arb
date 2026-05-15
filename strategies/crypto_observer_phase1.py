@@ -152,8 +152,16 @@ class DeribitTailFadeV1Strategy(_Phase1Base):
 
 class BidImbalanceV1Strategy(_Phase1Base):
     """Follows top-of-book bid/ask size imbalance. Buys the predicted side
-    at current ask. Cohort evidence (24h, n=26 settled): 69.2% WR
-    overall; mts<5min cohort 4/4 = 100% (n small, watching).
+    at current ask.
+
+    Cohort evidence revised 2026-05-15: full Phase 0 cohort (n=266
+    settled, vs 26 used at 5/14 promotion) shows original direction
+    WR=36.1% overall — losing. Paper trader hit n=83 / WR 30% / ROI
+    -37.6%. Band breakdown reveals the rich end (ya≥0.50) is where
+    the original direction still wins: $0.50+ paper had 12/14 = 85.7% WR
+    on the ≥$0.70 sub-band. MIN_PRICE filter keeps only those fires;
+    ya<0.60 zone is handled by the flipped sibling
+    `BidImbalanceFadeV1Strategy`.
     """
     STRATEGY_NAME = "bid_imbalance_v1"
     OBSERVER_NAME = "bid_imbalance"
@@ -162,6 +170,7 @@ class BidImbalanceV1Strategy(_Phase1Base):
         super().__init__(config, order_manager, market_scanner, kalshi_client)
         self.SIGNAL_FRESHNESS_S = config.BID_IMBALANCE_SIGNAL_FRESHNESS_S
         self.SIZE_USDC = config.BID_IMBALANCE_SIZE_USDC
+        self._min_price = config.BID_IMBALANCE_MIN_PRICE
 
     def _select_side_and_price(self, sig, market):
         pred = sig["predicted_outcome"]
@@ -170,6 +179,8 @@ class BidImbalanceV1Strategy(_Phase1Base):
         ask_key = "yes_ask_dollars" if pred == "yes" else "no_ask_dollars"
         price = _safe_float(market.get(ask_key))
         if price is None or price <= 0 or price >= 1:
+            return None
+        if price < self._min_price:
             return None
         return (pred, price)
 
@@ -235,6 +246,41 @@ class OpenNoTouchV1Strategy(_Phase1Base):
                 for k in list(self._fires_per_event.keys())[:100]:
                     del self._fires_per_event[k]
         return ("no", no_ask)
+
+
+class BidImbalanceFadeV1Strategy(_Phase1Base):
+    """Conditional-flip of bid_imbalance for the ya<0.60 fade zone.
+
+    Sources signals from the `bid_imbalance_fade` observer, which delegates
+    to BidImbalanceObserver's trigger, restricts to ya < 0.60, and flips
+    the predicted side. Trader buys the (already flipped) predicted side
+    at current ask.
+
+    Phase 0 cohort (2026-05-15, n=266 settled bid_imbalance signals)
+    showed original WR 36.1% overall but full-flip WR 63.9%. Sub-cohort
+    with ya<0.60 (n=141, excluding the na-feature legacy rows) flips at
+    83% WR — the alpha is concentrated in the cheap end, where bid
+    stacking on cheap YES is a retail-longshot contrarian indicator.
+    The rich end (ya≥0.60) is left to BidImbalanceV1Strategy with its
+    MIN_PRICE gate.
+    """
+    STRATEGY_NAME = "bid_imbalance_fade_v1"
+    OBSERVER_NAME = "bid_imbalance_fade"
+
+    def __init__(self, config, order_manager, market_scanner, kalshi_client):
+        super().__init__(config, order_manager, market_scanner, kalshi_client)
+        self.SIGNAL_FRESHNESS_S = config.BID_IMBALANCE_FADE_SIGNAL_FRESHNESS_S
+        self.SIZE_USDC = config.BID_IMBALANCE_FADE_SIZE_USDC
+
+    def _select_side_and_price(self, sig, market):
+        pred = sig["predicted_outcome"]
+        if pred not in ("yes", "no"):
+            return None
+        ask_key = "yes_ask_dollars" if pred == "yes" else "no_ask_dollars"
+        price = _safe_float(market.get(ask_key))
+        if price is None or price <= 0 or price >= 1:
+            return None
+        return (pred, price)
 
 
 class AtmHoldV1Strategy(_Phase1Base):

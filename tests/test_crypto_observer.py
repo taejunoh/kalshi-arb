@@ -13,7 +13,7 @@ from strategies.crypto_observer import (
     TailDecayObserver, AtmFadeObserver, ClusterSumObserver,
     BvTConsistencyObserver, SpotDriftMomentumObserver,
     OpenWideningObserver, DeribitTailSkewObserver, BidImbalanceObserver,
-    OpenNoTouchObserver, AtmHoldObserver,
+    OpenNoTouchObserver, AtmHoldObserver, BidImbalanceFadeObserver,
     _parse_suffix_threshold, _suffix_kind, _event_key, _build_leg,
     _lognormal_p_above, _flip,
 )
@@ -476,3 +476,37 @@ def test_atm_hold_emits_flipped_predictions():
     assert flip_sigs[0].predicted_outcome == "yes"
     assert orig_sigs[0].predicted_outcome == "no"
     assert flip_sigs[0].observer == "atm_hold"
+
+
+def test_bid_imbalance_fade_flips_predictions_below_max_ya():
+    """For any bid_imbalance signal with ya<0.60, the fade observer must
+    emit the same market_id with the predicted side flipped."""
+    legs = [
+        _b(89650, ya=0.20, yb=0.18,
+           yb_size=400, nb_size=100, ya_size=50, na_size=50),  # ya<0.60, pred=yes
+        _b(89750, ya=0.45, yb=0.43,
+           yb_size=100, nb_size=400, ya_size=50, na_size=50),  # ya<0.60, pred=no
+    ]
+    ctx = _ctx(b_legs=legs, close_s=300.0)
+
+    orig_sigs = BidImbalanceObserver().evaluate(ctx)
+    flip_sigs = BidImbalanceFadeObserver().evaluate(ctx)
+
+    assert len(orig_sigs) == 2
+    assert len(flip_sigs) == 2
+    by_market_orig = {s.market_id: s.predicted_outcome for s in orig_sigs}
+    by_market_flip = {s.market_id: s.predicted_outcome for s in flip_sigs}
+    for mkt, pred in by_market_orig.items():
+        assert by_market_flip[mkt] == _flip(pred)
+    assert all(s.observer == "bid_imbalance_fade" for s in flip_sigs)
+
+
+def test_bid_imbalance_fade_skips_when_ya_at_or_above_max():
+    """ya≥0.60 leg should be dropped by fade observer (original still fires)."""
+    legs = [
+        _b(89750, ya=0.70, yb=0.68,
+           yb_size=400, nb_size=100, ya_size=50, na_size=50),  # ya>=0.60
+    ]
+    ctx = _ctx(b_legs=legs, close_s=300.0)
+    assert len(BidImbalanceObserver().evaluate(ctx)) == 1
+    assert BidImbalanceFadeObserver().evaluate(ctx) == []

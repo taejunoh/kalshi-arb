@@ -12,6 +12,7 @@ import pytest
 from strategies.crypto_observer_phase1 import (
     DeribitTailFadeV1Strategy, BidImbalanceV1Strategy,
     OpenNoTouchV1Strategy, AtmHoldV1Strategy,
+    BidImbalanceFadeV1Strategy,
 )
 
 
@@ -22,6 +23,9 @@ def _cfg():
         DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S=15.0,
         BID_IMBALANCE_SIZE_USDC=20.0,
         BID_IMBALANCE_SIGNAL_FRESHNESS_S=15.0,
+        BID_IMBALANCE_MIN_PRICE=0.50,
+        BID_IMBALANCE_FADE_SIZE_USDC=20.0,
+        BID_IMBALANCE_FADE_SIGNAL_FRESHNESS_S=15.0,
         OPEN_NO_TOUCH_SIZE_USDC=20.0,
         OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S=15.0,
         OPEN_NO_TOUCH_MIN_YA=0.20,
@@ -182,6 +186,75 @@ async def test_circuit_breaker_blocks_fire():
     s, om = _build_strategy(BidImbalanceV1Strategy, signals=[sig],
                             market_lookup=markets.get)
     om.is_circuit_breaker_active = MagicMock(return_value=True)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_bid_imbalance_skips_when_price_below_min():
+    """After 2026-05-15 cohort re-analysis, original direction is only +EV
+    at the rich end. MIN_PRICE=0.50 drops fires below that band."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2270",
+           "predicted_outcome": "yes"}
+    markets = {"KXETH-26MAY1311-B2270": {
+        "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
+    }}
+    s, om = _build_strategy(BidImbalanceV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+# ── BidImbalanceFadeV1 (ya<0.60 conditional flip) ──────────────────
+
+
+@pytest.mark.asyncio
+async def test_bid_imbalance_fade_buys_no_on_flipped_signal():
+    """Observer `bid_imbalance_fade` emits the side flipped from the
+    original (pred=no in this case, original would have been pred=yes).
+    Trader buys NO at the current no_ask."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2200",
+           "predicted_outcome": "no"}
+    markets = {"KXETH-26MAY1311-B2200": {
+        "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
+    }}
+    s, om = _build_strategy(BidImbalanceFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["side"] == "no"
+    assert args["price"] == 0.80
+    assert args["strategy"] == "bid_imbalance_fade_v1"
+
+
+@pytest.mark.asyncio
+async def test_bid_imbalance_fade_buys_yes_on_flipped_no_signal():
+    """When the original would have predicted "no" (nb>yb), the flipped
+    observer emits pred="yes" — trader buys YES at the current yes_ask."""
+    sig = {"id": 2, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2300",
+           "predicted_outcome": "yes"}
+    markets = {"KXETH-26MAY1311-B2300": {
+        "yes_ask_dollars": 0.40, "no_ask_dollars": 0.60,
+    }}
+    s, om = _build_strategy(BidImbalanceFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["side"] == "yes"
+    assert args["price"] == 0.40
+
+
+@pytest.mark.asyncio
+async def test_bid_imbalance_fade_skips_stale_signal():
+    sig = {"id": 1, "ts": _now_iso(30.0), "market_id": "KXETH-26MAY1311-B2200",
+           "predicted_outcome": "no"}
+    markets = {"KXETH-26MAY1311-B2200": {
+        "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
+    }}
+    s, om = _build_strategy(BidImbalanceFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
     await s.scan_and_execute()
     assert om.market_order.await_count == 0
 

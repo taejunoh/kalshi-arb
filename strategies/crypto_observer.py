@@ -80,6 +80,12 @@ DERIBIT_TAIL_MIN_YB_SIZE = 30         # active bid present
 
 BID_IMBALANCE_RATIO_MIN = 3.0         # (yb+nb) / (ya+na) sizes ≥ 3
 BID_IMBALANCE_MTS_MAX_S = 600         # ≤ 10 min to close
+BID_IMBALANCE_FADE_MAX_YA = 0.60      # flipped sibling only fires below this ya —
+                                       # Phase 0 cohort 2026-05-15 (n=266) showed
+                                       # full-flip 63.9% WR but ya<0.60 sub-cohort
+                                       # 83% WR (n=141). Above 0.60 the original
+                                       # direction still wins, so the flipped
+                                       # observer stays out of that zone.
 
 # Cooldown so the same observer × market doesn't fire every 0.2s
 SIGNAL_COOLDOWN_S = 60.0
@@ -661,12 +667,44 @@ class AtmHoldObserver(BaseObserver):
         ]
 
 
+class BidImbalanceFadeObserver(BaseObserver):
+    """Conditional-flip of BidImbalanceObserver for the ya<0.60 fade zone.
+
+    Phase 0 cohort (2026-05-15, n=266 settled bid_imbalance signals)
+    revealed the 5/14 promotion cohort (n=26 @ 69% WR) was an ATM-band
+    fluke — the real distribution is 36% WR original / 63.9% WR flipped.
+    Cheap-YES bid stacking is a retail longshot indicator: above ya 0.60
+    the original direction still wins (>72% WR), below it the flip wins
+    (~83% WR n=141). This observer fires only in the fade zone and emits
+    the opposite predicted_outcome; the rich end is left to the original
+    BidImbalanceObserver.
+    """
+    name = "bid_imbalance_fade"
+
+    def __init__(self):
+        self._inner = BidImbalanceObserver()
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        out: list[Signal] = []
+        for s in self._inner.evaluate(ctx):
+            ya = s.features.get("ya")
+            if ya is None or ya >= BID_IMBALANCE_FADE_MAX_YA:
+                continue
+            out.append(Signal(
+                observer=self.name, series=s.series,
+                event_key=s.event_key, market_id=s.market_id,
+                predicted_outcome=_flip(s.predicted_outcome),
+                features=s.features,
+            ))
+        return out
+
+
 OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
     TailDecayObserver, AtmFadeObserver, ClusterSumObserver,
     BvTConsistencyObserver, SpotDriftMomentumObserver,
     OpenWideningObserver, DeribitTailSkewObserver, BidImbalanceObserver,
     # Flipped siblings
-    OpenNoTouchObserver, AtmHoldObserver,
+    OpenNoTouchObserver, AtmHoldObserver, BidImbalanceFadeObserver,
 )
 
 
