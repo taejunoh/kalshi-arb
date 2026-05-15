@@ -39,6 +39,11 @@ from strategies.sports_soccer_draw_v1 import SportsSoccerDrawV1Strategy
 from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
 from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
 from strategies.sports_favorite_v40 import SportsFavoriteV40Strategy
+from strategies.sports_tennis_pinnacle_arb_v1 import SportsTennisPinnacleArbV1Strategy
+from strategies.sports_atp_gs_bo5_chalk_v1 import SportsAtpGsBo5ChalkV1Strategy
+from strategies.sports_tennis_bid_imbalance_v1 import SportsTennisBidImbalanceV1Strategy
+from strategies.sports_ufc_chalk_fade_v1 import SportsUfcChalkFadeV1Strategy
+from strategies.sports_tennis_surface_skew_v1 import SportsTennisSurfaceSkewV1Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
@@ -214,6 +219,25 @@ class Bot:
         # PAPER-ONLY size 4 at launch. Drop-top-5 break-even — needs n=120+ for
         # robust read. Promotion gate ROI>=+5% + drop-5>0 by ~6/9.
         self.sports_favorite_v40 = SportsFavoriteV40Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # 2026-05-15 tennis/MMA portfolio — 5 paper-twin strategies built
+        # from KXATPMATCH/KXWTAMATCH/KXUFCFIGHT observer + bucket-replay
+        # analysis. Promotion gate: n>=25 per strategy + ROI per spec.
+        # See docs/superpowers/plans/2026-05-15-tennis-mma-strategy-portfolio-plan.md
+        self.sports_tennis_pinnacle_arb_v1 = SportsTennisPinnacleArbV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_atp_gs_bo5_chalk_v1 = SportsAtpGsBo5ChalkV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_tennis_bid_imbalance_v1 = SportsTennisBidImbalanceV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_ufc_chalk_fade_v1 = SportsUfcChalkFadeV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        self.sports_tennis_surface_skew_v1 = SportsTennisSurfaceSkewV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
@@ -530,6 +554,12 @@ class Bot:
             ("sports_underdog_v37", self.sports_underdog_v37),
             # V4.0 Favorite — MLB 0.50-0.55 + NPB 0.55-0.65 paper-only.
             ("sports_favorite_v40", self.sports_favorite_v40),
+            # 2026-05-15 tennis/MMA portfolio — paper-twin only at launch.
+            ("sports_tennis_pinnacle_arb_v1", self.sports_tennis_pinnacle_arb_v1),
+            ("sports_atp_gs_bo5_chalk_v1",    self.sports_atp_gs_bo5_chalk_v1),
+            ("sports_tennis_bid_imbalance_v1", self.sports_tennis_bid_imbalance_v1),
+            ("sports_ufc_chalk_fade_v1",      self.sports_ufc_chalk_fade_v1),
+            ("sports_tennis_surface_skew_v1", self.sports_tennis_surface_skew_v1),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
             # -37.5% ROI. Freshness gate was added 2026-04-16 (80ad42e) but
             # only a handful of post-gate entries accumulated before shutdown;
