@@ -557,7 +557,11 @@ class Bot:
             # 2026-05-15 tennis/MMA portfolio — paper-twin only at launch.
             ("sports_tennis_pinnacle_arb_v1", self.sports_tennis_pinnacle_arb_v1),
             ("sports_atp_gs_bo5_chalk_v1",    self.sports_atp_gs_bo5_chalk_v1),
-            ("sports_tennis_bid_imbalance_v1", self.sports_tennis_bid_imbalance_v1),
+            # A3 (sports_tennis_bid_imbalance_v1) held back 2026-05-15 per Phase 0
+            # replay selection-bias guard — top cohort WR 57% (n=7) ≤ baseline
+            # YES-band 58.8% / NO-band 60%, fails +6pp threshold. Re-evaluate when
+            # observer data reaches n≥30 on imbalance band (~2-3 weeks).
+            # ("sports_tennis_bid_imbalance_v1", self.sports_tennis_bid_imbalance_v1),
             ("sports_ufc_chalk_fade_v1",      self.sports_ufc_chalk_fade_v1),
             ("sports_tennis_surface_skew_v1", self.sports_tennis_surface_skew_v1),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
