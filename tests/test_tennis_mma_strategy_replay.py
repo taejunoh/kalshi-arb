@@ -6,6 +6,10 @@ from scripts.tennis_mma_strategy_replay import (
     simulate_tennis_pinnacle_arb_v1,
     wilson_ci,
 )
+from scripts.tennis_mma_strategy_replay import (
+    simulate_tennis_bid_imbalance_v1,
+    compute_imbalance_decile_baseline,
+)
 
 
 def _make_db(rows):
@@ -146,3 +150,20 @@ def test_simulate_tennis_pinnacle_arb_fires_on_gap():
     assert fires[0]["ticker"] == "KXATPMATCH-1"
     assert fires[0]["side"] == "yes"
     assert fires[0]["settle"] == 1.0
+
+
+def test_imbalance_decile_baseline_returns_per_band_wr():
+    """For each price band, return baseline WR with NO imbalance filter."""
+    rows = [
+        # YES band 0.50-0.85: 3 wins / 5 settled
+        {"timestamp": "t", "kalshi_ticker": f"X{i}", "sport": "ATP",
+         "minutes_to_start": 300.0, "kalshi_yes_ask": 0.60, "kalshi_no_ask": 0.40,
+         "kalshi_yes_bid_size": 50.0, "kalshi_no_bid_size": 50.0,
+         "pinnacle_yes_prob": 0.60, "pinnacle_age_s": 100, "has_pinnacle": 1,
+         "eu_yes_prob": 0.60}
+        for i in range(5)
+    ]
+    settled = {f"X{i}": (1.0 if i < 3 else 0.0) for i in range(5)}
+    baselines = compute_imbalance_decile_baseline(rows, settled)
+    assert "yes_band" in baselines
+    assert abs(baselines["yes_band"] - 0.60) < 0.001  # 3/5 = 0.60
