@@ -91,20 +91,25 @@ def test_midshot_v31_unblocks_wnba():
     assert "WNBA" not in SportsMidshotV31Strategy.OBSERVATION_ONLY_SPORTS
 
 
-def test_midshot_v31_pair_fire_dedup():
+def test_midshot_v31_pair_fire_dedup_flag_on():
+    """2026-05-15: midshot pair-fire dedup generalized from a WNBA-only
+    evaluate() override to the base-class PAIR_FIRE_DEDUP flag, which
+    runs at scan-loop level (sports_trader.py). Lifetime LIVE n=221 /
+    121 games showed 82% of games saw both-sides fired across separate
+    scans; game-level dedup sim lifts ROI 22%→72%."""
     from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
-    strat, _ = _make(SportsMidshotV31Strategy)
-    strat._traded_tickers = {WNBA_TICKER_A: 1234567890.0}
-    sig = strat.evaluate(0.25, 0.76, 0.25, ticker=WNBA_TICKER_B)
-    assert sig is None
+    assert SportsMidshotV31Strategy.PAIR_FIRE_DEDUP is True
 
 
-def test_midshot_v31_wnba_only_dedup_branch():
+def test_midshot_v31_evaluate_no_longer_has_wnba_branch():
+    """Sanity: the WNBA-only evaluate() override was removed when the
+    flag generalized to all sports. If a future change re-introduces a
+    per-sport evaluate() dedup branch, this test will catch it so we
+    can decide whether both layers are intended."""
     from strategies.sports_midshot_v31 import SportsMidshotV31Strategy
     import inspect
-    strat, _ = _make(SportsMidshotV31Strategy)
-    src = inspect.getsource(strat.evaluate)
-    assert "WNBAGAME" in src
+    src = inspect.getsource(SportsMidshotV31Strategy)
+    assert "WNBAGAME" not in src, "WNBA-only dedup branch should be gone"
 
 
 # ---------------------------------------------------------------------------

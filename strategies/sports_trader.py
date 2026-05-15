@@ -511,6 +511,19 @@ class SportsTraderStrategy:
     # OrderManager._v33_game_spend so the cap applies to the aggregate, not
     # per-strategy. None = no cap.
     PER_GAME_CAP_USDC: Optional[float] = None
+    # Persistent pair-fire dedup. Within a single scan cycle, traded_games
+    # already blocks same-game both-sides fires. But across scan cycles,
+    # the bot can fire side A in cycle N and side B in cycle N+1 (different
+    # tickers, same game) because the persistent _traded_tickers check only
+    # matches the exact ticker. When this flag is True, the scan loop also
+    # skips any ticker whose game_key (ticker minus last "-SIDE" suffix)
+    # matches a previously-traded ticker.
+    #
+    # Enable on strategies where lifetime analysis shows pair-fire destroys
+    # alpha (2026-05-15 audit): midshot_v31 90%-trade pair-fire rate, dedup
+    # lifts ROI +22% → +72%; v4_edge dedup lifts -42% → +3%. Avoid on
+    # strategies where dedup HURTS: longshot_v31 -36pp, underdog_v32 -7pp.
+    PAIR_FIRE_DEDUP: bool = False
     # Sport-blocklist. Skip entries for tickers in specified Kalshi series
     # (e.g. {"NHL"} to block all NHLGAME-* tickers). Used when a strategy
     # × sport combo shows no edge in either region. Sport codes match the
@@ -1319,6 +1332,15 @@ class SportsTraderStrategy:
                 markets_scanned += 1
                 if ticker in self._traded_tickers:
                     continue  # permanent block — sports games are one-time events
+                if self.PAIR_FIRE_DEDUP:
+                    game_key = ticker.rsplit("-", 1)[0]
+                    if any(t != ticker and t.rsplit("-", 1)[0] == game_key
+                           for t in self._traded_tickers):
+                        logger.debug(
+                            f"[{self.STRATEGY_NAME}] {ticker}: pair-fire dedup "
+                            f"(game {game_key} already traded), skip"
+                        )
+                        continue
 
                 # Observation-only sports (data collection without live trading).
                 # Added to sport_map so the observer records them, but live

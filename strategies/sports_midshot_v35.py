@@ -26,6 +26,12 @@ class SportsMidshotV35Strategy(SportsMidshotV34Strategy):
     # Explicit override of v31-inherited legacy gates (see longshot_v35 note).
     PRE_GAME_ONLY = False
     SPORT_BLOCKLIST = frozenset()
+    # Pair-fire dedup (2026-05-15). Explicit re-state from cascade chain
+    # midshot_v31 → v34 → v35 — keep here so future v34 opt-out wouldn't
+    # silently disable v35. Lifetime n=24/12 games shows 100% pair-fire
+    # rate; dedup sim ROI +35.3% → +48.4% (n too small for strong claim
+    # but consistent with midshot_v31 finding).
+    PAIR_FIRE_DEDUP = True
 
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 4→8 on 2026-04-25. Live n=6 with +48% ROI; modest raise.

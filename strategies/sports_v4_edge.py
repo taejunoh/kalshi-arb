@@ -47,6 +47,11 @@ class SportsV4EdgeStrategy(SportsTraderStrategy):
     # → thin books + volatile pricing. Reject signals with <$5 resting
     # liquidity on the signal side to bound slippage and partial-fill risk.
     MIN_DEPTH_USDC = 5.0
+    # Pair-fire dedup (2026-05-15). Lifetime LIVE n=56/47 games shows 17%
+    # of games saw both-sides fired across scans — small fraction by count
+    # but heavily concentrated on losing trades. Game-level dedup sim lifts
+    # ROI -42% → +3%. See cross_strategy_tier_2026-05-12 memory.
+    PAIR_FIRE_DEDUP = True
 
     # Per-cell sport/phase + price band gates — supersedes the prior
     # global ENTRY_PRICE_DEAD_ZONE = (0.10, 0.20). PRICE_MIN/MAX above are
