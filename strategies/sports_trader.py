@@ -1170,6 +1170,21 @@ class SportsTraderStrategy:
             return abs((game_dt - ticker_dt).total_seconds())
         return min(candidates, key=_delta_seconds)
 
+    def _stash_market_context(self, market: dict, game: Optional[dict]) -> None:
+        """Stash per-market context attributes used by subclasses' evaluate().
+
+        Called by scan_and_execute() immediately before evaluate(). Subclasses
+        (A2/A3/C tennis strategies) read these as self._last_tournament_slug,
+        self._last_yes_sub_title, self._last_mts. Production wiring added
+        2026-05-15 as part of tennis/MMA portfolio (Task 8).
+        """
+        self._last_tournament_slug = market.get("tournament_slug")
+        self._last_yes_sub_title = market.get("yes_sub_title")
+        if game is not None:
+            self._last_mts = _commence_time_to_minutes(game.get("commence_time"))
+        else:
+            self._last_mts = None
+
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
                  ticker: str = "") -> Optional[dict]:
@@ -1481,6 +1496,7 @@ class SportsTraderStrategy:
                     self._last_pinnacle_yes_prob = None
                     self._last_pinnacle_age_s = None
 
+                self._stash_market_context(market, matched_game)
                 signal = self.evaluate(ya, na, fair_prob,
                                        line_movement=line_movement, home_adj=home_adj,
                                        ticker=ticker)
