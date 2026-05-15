@@ -50,10 +50,9 @@ class SportsTennisPinnacleArbV1Strategy(SportsTraderStrategy):
         if pin is None or age is None or age > self.MAX_PINNACLE_AGE_S:
             return None
 
-        eu = getattr(self, "_last_eu_yes_prob", None)
-        if eu is None:
-            eu = fair_prob  # fair_prob IS the eu consensus per sports_trader.py
-        if abs(eu - pin) > self.MAX_EU_PINNACLE_DRIFT:
+        # fair_prob IS the eu consensus per sports_trader.py — eu/Pinnacle drift
+        # is the gap between the broad-book consensus and Pinnacle's sharper line.
+        if abs(fair_prob - pin) > self.MAX_EU_PINNACLE_DRIFT:
             return None
 
         gap_yes = pin - kalshi_yes
