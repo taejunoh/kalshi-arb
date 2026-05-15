@@ -25,6 +25,7 @@ def _cfg():
         OPEN_NO_TOUCH_SIZE_USDC=20.0,
         OPEN_NO_TOUCH_SIGNAL_FRESHNESS_S=15.0,
         OPEN_NO_TOUCH_MIN_YA=0.20,
+        OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT=3,
         ATM_HOLD_SIZE_USDC=20.0,
         ATM_HOLD_SIGNAL_FRESHNESS_S=15.0,
     )
@@ -251,6 +252,63 @@ async def test_open_no_touch_skips_yes_prediction():
                             market_lookup=markets.get)
     await s.scan_and_execute()
     assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_open_no_touch_per_event_cap():
+    """ATM±1% trigger fires on every bucket within the radius — for a
+    KXBTC event that's 10-16 buckets. Without the cap, all 10+ trades
+    share the same close outcome (correlated). Cap=3 keeps trades
+    independent enough for statistical confidence."""
+    # 5 distinct buckets, all under the same event_key 26MAY1311.
+    sigs = [
+        {"id": i, "ts": _now_iso(2.0),
+         "market_id": f"KXBTC-26MAY1311-B{82000 + i * 100}",
+         "event_key": "26MAY1311",
+         "predicted_outcome": "no"}
+        for i in range(5)
+    ]
+    markets = {
+        f"KXBTC-26MAY1311-B{82000 + i * 100}": {
+            "yes_ask_dollars": 0.40, "no_ask_dollars": 0.60,
+        }
+        for i in range(5)
+    }
+    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=sigs,
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    # Cap=3 — only first 3 sigs fire, last 2 skipped.
+    assert om.market_order.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_open_no_touch_cap_isolates_per_event():
+    """Cap counts are per-event_key — a different event resets the
+    counter, so different events can each get up to N fires."""
+    sigs = [
+        # 3 trades on event A (hits cap)
+        {"id": 1, "ts": _now_iso(2.0),
+         "market_id": "KXBTC-26MAY1311-B82000", "event_key": "26MAY1311",
+         "predicted_outcome": "no"},
+        {"id": 2, "ts": _now_iso(2.0),
+         "market_id": "KXBTC-26MAY1311-B82100", "event_key": "26MAY1311",
+         "predicted_outcome": "no"},
+        {"id": 3, "ts": _now_iso(2.0),
+         "market_id": "KXBTC-26MAY1311-B82200", "event_key": "26MAY1311",
+         "predicted_outcome": "no"},
+        # 1 trade on event B (well under cap)
+        {"id": 4, "ts": _now_iso(2.0),
+         "market_id": "KXBTC-26MAY1312-B82000", "event_key": "26MAY1312",
+         "predicted_outcome": "no"},
+    ]
+    markets = {sig["market_id"]: {
+        "yes_ask_dollars": 0.40, "no_ask_dollars": 0.60,
+    } for sig in sigs}
+    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=sigs,
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    # 3 fires on event A + 1 fire on event B = 4 total.
+    assert om.market_order.await_count == 4
 
 
 # ── AtmHoldV1 (flipped atm_fade) ───────────────────────────────────
