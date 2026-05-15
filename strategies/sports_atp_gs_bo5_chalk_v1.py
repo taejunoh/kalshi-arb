@@ -30,6 +30,15 @@ class SportsAtpGsBo5ChalkV1Strategy(SportsTraderStrategy):
         SportsTraderStrategy.OBSERVATION_ONLY_SPORTS - {"ATP"}
     )
 
+    # Hard blocklist — OBSERVATION_ONLY_SPORTS subtraction only removes
+    # ATP from the observation set; team sports + WTA were never in that
+    # set so without this they'd flow through. Target: ATP only.
+    SPORT_BLOCKLIST = frozenset({
+        "NBA", "WNBA", "MLB", "NHL", "NPB", "KBO",
+        "MLS", "EPL", "LAL", "UCL", "BUN",
+        "UFC", "WTA",
+    })
+
     PRE_GAME_ONLY = True
     MAX_MTS_AT_ENTRY = 4320.0  # 3 days
     MIN_DEPTH_USDC = 30.0

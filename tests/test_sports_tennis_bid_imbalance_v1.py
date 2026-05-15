@@ -63,3 +63,17 @@ def test_skips_when_both_bid_sizes_zero():
     sig = s.evaluate(kalshi_yes=0.60, kalshi_no=0.40, fair_prob=0.65,
                      ticker="KXATPMATCH-X")
     assert sig is None
+
+
+def test_blocks_mlb_and_other_team_sports():
+    """A3 must block MLB/NBA/NHL/soccer/UFC — only ATP/WTA allowed."""
+    blocked = SportsTennisBidImbalanceV1Strategy.SPORT_BLOCKLIST
+    assert "MLB" in blocked
+    assert "NBA" in blocked
+    assert "NHL" in blocked
+    assert "WNBA" in blocked
+    assert "UFC" in blocked
+    assert "MLS" in blocked
+    assert "EPL" in blocked
+    assert "WTA" not in blocked  # WTA is a target for A3
+    assert "ATP" not in blocked  # ATP is a target for A3

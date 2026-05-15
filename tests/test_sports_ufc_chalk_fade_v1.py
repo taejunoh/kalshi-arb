@@ -52,3 +52,17 @@ def test_skips_when_pinnacle_missing():
     sig = s.evaluate(kalshi_yes=0.80, kalshi_no=0.20, fair_prob=0.50,
                      ticker="KXUFCFIGHT-X")
     assert sig is None
+
+
+def test_blocks_atp_wta_and_other_team_sports():
+    """B1 is UFC-only — must block ATP+WTA + MLB/NBA/NHL/soccer."""
+    blocked = SportsUfcChalkFadeV1Strategy.SPORT_BLOCKLIST
+    assert "MLB" in blocked
+    assert "NBA" in blocked
+    assert "NHL" in blocked
+    assert "WNBA" in blocked
+    assert "MLS" in blocked
+    assert "EPL" in blocked
+    assert "ATP" in blocked  # B1 is UFC-only — tennis must be blocked
+    assert "WTA" in blocked  # B1 is UFC-only — tennis must be blocked
+    assert "UFC" not in blocked  # UFC is the sole target for B1

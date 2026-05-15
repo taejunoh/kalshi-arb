@@ -66,3 +66,17 @@ def test_skips_when_slug_missing():
     sig = s.evaluate(kalshi_yes=0.75, kalshi_no=0.25, fair_prob=0.78,
                      ticker="KXATPMATCH-X")
     assert sig is None
+
+
+def test_blocks_wta_and_other_team_sports():
+    """A2 is ATP-only — must block WTA + MLB/NBA/NHL/soccer/UFC."""
+    blocked = SportsAtpGsBo5ChalkV1Strategy.SPORT_BLOCKLIST
+    assert "MLB" in blocked
+    assert "NBA" in blocked
+    assert "NHL" in blocked
+    assert "WNBA" in blocked
+    assert "UFC" in blocked
+    assert "MLS" in blocked
+    assert "EPL" in blocked
+    assert "WTA" in blocked  # A2 is ATP-only — WTA must be blocked
+    assert "ATP" not in blocked  # ATP is the sole target for A2

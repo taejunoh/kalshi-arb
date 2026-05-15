@@ -111,3 +111,17 @@ def test_fires_at_6pp_gap_definitively():
                      ticker="KXATPMATCH-X")
     assert sig is not None
     assert sig["side"] == "yes"
+
+
+def test_blocks_mlb_and_other_team_sports():
+    """A1 must block MLB/NBA/NHL/soccer/UFC — only ATP/WTA allowed."""
+    blocked = SportsTennisPinnacleArbV1Strategy.SPORT_BLOCKLIST
+    assert "MLB" in blocked
+    assert "NBA" in blocked
+    assert "NHL" in blocked
+    assert "WNBA" in blocked
+    assert "UFC" in blocked
+    assert "MLS" in blocked
+    assert "EPL" in blocked
+    assert "WTA" not in blocked  # WTA is a target for A1
+    assert "ATP" not in blocked  # ATP is a target for A1

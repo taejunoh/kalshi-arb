@@ -28,6 +28,15 @@ class SportsUfcChalkFadeV1Strategy(SportsTraderStrategy):
         SportsTraderStrategy.OBSERVATION_ONLY_SPORTS - {"UFC"}
     )
 
+    # Hard blocklist — OBSERVATION_ONLY_SPORTS subtraction only removes
+    # UFC from the observation set; team sports + tennis were never in that
+    # set so without this they'd flow through. Target: UFC only.
+    SPORT_BLOCKLIST = frozenset({
+        "NBA", "WNBA", "MLB", "NHL", "NPB", "KBO",
+        "MLS", "EPL", "LAL", "UCL", "BUN",
+        "ATP", "WTA",
+    })
+
     PRE_GAME_ONLY = True
     MAX_MTS_AT_ENTRY = 4320.0
     MIN_DEPTH_USDC = 20.0
