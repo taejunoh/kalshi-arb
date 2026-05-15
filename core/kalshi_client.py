@@ -368,6 +368,39 @@ class KalshiClient:
             logger.error(f"Failed to fetch all markets: {e}")
         return all_markets
 
+    def get_top_of_book_sizes(self, ticker: str) -> tuple[float, float, float, float]:
+        """Return (yes_bid_size, yes_ask_size, no_bid_size, no_ask_size).
+
+        Sizes are raw contract counts (NOT USDC-denominated, unlike
+        get_order_book_depth). Used by bid-imbalance strategies that
+        need symmetric YES/NO bid size comparison.
+
+        Kalshi's orderbook_fp returns bid-side levels for YES and NO
+        independently (yes_dollars = YES bids, no_dollars = NO bids).
+        By complementarity, the NO bid at price p is equivalent to a
+        YES ask at price (1-p), so:
+          yes_bid_size = top of yes_dollars qty
+          yes_ask_size = top of no_dollars qty (complementary)
+          no_bid_size  = top of no_dollars qty
+          no_ask_size  = top of yes_dollars qty (complementary)
+
+        Returns (0, 0, 0, 0) on any fetch error.
+        """
+        try:
+            levels = self.get_orderbook_levels(ticker)
+            yes_levels = levels.get("yes", [])
+            no_levels = levels.get("no", [])
+            yes_top_qty = float(yes_levels[0][1]) if yes_levels else 0.0
+            no_top_qty = float(no_levels[0][1]) if no_levels else 0.0
+            yb = yes_top_qty
+            ya = no_top_qty
+            nb = no_top_qty
+            na = yes_top_qty
+            return (yb, ya, nb, na)
+        except Exception as e:
+            logger.error(f"Failed to get top of book sizes for {ticker}: {e}")
+            return (0.0, 0.0, 0.0, 0.0)
+
     def get_orderbook_levels(self, ticker: str) -> dict:
         """Return raw orderbook levels: {"yes": [(price, qty), ...], "no": [...]}."""
         try:
