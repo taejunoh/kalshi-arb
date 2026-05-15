@@ -19,7 +19,7 @@ from strategies.crypto_observer_phase1 import (
 def _cfg():
     return MagicMock(
         DERIBIT_TAIL_FADE_SIZE_USDC=20.0,
-        DERIBIT_TAIL_FADE_MAX_YA=0.35,
+        DERIBIT_TAIL_FADE_MAX_YA=0.30,
         DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S=15.0,
         BID_IMBALANCE_SIZE_USDC=20.0,
         BID_IMBALANCE_SIGNAL_FRESHNESS_S=15.0,
@@ -89,12 +89,12 @@ async def test_deribit_tail_fade_skips_stale_signal():
 
 @pytest.mark.asyncio
 async def test_deribit_tail_fade_skips_when_ya_above_max():
-    """Cohort evidence covers ya ≤ $0.30. If current market drifted above
-    the band, the signal is no longer in-distribution — skip."""
+    """Cohort evidence covers ya ≤ $0.30. ya 0.30-0.40 band 77.8% WR
+    (n=18) is too close to ~71% break-even — drop those fires."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2220",
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2220": {
-        "yes_ask_dollars": 0.40, "no_ask_dollars": 0.60,
+        "yes_ask_dollars": 0.35, "no_ask_dollars": 0.65,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)

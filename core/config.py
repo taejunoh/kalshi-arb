@@ -133,7 +133,9 @@ class Config:
         # ─ deribit_tail_fade_v1: observer cohort showed 26/26 = 100% WR
         #   across ya bands $0.03-$0.30. Fades tail (BUY NO).
         self.DERIBIT_TAIL_FADE_SIZE_USDC = float(os.getenv("DERIBIT_TAIL_FADE_SIZE_USDC", "20"))
-        self.DERIBIT_TAIL_FADE_MAX_YA = float(os.getenv("DERIBIT_TAIL_FADE_MAX_YA", "0.35"))
+        # 2026-05-15: 0.35→0.30. Phase 0 ya 0.30-0.40 cohort 77.8% WR
+        # (n=18), too close to ~71% break-even at this price level.
+        self.DERIBIT_TAIL_FADE_MAX_YA = float(os.getenv("DERIBIT_TAIL_FADE_MAX_YA", "0.30"))
         self.DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S = float(os.getenv("DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S", "15"))
         # ─ bid_imbalance_v1: original direction (BUY pred side at ask).
         #   5/14 promotion used n=26 cohort @ 69% WR — fluke. Full Phase 0

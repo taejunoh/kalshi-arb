@@ -379,14 +379,26 @@ def test_open_widening_skips_after_window():
 
 def test_deribit_tail_skew_fires_when_ya_overshoots_lognormal():
     obs = DeribitTailSkewObserver()
-    # Bucket far from spot. iv = 50%. tau = 5 min. P_LN of a 100$-wide
-    # bucket at spot+$2k should be near zero. ya = $0.05 → ratio huge.
-    legs = [_b(91750, ya=0.05, yb=0.04, yb_size=50),
-            _b(91850, ya=0.05, yb=0.04, yb_size=50)]
-    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=300.0, iv=0.50)
+    # Bucket ~1% OTM, 1h to close, iv=80%. Yields p_ln ~2%, so ya=0.10
+    # gives ratio ~4.5 — overshoots the 3× gate but stays under the
+    # ratio cap (50). Phase 0 sweet spot.
+    legs = [_b(90750, ya=0.10, yb=0.09, yb_size=50),
+            _b(90850, ya=0.10, yb=0.09, yb_size=50)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=3600.0, iv=0.80)
     sigs = obs.evaluate(ctx)
     assert all(s.predicted_outcome == "no" for s in sigs)
     assert len(sigs) >= 1
+
+
+def test_deribit_tail_skew_skips_when_ratio_exceeds_cap():
+    """Deep-OTM buckets push p_ln toward zero, blowing ratio past 50.
+    Phase 0 cohort showed WR drops to 83-93% in that regime — lognormal
+    breakdown, not real mispricing. Cap rejects."""
+    obs = DeribitTailSkewObserver()
+    # +$2k OTM with 5min/50% IV → p_ln ≈ 0, ratio = inf
+    legs = [_b(91750, ya=0.05, yb=0.04, yb_size=50)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=300.0, iv=0.50)
+    assert obs.evaluate(ctx) == []
 
 
 def test_deribit_tail_skew_skips_when_atm_and_priced_fairly():
