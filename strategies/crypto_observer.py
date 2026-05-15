@@ -77,6 +77,11 @@ OPEN_WIDENING_BUCKET_RADIUS_PCT = 0.010  # ATM ± 1% of spot
 DERIBIT_TAIL_RATIO = 3.0              # ya ≥ 3 × P_LN
 DERIBIT_TAIL_MIN_YA = 0.03            # ya ≥ $0.03 (don't fire on $0.01 noise)
 DERIBIT_TAIL_MIN_YB_SIZE = 30         # active bid present
+# 2026-05-15: ratio > 50 → p_ln ≈ 0 degenerate. Phase 0 n=22 cohort
+# above this gate had WR 86% (vs 97-98% for ratio 3-50) — lognormal
+# model breaks down on deep-OTM where fat-tail probability >> ATM-IV
+# lognormal. Skip rather than trade noise.
+DERIBIT_TAIL_RATIO_CAP = 50.0
 
 BID_IMBALANCE_RATIO_MIN = 3.0         # (yb+nb) / (ya+na) sizes ≥ 3
 BID_IMBALANCE_MTS_MAX_S = 600         # ≤ 10 min to close
@@ -551,6 +556,8 @@ class DeribitTailSkewObserver(BaseObserver):
             if p_ln > 0 and leg.ya < DERIBIT_TAIL_RATIO * p_ln:
                 continue
             ratio = (leg.ya / p_ln) if p_ln > 0 else float("inf")
+            if ratio > DERIBIT_TAIL_RATIO_CAP:
+                continue
             ratio_display = ratio if math.isfinite(ratio) else 1e6
             out.append(Signal(
                 observer=self.name, series=ctx.series,
