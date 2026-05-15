@@ -135,10 +135,19 @@ class Config:
         self.DERIBIT_TAIL_FADE_SIZE_USDC = float(os.getenv("DERIBIT_TAIL_FADE_SIZE_USDC", "20"))
         self.DERIBIT_TAIL_FADE_MAX_YA = float(os.getenv("DERIBIT_TAIL_FADE_MAX_YA", "0.35"))
         self.DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S = float(os.getenv("DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S", "15"))
-        # ─ bid_imbalance_v1: 18/26 = 69.2% WR; mts<5min cohort 4/4 = 100%.
-        #   Acts on predicted side (BUY YES if pred=yes, BUY NO if pred=no).
+        # ─ bid_imbalance_v1: original direction (BUY pred side at ask).
+        #   5/14 promotion used n=26 cohort @ 69% WR — fluke. Full Phase 0
+        #   cohort 2026-05-15 (n=266) showed 36% WR overall; paper trader
+        #   hit -37.6% ROI on n=83. MIN_PRICE keeps only the rich-end band
+        #   (ya≥0.50, where original wins ~80% WR); ya<0.60 zone handled
+        #   by `bid_imbalance_fade_v1`.
         self.BID_IMBALANCE_SIZE_USDC = float(os.getenv("BID_IMBALANCE_SIZE_USDC", "20"))
         self.BID_IMBALANCE_SIGNAL_FRESHNESS_S = float(os.getenv("BID_IMBALANCE_SIGNAL_FRESHNESS_S", "15"))
+        self.BID_IMBALANCE_MIN_PRICE = float(os.getenv("BID_IMBALANCE_MIN_PRICE", "0.50"))
+        # ─ bid_imbalance_fade_v1 (2026-05-15): flipped sibling for ya<0.60.
+        #   Phase 0 cohort flips at 83% WR in this zone (n=141).
+        self.BID_IMBALANCE_FADE_SIZE_USDC = float(os.getenv("BID_IMBALANCE_FADE_SIZE_USDC", "20"))
+        self.BID_IMBALANCE_FADE_SIGNAL_FRESHNESS_S = float(os.getenv("BID_IMBALANCE_FADE_SIGNAL_FRESHNESS_S", "15"))
 
         # Flipped-prediction Phase 1 variants (2026-05-14).
         # Phase 0 cohort showed original observers' WR ≪ 50% — the inverse
