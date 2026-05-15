@@ -96,6 +96,11 @@ LIMIT_AGGRESSION_CENTS_BY_STRATEGY = {
     # similar thin-book regime. Re-eval at ~2026-05-25 with launch data.
     "sports_underdog_v36": 25,
     "sports_underdog_v37": 25,
+    "sports_tennis_pinnacle_arb_v1": 25,    # 2026-05-15 thin-book tennis defensive
+    "sports_atp_gs_bo5_chalk_v1": 25,       # 2026-05-15 GS BO5 chalk paper-twin
+    "sports_tennis_bid_imbalance_v1": 25,
+    "sports_ufc_chalk_fade_v1": 25,         # 2026-05-15 UFC slow-book defensive
+    "sports_tennis_surface_skew_v1": 25,
 }
 
 
@@ -123,6 +128,11 @@ PAPER_TWIN_STRATEGIES = {
     "sports_soccer_draw_v1",  # 2026-05-11 live launch — soccer DRAW EPL+LAL 0.25-0.30
     "sports_underdog_v36",   # 2026-05-13 WNBA expansion — chalk-favorite
     "sports_underdog_v37",   # 2026-05-13 WNBA expansion — 20-29c TEAM band
+    "sports_tennis_pinnacle_arb_v1",   # 2026-05-15 A1 paper-twin launch
+    "sports_atp_gs_bo5_chalk_v1",      # 2026-05-15 A2 paper-twin launch
+    "sports_tennis_bid_imbalance_v1",  # 2026-05-15 A3 paper-twin launch
+    "sports_ufc_chalk_fade_v1",        # 2026-05-15 B1 paper-twin launch
+    "sports_tennis_surface_skew_v1",   # 2026-05-15 C paper-twin launch
 }
 
 
