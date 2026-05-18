@@ -1323,6 +1323,16 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "late_close_tail":    "late_close_tail_v1",
             "deribit_atm_skew":   "deribit_atm_fade_v1",
         }
+        # All known observers — seed so observers that haven't fired in the
+        # window still render with n=0 instead of being silently dropped.
+        # Order here drives the default rendering order in the dashboard.
+        KNOWN_OBSERVERS = (
+            "tail_decay", "atm_fade", "cluster_sum", "bvt_consistency",
+            "spot_drift_momentum", "open_widening", "deribit_tail_skew",
+            "bid_imbalance",
+            "open_no_touch", "atm_hold", "bid_imbalance_fade",
+            "late_close_tail", "deribit_atm_skew",
+        )
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         async with aiosqlite.connect(database.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
@@ -1340,6 +1350,17 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 (cutoff,),
             )
             rows = [dict(r) for r in await cur.fetchall()]
+
+            # Seed any known observer that didn't appear in the window
+            # (zero signals) so the dashboard always lists the full set.
+            by_name = {r["observer"]: r for r in rows}
+            for name in KNOWN_OBSERVERS:
+                if name not in by_name:
+                    rows.append({
+                        "observer": name, "n_total": 0, "n_open": 0,
+                        "n_settled": 0, "wins": 0, "last_ts": None,
+                    })
+            rows.sort(key=lambda r: r["observer"])
 
             # Per-Phase-1-strategy paper trade stats from trades table.
             phase1_stats: dict = {}
