@@ -151,9 +151,12 @@ class Config:
         # rejected on thin tail-strike books (first live fire 19:51 UTC,
         # KXETH-26MAY1816-B2100 needed 21 contracts, book had <21). Order
         # is clamped to top-of-book NO-ask depth; fires with effective
-        # contract count below MIN_FIRE_CONTRACTS are skipped (don't bother
-        # with 1-2 contract dust trades).
-        self.DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS = float(os.getenv("DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS", "3"))
+        # contract count below MIN_FIRE_CONTRACTS are skipped.
+        # 2026-05-18 evening: lowered 3→1 to maximize fire-rate while
+        # validating the live execution path. Once first live fill
+        # confirms end-to-end correctness, raise back to 3 to avoid
+        # dust trades polluting analytics.
+        self.DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS = float(os.getenv("DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS", "1"))
         # ─ bid_imbalance_v1: original direction (BUY pred side at ask).
         #   5/14 promotion used n=26 cohort @ 69% WR — fluke. Full Phase 0
         #   cohort 2026-05-15 (n=266) showed 36% WR overall; paper trader
