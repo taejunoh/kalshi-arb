@@ -833,6 +833,30 @@
       </div>
     </section>
 
+    <!-- ── Crypto Phase 1 strategy gates ── -->
+    <section id="strategy-gates-section">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div class="section-title" style="margin-bottom:0">Crypto Phase 1 strategy gates</div>
+        <span style="color:var(--text-dim);font-size:11px;">Live snapshot of gate config — what each signal must clear to fire</span>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll" style="max-height:280px;">
+          <table id="strategy-gates-table">
+            <thead>
+              <tr>
+                <th>Strategy</th>
+                <th>Mode</th>
+                <th>Gates</th>
+              </tr>
+            </thead>
+            <tbody id="strategy-gates-body">
+              <tr class="empty-row"><td colspan="3">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- ── Crypto observer Phase 0 (per-hypothesis WR) ── -->
     <section id="crypto-observer-section">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
@@ -1796,6 +1820,38 @@ async function refreshRegime() {
 }
 
 // ─────────────────────────────────────────────
+//  Crypto Phase 1 strategy gates
+// ─────────────────────────────────────────────
+async function refreshStrategyGates() {
+  try {
+    const data = await apiFetch('/api/strategy-gates');
+    const tbody = document.getElementById('strategy-gates-body');
+    const rows = (data && data.strategies) || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="3">No strategies configured.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(s => {
+      const modeBadge = s.live
+        ? '<span class="badge badge-green">LIVE</span>'
+        : '<span class="badge" style="background:var(--bg-2);color:var(--text-dim);">paper</span>';
+      const gateChips = (s.gates || []).map(g =>
+        `<span style="display:inline-block;background:var(--bg-2);border:1px solid var(--border);border-radius:4px;padding:2px 8px;margin:1px 4px 1px 0;font-size:11px;"><span style="color:var(--text-dim);">${g.label}:</span> <span class="td-mono">${g.value}</span></span>`
+      ).join('');
+      return `
+        <tr>
+          <td class="td-mono" style="vertical-align:top;"><div>${s.name}</div><div style="font-size:10px;color:var(--text-dim);font-family:inherit;margin-top:2px;">${s.desc}</div></td>
+          <td style="vertical-align:top;">${modeBadge}</td>
+          <td style="vertical-align:top;">${gateChips}</td>
+        </tr>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('strategy-gates-body').innerHTML =
+      `<tr class="empty-row" style="color:var(--red);"><td colspan="3">Failed: ${e.message}</td></tr>`;
+  }
+}
+
+// ─────────────────────────────────────────────
 //  Crypto observer Phase 0 — per-hypothesis WR
 // ─────────────────────────────────────────────
 async function refreshCryptoObserver() {
@@ -2119,6 +2175,7 @@ async function fullRefresh() {
     refreshRegime(),
     refreshObserverSignals(),
     refreshCryptoObserver(),
+    refreshStrategyGates(),
   ]);
 }
 

@@ -1239,6 +1239,85 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             r["fired"] = (r["timestamp"], r["kalshi_ticker"]) in fired
         return rows
 
+    @app.get("/api/strategy-gates")
+    async def get_strategy_gates():
+        """Current gate configuration for each Phase 1 crypto trader.
+
+        Snapshot of the config knobs that decide whether a fresh observer
+        signal becomes a live trade. Used by the dashboard so you can see
+        at-a-glance what bands/depth thresholds are active without SSH'ing
+        in to grep `core/config.py`.
+
+        Values are read from the live `config` object — they reflect the
+        current process's env vars, not whatever `.env` says on disk."""
+        if config is None:
+            return {"strategies": [], "as_of": datetime.now(timezone.utc).isoformat()}
+
+        # (display_name, attr_prefix, gates_spec, has_depth_gate)
+        # gates_spec = list of (label, format_fn). Format fn reads from config.
+        SPECS = [
+            ("deribit_tail_fade_v1",  "DERIBIT_TAIL_FADE",
+             "BUY NO on Kalshi tail strike when ya overprices vs Deribit lognormal",
+             True),
+            ("late_close_tail_v1",    "LATE_CLOSE_TAIL",
+             "Tail fade variant for near-close cohort",
+             True),
+            ("deribit_atm_fade_v1",   "DERIBIT_ATM_FADE",
+             "Inverse of tail_fade for high-ya (ITM) strikes",
+             True),
+            ("open_no_touch_v1",      "OPEN_NO_TOUCH",
+             "BUY NO at event open on ATM±1% buckets",
+             False),
+            ("atm_hold_v1",           "ATM_HOLD",
+             "BUY YES on ATM bucket near close",
+             False),
+            ("bid_imbalance_v1",      "BID_IMBALANCE",
+             "BUY predicted side on top-of-book imbalance, rich-end only",
+             False),
+            ("bid_imbalance_fade_v1", "BID_IMBALANCE_FADE",
+             "Flipped bid_imbalance for low-ya zone",
+             False),
+        ]
+
+        live_set = config.LIVE_STRATEGIES if hasattr(config, "LIVE_STRATEGIES") else set()
+        out = []
+        for name, prefix, desc, has_depth in SPECS:
+            def g(k, default=None):
+                return getattr(config, f"{prefix}_{k}", default)
+            gates = []
+            size = g("SIZE_USDC")
+            if size is not None:
+                gates.append({"label": "size", "value": f"${size:g}"})
+            min_ya = g("MIN_YA")
+            max_ya = g("MAX_YA")
+            if min_ya is not None or max_ya is not None:
+                lo = "—" if min_ya is None else f"{min_ya:.2f}"
+                hi = "—" if max_ya is None else f"{max_ya:.2f}"
+                gates.append({"label": "ya band", "value": f"{lo} ≤ ya ≤ {hi}"})
+            min_price = g("MIN_PRICE")
+            if min_price is not None:
+                gates.append({"label": "min price", "value": f"≥ {min_price:.2f}"})
+            if has_depth:
+                mfc = g("MIN_FIRE_CONTRACTS")
+                if mfc is not None:
+                    gates.append({"label": "depth", "value": f"≥ {mfc:g} contracts"})
+            max_fires = g("MAX_FIRES_PER_EVENT")
+            if max_fires is not None:
+                gates.append({"label": "fires/event", "value": f"≤ {max_fires:g}"})
+            fresh = g("SIGNAL_FRESHNESS_S")
+            if fresh is not None:
+                gates.append({"label": "freshness", "value": f"≤ {fresh:g}s"})
+            out.append({
+                "name": name,
+                "live": name in live_set,
+                "desc": desc,
+                "gates": gates,
+            })
+        return {
+            "strategies": out,
+            "as_of": datetime.now(timezone.utc).isoformat(),
+        }
+
     @app.get("/api/regime")
     async def get_regime():
         """Current trading-universe state — sport phase mix, playoff flag,
