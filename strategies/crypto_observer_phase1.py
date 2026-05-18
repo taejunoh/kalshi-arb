@@ -58,6 +58,14 @@ class _Phase1Base:
         """Translate (signal, current market) → (side, entry_price)."""
         raise NotImplementedError
 
+    def _size_usdc_for(self, side: str, price: float, market: dict
+                       ) -> Optional[float]:
+        """Hook for depth-aware sizing. Default is the strategy's fixed
+        SIZE_USDC. Subclasses may clamp by top-of-book contract depth on
+        the side being bought; return None to skip the fire entirely
+        (e.g., book too thin to fill a meaningful position)."""
+        return self.SIZE_USDC
+
     async def scan_and_execute(self):
         if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
             return
@@ -99,14 +107,18 @@ class _Phase1Base:
                 self._processed.add(sig_id)
                 continue
             side, price = choice
+            size_usdc = self._size_usdc_for(side, price, market)
+            if size_usdc is None or size_usdc <= 0:
+                self._processed.add(sig_id)
+                continue
             try:
                 await self._order_manager.market_order(
-                    ticker=ticker, side=side, size_usdc=self.SIZE_USDC,
+                    ticker=ticker, side=side, size_usdc=size_usdc,
                     price=price, strategy=self.STRATEGY_NAME, market_id=ticker,
                 )
                 logger.info(
                     f"[{self.STRATEGY_NAME}] FIRE {ticker} {side} "
-                    f"size=${self.SIZE_USDC:.0f} price={price:.3f} "
+                    f"size=${size_usdc:.2f} price={price:.3f} "
                     f"signal_id={sig_id} pred={sig['predicted_outcome']}"
                 )
             except Exception as e:
@@ -134,6 +146,7 @@ class DeribitTailFadeV1Strategy(_Phase1Base):
         self.SIZE_USDC = config.DERIBIT_TAIL_FADE_SIZE_USDC
         self._max_ya = config.DERIBIT_TAIL_FADE_MAX_YA
         self._min_ya = config.DERIBIT_TAIL_FADE_MIN_YA
+        self._min_fire_contracts = config.DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS
 
     def _select_side_and_price(self, sig, market):
         ya = _safe_float(market.get("yes_ask_dollars"))
@@ -150,6 +163,24 @@ class DeribitTailFadeV1Strategy(_Phase1Base):
         if sig["predicted_outcome"] != "no":
             return None
         return ("no", no_ask)
+
+    def _size_usdc_for(self, side, price, market):
+        # 2026-05-18 FOK reject (KXETH-26MAY1816-B2100 at no_ask=0.95 needed
+        # 21 contracts of resting volume, book had <21). Clamp our order to
+        # what's actually fillable at top-of-book, skip if depth is below
+        # MIN_FIRE_CONTRACTS (avoids dust trades that aren't worth the slot
+        # in trade history / dedup state).
+        depth = _safe_float(market.get("no_ask_size_fp"))
+        if depth is None or depth <= 0:
+            return None
+        if price <= 0:
+            return None
+        target_count = self.SIZE_USDC / price
+        if depth >= target_count:
+            return self.SIZE_USDC
+        if depth < self._min_fire_contracts:
+            return None
+        return depth * price
 
 
 class BidImbalanceV1Strategy(_Phase1Base):

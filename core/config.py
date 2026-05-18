@@ -147,6 +147,13 @@ class Config:
         self.DERIBIT_TAIL_FADE_MAX_YA = float(os.getenv("DERIBIT_TAIL_FADE_MAX_YA", "0.20"))
         self.DERIBIT_TAIL_FADE_MIN_YA = float(os.getenv("DERIBIT_TAIL_FADE_MIN_YA", "0.08"))
         self.DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S = float(os.getenv("DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S", "15"))
+        # 2026-05-18: depth-aware sizing replaces FOK market orders that
+        # rejected on thin tail-strike books (first live fire 19:51 UTC,
+        # KXETH-26MAY1816-B2100 needed 21 contracts, book had <21). Order
+        # is clamped to top-of-book NO-ask depth; fires with effective
+        # contract count below MIN_FIRE_CONTRACTS are skipped (don't bother
+        # with 1-2 contract dust trades).
+        self.DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS = float(os.getenv("DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS", "3"))
         # ─ bid_imbalance_v1: original direction (BUY pred side at ask).
         #   5/14 promotion used n=26 cohort @ 69% WR — fluke. Full Phase 0
         #   cohort 2026-05-15 (n=266) showed 36% WR overall; paper trader
