@@ -382,6 +382,95 @@ class BidImbalanceFadeV1Strategy(_Phase1Base):
         return (pred, price)
 
 
+class LateCloseTailV1Strategy(_Phase1Base):
+    """Paper trader for the late_close_tail observer.
+
+    Buys NO at no_ask on mid-OTM strikes (ya 0.05-0.30) within 10 min of
+    close. Same execution shape as DeribitTailFadeV1Strategy (depth-aware
+    sizing, MIN_FIRE_CONTRACTS floor) to avoid FOK rejects on thin books.
+    Paper-only at launch — Phase 2 live promotion gated on n ≥ 100 settled
+    + ROI ≥ +5%.
+    """
+    STRATEGY_NAME = "late_close_tail_v1"
+    OBSERVER_NAME = "late_close_tail"
+
+    def __init__(self, config, order_manager, market_scanner, kalshi_client):
+        super().__init__(config, order_manager, market_scanner, kalshi_client)
+        self.SIGNAL_FRESHNESS_S = config.LATE_CLOSE_TAIL_SIGNAL_FRESHNESS_S
+        self.SIZE_USDC = config.LATE_CLOSE_TAIL_SIZE_USDC
+        self._min_ya = config.LATE_CLOSE_TAIL_MIN_YA
+        self._max_ya = config.LATE_CLOSE_TAIL_MAX_YA
+        self._min_fire_contracts = config.LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS
+
+    def _select_side_and_price(self, sig, market):
+        if sig["predicted_outcome"] != "no":
+            return None
+        ya = _safe_float(market.get("yes_ask_dollars"))
+        no_ask = _safe_float(market.get("no_ask_dollars"))
+        if ya is None or no_ask is None:
+            return None
+        if no_ask <= 0 or no_ask >= 1:
+            return None
+        if ya < self._min_ya or ya > self._max_ya:
+            return None
+        return ("no", no_ask)
+
+    def _size_usdc_for(self, side, price, market):
+        depth = _safe_float(market.get("no_ask_size_fp"))
+        if depth is None or depth <= 0 or price <= 0:
+            return None
+        target_count = self.SIZE_USDC / price
+        if depth >= target_count:
+            return self.SIZE_USDC
+        if depth < self._min_fire_contracts:
+            return None
+        return depth * price
+
+
+class DeribitAtmFadeV1Strategy(_Phase1Base):
+    """Paper trader for the deribit_atm_skew observer.
+
+    Fades the ATM bucket when Kalshi yes_ask exceeds the Deribit-IV
+    lognormal probability by ≥ 1.5×. Buys NO at no_ask. Mirrors the
+    DeribitTailFadeV1Strategy execution shape (depth-aware sizing) since
+    ATM books are not guaranteed thicker than tails near close.
+    """
+    STRATEGY_NAME = "deribit_atm_fade_v1"
+    OBSERVER_NAME = "deribit_atm_skew"
+
+    def __init__(self, config, order_manager, market_scanner, kalshi_client):
+        super().__init__(config, order_manager, market_scanner, kalshi_client)
+        self.SIGNAL_FRESHNESS_S = config.DERIBIT_ATM_FADE_SIGNAL_FRESHNESS_S
+        self.SIZE_USDC = config.DERIBIT_ATM_FADE_SIZE_USDC
+        self._min_ya = config.DERIBIT_ATM_FADE_MIN_YA
+        self._max_ya = config.DERIBIT_ATM_FADE_MAX_YA
+        self._min_fire_contracts = config.DERIBIT_ATM_FADE_MIN_FIRE_CONTRACTS
+
+    def _select_side_and_price(self, sig, market):
+        if sig["predicted_outcome"] != "no":
+            return None
+        ya = _safe_float(market.get("yes_ask_dollars"))
+        no_ask = _safe_float(market.get("no_ask_dollars"))
+        if ya is None or no_ask is None:
+            return None
+        if no_ask <= 0 or no_ask >= 1:
+            return None
+        if ya < self._min_ya or ya > self._max_ya:
+            return None
+        return ("no", no_ask)
+
+    def _size_usdc_for(self, side, price, market):
+        depth = _safe_float(market.get("no_ask_size_fp"))
+        if depth is None or depth <= 0 or price <= 0:
+            return None
+        target_count = self.SIZE_USDC / price
+        if depth >= target_count:
+            return self.SIZE_USDC
+        if depth < self._min_fire_contracts:
+            return None
+        return depth * price
+
+
 class AtmHoldV1Strategy(_Phase1Base):
     """Inverse of atm_fade — predicts the ATM bucket holds (resolves YES)
     when ya is in [0.40, 0.65] within 5min of close. Cohort evidence is

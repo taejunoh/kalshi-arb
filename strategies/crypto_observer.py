@@ -48,6 +48,18 @@ TAIL_DECAY_DIST_MIN_PCT = 0.010       # ≥1.0% from spot
 TAIL_DECAY_YA_MAX = 0.05              # yes_ask ≤ $0.05
 TAIL_DECAY_YB_SIZE_MIN = 50           # active bid present
 
+# late_close_tail (2026-05-18): broader sibling of tail_decay that covers
+# the mid-OTM band (ya $0.05-$0.30) ignored by tail_decay (≤$0.05) and by
+# deribit_tail_fade (which uses a lognormal-ratio gate, not a ya band).
+# Trigger window extended to 10 min to close + dist relaxed to 0.5% from
+# spot to compensate for the tighter ya floor. Predicts "no" on the same
+# theory as tail_decay — OTM strikes don't get touched late in the event.
+LATE_CLOSE_TAIL_MTS_MAX_S = 600
+LATE_CLOSE_TAIL_DIST_MIN_PCT = 0.005
+LATE_CLOSE_TAIL_YA_MIN = 0.05
+LATE_CLOSE_TAIL_YA_MAX = 0.30
+LATE_CLOSE_TAIL_YB_SIZE_MIN = 30
+
 ATM_FADE_MTS_MAX_S = 300
 ATM_FADE_BUCKET_RADIUS = 0.25         # |bucket - spot| ≤ 0.25 × grid
 ATM_FADE_YA_MIN = 0.40
@@ -77,6 +89,19 @@ OPEN_WIDENING_BUCKET_RADIUS_PCT = 0.010  # ATM ± 1% of spot
 DERIBIT_TAIL_RATIO = 3.0              # ya ≥ 3 × P_LN
 DERIBIT_TAIL_MIN_YA = 0.03            # ya ≥ $0.03 (don't fire on $0.01 noise)
 DERIBIT_TAIL_MIN_YB_SIZE = 30         # active bid present
+
+# deribit_atm_skew (2026-05-18): ATM-bucket parallel of deribit_tail_skew.
+# Tests whether Kalshi mid-range ATM prices are also above the lognormal
+# fair value (most existing alpha sits in tails). RATIO floor 1.5 (vs 3.0
+# for tails) — ATM has high P_LN so 3.0× overshoot would require ya>1.
+# ya band keeps fires in a mid-range zone where overpricing is plausible
+# and entry economics are favourable.
+DERIBIT_ATM_RATIO = 1.5
+DERIBIT_ATM_MIN_YA = 0.30
+DERIBIT_ATM_MAX_YA = 0.70
+DERIBIT_ATM_BUCKET_RADIUS = 0.25      # |bucket-spot| ≤ 0.25 × grid
+DERIBIT_ATM_MTS_MAX_S = 600           # ≤10 min to close
+DERIBIT_ATM_MIN_YB_SIZE = 30
 # 2026-05-15: ratio > 50 → p_ln ≈ 0 degenerate. Phase 0 n=22 cohort
 # above this gate had WR 86% (vs 97-98% for ratio 3-50) — lognormal
 # model breaks down on deep-OTM where fat-tail probability >> ATM-IV
@@ -613,6 +638,116 @@ class BidImbalanceObserver(BaseObserver):
         return out
 
 
+# ── 9. late_close_tail ─────────────────────────────────────────────
+
+
+class LateCloseTailObserver(BaseObserver):
+    """Mid-OTM tail observer for the close window. Broader sibling of
+    tail_decay: 10-min window, 0.5% dist floor, ya in [0.05, 0.30].
+
+    Hypothesis: deep-OTM strikes don't get touched in the last 10 min of
+    a crypto hourly. tail_decay covers the ≤$0.05 zone; deribit_tail_fade
+    covers the lognormal-ratio overpricing zone. This observer covers the
+    gap where ya is large enough to have non-trivial payoff geometry but
+    still pure-OTM (≥0.5% from spot)."""
+    name = "late_close_tail"
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        if ctx.close_time_secs is None or ctx.close_time_secs > LATE_CLOSE_TAIL_MTS_MAX_S:
+            return []
+        if ctx.close_time_secs <= 0:
+            return []
+        out: list[Signal] = []
+        for leg in ctx.b_legs:
+            if leg.ya < LATE_CLOSE_TAIL_YA_MIN or leg.ya > LATE_CLOSE_TAIL_YA_MAX:
+                continue
+            if leg.yb_size < LATE_CLOSE_TAIL_YB_SIZE_MIN:
+                continue
+            dist_pct = abs(leg.threshold - ctx.spot) / ctx.spot
+            if dist_pct < LATE_CLOSE_TAIL_DIST_MIN_PCT:
+                continue
+            out.append(Signal(
+                observer=self.name, series=ctx.series,
+                event_key=ctx.event_key, market_id=leg.ticker,
+                predicted_outcome="no",
+                features={
+                    "ya": leg.ya, "yb": leg.yb,
+                    "na": leg.na,
+                    "yb_size": leg.yb_size,
+                    "spot": ctx.spot, "strike": leg.threshold,
+                    "dist_pct": round(dist_pct, 5),
+                    "mts_s": round(ctx.close_time_secs, 1),
+                },
+            ))
+        return out
+
+
+# ── 10. deribit_atm_skew ───────────────────────────────────────────
+
+
+class DeribitAtmSkewObserver(BaseObserver):
+    """ATM-bucket parallel of DeribitTailSkewObserver. Fires when Kalshi
+    ATM yes_ask exceeds the Deribit-IV lognormal probability by ≥ 1.5×.
+
+    The tail variant (DeribitTailSkewObserver) gates on ratio ≥ 3 and ya
+    ≥ $0.03 — appropriate for deep-OTM where P_LN is small and any
+    overshoot signals overpricing. For the ATM bucket P_LN is large
+    (often 0.15-0.40), so 3× would require ya > 1 to fire; we use 1.5×.
+    Predicts "no": the bet is the ATM bucket does NOT resolve YES (i.e.,
+    spot moves out of the ATM range)."""
+    name = "deribit_atm_skew"
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        if ctx.deribit_iv is None or ctx.deribit_iv <= 0:
+            return []
+        if ctx.close_time_secs is None or ctx.close_time_secs <= 0:
+            return []
+        if ctx.close_time_secs > DERIBIT_ATM_MTS_MAX_S:
+            return []
+        grid = ctx.bucket_grid()
+        if grid is None or grid <= 0:
+            return []
+        atm_idx = ctx.atm_bucket_index()
+        if atm_idx is None:
+            return []
+        leg = ctx.b_legs[atm_idx]
+        if abs(leg.threshold - ctx.spot) > DERIBIT_ATM_BUCKET_RADIUS * grid:
+            return []
+        if leg.ya < DERIBIT_ATM_MIN_YA or leg.ya > DERIBIT_ATM_MAX_YA:
+            return []
+        if leg.yb_size < DERIBIT_ATM_MIN_YB_SIZE:
+            return []
+        tau_years = ctx.close_time_secs / (365.25 * 86400)
+        p_above_lo = _lognormal_p_above(
+            spot=ctx.spot, strike=leg.threshold - grid / 2,
+            vol=ctx.deribit_iv, tau_years=tau_years,
+        )
+        p_above_hi = _lognormal_p_above(
+            spot=ctx.spot, strike=leg.threshold + grid / 2,
+            vol=ctx.deribit_iv, tau_years=tau_years,
+        )
+        if p_above_lo is None or p_above_hi is None:
+            return []
+        p_ln = max(0.0, p_above_lo - p_above_hi)
+        if p_ln <= 0:
+            return []
+        if leg.ya < DERIBIT_ATM_RATIO * p_ln:
+            return []
+        ratio = leg.ya / p_ln
+        return [Signal(
+            observer=self.name, series=ctx.series,
+            event_key=ctx.event_key, market_id=leg.ticker,
+            predicted_outcome="no",
+            features={"ya": leg.ya, "na": leg.na,
+                      "p_ln": round(p_ln, 6),
+                      "ratio": round(ratio, 2),
+                      "iv": ctx.deribit_iv,
+                      "spot": ctx.spot, "strike": leg.threshold,
+                      "grid": grid,
+                      "mts_s": round(ctx.close_time_secs, 1)},
+        )]
+
+
 # ── Flipped-prediction variants (2026-05-14) ───────────────────────
 #
 # Phase 0 cohort analysis on 24h data revealed that two observers' WR
@@ -712,6 +847,8 @@ OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
     OpenWideningObserver, DeribitTailSkewObserver, BidImbalanceObserver,
     # Flipped siblings
     OpenNoTouchObserver, AtmHoldObserver, BidImbalanceFadeObserver,
+    # 2026-05-18 additions: gap-fill / new-hypothesis observers
+    LateCloseTailObserver, DeribitAtmSkewObserver,
 )
 
 

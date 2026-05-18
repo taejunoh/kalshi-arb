@@ -13,6 +13,7 @@ from strategies.crypto_observer_phase1 import (
     DeribitTailFadeV1Strategy, BidImbalanceV1Strategy,
     OpenNoTouchV1Strategy, AtmHoldV1Strategy,
     BidImbalanceFadeV1Strategy,
+    LateCloseTailV1Strategy, DeribitAtmFadeV1Strategy,
 )
 
 
@@ -35,6 +36,16 @@ def _cfg():
         OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT=1,
         ATM_HOLD_SIZE_USDC=20.0,
         ATM_HOLD_SIGNAL_FRESHNESS_S=15.0,
+        LATE_CLOSE_TAIL_SIZE_USDC=20.0,
+        LATE_CLOSE_TAIL_SIGNAL_FRESHNESS_S=15.0,
+        LATE_CLOSE_TAIL_MIN_YA=0.05,
+        LATE_CLOSE_TAIL_MAX_YA=0.30,
+        LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS=3.0,
+        DERIBIT_ATM_FADE_SIZE_USDC=20.0,
+        DERIBIT_ATM_FADE_SIGNAL_FRESHNESS_S=15.0,
+        DERIBIT_ATM_FADE_MIN_YA=0.30,
+        DERIBIT_ATM_FADE_MAX_YA=0.70,
+        DERIBIT_ATM_FADE_MIN_FIRE_CONTRACTS=3.0,
     )
 
 
@@ -584,6 +595,187 @@ async def test_atm_hold_skips_if_predicted_no():
         "yes_ask_dollars": 0.55, "no_ask_dollars": 0.45,
     }}
     s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+# ── LateCloseTailV1 (2026-05-18) ───────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_late_close_tail_fires_no_on_mid_otm_signal():
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B91000": {
+        "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
+        "no_ask_size_fp": 50.0,
+    }}
+    s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["side"] == "no"
+    assert args["price"] == 0.85
+    assert args["size_usdc"] == 20.0
+    assert args["strategy"] == "late_close_tail_v1"
+
+
+@pytest.mark.asyncio
+async def test_late_close_tail_skips_when_ya_above_max():
+    """ya > 0.30 = near-ATM; protocol shifts to deribit_atm_fade territory."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B91000": {
+        "yes_ask_dollars": 0.40, "no_ask_dollars": 0.60,
+        "no_ask_size_fp": 50.0,
+    }}
+    s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_late_close_tail_skips_when_ya_below_min():
+    """ya < 0.05 = tail_decay zone; don't double-fire."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B91000": {
+        "yes_ask_dollars": 0.03, "no_ask_dollars": 0.97,
+        "no_ask_size_fp": 50.0,
+    }}
+    s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_late_close_tail_clamps_size_when_book_thin():
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B91000": {
+        "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
+        "no_ask_size_fp": 10.0,
+    }}
+    s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["size_usdc"] == pytest.approx(10.0 * 0.85)
+
+
+@pytest.mark.asyncio
+async def test_late_close_tail_skips_when_depth_below_min():
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B91000": {
+        "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
+        "no_ask_size_fp": 2.0,
+    }}
+    s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_late_close_tail_skips_when_predicted_yes():
+    """Observer always emits 'no' — guard against schema drift."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
+           "predicted_outcome": "yes"}
+    markets = {"KXBTC-26MAY1815-B91000": {
+        "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
+        "no_ask_size_fp": 50.0,
+    }}
+    s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+# ── DeribitAtmFadeV1 (2026-05-18) ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_deribit_atm_fade_fires_no_on_atm_overshoot():
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B89750",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B89750": {
+        "yes_ask_dollars": 0.60, "no_ask_dollars": 0.40,
+        "no_ask_size_fp": 100.0,
+    }}
+    s, om = _build_strategy(DeribitAtmFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["side"] == "no"
+    assert args["price"] == 0.40
+    assert args["size_usdc"] == 20.0
+    assert args["strategy"] == "deribit_atm_fade_v1"
+
+
+@pytest.mark.asyncio
+async def test_deribit_atm_fade_skips_when_ya_above_max():
+    """ya > 0.70 is the deribit_tail_fade zone (different price geometry)."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B89750",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B89750": {
+        "yes_ask_dollars": 0.75, "no_ask_dollars": 0.25,
+        "no_ask_size_fp": 100.0,
+    }}
+    s, om = _build_strategy(DeribitAtmFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_deribit_atm_fade_skips_when_ya_below_min():
+    """ya < 0.30 = the leg isn't ATM at all → observer shouldn't fire,
+    trader double-checks live price."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B89750",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B89750": {
+        "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
+        "no_ask_size_fp": 100.0,
+    }}
+    s, om = _build_strategy(DeribitAtmFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_deribit_atm_fade_clamps_size_when_book_thin():
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B89750",
+           "predicted_outcome": "no"}
+    # target_count = 20/0.40 = 50; depth=20 → clamp to 20 * 0.40 = $8
+    markets = {"KXBTC-26MAY1815-B89750": {
+        "yes_ask_dollars": 0.60, "no_ask_dollars": 0.40,
+        "no_ask_size_fp": 20.0,
+    }}
+    s, om = _build_strategy(DeribitAtmFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["size_usdc"] == pytest.approx(20.0 * 0.40)
+
+
+@pytest.mark.asyncio
+async def test_deribit_atm_fade_skips_when_predicted_yes():
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B89750",
+           "predicted_outcome": "yes"}
+    markets = {"KXBTC-26MAY1815-B89750": {
+        "yes_ask_dollars": 0.60, "no_ask_dollars": 0.40,
+        "no_ask_size_fp": 100.0,
+    }}
+    s, om = _build_strategy(DeribitAtmFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
     await s.scan_and_execute()
     assert om.market_order.await_count == 0

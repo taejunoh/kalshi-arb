@@ -55,6 +55,7 @@ from strategies.crypto_observer_phase1 import (
     DeribitTailFadeV1Strategy, BidImbalanceV1Strategy,
     OpenNoTouchV1Strategy, AtmHoldV1Strategy,
     BidImbalanceFadeV1Strategy,
+    LateCloseTailV1Strategy, DeribitAtmFadeV1Strategy,
 )
 from strategies.ladder_fed import LadderFedStrategy
 from strategies.ladder_approval import LadderApprovalStrategy
@@ -301,6 +302,15 @@ class Bot:
         # ya<0.60. Full Phase 0 cohort (n=266) showed original 36% WR but
         # flipped 64% WR; ya<0.60 sub-cohort flips at 83% WR. Paper-only.
         self.bid_imbalance_fade_v1 = BidImbalanceFadeV1Strategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client,
+        )
+        # 2026-05-18 additions: gap-fill (late_close_tail) + new-hypothesis
+        # (deribit_atm_fade). Both paper-only at launch; Phase 2 promotion
+        # gate is n ≥ 100 settled + ROI ≥ +5%.
+        self.late_close_tail_v1 = LateCloseTailV1Strategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client,
+        )
+        self.deribit_atm_fade_v1 = DeribitAtmFadeV1Strategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client,
         )
         # Macro Event Trader (C1) — paper-only at launch.
@@ -616,6 +626,8 @@ class Bot:
             ("open_no_touch_v1", self.open_no_touch_v1),
             ("atm_hold_v1", self.atm_hold_v1),
             ("bid_imbalance_fade_v1", self.bid_imbalance_fade_v1),
+            ("late_close_tail_v1", self.late_close_tail_v1),
+            ("deribit_atm_fade_v1", self.deribit_atm_fade_v1),
             # Macro Event Trader (C1) — paper-only. Requires consensus cron.
             ("macro_event", self.macro_event),
             # Cross-Venue Polymarket Trader (B1) — paper-only. Requires
