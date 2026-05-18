@@ -21,6 +21,7 @@ def _cfg():
         DERIBIT_TAIL_FADE_SIZE_USDC=20.0,
         DERIBIT_TAIL_FADE_MAX_YA=0.20,
         DERIBIT_TAIL_FADE_MIN_YA=0.08,
+        DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS=3.0,
         DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S=15.0,
         BID_IMBALANCE_SIZE_USDC=20.0,
         BID_IMBALANCE_SIGNAL_FRESHNESS_S=15.0,
@@ -63,6 +64,7 @@ async def test_deribit_tail_fade_fires_paper_no_on_fresh_signal():
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2220": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
+        "no_ask_size_fp": 50.0,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -82,6 +84,7 @@ async def test_deribit_tail_fade_skips_stale_signal():
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2220": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
+        "no_ask_size_fp": 50.0,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -121,11 +124,65 @@ async def test_deribit_tail_fade_skips_when_ya_below_min():
 
 
 @pytest.mark.asyncio
+async def test_deribit_tail_fade_clamps_size_when_book_thin():
+    """2026-05-18: top-of-book depth-aware sizing. When no_ask_size_fp
+    is below the target contract count, clamp order to fillable depth
+    (avoids FOK reject)."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2220",
+           "predicted_outcome": "no"}
+    # target_count = 20 / 0.85 ≈ 23.5, depth is 10 → clamp to 10 contracts
+    markets = {"KXETH-26MAY1311-B2220": {
+        "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
+        "no_ask_size_fp": 10.0,
+    }}
+    s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    # 10 contracts at $0.85 = $8.50
+    assert args["size_usdc"] == pytest.approx(10.0 * 0.85)
+
+
+@pytest.mark.asyncio
+async def test_deribit_tail_fade_skips_when_depth_below_min():
+    """2026-05-18: if top-of-book depth < MIN_FIRE_CONTRACTS, don't bother
+    firing a dust trade — the slot in trade history isn't worth it."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2220",
+           "predicted_outcome": "no"}
+    markets = {"KXETH-26MAY1311-B2220": {
+        "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
+        "no_ask_size_fp": 2.0,  # below MIN_FIRE_CONTRACTS=3
+    }}
+    s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_deribit_tail_fade_skips_when_depth_missing():
+    """If the scanner has no top-of-book size field, don't fire blind.
+    Defensive against partial scanner snapshots."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2220",
+           "predicted_outcome": "no"}
+    markets = {"KXETH-26MAY1311-B2220": {
+        "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
+        # no_ask_size_fp intentionally missing
+    }}
+    s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
 async def test_deribit_tail_fade_dedups_same_signal_id_within_run():
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2220",
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2220": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
+        "no_ask_size_fp": 50.0,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -142,6 +199,7 @@ async def test_deribit_tail_fade_skips_when_predicted_outcome_yes():
            "predicted_outcome": "yes"}
     markets = {"KXETH-26MAY1311-B2220": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
+        "no_ask_size_fp": 50.0,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
