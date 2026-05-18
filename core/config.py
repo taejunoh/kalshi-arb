@@ -133,9 +133,19 @@ class Config:
         # ─ deribit_tail_fade_v1: observer cohort showed 26/26 = 100% WR
         #   across ya bands $0.03-$0.30. Fades tail (BUY NO).
         self.DERIBIT_TAIL_FADE_SIZE_USDC = float(os.getenv("DERIBIT_TAIL_FADE_SIZE_USDC", "20"))
-        # 2026-05-15: 0.35→0.30. Phase 0 ya 0.30-0.40 cohort 77.8% WR
-        # (n=18), too close to ~71% break-even at this price level.
-        self.DERIBIT_TAIL_FADE_MAX_YA = float(os.getenv("DERIBIT_TAIL_FADE_MAX_YA", "0.30"))
+        # 2026-05-18 band re-analysis (paper n=483 post-tune):
+        #   no_ask 0.80-0.85 (ya 0.15-0.20)  n=125  WR 99%  ROI +14.2%
+        #   no_ask 0.85-0.90 (ya 0.10-0.15)  n=189  WR 100% ROI  +8.8%
+        #   no_ask 0.90-0.93 (ya 0.07-0.10)  n= 39  WR 100% ROI  +3.3%
+        #   no_ask 0.93-0.99 (ya 0.01-0.07)  n=109  WR 95%  ROI  ~0%   ← scratch
+        #   no_ask 0.99+     (ya <0.01)      n= 17  WR  0%  ROI -5.9%  ← loss
+        #   no_ask <0.80     (ya >0.20)      n=  4  WR 50%  ROI -54%   ← mis-cal
+        # MAX_YA 0.30→0.20 cuts the sub-0.80 mis-calibration zone (P1).
+        # MIN_YA = 0.08 cuts the >=0.93 degenerate zone where win payoff
+        # (~$0.02-0.07) can't cover the rare full loss (P0). Projects
+        # lifetime ROI +6.5% → ~+10%.
+        self.DERIBIT_TAIL_FADE_MAX_YA = float(os.getenv("DERIBIT_TAIL_FADE_MAX_YA", "0.20"))
+        self.DERIBIT_TAIL_FADE_MIN_YA = float(os.getenv("DERIBIT_TAIL_FADE_MIN_YA", "0.08"))
         self.DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S = float(os.getenv("DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S", "15"))
         # ─ bid_imbalance_v1: original direction (BUY pred side at ask).
         #   5/14 promotion used n=26 cohort @ 69% WR — fluke. Full Phase 0

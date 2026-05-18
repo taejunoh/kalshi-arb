@@ -19,7 +19,8 @@ from strategies.crypto_observer_phase1 import (
 def _cfg():
     return MagicMock(
         DERIBIT_TAIL_FADE_SIZE_USDC=20.0,
-        DERIBIT_TAIL_FADE_MAX_YA=0.30,
+        DERIBIT_TAIL_FADE_MAX_YA=0.20,
+        DERIBIT_TAIL_FADE_MIN_YA=0.08,
         DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S=15.0,
         BID_IMBALANCE_SIZE_USDC=20.0,
         BID_IMBALANCE_SIGNAL_FRESHNESS_S=15.0,
@@ -61,7 +62,7 @@ async def test_deribit_tail_fade_fires_paper_no_on_fresh_signal():
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2220",
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2220": {
-        "yes_ask_dollars": 0.03, "no_ask_dollars": 0.97,
+        "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -70,7 +71,7 @@ async def test_deribit_tail_fade_fires_paper_no_on_fresh_signal():
     args = om.market_order.await_args.kwargs
     assert args["ticker"] == "KXETH-26MAY1311-B2220"
     assert args["side"] == "no"
-    assert args["price"] == 0.97
+    assert args["price"] == 0.85
     assert args["size_usdc"] == 20.0
     assert args["strategy"] == "deribit_tail_fade_v1"
 
@@ -80,7 +81,7 @@ async def test_deribit_tail_fade_skips_stale_signal():
     sig = {"id": 1, "ts": _now_iso(30.0), "market_id": "KXETH-26MAY1311-B2220",
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2220": {
-        "yes_ask_dollars": 0.03, "no_ask_dollars": 0.97,
+        "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -90,12 +91,28 @@ async def test_deribit_tail_fade_skips_stale_signal():
 
 @pytest.mark.asyncio
 async def test_deribit_tail_fade_skips_when_ya_above_max():
-    """Cohort evidence covers ya ≤ $0.30. ya 0.30-0.40 band 77.8% WR
-    (n=18) is too close to ~71% break-even — drop those fires."""
+    """2026-05-18: MAX_YA tightened 0.30→0.20. no_ask <0.80 band (n=4)
+    showed 50% WR / -54% ROI — signal mis-calibration zone."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2220",
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2220": {
-        "yes_ask_dollars": 0.35, "no_ask_dollars": 0.65,
+        "yes_ask_dollars": 0.25, "no_ask_dollars": 0.75,
+    }}
+    s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_deribit_tail_fade_skips_when_ya_below_min():
+    """2026-05-18: MIN_YA=0.08 added. At no_ask≥0.92 the win payoff
+    ($0.01-0.07) can't cover the rare full loss; n=126 contributed
+    near-zero PnL on $2,453 stake before the cap."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2220",
+           "predicted_outcome": "no"}
+    markets = {"KXETH-26MAY1311-B2220": {
+        "yes_ask_dollars": 0.03, "no_ask_dollars": 0.97,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -108,7 +125,7 @@ async def test_deribit_tail_fade_dedups_same_signal_id_within_run():
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2220",
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2220": {
-        "yes_ask_dollars": 0.03, "no_ask_dollars": 0.97,
+        "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -124,7 +141,7 @@ async def test_deribit_tail_fade_skips_when_predicted_outcome_yes():
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2220",
            "predicted_outcome": "yes"}
     markets = {"KXETH-26MAY1311-B2220": {
-        "yes_ask_dollars": 0.03, "no_ask_dollars": 0.97,
+        "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)

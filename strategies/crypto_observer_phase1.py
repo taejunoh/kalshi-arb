@@ -133,6 +133,7 @@ class DeribitTailFadeV1Strategy(_Phase1Base):
         self.SIGNAL_FRESHNESS_S = config.DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S
         self.SIZE_USDC = config.DERIBIT_TAIL_FADE_SIZE_USDC
         self._max_ya = config.DERIBIT_TAIL_FADE_MAX_YA
+        self._min_ya = config.DERIBIT_TAIL_FADE_MIN_YA
 
     def _select_side_and_price(self, sig, market):
         ya = _safe_float(market.get("yes_ask_dollars"))
@@ -141,8 +142,9 @@ class DeribitTailFadeV1Strategy(_Phase1Base):
             return None
         if ya <= 0 or no_ask <= 0 or no_ask >= 1:
             return None
-        # Sanity: don't fire when yes_ask drifted above the cohort band.
-        if ya > self._max_ya:
+        # ya band gate — outside [MIN, MAX], the payout math inverts (high
+        # end) or signal mis-calibrates (low end). See config comment.
+        if ya < self._min_ya or ya > self._max_ya:
             return None
         # Observer predicts "no" — we BUY NO to express that.
         if sig["predicted_outcome"] != "no":
