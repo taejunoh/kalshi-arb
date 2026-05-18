@@ -133,6 +133,8 @@ PAPER_TWIN_STRATEGIES = {
     "sports_tennis_bid_imbalance_v1",  # 2026-05-15 A3 paper-twin launch
     "sports_ufc_chalk_fade_v1",        # 2026-05-15 B1 paper-twin launch
     "sports_tennis_surface_skew_v1",   # 2026-05-15 C paper-twin launch
+    "deribit_tail_fade_v1",            # 2026-05-18 crypto Phase 1 live promotion
+    "atm_hold_v1",                     # 2026-05-18 crypto Phase 1 live promotion
 }
 
 
