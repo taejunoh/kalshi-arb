@@ -121,6 +121,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_ufc_chalk_fade_v1",
             "sports_tennis_surface_skew_v1",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
+            # Crypto Phase 1 traders (paper-only unless promoted via .env).
+            # Listed here so they render with empty stats before first fire.
+            "deribit_tail_fade_v1", "bid_imbalance_v1", "bid_imbalance_fade_v1",
+            "open_no_touch_v1", "atm_hold_v1",
+            # 2026-05-18 additions
+            "late_close_tail_v1", "deribit_atm_fade_v1",
             # Archived — historical data surfaced in dashboard's Archived section.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
