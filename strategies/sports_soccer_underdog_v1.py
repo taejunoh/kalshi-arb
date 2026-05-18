@@ -63,10 +63,21 @@ class SportsSoccerUnderdogV1Strategy(SportsUnderdogV31Strategy):
     PRE_GAME_ONLY = True
     MAX_MTS_AT_ENTRY = 1440.0
 
-    # Price band: 20-29c (cap of 0.29 means 0.30 is blocked). 30-35c TEAM
-    # bucket showed ROI -60.9% n=7 in observer replay; keep clear of it.
+    # Price band: 20-24c (tightened 2026-05-18 from 0.20-0.29). Live n=40
+    # sub-band breakdown showed all alpha lives in 0.20-0.24:
+    #   .20-.24: n=22, +$320, ROI +444.7%  ★ entire alpha here
+    #   .25-.29: n=18, +$0.34, ROI +0.5%   ← flat, no contribution
+    # Live+paper n=80 confirms same split (.20-.24 +444.5% / .25-.29 -0.3%).
+    # Observer all-soccer-TEAM (n=282 settled) corroborates: .20-.25 +85.3%
+    # alpha (t=4.7σ) vs .25-.30 +1.5% (noise). Cutting .25-.29 drops fire
+    # rate ~45% but removes diluting band; expected ROI lift from +223%
+    # to ~+445% on retained fires.
+    # Lower floor 0.20 retained: .15-.20 observer +45.7% n=22 (t=2.18σ) is
+    # fragile (drop-top-3 → -19%, MLS-only WR 62% vs others 7%). Hold
+    # for separate Phase 0 evaluation.
+    # .30-.35 dead zone (-58% ROI n=29) remains correctly excluded.
     MIN_ENTRY_PRICE = 0.20
-    MAX_ENTRY_PRICE = 0.29
+    MAX_ENTRY_PRICE = 0.24
 
     # Depth gates (2026-05-12). Tier-based sizing entry/exit thresholds.
     # MIN $5 enables thin-book entries (observer replay tier1 $15-30 +142%
