@@ -490,6 +490,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             # Phase 1 paper traders promoted from crypto_observer 2026-05-14.
             "deribit_tail_fade_v1", "bid_imbalance_v1",
             "open_no_touch_v1", "atm_hold_v1",
+            "bid_imbalance_fade_v1",
+            # 2026-05-18 additions
+            "late_close_tail_v1", "deribit_atm_fade_v1",
             # Archived — surfaced in dashboard Archived section with reason.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
@@ -1311,6 +1314,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "bid_imbalance_fade": "bid_imbalance_fade_v1",
             "open_no_touch":      "open_no_touch_v1",
             "atm_hold":           "atm_hold_v1",
+            "late_close_tail":    "late_close_tail_v1",
+            "deribit_atm_skew":   "deribit_atm_fade_v1",
         }
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         async with aiosqlite.connect(database.db_path, timeout=30.0) as conn:

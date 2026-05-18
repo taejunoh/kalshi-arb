@@ -14,6 +14,7 @@ from strategies.crypto_observer import (
     BvTConsistencyObserver, SpotDriftMomentumObserver,
     OpenWideningObserver, DeribitTailSkewObserver, BidImbalanceObserver,
     OpenNoTouchObserver, AtmHoldObserver, BidImbalanceFadeObserver,
+    LateCloseTailObserver, DeribitAtmSkewObserver,
     _parse_suffix_threshold, _suffix_kind, _event_key, _build_leg,
     _lognormal_p_above, _flip,
 )
@@ -522,3 +523,130 @@ def test_bid_imbalance_fade_skips_when_ya_at_or_above_max():
     ctx = _ctx(b_legs=legs, close_s=300.0)
     assert len(BidImbalanceObserver().evaluate(ctx)) == 1
     assert BidImbalanceFadeObserver().evaluate(ctx) == []
+
+
+# ── 9. LateCloseTail (2026-05-18) ──────────────────────────────────
+
+
+def test_late_close_tail_fires_in_mid_otm_band():
+    """ya in [0.05, 0.30], dist ≥ 0.5% from spot, ≤10min to close → pred=no."""
+    obs = LateCloseTailObserver()
+    # Spot $89,750. Bucket at $90,250 = 0.56% above. ya=0.15, yb_size=50.
+    legs = [_b(90250, ya=0.15, yb=0.13, yb_size=50)]
+    sigs = obs.evaluate(_ctx(b_legs=legs, close_s=400.0))
+    assert len(sigs) == 1
+    assert sigs[0].predicted_outcome == "no"
+    assert sigs[0].market_id.endswith("B90250")
+    assert "na" in sigs[0].features
+
+
+def test_late_close_tail_skips_below_min_ya():
+    """ya < 0.05 is the tail_decay zone — late_close_tail must not double-fire."""
+    obs = LateCloseTailObserver()
+    legs = [_b(90250, ya=0.03, yb=0.02, yb_size=50)]
+    assert obs.evaluate(_ctx(b_legs=legs, close_s=400.0)) == []
+
+
+def test_late_close_tail_skips_above_max_ya():
+    """ya > 0.30 = near-ATM territory where the OTM-no-touch thesis fails."""
+    obs = LateCloseTailObserver()
+    legs = [_b(90250, ya=0.40, yb=0.38, yb_size=50)]
+    assert obs.evaluate(_ctx(b_legs=legs, close_s=400.0)) == []
+
+
+def test_late_close_tail_skips_within_dist_floor():
+    """≥0.5% from spot — closer buckets are ATM-ish, not tails."""
+    obs = LateCloseTailObserver()
+    # Bucket $50 above spot $89,750 = 0.056% — way under 0.5%.
+    legs = [_b(89800, ya=0.20, yb=0.18, yb_size=50)]
+    assert obs.evaluate(_ctx(b_legs=legs, close_s=400.0)) == []
+
+
+def test_late_close_tail_skips_inactive_bucket():
+    """yb_size below MIN cuts phantom-quoted strikes."""
+    obs = LateCloseTailObserver()
+    legs = [_b(90250, ya=0.15, yb=0.0, yb_size=0)]
+    assert obs.evaluate(_ctx(b_legs=legs, close_s=400.0)) == []
+
+
+def test_late_close_tail_skips_outside_close_window():
+    """>10min to close is the open_no_touch / mid-event regime."""
+    obs = LateCloseTailObserver()
+    legs = [_b(90250, ya=0.15, yb=0.13, yb_size=50)]
+    assert obs.evaluate(_ctx(b_legs=legs, close_s=1200.0)) == []
+
+
+# ── 10. DeribitAtmSkew (2026-05-18) ────────────────────────────────
+
+
+def test_deribit_atm_skew_fires_when_atm_ya_overshoots_lognormal():
+    """ATM bucket with ya ≥ 1.5 × P_LN, ya in [0.30, 0.70], iv present → no."""
+    obs = DeribitAtmSkewObserver()
+    # 5 min to close, IV=80% → ATM bucket P_LN ~25-30%. ya=0.60 gives
+    # ratio ~2-2.5, clears 1.5× gate.
+    legs = [_b(89650, ya=0.05, yb=0.04, yb_size=50),
+            _b(89750, ya=0.60, yb=0.58, yb_size=50),
+            _b(89850, ya=0.05, yb=0.04, yb_size=50)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=300.0, iv=0.80)
+    sigs = obs.evaluate(ctx)
+    assert len(sigs) == 1
+    assert sigs[0].market_id.endswith("B89750")
+    assert sigs[0].predicted_outcome == "no"
+    assert sigs[0].features["ratio"] >= 1.5
+    assert "na" in sigs[0].features
+
+
+def test_deribit_atm_skew_skips_when_ya_fair():
+    """ya below 1.5 × P_LN means market is pricing the ATM ~fairly.
+    1 min to close + iv=0.80 makes the ATM-bucket p_ln ~0.39, so ya=0.30
+    yields ratio ~0.77 — under the 1.5× gate."""
+    obs = DeribitAtmSkewObserver()
+    legs = [_b(89650, ya=0.05, yb=0.04, yb_size=50),
+            _b(89750, ya=0.30, yb=0.28, yb_size=50),
+            _b(89850, ya=0.05, yb=0.04, yb_size=50)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=60.0, iv=0.80)
+    assert obs.evaluate(ctx) == []
+
+
+def test_deribit_atm_skew_skips_when_atm_off_center():
+    """ATM bucket must be within 0.25 × grid of spot."""
+    obs = DeribitAtmSkewObserver()
+    # Spot 89750, closest bucket at 89400 = 350 from spot vs $100 grid → 3.5×.
+    legs = [_b(89300, ya=0.60, yb=0.58, yb_size=50),
+            _b(89400, ya=0.60, yb=0.58, yb_size=50)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=300.0, iv=0.80)
+    assert obs.evaluate(ctx) == []
+
+
+def test_deribit_atm_skew_skips_outside_ya_band():
+    obs = DeribitAtmSkewObserver()
+    legs = [_b(89650, ya=0.05, yb=0.04, yb_size=50),
+            _b(89750, ya=0.85, yb=0.83, yb_size=50),  # too rich
+            _b(89850, ya=0.05, yb=0.04, yb_size=50)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=300.0, iv=0.80)
+    assert obs.evaluate(ctx) == []
+
+
+def test_deribit_atm_skew_skips_without_iv():
+    """No Deribit IV → can't compute lognormal — skip rather than fire blind."""
+    obs = DeribitAtmSkewObserver()
+    legs = [_b(89750, ya=0.60, yb=0.58, yb_size=50)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=300.0, iv=None)
+    assert obs.evaluate(ctx) == []
+
+
+def test_deribit_atm_skew_skips_inactive_bucket():
+    obs = DeribitAtmSkewObserver()
+    legs = [_b(89750, ya=0.60, yb=0.58, yb_size=0)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=300.0, iv=0.80)
+    assert obs.evaluate(ctx) == []
+
+
+def test_deribit_atm_skew_skips_outside_close_window():
+    obs = DeribitAtmSkewObserver()
+    legs = [_b(89650, ya=0.05, yb=0.04, yb_size=50),
+            _b(89750, ya=0.60, yb=0.58, yb_size=50),
+            _b(89850, ya=0.05, yb=0.04, yb_size=50)]
+    # >10min to close
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=1200.0, iv=0.80)
+    assert obs.evaluate(ctx) == []

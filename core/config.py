@@ -200,6 +200,30 @@ class Config:
         self.ATM_HOLD_SIZE_USDC = float(os.getenv("ATM_HOLD_SIZE_USDC", "20"))
         self.ATM_HOLD_SIGNAL_FRESHNESS_S = float(os.getenv("ATM_HOLD_SIGNAL_FRESHNESS_S", "15"))
 
+        # 2026-05-18 Phase 1 promotions: two new paper traders covering
+        # gaps in the existing observer coverage.
+        # ─ late_close_tail_v1: mid-OTM (ya 0.05-0.30) fader in the 10-min
+        #   pre-close window. Broader than tail_decay (which caps at ya
+        #   0.05) and orthogonal to deribit_tail_fade (which gates by IV
+        #   ratio rather than absolute ya band). BUY NO at no_ask.
+        self.LATE_CLOSE_TAIL_SIZE_USDC = float(os.getenv("LATE_CLOSE_TAIL_SIZE_USDC", "20"))
+        self.LATE_CLOSE_TAIL_SIGNAL_FRESHNESS_S = float(os.getenv("LATE_CLOSE_TAIL_SIGNAL_FRESHNESS_S", "15"))
+        self.LATE_CLOSE_TAIL_MIN_YA = float(os.getenv("LATE_CLOSE_TAIL_MIN_YA", "0.05"))
+        self.LATE_CLOSE_TAIL_MAX_YA = float(os.getenv("LATE_CLOSE_TAIL_MAX_YA", "0.30"))
+        # Same depth-aware-sizing floor as deribit_tail_fade_v1; skip fires
+        # whose effective contract count would be below this threshold to
+        # avoid dust trades.
+        self.LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS = float(os.getenv("LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS", "1"))
+        # ─ deribit_atm_fade_v1: ATM-bucket parallel of deribit_tail_fade.
+        #   New hypothesis — Kalshi ATM may be overpriced vs Deribit-IV
+        #   lognormal (most existing alpha is in tails). BUY NO at no_ask
+        #   when ya ≥ 1.5 × P_LN and ya ∈ [0.30, 0.70].
+        self.DERIBIT_ATM_FADE_SIZE_USDC = float(os.getenv("DERIBIT_ATM_FADE_SIZE_USDC", "20"))
+        self.DERIBIT_ATM_FADE_SIGNAL_FRESHNESS_S = float(os.getenv("DERIBIT_ATM_FADE_SIGNAL_FRESHNESS_S", "15"))
+        self.DERIBIT_ATM_FADE_MIN_YA = float(os.getenv("DERIBIT_ATM_FADE_MIN_YA", "0.30"))
+        self.DERIBIT_ATM_FADE_MAX_YA = float(os.getenv("DERIBIT_ATM_FADE_MAX_YA", "0.70"))
+        self.DERIBIT_ATM_FADE_MIN_FIRE_CONTRACTS = float(os.getenv("DERIBIT_ATM_FADE_MIN_FIRE_CONTRACTS", "1"))
+
     @property
     def is_paper_mode(self) -> bool:
         return self.TRADING_MODE == "paper"
