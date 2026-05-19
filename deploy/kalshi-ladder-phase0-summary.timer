@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily ladder_crypto Phase 0 summary trigger
+Requires=kalshi-ladder-phase0-summary.service
+
+[Timer]
+# Daily at 14:00 UTC = 09:00 EST / 10:00 EDT -- user awake, before market open
+OnCalendar=*-*-* 14:00:00 UTC
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
