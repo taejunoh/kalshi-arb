@@ -109,16 +109,17 @@ async def test_watchdog_clears_warning_on_recovery(caplog):
 
 
 @pytest.mark.asyncio
-async def test_watchdog_never_tick_warns_immediately(caplog):
+async def test_watchdog_never_tick_warns_after_grace_period(caplog):
     import logging
     feed = PriceFeed()
     feed.STALENESS_WARN_THRESHOLD = 0.05
     feed.STALENESS_CHECK_INTERVAL = 0.02
     feed._subscribed.add("ETH")
+    feed._subscribe_time["ETH"] = time.time()
 
     caplog.set_level(logging.WARNING, logger="price_feed")
     task = asyncio.create_task(feed.watchdog())
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.15)
     task.cancel()
     try:
         await task
@@ -127,3 +128,30 @@ async def test_watchdog_never_tick_warns_immediately(caplog):
 
     warnings = [r for r in caplog.records if "stale" in r.getMessage() and "never" in r.getMessage()]
     assert len(warnings) >= 1
+
+
+@pytest.mark.asyncio
+async def test_watchdog_grace_period_suppresses_startup_warn(caplog):
+    """Healthy stream that delivers its first tick within grace period should NOT warn."""
+    import logging
+    feed = PriceFeed()
+    feed.STALENESS_WARN_THRESHOLD = 0.1
+    feed.STALENESS_CHECK_INTERVAL = 0.02
+    feed._subscribed.add("BTC")
+    feed._subscribe_time["BTC"] = time.time()
+
+    caplog.set_level(logging.WARNING, logger="price_feed")
+    task = asyncio.create_task(feed.watchdog())
+    # Stream delivers first message at 0.04s (well within 0.1s grace).
+    await asyncio.sleep(0.04)
+    msg = json.dumps({"s": "BTCUSDT", "p": "97400.50", "T": int(time.time() * 1000)})
+    feed._process_message("BTC", msg)
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    warnings = [r for r in caplog.records if "stale" in r.getMessage()]
+    assert len(warnings) == 0, f"expected no warnings, got: {[r.getMessage() for r in warnings]}"
