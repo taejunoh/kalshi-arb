@@ -128,11 +128,11 @@ class Database:
                 "would_fire INTEGER DEFAULT 0",
                 "phase TEXT DEFAULT 'phase0_paper'",
             ):
-                col_name = col_def.split()[0]
                 try:
                     await conn.execute(f"ALTER TABLE ladder_violations ADD COLUMN {col_def}")
-                except Exception:
-                    pass  # column already exists
+                except aiosqlite.OperationalError as e:
+                    if "duplicate column name" not in str(e).lower():
+                        raise
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS macro_consensus (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
