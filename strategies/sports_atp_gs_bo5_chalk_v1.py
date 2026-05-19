@@ -60,7 +60,10 @@ class SportsAtpGsBo5ChalkV1Strategy(SportsTraderStrategy):
         if meta is None or meta.get("format") != "BO5" or meta.get("tier") != "GS":
             return None
 
-        title = getattr(self, "_last_yes_sub_title", None)
+        # Round info ("Round Of 64", "Quarterfinal", …) lives in the full
+        # Kalshi market title, not in yes_sub_title (which carries only the
+        # player's name). Stashed alongside the slug by _stash_market_context.
+        title = getattr(self, "_last_market_title", None)
         round_code = parse_tennis_round(title or "")
         if round_code not in self.ELIGIBLE_ROUNDS:
             return None
