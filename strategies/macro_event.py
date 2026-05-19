@@ -9,6 +9,7 @@ cross-strategy exposure cap with ladder_fed.
 
 Spec: docs/superpowers/specs/2026-05-09-macro-event-trader-design.md
 """
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -142,13 +143,20 @@ class MacroEventStrategy:
         if not self._inside_window(market, now=now):
             return
 
-        # Fetch latest book
-        yes_price, no_price = self._client.get_market_prices(ticker)
-        if yes_price is None or no_price is None:
+        # Fetch latest book in a worker thread — keeps the event loop free
+        # while the two sync httpx.Client calls run. Mirrors ladder_fed /
+        # ladder_crypto / xvenue_polymarket / sports_trader fixes.
+        def _fetch_book_sync(client, t):
+            yp, np_ = client.get_market_prices(t)
+            if yp is None or np_ is None:
+                return None
+            yd, nd = client.get_order_book_depth(t)
+            return yp, np_, yd or 0.0, nd or 0.0
+
+        book = await asyncio.to_thread(_fetch_book_sync, self._client, ticker)
+        if book is None:
             return
-        yes_depth, no_depth = self._client.get_order_book_depth(ticker)
-        yes_depth = yes_depth or 0.0
-        no_depth = no_depth or 0.0
+        yes_price, no_price, yes_depth, no_depth = book
 
         # Bid/ask: prefer market-dict fields (in cents → divide by 100) so that
         # the mid is computed from the spread rather than collapsing to ask.
