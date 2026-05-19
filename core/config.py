@@ -99,10 +99,10 @@ class Config:
         # Binance WebSocket URLs (US fallback for regions where global is blocked)
         binance_base = os.getenv("BINANCE_WS_BASE", "wss://stream.binance.us:9443")
         self.BINANCE_WS_URLS = {
-            "BTC": f"{binance_base}/ws/btcusdt@aggTrade",
-            "ETH": f"{binance_base}/ws/ethusdt@aggTrade",
-            "SOL": f"{binance_base}/ws/solusdt@aggTrade",
-            "XRP": f"{binance_base}/ws/xrpusdt@aggTrade",
+            "BTC": f"{binance_base}/ws/btcusdt@trade",
+            "ETH": f"{binance_base}/ws/ethusdt@trade",
+            "SOL": f"{binance_base}/ws/solusdt@trade",
+            "XRP": f"{binance_base}/ws/xrpusdt@trade",
         }
 
         # Crypto Fair-Value Trader (B2) — single sub-strategy crypto_fair_value.

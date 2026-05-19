@@ -251,9 +251,6 @@ class CryptoFairValueStrategy:
         if db is None:
             logger.warning("OrderManager has no _db — crypto_fair_value scan disabled")
             return
-        logger.info("crypto_fair_value scan_loop started")
-        _diag_iter = 0
-        _diag_last_log = time.time()
         while True:
             try:
                 # Re-check circuit breaker EVERY iteration (kill switch + daily
@@ -277,37 +274,18 @@ class CryptoFairValueStrategy:
                 # fix from final-review I2.
                 target_tickers: list[str] = []
                 asset_markets: list[tuple[dict, str]] = []
-                _diag_spots: dict[str, Optional[float]] = {}
-                _diag_per_asset: dict[str, int] = {}
                 for asset in ("BTC", "ETH", "XRP"):
                     spot = self._price_feed.get_price(asset)
-                    _diag_spots[asset] = spot
                     if spot is None:
-                        _diag_per_asset[asset] = -1
                         continue
                     atm_markets = self._filter_atm(
                         all_markets, spot=spot, asset=asset,
                         n=cfg.CRYPTO_FAIR_ATM_WINDOW_N,
                     )
-                    _diag_per_asset[asset] = len(atm_markets)
                     for m in atm_markets:
                         target_tickers.append(m.get("ticker", ""))
                         asset_markets.append((m, asset))
                 cache.set_target_tickers(target_tickers)
-
-                _diag_iter += 1
-                if time.time() - _diag_last_log >= 30.0:
-                    cache_filled = sum(
-                        1 for t in target_tickers if cache.get(t) is not None
-                    )
-                    logger.info(
-                        f"crypto_fair_value diag: iter={_diag_iter} "
-                        f"all_markets={len(all_markets)} "
-                        f"atm_targets={len(target_tickers)} "
-                        f"cache_hit={cache_filled} "
-                        f"spots={_diag_spots} per_asset={_diag_per_asset}"
-                    )
-                    _diag_last_log = time.time()
 
                 # Second pass: per-market 9-gate evaluation
                 for m, _asset in asset_markets:
