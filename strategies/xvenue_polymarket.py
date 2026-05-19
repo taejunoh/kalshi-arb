@@ -10,6 +10,7 @@ political markets are slow-moving, no separate fast-scan task needed.
 
 Spec: docs/superpowers/specs/2026-05-11-xvenue-polymarket-trader-design.md
 """
+import asyncio
 import logging
 import time
 from datetime import datetime, timezone
@@ -112,6 +113,16 @@ class XVenuePolymarketStrategy:
         scale = max(0.5, min(3.0, abs(deviation) / cfg.XVENUE_MIN_DEVIATION))
         return min(base * scale, cfg.XVENUE_MAX_POSITION_PER_TICKER)
 
+    def _fetch_book_sync(self, ticker: str):
+        # Combined sync probe: dispatched via asyncio.to_thread so the two
+        # httpx.Client.get calls don't block the event loop. Returns None
+        # when the market has no price.
+        yp, np_ = self._client.get_market_prices(ticker)
+        if yp is None or np_ is None:
+            return None
+        depths = self._client.get_order_book_depth(ticker)
+        return yp, np_, depths
+
     async def scan_and_execute(self):
         """Single iteration — called by main bot's _strategy_loop (60s)."""
         if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
@@ -155,11 +166,16 @@ class XVenuePolymarketStrategy:
         cfg = self.config
         ticker = market.get("ticker", "")
 
-        # Fetch Kalshi book
-        yes_price, no_price = self._client.get_market_prices(ticker)
-        if yes_price is None or no_price is None:
+        # Fetch Kalshi book in a worker thread. The two sync httpx.Client
+        # calls used to run inline in this async method; with ~N slugs ×
+        # M entries × K markets they produced 211-234 s event-loop blocks
+        # per scan (SLOW_STRAT evidence), starving sports scan_loops and
+        # producing the Odds API ConnectTimeout flood. Companion fixes in
+        # ladder_fed.py and ladder_crypto.py.
+        book = await asyncio.to_thread(self._fetch_book_sync, ticker)
+        if book is None:
             return
-        depths = self._client.get_order_book_depth(ticker)
+        yes_price, no_price, depths = book
         yes_depth, no_depth = depths if depths else (0.0, 0.0)
         # Derive true 2-sided book (yes_bid ~= 1 - no_ask)
         yes_ask = yes_price
