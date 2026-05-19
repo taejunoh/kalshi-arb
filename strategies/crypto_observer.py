@@ -117,6 +117,22 @@ BID_IMBALANCE_FADE_MAX_YA = 0.60      # flipped sibling only fires below this ya
                                        # direction still wins, so the flipped
                                        # observer stays out of that zone.
 
+# ETF_FLOW_LAG: spot ETF daily volume z-score with sign of price change.
+# Big +ve → bullish creation activity → fade DOWN-strike Kalshi binaries
+# (predict "no" on strikes below spot). Big -ve → bearish redemption.
+ETF_FLOW_MIN_ABS_Z = 1.5         # ≥1.5 sigma above 20-day vol baseline
+ETF_FLOW_MTS_MAX_S = 86400        # within 24h of close
+ETF_FLOW_MIN_YA = 0.05
+ETF_FLOW_MIN_YB_SIZE = 30
+#
+# CME_BASIS_FADE: CME front-month futures vs spot basis. Sustained
+# positive basis (contango) → fade DOWN-strikes. Negative basis
+# (backwardation) → fade UP-strikes.
+CME_BASIS_MIN_ABS = 0.002        # ≥0.2% basis (typical noise level ~0.05%)
+CME_BASIS_MTS_MAX_S = 86400
+CME_BASIS_MIN_YA = 0.05
+CME_BASIS_MIN_YB_SIZE = 30
+
 # 2026-05-19 Phase 0 additions — observers that exploit cross-venue
 # disagreement beyond the Deribit option-chain lognormal model.
 #
@@ -261,6 +277,8 @@ class EventContext:
     # 2026-05-19 Phase 0 additions (None if Deribit fetch failed this tick)
     funding_8h: Optional[float] = None   # signed decimal, e.g. 0.0005 = +0.05%/8h
     iv_skew: Optional[float] = None      # put_IV - call_IV at ±10% strike, decimal
+    etf_flow_z: Optional[float] = None   # signed volume z-score on IBIT/ETHA
+    cme_basis: Optional[float] = None    # (futures_close - spot) / spot
 
     def atm_bucket_index(self) -> Optional[int]:
         """Index in b_legs of the bucket whose center is closest to spot."""
@@ -867,6 +885,95 @@ class BidImbalanceFadeObserver(BaseObserver):
         return out
 
 
+class EtfFlowLagObserver(BaseObserver):
+    """Phase 0: spot ETF volume-z-score as directional signal.
+
+    When |signed volume z| ≥ ETF_FLOW_MIN_ABS_Z (1.5σ over 20-day baseline,
+    with sign from same-day price direction), ETF demand is one-sided.
+    Phase 0 thesis: this leads Kalshi binary pricing.
+
+      etf_flow_z > 0 (heavy buying)    → fade DOWNSIDE strikes (predict "no")
+      etf_flow_z < 0 (heavy selling)   → fade UPSIDE strikes (predict "no")
+    """
+    name = "etf_flow_lag"
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        if ctx.etf_flow_z is None:
+            return []
+        if abs(ctx.etf_flow_z) < ETF_FLOW_MIN_ABS_Z:
+            return []
+        if ctx.close_time_secs is None or ctx.close_time_secs <= 0:
+            return []
+        if ctx.close_time_secs > ETF_FLOW_MTS_MAX_S:
+            return []
+        out: list[Signal] = []
+        for leg in ctx.b_legs:
+            if leg.ya < ETF_FLOW_MIN_YA:
+                continue
+            if leg.yb_size < ETF_FLOW_MIN_YB_SIZE:
+                continue
+            # bullish flow (z > 0) → fade strikes BELOW spot
+            # bearish flow (z < 0) → fade strikes ABOVE spot
+            if ctx.etf_flow_z > 0 and leg.threshold >= ctx.spot:
+                continue
+            if ctx.etf_flow_z < 0 and leg.threshold <= ctx.spot:
+                continue
+            out.append(Signal(
+                observer=self.name, series=ctx.series,
+                event_key=ctx.event_key, market_id=leg.ticker,
+                predicted_outcome="no",
+                features={"ya": leg.ya, "no_ask": leg.na,
+                          "etf_flow_z": round(ctx.etf_flow_z, 3),
+                          "spot": ctx.spot, "strike": leg.threshold,
+                          "side": "fade_downside" if ctx.etf_flow_z > 0 else "fade_upside",
+                          "mts_s": round(ctx.close_time_secs, 1)},
+            ))
+        return out
+
+
+class CmeBasisFadeObserver(BaseObserver):
+    """Phase 0: CME futures basis (contango/backwardation) as directional.
+
+    When |basis| ≥ CME_BASIS_MIN_ABS (~0.2%), futures pricing is structurally
+    skewed. Phase 0 thesis: pro futures market leads Kalshi pricing.
+
+      basis > 0 (contango, futures > spot)        → fade DOWN-strikes
+      basis < 0 (backwardation, futures < spot)   → fade UP-strikes
+    """
+    name = "cme_basis_fade"
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        if ctx.cme_basis is None:
+            return []
+        if abs(ctx.cme_basis) < CME_BASIS_MIN_ABS:
+            return []
+        if ctx.close_time_secs is None or ctx.close_time_secs <= 0:
+            return []
+        if ctx.close_time_secs > CME_BASIS_MTS_MAX_S:
+            return []
+        out: list[Signal] = []
+        for leg in ctx.b_legs:
+            if leg.ya < CME_BASIS_MIN_YA:
+                continue
+            if leg.yb_size < CME_BASIS_MIN_YB_SIZE:
+                continue
+            if ctx.cme_basis > 0 and leg.threshold >= ctx.spot:
+                continue
+            if ctx.cme_basis < 0 and leg.threshold <= ctx.spot:
+                continue
+            out.append(Signal(
+                observer=self.name, series=ctx.series,
+                event_key=ctx.event_key, market_id=leg.ticker,
+                predicted_outcome="no",
+                features={"ya": leg.ya, "no_ask": leg.na,
+                          "cme_basis": round(ctx.cme_basis, 5),
+                          "spot": ctx.spot, "strike": leg.threshold,
+                          "side": "fade_downside" if ctx.cme_basis > 0 else "fade_upside",
+                          "mts_s": round(ctx.close_time_secs, 1)},
+            ))
+        return out
+
+
 class FundingRateFadeObserver(BaseObserver):
     """Phase 0: Deribit perp funding rate signal.
 
@@ -978,6 +1085,8 @@ OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
     LateCloseTailObserver, DeribitAtmSkewObserver,
     # 2026-05-19 Phase 0 additions: cross-venue Deribit signals
     FundingRateFadeObserver, VolSkewFadeObserver,
+    # 2026-05-19 Phase 0: external-data signals (yfinance ETF + CME)
+    EtfFlowLagObserver, CmeBasisFadeObserver,
 )
 
 
@@ -1161,6 +1270,16 @@ class CryptoObserverStrategy:
                     skew_by_asset[ctx.asset] = None
             ctx.funding_8h = funding_by_asset[ctx.asset]
             ctx.iv_skew = skew_by_asset[ctx.asset]
+            # 2026-05-19: yfinance-backed external-data observers.
+            # TTL-cached 10 min — daily data, ok to call every scan.
+            try:
+                from core.market_extras import get_etf_flow_zscore, get_cme_basis
+                ctx.etf_flow_z = get_etf_flow_zscore(ctx.asset)
+                ctx.cme_basis = get_cme_basis(ctx.asset)
+            except Exception as e:
+                logger.warning(f"market_extras fetch failed {ctx.asset}: {e}")
+                ctx.etf_flow_z = None
+                ctx.cme_basis = None
 
         db = getattr(self._order_manager, "_db", None)
         if db is None:
