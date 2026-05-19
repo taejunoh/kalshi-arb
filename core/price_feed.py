@@ -13,6 +13,8 @@ logger = logging.getLogger("price_feed")
 
 class PriceFeed:
     STALE_THRESHOLD = 5.0
+    STALENESS_WARN_THRESHOLD = 60.0
+    STALENESS_CHECK_INTERVAL = 15.0
     VOLATILITY_WINDOW = 120  # keep last 120 ticks for volatility calculation
 
     def __init__(self):
@@ -21,6 +23,8 @@ class PriceFeed:
         self._candle_opens: dict[str, float] = {}
         self._candle_window_start: dict[str, int] = {}
         self._price_history: dict[str, deque] = {}  # symbol -> deque of (time, price)
+        self._subscribed: set[str] = set()
+        self._warned_stale: set[str] = set()
 
     def get_price(self, symbol: str) -> Optional[float]:
         return self._prices.get(symbol)
@@ -78,7 +82,38 @@ class PriceFeed:
         now = int(time.time())
         return now - (now % 900)
 
+    async def watchdog(self):
+        """Periodically check subscribed symbols for stream staleness.
+
+        binance.us has silently dropped streams in the past (e.g., @aggTrade
+        deprecation 2026-05) where the WS stays connected but emits zero
+        messages. subscribe() only catches connect/disconnect errors, so this
+        loop flags symbols that haven't ticked within STALENESS_WARN_THRESHOLD.
+        """
+        while True:
+            await asyncio.sleep(self.STALENESS_CHECK_INTERVAL)
+            now = time.time()
+            for symbol in list(self._subscribed):
+                last = self._last_update.get(symbol)
+                if last is None:
+                    gap = None
+                else:
+                    gap = now - last
+                stale = gap is None or gap > self.STALENESS_WARN_THRESHOLD
+                if stale and symbol not in self._warned_stale:
+                    gap_str = f"{gap:.0f}s" if gap is not None else "never"
+                    logger.warning(
+                        f"{symbol} price feed stale: no tick in {gap_str} "
+                        f"(threshold {self.STALENESS_WARN_THRESHOLD:.0f}s) — "
+                        f"WS may be silently dead"
+                    )
+                    self._warned_stale.add(symbol)
+                elif not stale and symbol in self._warned_stale:
+                    logger.info(f"{symbol} price feed recovered (last tick {gap:.1f}s ago)")
+                    self._warned_stale.discard(symbol)
+
     async def subscribe(self, symbol: str, ws_url: str):
+        self._subscribed.add(symbol)
         backoff = 1
         logged_max_backoff = False
         while True:

@@ -442,7 +442,7 @@ class Bot:
             logger.info("Bot tasks cancelled")
 
     async def _price_feed_task(self):
-        tasks = []
+        tasks = [asyncio.create_task(self.price_feed.watchdog())]
         for symbol, url in self.config.BINANCE_WS_URLS.items():
             tasks.append(asyncio.create_task(self.price_feed.subscribe(symbol, url)))
         await asyncio.gather(*tasks)
