@@ -1,0 +1,17 @@
+[Unit]
+Description=Schedule for Phase 0 cross-venue observer eval — fires on 5/26 + 6/02
+Requires=kalshi-phase0-observer-eval.service
+
+[Timer]
+# Two scheduled evals tied to [[vol_skew_fade_roi_audit_2026-05-19]] cohort:
+# - 2026-05-26 13:00 UTC = 09:00 EDT = 1-week post-deploy
+# - 2026-06-02 13:00 UTC = 2-week deeper sample (if 5/26 inconclusive)
+# After 6/02 the timer goes dormant (no further OnCalendar entries).
+# Delete or disable manually if a verdict at 5/26 resolves it earlier.
+OnCalendar=2026-05-26 13:00:00 UTC
+OnCalendar=2026-06-02 13:00:00 UTC
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
