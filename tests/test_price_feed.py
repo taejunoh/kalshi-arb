@@ -50,6 +50,50 @@ async def test_process_binance_kline_message():
 
 
 @pytest.mark.asyncio
+async def test_book_ticker_parses_mid():
+    feed = PriceFeed()
+    msg = json.dumps({"u": 1, "s": "BTCUSDT", "b": "76700.00", "B": "0.5", "a": "76710.00", "A": "0.3"})
+    feed._process_book_ticker("BTC", msg)
+    assert feed.get_mid("BTC") == 76705.0
+    assert feed.is_mid_stale("BTC") is False
+
+
+@pytest.mark.asyncio
+async def test_book_ticker_rejects_inverted_or_zero():
+    feed = PriceFeed()
+    # ask < bid (crossed book) → reject
+    bad = json.dumps({"u": 1, "s": "BTCUSDT", "b": "76710", "a": "76700"})
+    feed._process_book_ticker("BTC", bad)
+    assert feed.get_mid("BTC") is None
+    # zero ask → reject
+    bad2 = json.dumps({"u": 2, "s": "BTCUSDT", "b": "76700", "a": "0"})
+    feed._process_book_ticker("BTC", bad2)
+    assert feed.get_mid("BTC") is None
+
+
+@pytest.mark.asyncio
+async def test_is_mid_stale_when_never_seen():
+    feed = PriceFeed()
+    assert feed.is_mid_stale("BTC") is True
+
+
+@pytest.mark.asyncio
+async def test_price_history_dedups_duplicate_prices():
+    feed = PriceFeed()
+    base = json.dumps({"s": "BTCUSDT", "p": "76000.0", "T": 0})
+    same = json.dumps({"s": "BTCUSDT", "p": "76000.0", "T": 0})
+    diff = json.dumps({"s": "BTCUSDT", "p": "76050.0", "T": 0})
+    feed._process_message("BTC", base)
+    feed._process_message("BTC", same)
+    feed._process_message("BTC", same)
+    feed._process_message("BTC", diff)
+    # _prices reflects latest, _last_update bumped every msg, but history
+    # only retains distinct-price ticks.
+    assert feed.get_price("BTC") == 76050.0
+    assert len(feed._price_history["BTC"]) == 2
+
+
+@pytest.mark.asyncio
 async def test_process_message_ignores_unknown_format():
     feed = PriceFeed()
     msg = json.dumps({"e": "ping", "E": 0})

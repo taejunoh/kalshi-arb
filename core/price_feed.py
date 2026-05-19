@@ -26,6 +26,11 @@ class PriceFeed:
         self._subscribed: set[str] = set()
         self._subscribe_time: dict[str, float] = {}
         self._warned_stale: set[str] = set()
+        # bookTicker mid (parallel data source for crypto_fair_value_mid_v1).
+        # Decoupled from _prices so the kline-derived last-trade signal is
+        # untouched.
+        self._mid_prices: dict[str, float] = {}
+        self._mid_last_update: dict[str, float] = {}
 
     def get_price(self, symbol: str) -> Optional[float]:
         return self._prices.get(symbol)
@@ -35,6 +40,15 @@ class PriceFeed:
 
     def is_stale(self, symbol: str) -> bool:
         last = self._last_update.get(symbol)
+        if last is None:
+            return True
+        return (time.time() - last) > self.STALE_THRESHOLD
+
+    def get_mid(self, symbol: str) -> Optional[float]:
+        return self._mid_prices.get(symbol)
+
+    def is_mid_stale(self, symbol: str) -> bool:
+        last = self._mid_last_update.get(symbol)
         if last is None:
             return True
         return (time.time() - last) > self.STALE_THRESHOLD
@@ -72,13 +86,18 @@ class PriceFeed:
         else:
             return
         now = time.time()
+        prev_price = self._prices.get(symbol)
         self._prices[symbol] = price
         self._last_update[symbol] = now
 
-        # Track price history for volatility calculation
-        if symbol not in self._price_history:
-            self._price_history[symbol] = deque(maxlen=self.VOLATILITY_WINDOW)
-        self._price_history[symbol].append((now, price))
+        # Volatility history: skip duplicate consecutive prices. @kline_1m emits
+        # a tick every second even when no trade occurred, so close stays flat
+        # for low-volume pairs — appending duplicates inflates the window with
+        # zero log-returns and deflates realized vol.
+        if prev_price is None or price != prev_price:
+            if symbol not in self._price_history:
+                self._price_history[symbol] = deque(maxlen=self.VOLATILITY_WINDOW)
+            self._price_history[symbol].append((now, price))
 
         current_window = self._get_15min_window()
         prev_window = self._candle_window_start.get(symbol)
@@ -124,6 +143,59 @@ class PriceFeed:
                 elif not stale and symbol in self._warned_stale:
                     logger.info(f"{symbol} price feed recovered (last tick {gap:.1f}s ago)")
                     self._warned_stale.discard(symbol)
+
+    def _process_book_ticker(self, symbol: str, raw_msg: str):
+        # @bookTicker format: {"u":..., "s":"BTCUSDT", "b":"bid", "B":"bidQty",
+        # "a":"ask", "A":"askQty"}. We compute mid = (bid + ask) / 2 and store
+        # separately from kline-derived _prices.
+        data = json.loads(raw_msg)
+        bid_raw = data.get("b")
+        ask_raw = data.get("a")
+        if bid_raw is None or ask_raw is None:
+            return
+        try:
+            bid = float(bid_raw)
+            ask = float(ask_raw)
+        except (TypeError, ValueError):
+            return
+        if bid <= 0 or ask <= 0 or ask < bid:
+            return
+        self._mid_prices[symbol] = (bid + ask) / 2.0
+        self._mid_last_update[symbol] = time.time()
+
+    async def subscribe_book_ticker(self, symbol: str, ws_url: str):
+        """Subscribe to @bookTicker stream for mid-price tracking.
+
+        Mid is updated on every L1 change (very high frequency). Strategies
+        consuming mid should read get_mid() in their scan loop — there is no
+        per-tick callback or history buffer (vol still comes from kline).
+        """
+        backoff = 1
+        logged_max_backoff = False
+        while True:
+            try:
+                async with websockets.connect(ws_url, open_timeout=10) as ws:
+                    logger.info(f"Connected to {symbol} bookTicker feed")
+                    backoff = 1
+                    logged_max_backoff = False
+                    async for msg in ws:
+                        self._process_book_ticker(symbol, msg)
+            except asyncio.CancelledError:
+                logger.info(f"{symbol} bookTicker shutting down")
+                return
+            except (websockets.ConnectionClosed, ConnectionRefusedError, OSError) as e:
+                if backoff < 30:
+                    logger.warning(f"{symbol} bookTicker disconnected: {e}. Reconnecting in {backoff}s...")
+                elif not logged_max_backoff:
+                    logger.warning(f"{symbol} bookTicker unreachable, retrying silently every {backoff}s")
+                    logged_max_backoff = True
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30)
+            except Exception as e:
+                if not logged_max_backoff:
+                    logger.error(f"{symbol} bookTicker unexpected error: {e}")
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30)
 
     async def subscribe(self, symbol: str, ws_url: str):
         self._subscribed.add(symbol)
