@@ -2,6 +2,7 @@ import asyncio
 import logging
 import signal
 import sys
+import time
 
 from core.config import Config
 from core.database import Database
@@ -685,13 +686,24 @@ class Bot:
             # scripts/polymarket_quote_cron.py running separately.
             ("xvenue_polymarket", self.xvenue_polymarket),
         ]
+        # ── TEMP DEBUG 2026-05-19: log per-strategy entry to find hang ──
+        _strat_iter = 0
         while self._running:
+            _strat_iter += 1
+            _iter_start = time.time()
             for name, strategy in strategies:
+                _t0 = time.time()
+                if _strat_iter <= 3:
+                    logger.warning(f"[STRAT_DEBUG] iter={_strat_iter} start={name}")
                 try:
                     await strategy.scan_and_execute()
                 except Exception as e:
                     logger.error(f"{name} loop error: {e}")
                     await self.notifier.notify_error(f"{name}: {e}")
+                _dt = time.time() - _t0
+                if _dt > 5.0 or _strat_iter <= 3:
+                    logger.warning(f"[STRAT_DEBUG] iter={_strat_iter} done={name} dt={_dt:.2f}s")
+            logger.warning(f"[STRAT_DEBUG] iter={_strat_iter} FULL_LOOP dt={time.time()-_iter_start:.2f}s")
             await asyncio.sleep(0.2)
 
     def _reconcile_resting_orders(self):
