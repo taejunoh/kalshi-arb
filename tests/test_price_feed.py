@@ -37,6 +37,27 @@ async def test_get_price_returns_none_for_unknown():
 
 
 @pytest.mark.asyncio
+async def test_process_binance_kline_message():
+    feed = PriceFeed()
+    msg = json.dumps({
+        "e": "kline",
+        "E": int(time.time() * 1000),
+        "s": "BTCUSDT",
+        "k": {"t": 0, "T": 0, "s": "BTCUSDT", "i": "1m", "c": "76950.25", "o": "76900", "h": "77000", "l": "76800", "v": "1.0"},
+    })
+    feed._process_message("BTC", msg)
+    assert feed.get_price("BTC") == 76950.25
+
+
+@pytest.mark.asyncio
+async def test_process_message_ignores_unknown_format():
+    feed = PriceFeed()
+    msg = json.dumps({"e": "ping", "E": 0})
+    feed._process_message("BTC", msg)
+    assert feed.get_price("BTC") is None
+
+
+@pytest.mark.asyncio
 async def test_watchdog_warns_when_stream_silently_dead(caplog):
     import logging
     feed = PriceFeed()

@@ -96,13 +96,16 @@ class Config:
         self.TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
         self.TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
-        # Binance WebSocket URLs (US fallback for regions where global is blocked)
+        # Binance WebSocket URLs (US fallback for regions where global is blocked).
+        # 2026-05-19: binance.us silently stopped emitting @trade / @aggTrade /
+        # @miniTicker (no error, just zero messages). @kline_1m still works and
+        # k.c (close) tracks last trade at ~1Hz, which is sufficient for spot.
         binance_base = os.getenv("BINANCE_WS_BASE", "wss://stream.binance.us:9443")
         self.BINANCE_WS_URLS = {
-            "BTC": f"{binance_base}/ws/btcusdt@trade",
-            "ETH": f"{binance_base}/ws/ethusdt@trade",
-            "SOL": f"{binance_base}/ws/solusdt@trade",
-            "XRP": f"{binance_base}/ws/xrpusdt@trade",
+            "BTC": f"{binance_base}/ws/btcusdt@kline_1m",
+            "ETH": f"{binance_base}/ws/ethusdt@kline_1m",
+            "SOL": f"{binance_base}/ws/solusdt@kline_1m",
+            "XRP": f"{binance_base}/ws/xrpusdt@kline_1m",
         }
 
         # Crypto Fair-Value Trader (B2) — single sub-strategy crypto_fair_value.

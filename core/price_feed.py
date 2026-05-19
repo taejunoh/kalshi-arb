@@ -61,7 +61,15 @@ class PriceFeed:
 
     def _process_message(self, symbol: str, raw_msg: str):
         data = json.loads(raw_msg)
-        price = float(data["p"])
+        # @trade / @aggTrade emit {"p": "..."}; @kline_* emits {"k": {"c": "..."}}.
+        # binance.us silent-killed trade event streams 2026-05-19, so we now run
+        # on @kline_1m by default but keep @trade parsing for backwards-compat.
+        if "p" in data:
+            price = float(data["p"])
+        elif "k" in data and "c" in data["k"]:
+            price = float(data["k"]["c"])
+        else:
+            return
         now = time.time()
         self._prices[symbol] = price
         self._last_update[symbol] = now
