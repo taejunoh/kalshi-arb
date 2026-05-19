@@ -30,6 +30,8 @@ class SportsAtpGsBo5ChalkV1Strategy(SportsTraderStrategy):
         SportsTraderStrategy.OBSERVATION_ONLY_SPORTS - {"ATP"}
     )
 
+    INDIVIDUAL_SPORTS_OPT_IN = True
+
     # Hard blocklist — OBSERVATION_ONLY_SPORTS subtraction only removes
     # ATP from the observation set; team sports + WTA were never in that
     # set so without this they'd flow through. Target: ATP only.

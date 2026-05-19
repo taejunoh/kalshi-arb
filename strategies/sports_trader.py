@@ -6,7 +6,7 @@ import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Union
 
 import httpx
 
@@ -232,6 +232,84 @@ SPORT_SHORT_BY_TOKEN = {
     "ATPMATCH": "ATP", "WTAMATCH": "WTA", "UFCFIGHT": "UFC",  # NEW 2026-05-11
 }
 
+# Individual-sport series — Kalshi market title carries player/fighter names
+# rather than team city/nickname, so the matcher and YES-leg detection use
+# yes_sub_title against home_team/away_team instead of the team-name path.
+# Also gated by INDIVIDUAL_SPORTS_OPT_IN at scan_and_execute level so team-
+# sport strategies never reach these tickers regardless of fetch state.
+INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
+
+# Tennis fans out across concurrent tournaments. Each Kalshi series can have
+# several active Odds API endpoints running in parallel (e.g., French Open +
+# Hamburg Open in May/June). Update via tennis_endpoint_rotation cron alerts
+# — currently-active slugs are surfaced by /v4/sports?all=true filter on
+# active=True. UFC stays single-endpoint (mma_mixed_martial_arts, year-round).
+TENNIS_ATP_SLUGS: tuple[str, ...] = (
+    "tennis_atp_french_open",     # 5/25 – 6/8 (Roland Garros)
+    "tennis_atp_hamburg_open",    # ATP 500 clay, late May
+)
+TENNIS_WTA_SLUGS: tuple[str, ...] = (
+    "tennis_wta_french_open",     # 5/25 – 6/8 (Roland Garros)
+    "tennis_wta_strasbourg",      # WTA 250 clay, week before RG
+)
+
+# Single source of truth for Kalshi series → Odds API sport key(s). Tennis
+# values are tuples (multi-slug fan-out); single-tournament sports are str.
+# Both observer and live scan_and_execute iterate this map; tagged-game
+# bookkeeping is centralised in `_fetch_odds_multi`.
+SPORT_ODDS_KEYS: dict[str, Union[str, tuple[str, ...]]] = {
+    "KXNBAGAME": "basketball_nba",
+    "KXWNBAGAME": "basketball_wnba",
+    "KXMLBGAME": "baseball_mlb",
+    "KXNHLGAME": "icehockey_nhl",
+    "KXNPBGAME": "baseball_npb",
+    "KXKBOGAME": "baseball_kbo",
+    "KXMLSGAME": "soccer_usa_mls",
+    "KXEPLGAME": "soccer_epl",
+    "KXLALIGAGAME": "soccer_spain_la_liga",
+    "KXUCLGAME": "soccer_uefa_champs_league",
+    "KXBUNDESLIGAGAME": "soccer_germany_bundesliga",
+    "KXATPMATCH": TENNIS_ATP_SLUGS,
+    "KXWTAMATCH": TENNIS_WTA_SLUGS,
+    "KXUFCFIGHT": "mma_mixed_martial_arts",
+}
+
+
+def _name_overlap_score(yes_lc: str, name_lc: str) -> float:
+    """How well does `yes_lc` match `name_lc`? See `_individual_yes_is_home`."""
+    if not yes_lc or not name_lc:
+        return 0.0
+    if yes_lc == name_lc:
+        return 1.0
+    yes_tok = set(yes_lc.split())
+    name_tok = set(name_lc.split())
+    if not yes_tok or not name_tok:
+        return 0.0
+    if not (yes_tok.issubset(name_tok) or name_tok.issubset(yes_tok)):
+        return 0.0
+    smaller, larger = min(len(yes_tok), len(name_tok)), max(len(yes_tok), len(name_tok))
+    return 0.5 + 0.5 * (smaller / larger)
+
+
+def _individual_yes_is_home(yes_sub_title: str, home_lc: str, away_lc: str) -> Optional[bool]:
+    """Decide which side (home vs away) of the matched game `yes_sub_title`
+    refers to. Returns None if neither side overlaps.
+
+    For collisions (e.g., "Diaz vs Diaz") pick the higher overlap score;
+    equal scores → home wins (mirrors the soccer fallback).
+    """
+    if not yes_sub_title:
+        return None
+    yes_lc = yes_sub_title.strip().lower()
+    if not yes_lc:
+        return None
+    home_score = _name_overlap_score(yes_lc, home_lc)
+    away_score = _name_overlap_score(yes_lc, away_lc)
+    if home_score == 0.0 and away_score == 0.0:
+        return None
+    return home_score >= away_score
+
+
 # Tennis tournament metadata for cell-expansion analysis. Keys are Odds API
 # endpoint slugs (matches tournament_slug column in odds_observations).
 # Values document tier (GS/M1000/500/250), surface (clay/grass/hard),
@@ -270,12 +348,14 @@ TENNIS_SLUG_META = {
     "tennis_atp_barcelona_open":      {"tier": "ATP500",  "surface": "clay",  "format": "BO3"},
     "tennis_atp_dubai":               {"tier": "ATP500",  "surface": "hard",  "format": "BO3"},
     "tennis_atp_qatar_open":          {"tier": "ATP500",  "surface": "hard",  "format": "BO3"},
+    "tennis_atp_hamburg_open":        {"tier": "ATP500",  "surface": "clay",  "format": "BO3"},
     "tennis_atp_munich":              {"tier": "ATP250",  "surface": "clay",  "format": "BO3"},
     "tennis_atp_china_open":          {"tier": "ATP500",  "surface": "hard",  "format": "BO3"},
     "tennis_wta_charleston_open":     {"tier": "WTA500",  "surface": "clay",  "format": "BO3"},
     "tennis_wta_stuttgart_open":      {"tier": "WTA500",  "surface": "clay",  "format": "BO3"},
     "tennis_wta_dubai":               {"tier": "WTA500",  "surface": "hard",  "format": "BO3"},
     "tennis_wta_qatar_open":          {"tier": "WTA500",  "surface": "hard",  "format": "BO3"},
+    "tennis_wta_strasbourg":          {"tier": "WTA250",  "surface": "clay",  "format": "BO3"},
 }
 
 # Regex for extracting round from a Kalshi tennis market title.
@@ -529,6 +609,18 @@ class SportsTraderStrategy:
     # × sport combo shows no edge in either region. Sport codes match the
     # 3-letter ticker prefix: NBA, MLB, NHL.
     SPORT_BLOCKLIST: set[str] = frozenset()
+    # Defense-in-depth for individual-sport series (KXATPMATCH / KXWTAMATCH /
+    # KXUFCFIGHT). Ticker shape is fundamentally different: yes_sub_title
+    # carries a player/fighter name, not a team city. Team-sport strategies
+    # have no edge model for these markets and historically relied on the
+    # odds-fetch path silently returning [] to skip them. Now that the fetch
+    # path actually returns games, this opt-in flag is the canonical gate.
+    # Subclasses targeting tennis/MMA must set True. Skip happens BEFORE
+    # SPORT_BLOCKLIST / OBSERVATION_ONLY_SPORTS / matcher — see
+    # scan_and_execute. Reason: 2026-05-18 incident — sports_soccer_underdog_v1
+    # and sports_underdog_v37 fired on 6 KXATPMATCH tickers because their
+    # SPORT_BLOCKLIST overrides did not include ATP/WTA/UFC.
+    INDIVIDUAL_SPORTS_OPT_IN: bool = False
     # Playoff-blocklist. Skip entries when the ticker's sport is in this
     # set AND falls within its playoff window per core.season calendar.
     # Distinct from SPORT_BLOCKLIST in that it auto-deactivates when the
@@ -814,6 +906,27 @@ class SportsTraderStrategy:
                 self.odds_api_usage = hit[2]
                 return hit[1]
             return []
+
+    async def _fetch_odds_multi(
+        self, value: Union[str, tuple[str, ...], list[str]]
+    ) -> list[dict]:
+        """Fetch games from one or more Odds API sport slugs.
+
+        Tennis series map to a tuple of concurrently-active tournament slugs
+        (French Open + Hamburg, etc.). Each returned game is tagged with
+        `_tournament_slug` so downstream metadata lookups (TENNIS_SLUG_META,
+        observer tournament_slug column) work without re-deriving the source.
+        Single-slug team sports get the same tag for symmetry.
+        """
+        slugs = (value,) if isinstance(value, str) else tuple(value)
+        out: list[dict] = []
+        for slug in slugs:
+            games = await self._fetch_odds(slug)
+            for g in games:
+                tagged = dict(g)
+                tagged["_tournament_slug"] = slug
+                out.append(tagged)
+        return out
 
     # Home court/field advantage — NOT applied to consensus (already priced in by bookmakers)
     # Kept as reference only. Only used if Kalshi specifically misprices home/away.
@@ -1175,15 +1288,20 @@ class SportsTraderStrategy:
 
         Called by scan_and_execute() immediately before evaluate(). Subclasses
         (A2/A3/C tennis strategies) read these as self._last_tournament_slug,
-        self._last_yes_sub_title, self._last_mts. Production wiring added
-        2026-05-15 as part of tennis/MMA portfolio (Task 8).
+        self._last_yes_sub_title, self._last_mts. tournament_slug is sourced
+        from the matched game's `_tournament_slug` (injected by
+        _fetch_odds_multi) — Kalshi market dicts don't carry tournament_slug.
+        Market dicts may pre-populate `tournament_slug` for tests.
         """
-        self._last_tournament_slug = market.get("tournament_slug")
-        self._last_yes_sub_title = market.get("yes_sub_title")
         if game is not None:
+            self._last_tournament_slug = (
+                game.get("_tournament_slug") or market.get("tournament_slug")
+            )
             self._last_mts = _commence_time_to_minutes(game.get("commence_time"))
         else:
+            self._last_tournament_slug = market.get("tournament_slug")
             self._last_mts = None
+        self._last_yes_sub_title = market.get("yes_sub_title")
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
@@ -1238,24 +1356,14 @@ class SportsTraderStrategy:
             return
         self._last_scan_time = now
 
-        # Fetch odds from API
-        sport_map = {
-            "KXNBAGAME": "basketball_nba",
-            "KXWNBAGAME": "basketball_wnba",
-            "KXMLBGAME": "baseball_mlb",
-            "KXNHLGAME": "icehockey_nhl",
-            "KXNPBGAME": "baseball_npb",
-            "KXKBOGAME": "baseball_kbo",
-            "KXMLSGAME": "soccer_usa_mls",
-            "KXEPLGAME": "soccer_epl",
-            "KXLALIGAGAME": "soccer_spain_la_liga",
-            "KXUCLGAME": "soccer_uefa_champs_league",
-            "KXBUNDESLIGAGAME": "soccer_germany_bundesliga",
-        }
+        # Fetch odds from API. Tennis values are tuples (multi-tournament
+        # fan-out) — _fetch_odds_multi tags each game with _tournament_slug
+        # so per-series metadata (TENNIS_SLUG_META) is resolvable downstream.
+        sport_map = SPORT_ODDS_KEYS
 
         all_odds = {}
-        for series, sport_key in sport_map.items():
-            games = await self._fetch_odds(sport_key)
+        for series, sport_value in sport_map.items():
+            games = await self._fetch_odds_multi(sport_value)
             all_odds[series] = games
 
         trades_attempted = 0
@@ -1357,6 +1465,18 @@ class SportsTraderStrategy:
                         )
                         continue
 
+                # Individual-sport opt-in guard. Tennis/MMA markets use a
+                # player/fighter name in yes_sub_title and an entirely separate
+                # matcher path; team-sport strategies have no edge model and
+                # must never reach evaluate() on these tickers. Strategies
+                # targeting tennis/MMA explicitly set INDIVIDUAL_SPORTS_OPT_IN
+                # = True. Skipping here (before OBSERVATION_ONLY / SPORT_BLOCKLIST /
+                # matcher) means a subclass cannot accidentally re-enable
+                # individual-sport routing by overriding the gates below.
+                # See 2026-05-18 incident notes on INDIVIDUAL_SPORTS_OPT_IN.
+                if not self.INDIVIDUAL_SPORTS_OPT_IN and series in INDIVIDUAL_SPORT_SERIES:
+                    continue
+
                 # Observation-only sports (data collection without live trading).
                 # Added to sport_map so the observer records them, but live
                 # trading strategies must explicitly promote a sport before
@@ -1410,8 +1530,19 @@ class SportsTraderStrategy:
                 if ya < 0.05 or na < 0.05:
                     continue
 
-                # Match to odds data
-                matched_game = self._match_kalshi_to_odds(title, odds_games, kalshi_ticker=ticker)
+                # Match to odds data. Individual sports (tennis/MMA) carry the
+                # player/fighter name in yes_sub_title rather than team city, so
+                # the matcher and YES-leg detection take a separate path.
+                is_individual = series in INDIVIDUAL_SPORT_SERIES
+                yes_sub_for_match = market.get("yes_sub_title") or ""
+                if is_individual:
+                    matched_game = _match_individual_sport_to_odds(
+                        yes_sub_for_match, odds_games, kalshi_ticker=ticker,
+                    )
+                else:
+                    matched_game = self._match_kalshi_to_odds(
+                        title, odds_games, kalshi_ticker=ticker,
+                    )
                 if not matched_game:
                     continue
 
@@ -1431,17 +1562,30 @@ class SportsTraderStrategy:
 
                 # Determine which team YES refers to using yes_sub_title (most reliable)
                 # e.g., ticker -MIN has yes_sub_title="Minnesota", -DET has "Detroit"
-                yes_team = market.get("yes_sub_title", "").lower()
+                yes_team = yes_sub_for_match.lower()
                 home = consensus["home_team"].lower()
                 away = consensus["away_team"].lower()
 
+                if is_individual:
+                    # Player/fighter name matching — handles collisions like
+                    # "Diaz vs Diaz" by scoring both sides.
+                    is_yes_home = _individual_yes_is_home(yes_team, home, away)
+                    if is_yes_home is None:
+                        logger.debug(
+                            f"[SPORTS] Can't match individual YES '{yes_team}' "
+                            f"to {home}/{away}"
+                        )
+                        continue
+                    fair_prob = (
+                        consensus["home_prob"] if is_yes_home else consensus["away_prob"]
+                    )
                 # Soccer 3-way DRAW outcome: ticker -TIE represents "draw happens".
                 # yes_sub_title is "Tie" — doesn't match home/away teams. Bypass
                 # team-matching and pass through to evaluate (v38_soccer_draw
                 # handles TIE side; other strategies skip via their own evaluate).
                 # fair_prob=0.25 (typical soccer draw prob) — safe sentinel for
                 # downstream _format_log formatting; v38 evaluate doesn't use it.
-                if ticker.endswith("-TIE"):
+                elif ticker.endswith("-TIE"):
                     fair_prob = 0.25
                     is_yes_home = False
                 else:
@@ -1467,8 +1611,16 @@ class SportsTraderStrategy:
                             logger.debug(f"[SPORTS] Can't match YES team '{yes_team}' to {home}/{away}")
                             continue
 
-                # V2 signals
-                sport_key = sport_map.get(series, "")
+                # V2 signals. Per-game slug for tennis fan-out (each game in
+                # `odds_games` is tagged by _fetch_odds_multi); falls back to
+                # the series-level value for single-slug team sports.
+                sport_value = sport_map.get(series, "")
+                if isinstance(sport_value, str):
+                    sport_key = sport_value
+                else:
+                    sport_key = matched_game.get("_tournament_slug") or (
+                        sport_value[0] if sport_value else ""
+                    )
                 game_odds_id = f"{consensus['home_team']}_vs_{consensus['away_team']}"
                 line_movement = self._detect_line_movement(
                     game_odds_id, consensus["home_prob"], consensus["away_prob"]

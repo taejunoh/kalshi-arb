@@ -24,35 +24,25 @@ from typing import Optional
 
 from core.starter_fetcher import get_starters
 from strategies.sports_trader import (
+    INDIVIDUAL_SPORT_SERIES,
     SPORTS_SERIES,
+    SPORT_ODDS_KEYS,
     ODDS_TO_KALSHI_SHORT,
     SportsTraderStrategy,
     _commence_time_to_minutes,
+    _individual_yes_is_home,
     _match_individual_sport_to_odds,
+    _name_overlap_score,
 )
 
 logger = logging.getLogger("sports_scan_observer")
 
 
-SPORT_MAP = {
-    "KXNBAGAME": "basketball_nba",
-    "KXWNBAGAME": "basketball_wnba",
-    "KXMLBGAME": "baseball_mlb",
-    "KXNHLGAME": "icehockey_nhl",
-    "KXNPBGAME": "baseball_npb",
-    "KXKBOGAME": "baseball_kbo",
-    "KXMLSGAME": "soccer_usa_mls",
-    "KXEPLGAME": "soccer_epl",
-    "KXLALIGAGAME": "soccer_spain_la_liga",
-    "KXUCLGAME": "soccer_uefa_champs_league",
-    "KXBUNDESLIGAGAME": "soccer_germany_bundesliga",
-    # 2026-05-11: Individual-sport observers. Tennis slug rotates per
-    # currently-active tournament (manually updated; rotation cron in Task 9
-    # alerts when active slug returns 0 events). Verified slugs from Task 0:
-    "KXATPMATCH": "tennis_atp_italian_open",  # active 5/11; rotate per tour calendar
-    "KXWTAMATCH": "tennis_wta_italian_open",  # active 5/11; rotate per tour calendar
-    "KXUFCFIGHT": "mma_mixed_martial_arts",   # year-round single endpoint
-}
+# Legacy aliases — kept so `tennis_endpoint_rotation.py` and existing tests
+# (`test_observer_sport_map_tennis_mma.py`) keep importing from here. Both
+# names now resolve to the shared `SPORT_ODDS_KEYS` defined in sports_trader.
+SPORT_MAP = SPORT_ODDS_KEYS
+
 SPORT_SHORT = {
     "KXNBAGAME": "NBA",
     "KXWNBAGAME": "WNBA",
@@ -70,8 +60,6 @@ SPORT_SHORT = {
     "KXUFCFIGHT": "UFC",
 }
 
-INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
-
 
 def _matcher_for_series(series: str):
     """Return the matcher function for `series`, or None for team-sport
@@ -81,49 +69,6 @@ def _matcher_for_series(series: str):
     if series in INDIVIDUAL_SPORT_SERIES:
         return _match_individual_sport_to_odds
     return None
-
-
-def _name_overlap_score(yes_lc: str, name_lc: str) -> float:
-    """How well does `yes_lc` match `name_lc`?
-
-    Returns a score in [0.0, 1.0]:
-      1.0   = exact (case-insensitive) match
-      0.5-0.99 = token-set subset match (one is a subset of the other);
-                 higher when token-count difference is smaller
-      0.0   = no overlap
-
-    Used by `_individual_yes_is_home` to pick the better side when both
-    home and away token-overlap with `yes_sub_title` (e.g., "Diaz vs Diaz").
-    """
-    if not yes_lc or not name_lc:
-        return 0.0
-    if yes_lc == name_lc:
-        return 1.0
-    yes_tok = set(yes_lc.split())
-    name_tok = set(name_lc.split())
-    if not yes_tok or not name_tok:
-        return 0.0
-    if not (yes_tok.issubset(name_tok) or name_tok.issubset(yes_tok)):
-        return 0.0
-    # Subset match — score by token-count ratio (closer = better)
-    smaller, larger = min(len(yes_tok), len(name_tok)), max(len(yes_tok), len(name_tok))
-    return 0.5 + 0.5 * (smaller / larger)
-
-
-def _individual_yes_is_home(yes_sub_title: str, home_lc: str, away_lc: str) -> Optional[bool]:
-    """Decide which side (home vs away) of the matched game `yes_sub_title`
-    refers to. Returns None if neither side overlaps (defensive — by the
-    time we reach here, the matcher already picked this game).
-
-    For collisions (e.g., "Diaz vs Diaz" where both fighters share a token),
-    pick the side with the higher overlap score. Equal scores → home wins
-    (mirrors the existing soccer fallback).
-    """
-    home_score = _name_overlap_score(yes_sub_title, home_lc)
-    away_score = _name_overlap_score(yes_sub_title, away_lc)
-    if home_score == 0.0 and away_score == 0.0:
-        return None
-    return home_score >= away_score
 
 
 class SportsScanObserver(SportsTraderStrategy):
@@ -146,10 +91,13 @@ class SportsScanObserver(SportsTraderStrategy):
             return
 
         # Prefetch odds per sport once per cycle so repeated matches within
-        # this cycle are cache hits; same pattern as scan_and_execute.
+        # this cycle are cache hits; same pattern as scan_and_execute. Tennis
+        # series fan out across multiple concurrent tournaments — each game
+        # gets `_tournament_slug` injected by _fetch_odds_multi so the DB
+        # write below records the correct per-game slug.
         all_odds: dict[str, list[dict]] = {}
-        for series, sport_key in SPORT_MAP.items():
-            all_odds[series] = await self._fetch_odds(sport_key)
+        for series, sport_value in SPORT_MAP.items():
+            all_odds[series] = await self._fetch_odds_multi(sport_value)
 
         loop = asyncio.get_event_loop()
         for series in SPORTS_SERIES:
@@ -168,7 +116,15 @@ class SportsScanObserver(SportsTraderStrategy):
                 continue
 
             odds_games = all_odds.get(series, [])
-            sport_key = SPORT_MAP[series]
+            sport_value = SPORT_MAP[series]
+            # For single-slug team sports `sport_value` is a str; for tennis
+            # it is a tuple of concurrent tournament slugs. The per-game
+            # `_tournament_slug` tag (set by _fetch_odds_multi) overrides
+            # this default for the DB write below.
+            default_sport_key = (
+                sport_value if isinstance(sport_value, str)
+                else (sport_value[0] if sport_value else "")
+            )
             sport_short = SPORT_SHORT[series]
 
             for market in markets:
@@ -210,6 +166,11 @@ class SportsScanObserver(SportsTraderStrategy):
                     )
                 if not matched_game:
                     continue
+
+                # Per-game sport_key — tennis fan-out tags each game with its
+                # source tournament; team sports fall back to the series-level
+                # default. The slug also drives the Pinnacle-age cache key.
+                sport_key = matched_game.get("_tournament_slug") or default_sport_key
 
                 # Probability dicts (with draw_prob populated for 3-way soccer).
                 us_dict, eu_dict, pin_dict, pin_age_s = (
