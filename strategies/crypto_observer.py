@@ -1264,15 +1264,45 @@ class CryptoObserverStrategy:
     async def scan_and_execute(self):
         # Observer is read-only: no circuit-breaker / kill switch needed.
         markets = self._scanner.get_active_markets()
+        # ── TEMP DEBUG 2026-05-19 (silent-fail probe) ──
+        # All observers went silent at 12:13 UTC. Logic verified healthy via
+        # off-process eval. Instrumenting to find which gate kills signals
+        # in-process. Throttled to 1 log per 30s. Remove after diagnosis.
+        debug_now = time.time()
+        last_debug = getattr(self, "_last_debug_log", 0.0)
+        debug = (debug_now - last_debug) >= 30.0
+        if debug:
+            self._last_debug_log = debug_now
         if not markets:
+            if debug:
+                logger.warning("[OBS_DEBUG] markets=0 -> early return")
             return
         now = datetime.now(timezone.utc)
         now_epoch = time.time()
         self._update_spot_history(now_epoch)
 
+        if debug:
+            from collections import Counter as _Counter
+            series_cnt = _Counter(m.get("ticker", "").split("-")[0] for m in markets)
+            target_cnt = sum(1 for m in markets
+                             if m.get("ticker", "").split("-")[0] in TARGET_SERIES)
+            stale_info = {a: (self._price_feed.get_price(a),
+                              self._price_feed.is_stale(a))
+                          for a in ("BTC", "ETH")}
+            logger.warning(
+                f"[OBS_DEBUG] markets={len(markets)} target_series={target_cnt} "
+                f"by_series={dict(series_cnt)} stale={stale_info}"
+            )
+
         contexts = self._build_contexts(markets, now, now_epoch)
         if not contexts:
+            if debug:
+                logger.warning("[OBS_DEBUG] contexts=0 -> early return")
             return
+        if debug:
+            ctx_info = [(c.series, c.event_key, len(c.b_legs), len(c.t_legs),
+                         round(c.spot, 2)) for c in contexts]
+            logger.warning(f"[OBS_DEBUG] contexts={len(contexts)} {ctx_info}")
 
         # Resolve Deribit IV once per asset (cached DB call)
         iv_by_asset: dict[str, Optional[float]] = {}
@@ -1308,8 +1338,24 @@ class CryptoObserverStrategy:
 
         db = getattr(self._order_manager, "_db", None)
         if db is None:
+            if debug:
+                logger.warning("[OBS_DEBUG] db is None -> early return")
             return
+        if debug:
+            feat = {a: (funding_by_asset.get(a), skew_by_asset.get(a),
+                        getattr(next((c for c in contexts if c.asset == a), None),
+                                "etf_flow_z", None),
+                        getattr(next((c for c in contexts if c.asset == a), None),
+                                "cme_basis", None))
+                    for a in ("BTC", "ETH")}
+            logger.warning(f"[OBS_DEBUG] features {{asset: (funding, skew, etf_z, cme_basis)}} = {feat}")
 
+        # Per-tick counters for debug
+        n_emitted = 0
+        n_cooldown = 0
+        n_recorded = 0
+        n_db_err = 0
+        by_obs: dict[str, int] = {}
         for ctx in contexts:
             for obs in self._observers:
                 try:
@@ -1317,10 +1363,14 @@ class CryptoObserverStrategy:
                 except Exception as e:
                     logger.error(f"observer {obs.name} crashed: {e}")
                     continue
+                if signals:
+                    by_obs[obs.name] = by_obs.get(obs.name, 0) + len(signals)
                 for sig in signals:
+                    n_emitted += 1
                     cooldown_key = (sig.observer, sig.market_id)
                     last = self._last_fire.get(cooldown_key)
                     if last is not None and (now_epoch - last) < SIGNAL_COOLDOWN_S:
+                        n_cooldown += 1
                         continue
                     try:
                         await db.record_crypto_observer_signal(
@@ -1331,5 +1381,12 @@ class CryptoObserverStrategy:
                                                     sort_keys=True),
                         )
                         self._last_fire[cooldown_key] = now_epoch
+                        n_recorded += 1
                     except Exception as e:
+                        n_db_err += 1
                         logger.error(f"record_crypto_observer_signal failed: {e}")
+        if debug:
+            logger.warning(
+                f"[OBS_DEBUG] tick_done emitted={n_emitted} recorded={n_recorded} "
+                f"cooldown={n_cooldown} db_err={n_db_err} by_observer={by_obs}"
+            )
