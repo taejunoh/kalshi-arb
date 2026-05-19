@@ -92,18 +92,25 @@ class SportsSoccerUnderdogV1Strategy(SportsUnderdogV31Strategy):
     DEPTH_DEAD_ZONE = None
 
     def _get_trade_size(self, signal: dict) -> float:
-        """Tier-based cap policy by depth (2026-05-12).
+        """Tier-based cap policy by depth (2026-05-12, tier5 raised 5/18).
 
         Observer replay (n=34, 4/24+ MLS/EPL/LAL/BUN/UCL) shows depth-tier
         ROI variance: thin (cap 2-4 for cushion), mid (cap 8), sweet spot
         $2000-10k (cap 24, ROI +97% n=4). >$10k blocked at gate.
+
+        2026-05-18 tier5 cap 24→36 (1.5x): live n=18 since 5/12 produced
+        +$247 PnL / +57% ROI at cap 24. Cushion 287× → 191× still huge;
+        depth/bankroll non-binding. Drop-top-3 fragility (89% of PnL from
+        3 hits) means realized EV may not scale 1.5x — accept asymmetric
+        variance for final week of EPL/LAL season. Re-eval ~6/01 with
+        post-season MLS-only sample to decide cap 36 → 48 or rollback.
 
         Per-tier cushion ratio kept ≥4× by sizing cap to depth tier:
           tier1 ($15-30, cap 2): stake $0.58, cushion ≥26×
           tier2 ($30-100, cap 4): stake $1.16, cushion ≥26×
           tier3 ($100-500, cap 8): cushion ≥43×
           tier4 ($500-2000, cap 8): cushion ≥215×
-          tier5 ($2000-10k, cap 24): cushion ≥287× — sweet spot, cap raised 3×
+          tier5 ($2000-10k, cap 36): stake ~$8.7, cushion ≥191×
         """
         ticker = signal.get("ticker", "")
         side = signal.get("side", "yes")
@@ -117,7 +124,7 @@ class SportsSoccerUnderdogV1Strategy(SportsUnderdogV31Strategy):
         if depth is None:
             cap = 8.0  # fallback to pre-tier cap
         elif depth >= 2000:
-            cap = 24.0
+            cap = 36.0
         elif depth >= 100:
             cap = 8.0
         elif depth >= 30:
