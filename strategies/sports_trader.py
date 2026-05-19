@@ -40,6 +40,26 @@ def _get_odds_http_client():
     return _ODDS_HTTP_CLIENT
 
 
+# Concurrency cap on _fetch_odds network calls (2026-05-19 evening). With
+# 24 sports scan_loops each polling at 1 s cadence, cache misses cluster
+# into thundering-herd bursts that overload httpx pool slot acquisition +
+# asyncio's default 6-worker DNS executor on t3.small (2 vCPU). Resulting
+# ConnectTimeouts (685 in 22 min post-restart) didn't break trades — stale
+# cache fallback held — but cache freshness suffered. Semaphore at the
+# network-call boundary serializes the burst without affecting cache hits
+# (those return before this gate). cap=8 matches a comfortable upper bound
+# on (DNS workers, healthy parallel TLS handshakes).
+_ODDS_FETCH_SEM: Optional[Any] = None
+_ODDS_FETCH_SEM_CAP = 8
+
+
+def _get_odds_fetch_sem():
+    global _ODDS_FETCH_SEM
+    if _ODDS_FETCH_SEM is None:
+        _ODDS_FETCH_SEM = asyncio.Semaphore(_ODDS_FETCH_SEM_CAP)
+    return _ODDS_FETCH_SEM
+
+
 # 429-aware global Odds API cooldown (2026-05-19 evening). When Odds API
 # returns 429 Too Many Requests, we set this timestamp and skip ALL further
 # _fetch_odds HTTP requests until it elapses — strategies serve stale cache
@@ -917,15 +937,16 @@ class SportsTraderStrategy:
 
         try:
             client = _get_odds_http_client()
-            resp = await client.get(
-                f"https://api.the-odds-api.com/v4/sports/{sport}/odds",
-                params={
-                    "apiKey": self._odds_api_key,
-                    "regions": region,
-                    "markets": "h2h",
-                    "oddsFormat": "decimal",
-                },
-            )
+            async with _get_odds_fetch_sem():
+                resp = await client.get(
+                    f"https://api.the-odds-api.com/v4/sports/{sport}/odds",
+                    params={
+                        "apiKey": self._odds_api_key,
+                        "regions": region,
+                        "markets": "h2h",
+                        "oddsFormat": "decimal",
+                    },
+                )
             resp.raise_for_status()
             usage = {
                 "used": int(resp.headers.get("x-requests-used", 0)),
