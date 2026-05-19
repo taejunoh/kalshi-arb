@@ -900,7 +900,12 @@ class SportsTraderStrategy:
                 _PINNACLE_AGE.observe(region, sport, pinnacle_hash)
                 return data
         except Exception as e:
-            logger.error(f"Odds API error for {sport}: {e}")
+            # 2026-05-19: include exception type — many failures today logged
+            # blank message ("Odds API error for X:"). Without type+repr we
+            # can't distinguish ReadTimeout vs ConnectError vs HTTP status.
+            logger.error(
+                f"Odds API error for {sport}: {type(e).__name__}: {e!r}"
+            )
             # Keep serving stale cache rather than failing all strategies
             if hit is not None:
                 self.odds_api_usage = hit[2]
