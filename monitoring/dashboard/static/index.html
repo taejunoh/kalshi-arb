@@ -861,7 +861,7 @@
     <section id="crypto-observer-section">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
         <div class="section-title" style="margin-bottom:0">Crypto observer Phase 0 + Phase 1 paper — last 7 days</div>
-        <span style="color:var(--text-dim);font-size:11px;">17 hypotheses on KXBTC/KXETH (5/19: +4 cross-venue — funding, vol-skew, ETF flow, CME basis). Phase 0 = signal-only WR (Wilson 95% CI). Phase 1 = promoted paper trader P&amp;L.</span>
+        <span style="color:var(--text-dim);font-size:11px;">17 hypotheses on KXBTC/KXETH (5/19: +4 cross-venue — funding, vol-skew, ETF flow, CME basis). Phase 0 = signal-only WR (Wilson 95% CI). Phase 1 = promoted paper trader P&amp;L. Direct rows (crypto_fair_value family) skip the observer columns.</span>
       </div>
       <div class="table-wrap">
         <div class="table-scroll" style="max-height:280px;">
@@ -1892,12 +1892,20 @@ async function refreshCryptoObserver() {
         const s = (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
         ph1Roi = `<span class="${cls}">${s}</span>`;
       }
+      // Direct trader rows (crypto_fair_value family) have no observer-side
+      // stats — render those cells as "—" and tag the strategy name.
+      const obsLabel = r.is_direct_trader
+        ? `<span class="badge badge-gray">direct</span> ${r.observer}`
+        : r.observer;
+      const nt = r.n_total == null ? '—' : r.n_total;
+      const no = r.n_open == null ? '—' : r.n_open;
+      const ns = r.n_settled == null ? '—' : r.n_settled;
       return `
         <tr>
-          <td class="td-mono">${r.observer}</td>
-          <td class="td-mono">${r.n_total}</td>
-          <td class="td-mono">${r.n_open}</td>
-          <td class="td-mono">${r.n_settled}</td>
+          <td class="td-mono">${obsLabel}</td>
+          <td class="td-mono">${nt}</td>
+          <td class="td-mono">${no}</td>
+          <td class="td-mono">${ns}</td>
           <td class="td-mono">${wrBadge}</td>
           <td class="td-mono">${ciTxt}</td>
           <td class="td-mono">${ph1Strat}</td>
