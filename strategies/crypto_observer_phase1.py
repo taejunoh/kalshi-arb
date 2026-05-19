@@ -100,15 +100,33 @@ class _Phase1Base:
             market = self._scanner.get_market(ticker)
             if market is None:
                 # Market dropped from scanner cache between signal and now.
+                logger.debug(
+                    f"[{self.STRATEGY_NAME}] SKIP sig={sig_id} ticker={ticker} "
+                    f"reason=no_market_in_scanner"
+                )
                 self._processed.add(sig_id)
                 continue
             choice = self._select_side_and_price(sig, market)
             if choice is None:
+                logger.debug(
+                    f"[{self.STRATEGY_NAME}] SKIP sig={sig_id} ticker={ticker} "
+                    f"reason=select_side_returned_none "
+                    f"ya={market.get('yes_ask_dollars')} "
+                    f"no_ask={market.get('no_ask_dollars')} "
+                    f"pred={sig.get('predicted_outcome')}"
+                )
                 self._processed.add(sig_id)
                 continue
             side, price = choice
             size_usdc = self._size_usdc_for(side, price, market)
             if size_usdc is None or size_usdc <= 0:
+                depth_key = "no_ask_size_fp" if side == "no" else "yes_ask_size_fp"
+                logger.debug(
+                    f"[{self.STRATEGY_NAME}] SKIP sig={sig_id} ticker={ticker} "
+                    f"reason=size_returned_none "
+                    f"side={side} price={price:.3f} "
+                    f"depth_{depth_key}={market.get(depth_key)}"
+                )
                 self._processed.add(sig_id)
                 continue
             try:
