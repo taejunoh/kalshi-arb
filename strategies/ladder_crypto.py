@@ -13,6 +13,7 @@ same event key:
   monotone — adjacent buckets on the low-prob side naturally have
   yes_ask values that rise toward ATM (e.g. 0.02 → 0.05 → 0.15).
 """
+import asyncio
 import json
 import logging
 from typing import Optional
@@ -131,6 +132,9 @@ class LadderCryptoStrategy:
         return out
 
     def _enrich(self, ms: list[dict]) -> list[dict]:
+        # SYNC by design — dispatched via asyncio.to_thread from
+        # scan_and_execute. See companion fix in ladder_fed.py for context:
+        # SLOW_STRAT showed 40 s blocking iters; same sync-in-async pattern.
         out = []
         for m in ms:
             yes_price, no_price = self._client.get_market_prices(m["ticker"])
@@ -165,7 +169,7 @@ class LadderCryptoStrategy:
             by_series_kind.setdefault((series, kind), []).append(m)
 
         for (series, kind), ms in by_series_kind.items():
-            enriched = self._enrich(ms)
+            enriched = await asyncio.to_thread(self._enrich, ms)
             if not enriched:
                 continue
             if kind == "cumulative":
