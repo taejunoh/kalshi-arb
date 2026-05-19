@@ -512,6 +512,25 @@ class Bot:
             asyncio.create_task(
                 self.deribit_atm_fade_v1.scan_loop(scan_interval_secs=1.0)
             ),
+            # 2026-05-19 (eve): 5 tennis/UFC paper strategies moved out of
+            # _strategy_loop to dodge the upstream serial queue. Each runs
+            # at 1 s poll cadence — internal `_get_scan_interval()` still
+            # throttles the actual scan work. Same pattern as Phase 1 traders.
+            asyncio.create_task(
+                self.sports_tennis_pinnacle_arb_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_atp_gs_bo5_chalk_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_ufc_chalk_fade_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_tennis_surface_skew_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_tennis_underdog_v1.scan_loop(scan_interval_secs=1.0)
+            ),
         ]
 
         try:
@@ -667,18 +686,22 @@ class Bot:
             # V4.0 Favorite — MLB 0.50-0.55 + NPB 0.55-0.65 paper-only.
             ("sports_favorite_v40", self.sports_favorite_v40),
             # 2026-05-15 tennis/MMA portfolio — paper-twin only at launch.
-            ("sports_tennis_pinnacle_arb_v1", self.sports_tennis_pinnacle_arb_v1),
-            ("sports_atp_gs_bo5_chalk_v1",    self.sports_atp_gs_bo5_chalk_v1),
+            # 2026-05-19 (eve): MOVED to own scan_loop tasks (see run()) —
+            # the serial main loop pushed iter=1 to 30+ min per pass when
+            # Odds API was degraded, so tennis/UFC paper strategies never
+            # got a chance to fire on TU1's day-of-deploy candidates.
+            # Mirrors the crypto_observer + Phase 1 traders separation
+            # (commit fbb0f79). Kept here only as commented bookkeeping.
+            # ("sports_tennis_pinnacle_arb_v1", self.sports_tennis_pinnacle_arb_v1),
+            # ("sports_atp_gs_bo5_chalk_v1",    self.sports_atp_gs_bo5_chalk_v1),
+            # ("sports_ufc_chalk_fade_v1",      self.sports_ufc_chalk_fade_v1),
+            # ("sports_tennis_surface_skew_v1", self.sports_tennis_surface_skew_v1),
+            # ("sports_tennis_underdog_v1",     self.sports_tennis_underdog_v1),
             # A3 (sports_tennis_bid_imbalance_v1) held back 2026-05-15 per Phase 0
             # replay selection-bias guard — top cohort WR 57% (n=7) ≤ baseline
             # YES-band 58.8% / NO-band 60%, fails +6pp threshold. Re-evaluate when
             # observer data reaches n≥30 on imbalance band (~2-3 weeks).
             # ("sports_tennis_bid_imbalance_v1", self.sports_tennis_bid_imbalance_v1),
-            ("sports_ufc_chalk_fade_v1",      self.sports_ufc_chalk_fade_v1),
-            ("sports_tennis_surface_skew_v1", self.sports_tennis_surface_skew_v1),
-            # Tennis underdog band — paper-only. Built 2026-05-19 from observer
-            # backtest. See sports_tennis_underdog_v1 module docstring.
-            ("sports_tennis_underdog_v1",     self.sports_tennis_underdog_v1),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
             # -37.5% ROI. Freshness gate was added 2026-04-16 (80ad42e) but
             # only a handful of post-gate entries accumulated before shutdown;
