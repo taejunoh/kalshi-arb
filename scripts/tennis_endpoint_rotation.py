@@ -61,45 +61,32 @@ def _events_count_for_endpoint(api_key: str, slug: str) -> int:
         return 0
 
 
-def _iter_slugs(value) -> tuple[str, ...]:
-    """Tennis series now map to a tuple of concurrent tournament slugs; team
-    sports still map to a single str. Normalise both shapes for iteration."""
-    if isinstance(value, str):
-        return (value,)
-    return tuple(value)
-
-
 def detect_stale_endpoints(
     state: dict[str, int],
     current_counts: dict[str, int],
-    sport_map: dict,
+    sport_map: dict[str, str],
     threshold: int = 2,
 ) -> tuple[dict[str, int], list[str]]:
-    """Update consecutive-zero counters and return Kalshi series with one or
-    more tennis slugs that have been zero-event for >= threshold days.
+    """Update consecutive-zero counters and return list of Kalshi series
+    whose endpoint has been zero for >= threshold days.
 
-    Tennis series map to a tuple of concurrent tournament slugs; a series is
-    listed once if any of its slugs trip the threshold today (per-slug detail
-    is included in the alert body). Non-tennis series in sport_map are ignored.
+    Only tennis series (KXATPMATCH, KXWTAMATCH) are considered. Non-tennis
+    series in sport_map are ignored.
     """
     new_state = dict(state)
     stale_series: list[str] = []
-    for series, value in sport_map.items():
+    for series, slug in sport_map.items():
         if series not in TENNIS_SERIES:
             continue
-        tripped_any = False
-        for slug in _iter_slugs(value):
-            count_today = current_counts.get(slug, 0)
-            if count_today == 0:
-                new_state[slug] = new_state.get(slug, 0) + 1
-                if new_state[slug] >= threshold:
-                    tripped_any = True
-                    # Reset on alert to avoid repeated daily nag for the same stale slug
-                    new_state[slug] = 0
-            else:
+        count_today = current_counts.get(slug, 0)
+        if count_today == 0:
+            new_state[slug] = new_state.get(slug, 0) + 1
+            if new_state[slug] >= threshold:
+                stale_series.append(series)
+                # Reset on alert to avoid repeated daily nag for the same stale endpoint
                 new_state[slug] = 0
-        if tripped_any:
-            stale_series.append(series)
+        else:
+            new_state[slug] = 0
     return new_state, stale_series
 
 
@@ -138,15 +125,12 @@ def main():
         logger.error("ODDS_API_KEY missing")
         sys.exit(1)
 
-    # Today's events per mapped tennis slug. Tennis series are tuples — count
-    # each slug separately so the rotation alert can name the specific stale
-    # tournament (Italian Open done, Hamburg still running, etc.).
+    # Today's events per mapped tennis slug
     current_counts: dict[str, int] = {}
-    for series, value in SPORT_MAP.items():
+    for series, slug in SPORT_MAP.items():
         if series in TENNIS_SERIES:
-            for slug in _iter_slugs(value):
-                current_counts[slug] = _events_count_for_endpoint(api_key, slug)
-                logger.info(f"{series} -> {slug}: {current_counts[slug]} events")
+            current_counts[slug] = _events_count_for_endpoint(api_key, slug)
+            logger.info(f"{series} -> {slug}: {current_counts[slug]} events")
 
     state = _load_state()
     new_state, stale = detect_stale_endpoints(state, current_counts, SPORT_MAP)
@@ -170,9 +154,7 @@ def main():
         "Stale (0 events for 2+ days):",
     ]
     for series in stale:
-        slugs = _iter_slugs(SPORT_MAP[series])
-        zero_slugs = [s for s in slugs if current_counts.get(s, 0) == 0]
-        lines.append(f"  • {series} → " + ", ".join(zero_slugs or list(slugs)))
+        lines.append(f"  • {series} → {SPORT_MAP[series]}")
     lines += ["", "Currently active tennis endpoints:", suggestions]
     lines += ["", "<i>Action: edit strategies/sports_scan_observer.py SPORT_MAP, "
               "deploy, restart kalshi-bot.</i>"]

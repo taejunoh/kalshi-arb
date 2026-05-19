@@ -9,11 +9,10 @@ from scripts.tennis_endpoint_rotation import (
 
 
 def test_detect_stale_endpoints_zero_events_two_days_triggers():
-    """If any slug under a tennis series has zero events for >= 2 consecutive
-    days, detect_stale_endpoints lists the series. Counter persists in a
-    state file."""
+    """If a mapped endpoint has zero events for >= 2 consecutive days,
+    detect_stale_endpoints lists it. Counter persists in a state file."""
     state = {"tennis_atp_italian_open": 2}  # 2 consecutive zero-event days
-    sport_map = {"KXATPMATCH": ("tennis_atp_italian_open",)}
+    sport_map = {"KXATPMATCH": "tennis_atp_italian_open"}
     current_counts = {"tennis_atp_italian_open": 0}  # zero again today
     new_state, stale = detect_stale_endpoints(state, current_counts, sport_map, threshold=2)
     assert "KXATPMATCH" in stale
@@ -23,7 +22,7 @@ def test_detect_stale_endpoints_zero_events_two_days_triggers():
 
 def test_detect_stale_endpoints_first_zero_day_does_not_trigger():
     state = {}
-    sport_map = {"KXATPMATCH": ("tennis_atp_italian_open",)}
+    sport_map = {"KXATPMATCH": "tennis_atp_italian_open"}
     current_counts = {"tennis_atp_italian_open": 0}
     new_state, stale = detect_stale_endpoints(state, current_counts, sport_map, threshold=2)
     assert "KXATPMATCH" not in stale
@@ -32,28 +31,11 @@ def test_detect_stale_endpoints_first_zero_day_does_not_trigger():
 
 def test_detect_stale_endpoints_nonzero_resets_counter():
     state = {"tennis_atp_italian_open": 1}
-    sport_map = {"KXATPMATCH": ("tennis_atp_italian_open",)}
+    sport_map = {"KXATPMATCH": "tennis_atp_italian_open"}
     current_counts = {"tennis_atp_italian_open": 15}
     new_state, stale = detect_stale_endpoints(state, current_counts, sport_map, threshold=2)
     assert "KXATPMATCH" not in stale
     assert new_state.get("tennis_atp_italian_open", 0) == 0
-
-
-def test_detect_stale_endpoints_partial_stale_in_multi_tournament():
-    """When a series fans out across multiple tournaments, alert as soon as
-    one slug trips the threshold even if siblings are still live."""
-    state = {"tennis_atp_italian_open": 2}
-    sport_map = {
-        "KXATPMATCH": ("tennis_atp_italian_open", "tennis_atp_french_open"),
-    }
-    current_counts = {
-        "tennis_atp_italian_open": 0,    # stale — tournament ended
-        "tennis_atp_french_open": 12,    # active — Roland Garros running
-    }
-    new_state, stale = detect_stale_endpoints(state, current_counts, sport_map, threshold=2)
-    assert "KXATPMATCH" in stale
-    assert new_state["tennis_atp_french_open"] == 0
-    assert new_state["tennis_atp_italian_open"] == 0
 
 
 def test_detect_stale_endpoints_ignores_non_tennis_series():
