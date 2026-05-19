@@ -156,6 +156,15 @@ VOL_SKEW_MTS_MAX_S = 86400        # within 24h of close
 VOL_SKEW_MIN_YA = 0.05
 VOL_SKEW_MIN_YB_SIZE = 30
 
+# Shared spread gate for Phase 0 cross-venue observers (vol_skew_fade,
+# cme_basis_fade, etf_flow_lag). 5/19 PM ROI audit showed all three had
+# 67-90% WR but -7 to -17% pooled ROI because they fired on wide-spread
+# markets where bid-ask compression killed edge regardless of side. At
+# ya + na - 1.0 ≤ 5c the loss shrinks 2-3× (etf_flow ROI -7→-2%);
+# at ≤3c ROI flips positive on small samples. See
+# [[vol_skew_fade_roi_audit_2026-05-19]].
+CROSS_VENUE_MAX_SPREAD = 0.05
+
 # Cooldown so the same observer × market doesn't fire every 0.2s
 SIGNAL_COOLDOWN_S = 60.0
 
@@ -912,6 +921,11 @@ class EtfFlowLagObserver(BaseObserver):
                 continue
             if leg.yb_size < ETF_FLOW_MIN_YB_SIZE:
                 continue
+            # Spread gate: ya + na - 1.0 = implied half-spread × 2. Without
+            # this, observer fires on 11c-spread markets where neither side
+            # is tradable.
+            if (leg.ya + leg.na - 1.0) > CROSS_VENUE_MAX_SPREAD:
+                continue
             # bullish flow (z > 0) → fade strikes BELOW spot
             # bearish flow (z < 0) → fade strikes ABOVE spot
             if ctx.etf_flow_z > 0 and leg.threshold >= ctx.spot:
@@ -956,6 +970,8 @@ class CmeBasisFadeObserver(BaseObserver):
             if leg.ya < CME_BASIS_MIN_YA:
                 continue
             if leg.yb_size < CME_BASIS_MIN_YB_SIZE:
+                continue
+            if (leg.ya + leg.na - 1.0) > CROSS_VENUE_MAX_SPREAD:
                 continue
             if ctx.cme_basis > 0 and leg.threshold >= ctx.spot:
                 continue
@@ -1056,16 +1072,25 @@ class VolSkewFadeObserver(BaseObserver):
                 continue
             if leg.yb_size < VOL_SKEW_MIN_YB_SIZE:
                 continue
+            if (leg.ya + leg.na - 1.0) > CROSS_VENUE_MAX_SPREAD:
+                continue
             # iv_skew > 0 (put-skew, downside fear) → fade strikes BELOW spot
             # iv_skew < 0 (call-skew, upside chase) → fade strikes ABOVE spot
             if ctx.iv_skew > 0 and leg.threshold >= ctx.spot:
                 continue
             if ctx.iv_skew < 0 and leg.threshold <= ctx.spot:
                 continue
+            # 5/19 PM ROI audit: predicted_outcome was "no" — bet against the
+            # OTM bucket, paying ~0.94 to win 0.06. WR 67% with BE ~80% lost
+            # money. Flipped to "yes": pays ya~0.25 on the underpriced side.
+            # Spread-gated cohort at ≤3c showed +7% sim ROI; gate now tightens
+            # to ≤5c so going-forward direction matches docstring "fade" intent
+            # (bet against the fear, buy the underpriced upside on put-skew /
+            # underpriced downside on call-skew).
             out.append(Signal(
                 observer=self.name, series=ctx.series,
                 event_key=ctx.event_key, market_id=leg.ticker,
-                predicted_outcome="no",
+                predicted_outcome="yes",
                 features={"ya": leg.ya, "no_ask": leg.na,
                           "iv_skew": round(ctx.iv_skew, 6),
                           "spot": ctx.spot, "strike": leg.threshold,

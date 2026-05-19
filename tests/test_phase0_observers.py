@@ -151,6 +151,55 @@ def test_cme_basis_skip_when_none():
     assert o.evaluate(_ctx(cme_b=None)) == []
 
 
+# ── Spread gate (5/19 PM addition) ─────────────────────────────────
+
+
+def _wide_spread_ctx(spot=80000, **kwargs):
+    """Same shape as _ctx but legs have ya + na = 1.10 (10c spread, above 5c gate)."""
+    legs = []
+    for thresh in (spot - 1000, spot - 500, spot + 500, spot + 1000):
+        legs.append(Leg(
+            ticker=f"KXBTC-26MAY1822-B{int(thresh)}",
+            kind="bucketed", threshold=thresh,
+            ya=0.20, yb=0.05, na=0.90, nb=0.05,  # ya + na - 1 = 0.10
+            ya_size=10, yb_size=50, na_size=10, nb_size=10,
+            liquidity=100.0, raw={},
+        ))
+    return EventContext(
+        series="KXBTC", asset="BTC", event_key="26MAY1822",
+        now=datetime.now(timezone.utc), spot=spot,
+        spot_60s_ago=spot, deribit_iv=0.50,
+        b_legs=legs, t_legs=[], open_time_secs=None, close_time_secs=1800,
+        funding_8h=kwargs.get("funding"), iv_skew=kwargs.get("skew"),
+        etf_flow_z=kwargs.get("etf_z"), cme_basis=kwargs.get("cme_b"),
+    )
+
+
+def test_vol_skew_spread_gate_blocks_wide_market():
+    o = VolSkewFadeObserver()
+    assert o.evaluate(_wide_spread_ctx(skew=0.10)) == []
+
+
+def test_etf_flow_spread_gate_blocks_wide_market():
+    o = EtfFlowLagObserver()
+    assert o.evaluate(_wide_spread_ctx(etf_z=2.0)) == []
+
+
+def test_cme_basis_spread_gate_blocks_wide_market():
+    o = CmeBasisFadeObserver()
+    assert o.evaluate(_wide_spread_ctx(cme_b=0.005)) == []
+
+
+def test_vol_skew_predicted_outcome_flipped_to_yes():
+    """5/19 PM: was 'no' (buy expensive NO at ~0.94), now 'yes' (buy underpriced
+    YES at ~0.25) so fade-the-fear thesis matches actual trade direction."""
+    o = VolSkewFadeObserver()
+    sigs = o.evaluate(_ctx(skew=0.10))
+    assert len(sigs) == 2
+    for s in sigs:
+        assert s.predicted_outcome == "yes"
+
+
 if __name__ == "__main__":
     import sys
     g = dict(globals())
