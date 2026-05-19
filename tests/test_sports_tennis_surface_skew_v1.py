@@ -39,12 +39,24 @@ def test_skips_hard_court():
     assert sig is None
 
 
-def test_skips_skew_below_4pp():
+def test_skips_skew_below_threshold():
+    """Skew of 2pp (pin 0.60 vs eu 0.58) below the 3% threshold."""
     s = _make_strategy()
     s._last_pinnacle_yes_prob = 0.60
     sig = s.evaluate(kalshi_yes=0.58, kalshi_no=0.42, fair_prob=0.58,
                      ticker="KXATPMATCH-X")
     assert sig is None
+
+
+def test_fires_at_3pp_skew():
+    """2026-05-19: threshold lowered from 4pp to 3pp. n=2 backtest
+    candidates at 3pp showed 100% WR / +36% PnL on clay."""
+    s = _make_strategy()
+    s._last_pinnacle_yes_prob = 0.61  # eu 0.58, skew = +3pp exactly
+    sig = s.evaluate(kalshi_yes=0.58, kalshi_no=0.42, fair_prob=0.58,
+                     ticker="KXATPMATCH-X")
+    assert sig is not None
+    assert sig["side"] == "yes"
 
 
 def test_skips_outside_price_band():
