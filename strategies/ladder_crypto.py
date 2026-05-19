@@ -1,5 +1,8 @@
 """Ladder Crypto — KXBTC, KXETH price-bucket ladders.
 
+Phase 0 (2026-05-19): Paper-only walked-edge logging. NO market_order calls.
+See docs/superpowers/specs/2026-05-19-ladder-crypto-resurrection-design.md
+
 A KXBTC/KXETH event publishes two market types side-by-side under the
 same event key:
 
@@ -9,17 +12,8 @@ same event key:
   $40 (ETH) range. Dense (50+ per event). yes_ask peaks around ATM, NOT
   monotone — adjacent buckets on the low-prob side naturally have
   yes_ask values that rise toward ATM (e.g. 0.02 → 0.05 → 0.15).
-
-Treating B-markets under the cumulative-ladder fade detector reads that
-natural slope as a mispricing and buys YES on the lower-threshold leg,
-which is deep OTM and loses ~100% of the time. Paper trial 2026-05-09→12
-hit 35 settled / 5.7% WR / -83.6% ROI before this fix.
-
-This module partitions legs by suffix prefix and routes each subset
-through the framework with its correct ladder_type. Bucketed math
-additionally requires a roughly-complete bucket set (sum of yes_mid
-near 1.0) before any signal fires.
 """
+import json
 import logging
 from typing import Optional
 
@@ -28,6 +22,7 @@ from core.ladder_framework import (
     find_arb_opportunities,
     find_fade_opportunities,
 )
+from core.orderbook_walk import walk_orderbook, WalkResult
 
 logger = logging.getLogger("ladder_crypto")
 
@@ -46,11 +41,12 @@ class LadderCryptoStrategy:
     STRATEGY_NAME = "ladder_crypto"
     DIRECTION = "asc"
 
-    def __init__(self, config, order_manager, market_scanner, kalshi_client):
+    def __init__(self, config, order_manager, market_scanner, kalshi_client, db=None):
         self.config = config
         self._order_manager = order_manager
         self._scanner = market_scanner
         self._client = kalshi_client
+        self._db = db
 
     @staticmethod
     def _parse_suffix(suffix: str) -> Optional[float]:
@@ -195,31 +191,129 @@ class LadderCryptoStrategy:
 
     async def _handle_group(self, group):
         cfg = self.config
+        if not getattr(cfg, "LADDER_PHASE0_ENABLED", True):
+            return
         if group.ladder_type == "bucketed":
             sum_mid = sum((l.yes_ask + l.yes_bid) / 2.0 for l in group.legs)
             if not (BUCKETED_SUM_MID_MIN <= sum_mid <= BUCKETED_SUM_MID_MAX):
                 return
-        arb = find_arb_opportunities(
+
+        arb_candidates = find_arb_opportunities(
             group, fee=cfg.KALSHI_FEE_PER_CONTRACT,
             min_edge_usdc=cfg.LADDER_MIN_ARB_EDGE_USDC,
             min_depth_usdc=cfg.LADDER_MIN_DEPTH_USDC,
             max_position_usdc=cfg.LADDER_MAX_POSITION_PER_GROUP,
         )
-        if arb:
-            for leg in arb[0].legs:
-                await self._order_manager.market_order(
-                    ticker=leg.ticker, side=leg.side, size_usdc=leg.size_usdc,
-                    price=leg.price, strategy=self.STRATEGY_NAME, market_id=leg.ticker,
-                )
-            return
-        fade = find_fade_opportunities(
+        for arb in arb_candidates:
+            await self._log_phase0_arb(group, arb)
+
+        # Fades also logged (paper); single-leg path.
+        fade_candidates = find_fade_opportunities(
             group, fee=cfg.KALSHI_FEE_PER_CONTRACT,
             min_inversion=cfg.LADDER_MIN_FADE_INVERSION,
             max_size_usdc=cfg.LADDER_MAX_POSITION_PER_GROUP / 2.5,
         )
-        if fade:
-            t = fade[0]
-            await self._order_manager.market_order(
-                ticker=t.ticker, side=t.side, size_usdc=t.size_usdc,
-                price=t.price, strategy=self.STRATEGY_NAME, market_id=t.ticker,
+        for fade in fade_candidates:
+            await self._log_phase0_fade(group, fade)
+
+    async def _log_phase0_arb(self, group, arb):
+        """Walk each leg, compute walked-edge per contract-group, log to DB.
+
+        Per-contract math (same units as framework's find_arb_opportunities):
+          cumulative arb: buy 1 t1.yes + 1 t2.no → payoff $1, cost = sum of
+            walked prices, fee = 2 × KALSHI_FEE_PER_CONTRACT
+          bucketed arb: buy 1 contract on each of N mutually-exclusive legs
+            → payoff $1, cost = sum of walked prices, fee = N × fee_per_contract
+        edge per unit ∈ [-fee, ~$0.50] — directly comparable to the
+        LADDER_PHASE0_MIN_WALKED_EDGE_USDC threshold ($0.15).
+        """
+        cfg = self.config
+        probe = cfg.LADDER_PHASE0_PROBE_NOTIONAL_USDC
+        walked = []
+        max_gap = 0.0
+        all_fillable = True
+        walked_per_unit_cost = 0.0  # sum of walked $/contract across legs
+        for leg in arb.legs:
+            wr = walk_orderbook(self._client, leg.ticker, leg.side, probe)
+            if wr is None:
+                all_fillable = False
+                walked.append({"ticker": leg.ticker, "side": leg.side, "walked": None})
+                # Treat missing walk as worst-case for cost (full $1) so edge
+                # goes negative and would_fire stays False.
+                walked_per_unit_cost += 1.0
+                continue
+            walked.append({
+                "ticker": leg.ticker, "side": leg.side,
+                "top_ask": wr.top_ask, "walked_avg": wr.avg_fill_price,
+                "max_fillable_usdc": wr.max_fillable_usdc,
+                "gap_cents": wr.top_vs_walked_gap_cents,
+            })
+            if wr.max_fillable_usdc < probe:
+                all_fillable = False
+            max_gap = max(max_gap, wr.top_vs_walked_gap_cents)
+            walked_per_unit_cost += wr.avg_fill_price
+        n = len(arb.legs)
+        fee_legs = 2 if group.ladder_type == "cumulative" else n
+        walked_edge = 1.0 - walked_per_unit_cost - fee_legs * cfg.KALSHI_FEE_PER_CONTRACT
+        would_fire = (
+            walked_edge >= cfg.LADDER_PHASE0_MIN_WALKED_EDGE_USDC
+            and all_fillable
+            and max_gap <= cfg.LADDER_PHASE0_MAX_TOP_WALKED_GAP_CENTS
+        )
+        if self._db is not None:
+            await self._db.record_ladder_violation(
+                series=group.series, event_key=group.event_key,
+                ladder_type=group.ladder_type,
+                leg_a_ticker=arb.legs[0].ticker,
+                leg_b_ticker=arb.legs[1].ticker if len(arb.legs) > 1 else None,
+                inversion_amount=arb.expected_edge_usdc,
+                leg_a_depth=None, leg_b_depth=None,
+                action_taken="phase0_arb_log",
+                sub_strategy=self.STRATEGY_NAME,
+                walked_edge_usdc=round(walked_edge, 6),
+                walked_legs_json=json.dumps(walked),
+                top_vs_walked_max_gap_cents=round(max_gap, 2),
+                would_fire=would_fire,
+                phase="phase0_paper",
+            )
+
+    async def _log_phase0_fade(self, group, fade):
+        """Single-leg fade: walk just the target leg."""
+        cfg = self.config
+        probe = cfg.LADDER_PHASE0_PROBE_NOTIONAL_USDC
+        wr = walk_orderbook(self._client, fade.ticker, fade.side, probe)
+        if wr is None:
+            walked_legs = [{"ticker": fade.ticker, "side": fade.side, "walked": None}]
+            walked_edge = None
+            would_fire = False
+            max_gap = None
+        else:
+            walked_legs = [{
+                "ticker": fade.ticker, "side": fade.side,
+                "top_ask": wr.top_ask, "walked_avg": wr.avg_fill_price,
+                "max_fillable_usdc": wr.max_fillable_usdc,
+                "gap_cents": wr.top_vs_walked_gap_cents,
+            }]
+            # Fade edge ≈ inversion_amount - (walked_avg - top_ask) - fee
+            walked_edge = fade.inversion_amount - (wr.avg_fill_price - wr.top_ask) - cfg.KALSHI_FEE_PER_CONTRACT
+            would_fire = (
+                walked_edge >= cfg.LADDER_PHASE0_MIN_WALKED_EDGE_USDC
+                and wr.max_fillable_usdc >= probe
+                and wr.top_vs_walked_gap_cents <= cfg.LADDER_PHASE0_MAX_TOP_WALKED_GAP_CENTS
+            )
+            max_gap = wr.top_vs_walked_gap_cents
+        if self._db is not None:
+            await self._db.record_ladder_violation(
+                series=group.series, event_key=group.event_key,
+                ladder_type=group.ladder_type,
+                leg_a_ticker=fade.ticker, leg_b_ticker=None,
+                inversion_amount=fade.inversion_amount,
+                leg_a_depth=None, leg_b_depth=None,
+                action_taken="phase0_fade_log",
+                sub_strategy=self.STRATEGY_NAME,
+                walked_edge_usdc=round(walked_edge, 6) if walked_edge is not None else None,
+                walked_legs_json=json.dumps(walked_legs),
+                top_vs_walked_max_gap_cents=round(max_gap, 2) if max_gap is not None else None,
+                would_fire=would_fire,
+                phase="phase0_paper",
             )

@@ -81,6 +81,20 @@ class Config:
         self.LADDER_MAX_POSITION_PER_GROUP = float(os.getenv("LADDER_MAX_POSITION_PER_GROUP", "50"))
         self.LADDER_STALE_ORDERBOOK_SEC = float(os.getenv("LADDER_STALE_ORDERBOOK_SEC", "10"))
 
+        # Ladder Phase 0 resurrection (2026-05-19). Paper-only walked-edge
+        # logging; phantom-quote defense via orderbook walk. Spec:
+        # docs/superpowers/specs/2026-05-19-ladder-crypto-resurrection-design.md
+        self.LADDER_PHASE0_MIN_WALKED_EDGE_USDC = float(
+            os.getenv("LADDER_PHASE0_MIN_WALKED_EDGE_USDC", "0.15")
+        )
+        self.LADDER_PHASE0_MAX_TOP_WALKED_GAP_CENTS = float(
+            os.getenv("LADDER_PHASE0_MAX_TOP_WALKED_GAP_CENTS", "2.0")
+        )
+        self.LADDER_PHASE0_PROBE_NOTIONAL_USDC = float(
+            os.getenv("LADDER_PHASE0_PROBE_NOTIONAL_USDC", "25.0")
+        )
+        self.LADDER_PHASE0_ENABLED = os.getenv("LADDER_PHASE0_ENABLED", "true").lower() == "true"
+
         # Macro Event Trader (C1) — single sub-strategy macro_event.
         # Spec: docs/superpowers/specs/2026-05-09-macro-event-trader-design.md
         self.MACRO_EVENT_MIN_DEVIATION = float(os.getenv("MACRO_EVENT_MIN_DEVIATION", "0.10"))
