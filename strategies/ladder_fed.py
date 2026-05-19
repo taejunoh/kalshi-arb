@@ -8,6 +8,7 @@ Conflict with C1 (FOMC window sub-project, separate spec): if both
 strategies fire on the same ticker, ladder_fed has dedup priority via
 the standard DB has_existing_trade gate (extended to ladder_* in Task 7).
 """
+import asyncio
 import logging
 from typing import Optional
 
@@ -55,6 +56,30 @@ class LadderFedStrategy:
     def _is_target_market(m: dict) -> bool:
         return m.get("ticker", "").split("-")[0] in TARGET_SERIES
 
+    @staticmethod
+    def _enrich_markets_sync(markets: list[dict], client) -> list[dict]:
+        # 2026-05-19 evening: this used to run inline in scan_and_execute,
+        # making 48 sync httpx.Client.get() calls (24 markets × 2 endpoints)
+        # while pretending to be async. Under degraded Kalshi latency this
+        # blocked the event loop for 670-715 s per iter (observed), starving
+        # all sports scan_loops on the same loop — the actual root cause of
+        # the ~22/min ConnectTimeout flood originally blamed on the Odds API
+        # httpx pool. Moved to a worker thread via asyncio.to_thread() so
+        # the loop stays responsive.
+        out = []
+        for m in markets:
+            yp, np_ = client.get_market_prices(m["ticker"])
+            if yp is None or np_ is None:
+                continue
+            yd, nd = client.get_order_book_depth(m["ticker"])
+            out.append({
+                **m,
+                "yes_ask": yp, "yes_bid": yp,
+                "no_ask": np_, "no_bid": np_,
+                "yes_depth": yd or 0.0, "no_depth": nd or 0.0,
+            })
+        return out
+
     async def scan_and_execute(self):
         if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
             return
@@ -65,18 +90,7 @@ class LadderFedStrategy:
         if not markets:
             return
 
-        enriched = []
-        for m in markets:
-            yes_price, no_price = self._client.get_market_prices(m["ticker"])
-            if yes_price is None or no_price is None:
-                continue
-            yes_depth, no_depth = self._client.get_order_book_depth(m["ticker"])
-            enriched.append({
-                **m,
-                "yes_ask": yes_price, "yes_bid": yes_price,
-                "no_ask": no_price, "no_bid": no_price,
-                "yes_depth": yes_depth or 0.0, "no_depth": no_depth or 0.0,
-            })
+        enriched = await asyncio.to_thread(self._enrich_markets_sync, markets, self._client)
 
         groups = group_legs_into_ladders(
             enriched, suffix_parser=self._parse_suffix,
