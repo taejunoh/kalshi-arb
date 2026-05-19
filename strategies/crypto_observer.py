@@ -117,6 +117,29 @@ BID_IMBALANCE_FADE_MAX_YA = 0.60      # flipped sibling only fires below this ya
                                        # direction still wins, so the flipped
                                        # observer stays out of that zone.
 
+# 2026-05-19 Phase 0 additions — observers that exploit cross-venue
+# disagreement beyond the Deribit option-chain lognormal model.
+#
+# FUNDING_RATE_FADE: Deribit BTC/ETH perp funding rate elevated
+# (longs paying shorts heavily) historically precedes mean reversion.
+# Phase 0 thesis: when |funding_8h| > threshold, fade the direction the
+# crowd is positioned in. Predict the SAME direction Kalshi over-prices
+# (no fancy mean-reversion call — observer just records the disagreement
+# magnitude; predicted_outcome="no" by convention, like tail_skew).
+FUNDING_RATE_MIN_ABS = 0.0003     # ≥0.03% / 8h ≈ ~33% APR (elevated)
+FUNDING_RATE_MTS_MAX_S = 28800    # within 8h of close (one funding cycle)
+FUNDING_RATE_MIN_YA = 0.05
+FUNDING_RATE_MIN_YB_SIZE = 30
+#
+# VOL_SKEW_FADE: put-call IV asymmetry. Sharp put skew = downside fear
+# priced in options market. Phase 0 thesis: extreme skew (|put_IV - call_IV|
+# > 5 pts) signals coming mean reversion. Predict "no" on tail strikes
+# in the direction of the priced fear (e.g., put skew → fade BTC down).
+VOL_SKEW_MIN_ABS = 0.05           # ≥5 IV points (decimal) asymmetry
+VOL_SKEW_MTS_MAX_S = 86400        # within 24h of close
+VOL_SKEW_MIN_YA = 0.05
+VOL_SKEW_MIN_YB_SIZE = 30
+
 # Cooldown so the same observer × market doesn't fire every 0.2s
 SIGNAL_COOLDOWN_S = 60.0
 
@@ -235,6 +258,9 @@ class EventContext:
     t_legs: list[Leg]              # sorted asc by threshold
     open_time_secs: Optional[float]   # seconds since open of representative leg
     close_time_secs: Optional[float]  # seconds until close
+    # 2026-05-19 Phase 0 additions (None if Deribit fetch failed this tick)
+    funding_8h: Optional[float] = None   # signed decimal, e.g. 0.0005 = +0.05%/8h
+    iv_skew: Optional[float] = None      # put_IV - call_IV at ±10% strike, decimal
 
     def atm_bucket_index(self) -> Optional[int]:
         """Index in b_legs of the bucket whose center is closest to spot."""
@@ -841,6 +867,107 @@ class BidImbalanceFadeObserver(BaseObserver):
         return out
 
 
+class FundingRateFadeObserver(BaseObserver):
+    """Phase 0: Deribit perp funding rate signal.
+
+    When |funding_8h| ≥ FUNDING_RATE_MIN_ABS, the perpetual market is
+    heavily one-sided (longs paying shorts or vice versa). Historical
+    crypto literature suggests this precedes mean reversion. Observer
+    just records the signal — predicted_outcome convention:
+
+      funding > 0  (longs paying)  → fade UPSIDE  → for strike > spot,
+                                      Kalshi YES bet says "BTC up";
+                                      predict "no" (BTC won't go up that far)
+      funding < 0  (shorts paying) → fade DOWNSIDE → for strike < spot,
+                                      Kalshi YES bet says "BTC down";
+                                      predict "no" (BTC won't fall that far)
+
+    Direction may be flipped after 1-2 weeks of Phase 0 data if WR < 50%.
+    """
+    name = "funding_rate_fade"
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        if ctx.funding_8h is None:
+            return []
+        if abs(ctx.funding_8h) < FUNDING_RATE_MIN_ABS:
+            return []
+        if ctx.close_time_secs is None or ctx.close_time_secs <= 0:
+            return []
+        if ctx.close_time_secs > FUNDING_RATE_MTS_MAX_S:
+            return []
+        out: list[Signal] = []
+        for leg in ctx.b_legs:
+            if leg.ya < FUNDING_RATE_MIN_YA:
+                continue
+            if leg.yb_size < FUNDING_RATE_MIN_YB_SIZE:
+                continue
+            # Which side of spot does this strike sit on?
+            if ctx.funding_8h > 0 and leg.threshold <= ctx.spot:
+                continue  # need upside strike to fade upside
+            if ctx.funding_8h < 0 and leg.threshold >= ctx.spot:
+                continue  # need downside strike to fade downside
+            out.append(Signal(
+                observer=self.name, series=ctx.series,
+                event_key=ctx.event_key, market_id=leg.ticker,
+                predicted_outcome="no",
+                features={"ya": leg.ya, "no_ask": leg.na,
+                          "funding_8h": round(ctx.funding_8h, 6),
+                          "spot": ctx.spot, "strike": leg.threshold,
+                          "side": "fade_upside" if ctx.funding_8h > 0 else "fade_downside",
+                          "mts_s": round(ctx.close_time_secs, 1)},
+            ))
+        return out
+
+
+class VolSkewFadeObserver(BaseObserver):
+    """Phase 0: option-market put-call IV asymmetry.
+
+    When |put_IV - call_IV| ≥ VOL_SKEW_MIN_ABS (~5 IV pts), the option
+    market is pricing strong directional fear (put-skew) or upside
+    chase (call-skew). Phase 0 thesis: mean reversion. Observer convention:
+
+      iv_skew > 0  (put-skew, downside fear)  → fade DOWNSIDE
+      iv_skew < 0  (call-skew, upside chase) → fade UPSIDE
+
+    Independent from deribit_tail_skew (single-strike lognormal) — this
+    looks at the full smile shape.
+    """
+    name = "vol_skew_fade"
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        if ctx.iv_skew is None:
+            return []
+        if abs(ctx.iv_skew) < VOL_SKEW_MIN_ABS:
+            return []
+        if ctx.close_time_secs is None or ctx.close_time_secs <= 0:
+            return []
+        if ctx.close_time_secs > VOL_SKEW_MTS_MAX_S:
+            return []
+        out: list[Signal] = []
+        for leg in ctx.b_legs:
+            if leg.ya < VOL_SKEW_MIN_YA:
+                continue
+            if leg.yb_size < VOL_SKEW_MIN_YB_SIZE:
+                continue
+            # iv_skew > 0 (put-skew, downside fear) → fade strikes BELOW spot
+            # iv_skew < 0 (call-skew, upside chase) → fade strikes ABOVE spot
+            if ctx.iv_skew > 0 and leg.threshold >= ctx.spot:
+                continue
+            if ctx.iv_skew < 0 and leg.threshold <= ctx.spot:
+                continue
+            out.append(Signal(
+                observer=self.name, series=ctx.series,
+                event_key=ctx.event_key, market_id=leg.ticker,
+                predicted_outcome="no",
+                features={"ya": leg.ya, "no_ask": leg.na,
+                          "iv_skew": round(ctx.iv_skew, 6),
+                          "spot": ctx.spot, "strike": leg.threshold,
+                          "side": "fade_downside" if ctx.iv_skew > 0 else "fade_upside",
+                          "mts_s": round(ctx.close_time_secs, 1)},
+            ))
+        return out
+
+
 OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
     TailDecayObserver, AtmFadeObserver, ClusterSumObserver,
     BvTConsistencyObserver, SpotDriftMomentumObserver,
@@ -849,6 +976,8 @@ OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
     OpenNoTouchObserver, AtmHoldObserver, BidImbalanceFadeObserver,
     # 2026-05-18 additions: gap-fill / new-hypothesis observers
     LateCloseTailObserver, DeribitAtmSkewObserver,
+    # 2026-05-19 Phase 0 additions: cross-venue Deribit signals
+    FundingRateFadeObserver, VolSkewFadeObserver,
 )
 
 
@@ -1013,10 +1142,25 @@ class CryptoObserverStrategy:
 
         # Resolve Deribit IV once per asset (cached DB call)
         iv_by_asset: dict[str, Optional[float]] = {}
+        funding_by_asset: dict[str, Optional[float]] = {}
+        skew_by_asset: dict[str, Optional[float]] = {}
         for ctx in contexts:
             if ctx.asset not in iv_by_asset:
                 iv_by_asset[ctx.asset] = await self._deribit_iv(ctx.asset)
             ctx.deribit_iv = iv_by_asset[ctx.asset]
+            # 2026-05-19: Phase 0 additions. TTL-cached fetches inside the
+            # helpers — safe to call every scan tick.
+            if ctx.asset not in funding_by_asset:
+                try:
+                    from core.deribit_extras import get_funding_rate, get_iv_skew
+                    funding_by_asset[ctx.asset] = get_funding_rate(ctx.asset)
+                    skew_by_asset[ctx.asset] = get_iv_skew(ctx.asset)
+                except Exception as e:
+                    logger.warning(f"deribit_extras fetch failed {ctx.asset}: {e}")
+                    funding_by_asset[ctx.asset] = None
+                    skew_by_asset[ctx.asset] = None
+            ctx.funding_8h = funding_by_asset[ctx.asset]
+            ctx.iv_skew = skew_by_asset[ctx.asset]
 
         db = getattr(self._order_manager, "_db", None)
         if db is None:
