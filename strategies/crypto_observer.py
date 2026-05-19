@@ -1263,11 +1263,13 @@ class CryptoObserverStrategy:
 
     async def scan_and_execute(self):
         # Observer is read-only: no circuit-breaker / kill switch needed.
-        markets = self._scanner.get_active_markets()
         # ── TEMP DEBUG 2026-05-19 (silent-fail probe) ──
-        # All observers went silent at 12:13 UTC. Logic verified healthy via
-        # off-process eval. Instrumenting to find which gate kills signals
-        # in-process. Throttled to 1 log per 30s. Remove after diagnosis.
+        # Unthrottled entry counter (proves function is called at all).
+        self._entry_count = getattr(self, "_entry_count", 0) + 1
+        if self._entry_count <= 5 or self._entry_count % 100 == 0:
+            logger.warning(f"[OBS_DEBUG] scan_and_execute ENTRY n={self._entry_count}")
+        markets = self._scanner.get_active_markets()
+        # Throttled gate-by-gate diagnostic (1 log per 30s).
         debug_now = time.time()
         last_debug = getattr(self, "_last_debug_log", 0.0)
         debug = (debug_now - last_debug) >= 30.0
