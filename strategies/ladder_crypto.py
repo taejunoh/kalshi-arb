@@ -261,24 +261,32 @@ class LadderCryptoStrategy:
             and max_gap <= cfg.LADDER_PHASE0_MAX_TOP_WALKED_GAP_CENTS
         )
         if self._db is not None:
-            await self._db.record_ladder_violation(
-                series=group.series, event_key=group.event_key,
-                ladder_type=group.ladder_type,
-                leg_a_ticker=arb.legs[0].ticker,
-                leg_b_ticker=arb.legs[1].ticker if len(arb.legs) > 1 else None,
-                inversion_amount=arb.expected_edge_usdc,
-                leg_a_depth=None, leg_b_depth=None,
-                action_taken="phase0_arb_log",
-                sub_strategy=self.STRATEGY_NAME,
-                walked_edge_usdc=round(walked_edge, 6),
-                walked_legs_json=json.dumps(walked),
-                top_vs_walked_max_gap_cents=round(max_gap, 2),
-                would_fire=would_fire,
-                phase="phase0_paper",
-            )
+            try:
+                await self._db.record_ladder_violation(
+                    series=group.series, event_key=group.event_key,
+                    ladder_type=group.ladder_type,
+                    leg_a_ticker=arb.legs[0].ticker,
+                    leg_b_ticker=arb.legs[1].ticker if len(arb.legs) > 1 else None,
+                    inversion_amount=arb.expected_edge_usdc,
+                    leg_a_depth=None, leg_b_depth=None,
+                    action_taken="phase0_arb_log",
+                    sub_strategy=self.STRATEGY_NAME,
+                    walked_edge_usdc=round(walked_edge, 6),
+                    walked_legs_json=json.dumps(walked),
+                    top_vs_walked_max_gap_cents=round(max_gap, 2),
+                    would_fire=would_fire,
+                    phase="phase0_paper",
+                )
+            except Exception as e:
+                logger.warning(f"phase0 log failed series={group.series} event={group.event_key}: {e}")
 
     async def _log_phase0_fade(self, group, fade):
-        """Single-leg fade: walk just the target leg."""
+        """Single-leg fade: walk just the target leg.
+
+        Note: walked_edge_usdc for fade rows = inversion - slippage - fee, which
+        is NOT comparable to arb-row walked_edge_usdc (= 1 - cost - n*fee).
+        Analysts must filter by action_taken before aggregating walked_edge_usdc.
+        """
         cfg = self.config
         probe = cfg.LADDER_PHASE0_PROBE_NOTIONAL_USDC
         wr = walk_orderbook(self._client, fade.ticker, fade.side, probe)
@@ -303,17 +311,20 @@ class LadderCryptoStrategy:
             )
             max_gap = wr.top_vs_walked_gap_cents
         if self._db is not None:
-            await self._db.record_ladder_violation(
-                series=group.series, event_key=group.event_key,
-                ladder_type=group.ladder_type,
-                leg_a_ticker=fade.ticker, leg_b_ticker=None,
-                inversion_amount=fade.inversion_amount,
-                leg_a_depth=None, leg_b_depth=None,
-                action_taken="phase0_fade_log",
-                sub_strategy=self.STRATEGY_NAME,
-                walked_edge_usdc=round(walked_edge, 6) if walked_edge is not None else None,
-                walked_legs_json=json.dumps(walked_legs),
-                top_vs_walked_max_gap_cents=round(max_gap, 2) if max_gap is not None else None,
-                would_fire=would_fire,
-                phase="phase0_paper",
-            )
+            try:
+                await self._db.record_ladder_violation(
+                    series=group.series, event_key=group.event_key,
+                    ladder_type=group.ladder_type,
+                    leg_a_ticker=fade.ticker, leg_b_ticker=None,
+                    inversion_amount=fade.inversion_amount,
+                    leg_a_depth=None, leg_b_depth=None,
+                    action_taken="phase0_fade_log",
+                    sub_strategy=self.STRATEGY_NAME,
+                    walked_edge_usdc=round(walked_edge, 6) if walked_edge is not None else None,
+                    walked_legs_json=json.dumps(walked_legs),
+                    top_vs_walked_max_gap_cents=round(max_gap, 2) if max_gap is not None else None,
+                    would_fire=would_fire,
+                    phase="phase0_paper",
+                )
+            except Exception as e:
+                logger.warning(f"phase0 log failed series={group.series} event={group.event_key}: {e}")

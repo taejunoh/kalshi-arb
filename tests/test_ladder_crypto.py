@@ -194,3 +194,41 @@ async def test_phase0_no_market_order_calls(monkeypatch):
     await strat._handle_group(group)
 
     assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_phase0_fade_logs_with_walked_slippage(monkeypatch):
+    """Fade path: walked > top → would_fire=False; correct action_taken."""
+    from core import orderbook_walk
+
+    def fake_walk(client, ticker, side, target_notional_usdc):
+        # Walked price 4c above top — exceeds 2c gap threshold
+        return orderbook_walk.WalkResult(
+            avg_fill_price=0.14, max_fillable_usdc=25.0,
+            levels_consumed=2, top_ask=0.10, top_vs_walked_gap_cents=4.0,
+        )
+    monkeypatch.setattr("strategies.ladder_crypto.walk_orderbook", fake_walk)
+
+    cfg = _make_config()
+    om = MagicMock(); om.market_order = AsyncMock()
+    db = MagicMock(); db.record_ladder_violation = AsyncMock(return_value=1)
+    strat = LadderCryptoStrategy(cfg, om, MagicMock(), MagicMock())
+    strat._db = db
+
+    group = LadderGroup(series="KXBTC", event_key="26MAY1915-1500",
+                        ladder_type="cumulative", direction="asc",
+                        legs=_cumulative_legs())
+    await strat._handle_group(group)
+
+    fade_calls = [
+        c for c in db.record_ladder_violation.await_args_list
+        if c.kwargs.get("action_taken") == "phase0_fade_log"
+    ]
+    assert len(fade_calls) == 1
+    kw = fade_calls[0].kwargs
+    assert kw["would_fire"] is False
+    # fade walked_edge = inversion_amount - (walked_avg - top_ask) - fee
+    # inversion = 0.70 - 0.10 = 0.60 (t2.yes_bid - t1.yes_ask)
+    # slippage = 0.14 - 0.10 = 0.04
+    # walked_edge = 0.60 - 0.04 - 0.07 = 0.49
+    assert kw["walked_edge_usdc"] == pytest.approx(0.49, abs=0.01)
