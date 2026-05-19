@@ -58,12 +58,16 @@ def test_fires_when_pinnacle_mildly_disagrees():
     assert sig is not None
 
 
-def test_skips_when_pinnacle_stale():
+def test_accepts_stale_pinnacle():
+    """TU1 signal is price-band, not Pinnacle-event-driven. A stale Pinnacle
+    line is still useful as a sanity veto — don't gate on age. 2026-05-19:
+    inherited age gate was rejecting all candidates and producing 0 fires."""
     s = _make(pin=0.32)
-    s._last_pinnacle_age_s = 1000  # > MAX_PINNACLE_AGE_S=600
+    s._last_pinnacle_age_s = 100000  # very old — must still fire
     sig = s.evaluate(kalshi_yes=0.30, kalshi_no=0.71, fair_prob=0.32,
                      ticker="KXATPMATCH-X")
-    assert sig is None
+    assert sig is not None
+    assert sig["side"] == "yes"
 
 
 def test_skips_when_pinnacle_missing():

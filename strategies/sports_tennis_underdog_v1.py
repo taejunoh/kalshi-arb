@@ -47,18 +47,20 @@ class SportsTennisUnderdogV1Strategy(SportsTraderStrategy):
     MIN_ENTRY_PRICE = 0.25
     MAX_ENTRY_PRICE = 0.35
 
-    # Pinnacle sanity gate: don't fire when Pinnacle thinks the underdog is
-    # even MORE of a longshot than Kalshi has it. (Strong-favorite chalk
-    # should still go to A2/surface_skew, not here.) None = age-only check.
-    MAX_PINNACLE_AGE_S = 600
+    # TU1 signal is price-band only — Pinnacle is used as a sanity veto, not
+    # as a freshness-driven signal source. Unlike A1/C (which require fresh
+    # Pinnacle ticks to fire), TU1 should accept any non-null Pinnacle value
+    # as veto input. 2026-05-19 first-fire check showed 35 candidates and
+    # 0 fires because inherited MAX_PINNACLE_AGE_S=600 rejected everything
+    # after the Pinnacle hash stopped ticking (~30 min post-deploy). Removed.
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
                  ticker: str = "") -> Optional[dict]:
-        # Tennis Pinnacle freshness gate — same shape as A1/A2/C.
+        # Pinnacle must exist for the veto check, but freshness is NOT
+        # required — see class comment above.
         pin = self._last_pinnacle_yes_prob
-        age = self._last_pinnacle_age_s
-        if pin is None or age is None or age > self.MAX_PINNACLE_AGE_S:
+        if pin is None:
             return None
 
         # Price band gate. Base class already enforces MIN/MAX_ENTRY_PRICE
