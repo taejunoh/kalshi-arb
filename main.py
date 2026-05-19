@@ -487,6 +487,31 @@ class Bot:
             asyncio.create_task(
                 self.crypto_observer.scan_loop(scan_interval_secs=1.0)
             ),
+            # 2026-05-19 (Phase 1 traders): same scan-rate problem. With
+            # SIGNAL_FRESHNESS_S=15 s, signals age out before the main loop
+            # comes back around (10-30 min/iter), so every signal gets skipped
+            # as too-old. 1 s scan_loop each — matches observer cadence.
+            asyncio.create_task(
+                self.deribit_tail_fade_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.bid_imbalance_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.open_no_touch_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.atm_hold_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.bid_imbalance_fade_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.late_close_tail_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.deribit_atm_fade_v1.scan_loop(scan_interval_secs=1.0)
+            ),
         ]
 
         try:
@@ -550,18 +575,11 @@ class Bot:
             # shutdown_fade deprecated — see docs/future-work/shutdown-fade-redesign.md
             ("spread_scanner", self.spread_scanner),
             ("market_maker", self.market_maker),
-            # 2026-05-19: crypto_observer moved to its own scan_loop task
-            # (1 s cadence) — see _strategy_loop's task list. Reordered the
-            # Phase 1 consumer traders here so they see fresh observer signals
-            # before the slow sports portfolio runs (~28 strategies, ~7-73 s
-            # each on cold-cache iters under degraded Odds API).
-            ("deribit_tail_fade_v1", self.deribit_tail_fade_v1),
-            ("bid_imbalance_v1", self.bid_imbalance_v1),
-            ("open_no_touch_v1", self.open_no_touch_v1),
-            ("atm_hold_v1", self.atm_hold_v1),
-            ("bid_imbalance_fade_v1", self.bid_imbalance_fade_v1),
-            ("late_close_tail_v1", self.late_close_tail_v1),
-            ("deribit_atm_fade_v1", self.deribit_atm_fade_v1),
+            # 2026-05-19: crypto_observer + 7 Phase 1 paper traders all moved
+            # to their own scan_loop tasks (1 s cadence) — see _strategy_loop's
+            # task list. Under degraded Odds API, the main loop hit 10-30 min
+            # iters; Phase 1's 15 s freshness window aged out every signal
+            # before the next call.
             # mentions_trader disabled 2026-04-17 — sports v31 trio is now the
             # main live strategy. Mentions accumulated 110 Kalshi positions
             # (~$200 tied capital) in KXFEDMENTION-* markets settling end of
