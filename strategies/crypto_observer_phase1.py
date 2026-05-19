@@ -66,6 +66,21 @@ class _Phase1Base:
         (e.g., book too thin to fill a meaningful position)."""
         return self.SIZE_USDC
 
+    async def scan_loop(self, scan_interval_secs: float = 1.0):
+        """Dedicated scan task — bypasses main strategy loop. 2026-05-19:
+        SIGNAL_FRESHNESS_S=15s means signals age out fast; if Phase 1
+        traders live in the main strategy loop (10-30 min/iter under
+        slow Odds API), every signal is stale by the time the trader
+        runs. Mirror crypto_observer.scan_loop pattern at 1 s cadence.
+        """
+        import asyncio
+        while True:
+            try:
+                await self.scan_and_execute()
+            except Exception as e:
+                logger.error(f"{self.STRATEGY_NAME} scan_loop error: {e}")
+            await asyncio.sleep(scan_interval_secs)
+
     async def scan_and_execute(self):
         if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
             return

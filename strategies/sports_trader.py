@@ -6,7 +6,7 @@ import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import httpx
 
@@ -18,6 +18,26 @@ logger = logging.getLogger("sports_trader")
 # monthly quota (10 strategies × 3 sports × 288 scans/day = 8640 calls/day
 # uncached → ~260K/mo vs 20K allotted). Keyed by (region, sport).
 _ODDS_CACHE: dict[tuple[str, str], tuple[float, list[dict], dict]] = {}
+
+# Shared HTTP client for Odds API. 2026-05-19: prior code created a fresh
+# httpx.AsyncClient per call. With 17+ sports strategies (now all running on
+# their own observer-side scan_loops via crypto_observer + Phase 1 traders,
+# plus the main strategy loop), the per-call client churn produced waves of
+# ephemeral TCP connections that exhausted port range + connection-pool
+# bookkeeping → ConnectTimeout(''). One shared client with a 50-connection
+# pool + 20 keepalive amortises the TLS handshake and caps concurrent
+# socket usage. Lazy init so tests that never call _fetch_odds don't fork
+# an event-loop-bound resource at import time.
+_ODDS_HTTP_CLIENT: Optional[Any] = None
+
+
+def _get_odds_http_client():
+    global _ODDS_HTTP_CLIENT
+    if _ODDS_HTTP_CLIENT is None:
+        import httpx
+        limits = httpx.Limits(max_connections=50, max_keepalive_connections=20)
+        _ODDS_HTTP_CLIENT = httpx.AsyncClient(timeout=10, limits=limits)
+    return _ODDS_HTTP_CLIENT
 # Per-region TTL matched to upstream tick cadence (2026-04-14 freshness measurement):
 # us retail (matchbook/betfair) ticks 63~98s → 60s TTL keeps every scan fresh.
 # eu (Pinnacle dominant) upstream gap ~883s → 600s TTL avoids duplicate fetch.
@@ -876,29 +896,29 @@ class SportsTraderStrategy:
                 return data
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(
-                    f"https://api.the-odds-api.com/v4/sports/{sport}/odds",
-                    params={
-                        "apiKey": self._odds_api_key,
-                        "regions": region,
-                        "markets": "h2h",
-                        "oddsFormat": "decimal",
-                    },
-                )
-                resp.raise_for_status()
-                usage = {
-                    "used": int(resp.headers.get("x-requests-used", 0)),
-                    "remaining": int(resp.headers.get("x-requests-remaining", 0)),
-                    "last": int(resp.headers.get("x-requests-last", 0)),
-                }
-                data = resp.json()
-                self.odds_api_usage = usage
-                await self._check_quota(usage.get("remaining", 0))
-                _ODDS_CACHE[cache_key] = (now, data, usage)
-                pinnacle_hash = _compute_pinnacle_payload_hash(data)
-                _PINNACLE_AGE.observe(region, sport, pinnacle_hash)
-                return data
+            client = _get_odds_http_client()
+            resp = await client.get(
+                f"https://api.the-odds-api.com/v4/sports/{sport}/odds",
+                params={
+                    "apiKey": self._odds_api_key,
+                    "regions": region,
+                    "markets": "h2h",
+                    "oddsFormat": "decimal",
+                },
+            )
+            resp.raise_for_status()
+            usage = {
+                "used": int(resp.headers.get("x-requests-used", 0)),
+                "remaining": int(resp.headers.get("x-requests-remaining", 0)),
+                "last": int(resp.headers.get("x-requests-last", 0)),
+            }
+            data = resp.json()
+            self.odds_api_usage = usage
+            await self._check_quota(usage.get("remaining", 0))
+            _ODDS_CACHE[cache_key] = (now, data, usage)
+            pinnacle_hash = _compute_pinnacle_payload_hash(data)
+            _PINNACLE_AGE.observe(region, sport, pinnacle_hash)
+            return data
         except Exception as e:
             # 2026-05-19: include exception type — many failures today logged
             # blank message ("Odds API error for X:"). Without type+repr we
