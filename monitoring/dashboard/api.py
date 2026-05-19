@@ -1401,6 +1401,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "atm_hold":           "atm_hold_v1",
             "late_close_tail":    "late_close_tail_v1",
             "deribit_atm_skew":   "deribit_atm_fade_v1",
+            # Direct traders that write Phase 0 signals under their own name
+            # (observer == phase 1 strategy). See
+            # [[crypto_fair_value_mid_v1_2026-05-19]].
+            "crypto_fair_value":        "crypto_fair_value",
+            "crypto_fair_value_mid_v1": "crypto_fair_value_mid_v1",
         }
         # All known observers — seed so observers that haven't fired in the
         # window still render with n=0 instead of being silently dropped.
@@ -1411,6 +1416,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "bid_imbalance",
             "open_no_touch", "atm_hold", "bid_imbalance_fade",
             "late_close_tail", "deribit_atm_skew",
+            # Direct traders (write Phase 0 signals under their own observer name).
+            "crypto_fair_value", "crypto_fair_value_mid_v1",
         )
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         async with aiosqlite.connect(database.db_path, timeout=30.0) as conn:
@@ -1502,48 +1509,6 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     r["phase1_paper_pnl"] = 0.0
                     r["phase1_paper_stake"] = 0.0
                     r["phase1_paper_roi"] = None
-        # Direct crypto trader rows (not observer-derived). Renders alongside
-        # the observer table so paper-trade stats for crypto_fair_value family
-        # are visible for A/B comparison (see [[crypto_fair_value_mid_v1_2026-05-19]]).
-        DIRECT_CRYPTO_STRATEGIES = ("crypto_fair_value", "crypto_fair_value_mid_v1")
-        direct_stats: dict = {}
-        async with aiosqlite.connect(database.db_path, timeout=30.0) as conn2:
-            conn2.row_factory = aiosqlite.Row
-            placeholders = ",".join("?" * len(DIRECT_CRYPTO_STRATEGIES))
-            cur3 = await conn2.execute(
-                f"""SELECT strategy,
-                          COUNT(*) AS n_trades,
-                          SUM(CASE WHEN status='paper_settled' THEN 1 ELSE 0 END) AS n_settled,
-                          SUM(CASE WHEN status='paper_settled' AND pnl > 0 THEN 1 ELSE 0 END) AS wins,
-                          ROUND(COALESCE(SUM(pnl), 0), 2) AS pnl_sum,
-                          ROUND(COALESCE(SUM(CASE WHEN status='paper_settled' THEN size ELSE 0 END), 0), 2) AS settled_stake,
-                          MAX(timestamp) AS last_ts
-                   FROM trades
-                   WHERE strategy IN ({placeholders}) AND timestamp >= ?
-                   GROUP BY strategy""",
-                (*DIRECT_CRYPTO_STRATEGIES, cutoff),
-            )
-            for r in await cur3.fetchall():
-                direct_stats[r["strategy"]] = dict(r)
-        for sname in DIRECT_CRYPTO_STRATEGIES:
-            st = direct_stats.get(sname)
-            stake = (st["settled_stake"] if st else 0) or 0.0
-            rows.append({
-                "observer": sname,
-                "is_direct_trader": True,
-                "n_total": None, "n_open": None, "n_settled": None, "wins": None,
-                "last_ts": st["last_ts"] if st else None,
-                "wr": None, "wr_ci_lo": None, "wr_ci_hi": None,
-                "phase1_strategy": sname,
-                "phase1_paper_trades": st["n_trades"] if st else 0,
-                "phase1_paper_settled": st["n_settled"] if st else 0,
-                "phase1_paper_wins": st["wins"] if st else 0,
-                "phase1_paper_pnl": st["pnl_sum"] if st else 0.0,
-                "phase1_paper_stake": stake,
-                "phase1_paper_roi": (
-                    round(100.0 * st["pnl_sum"] / stake, 2) if st and stake > 0 else None
-                ),
-            })
         return {
             "observers": rows,
             "as_of": datetime.now(timezone.utc).isoformat(),

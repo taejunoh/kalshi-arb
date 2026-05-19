@@ -1892,9 +1892,13 @@ async function refreshCryptoObserver() {
         const s = (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
         ph1Roi = `<span class="${cls}">${s}</span>`;
       }
-      // Direct trader rows (crypto_fair_value family) have no observer-side
-      // stats — render those cells as "—" and tag the strategy name.
-      const obsLabel = r.is_direct_trader
+      // Direct-trader observers (crypto_fair_value family) write Phase 0 rows
+      // under their own STRATEGY_NAME — tag visually so they're distinguishable
+      // from hypothesis observers in the same table.
+      const isDirect = r.observer === r.phase1_strategy
+        && r.phase1_strategy != null
+        && r.observer.startsWith('crypto_fair_value');
+      const obsLabel = isDirect
         ? `<span class="badge badge-gray">direct</span> ${r.observer}`
         : r.observer;
       const nt = r.n_total == null ? '—' : r.n_total;

@@ -75,7 +75,16 @@ class CryptoFairValueMidV1Strategy(CryptoFairValueStrategy):
         )
         if edge is None:
             return
+
+        size_proposed = self._size_for_edge(edge["deviation"])
         depth_for_side = ob.yes_depth if edge["side"] == "yes" else ob.no_depth
+        await self._maybe_log_phase0_signal(
+            db=db, ticker=ticker, market=market, side=edge["side"],
+            spot=spot, strike=strike, fair=fair, impl=(ob.yes_ask + ob.yes_bid) / 2,
+            deviation=edge["deviation"], vol=vol, vol_source=vol_source,
+            size_proposed=size_proposed, depth_for_side=depth_for_side,
+        )
+
         if depth_for_side < cfg.CRYPTO_FAIR_MIN_DEPTH_USDC:
             return
 
@@ -83,7 +92,7 @@ class CryptoFairValueMidV1Strategy(CryptoFairValueStrategy):
         if last_fire is not None and (time.time() - last_fire) < cfg.CRYPTO_FAIR_RECENTLY_FIRED_SECS:
             return
 
-        size = self._size_for_edge(edge["deviation"])
+        size = size_proposed
         existing = await db.total_open_exposure(ticker)
         if existing + size > cfg.CRYPTO_FAIR_MAX_TICKER_TOTAL_EXPOSURE:
             return

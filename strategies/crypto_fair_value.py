@@ -10,6 +10,7 @@ cross-strategy exposure cap.
 Spec: docs/superpowers/specs/2026-05-10-crypto-fair-value-trader-design.md
 """
 import asyncio
+import json
 import logging
 import re
 import time
@@ -17,6 +18,11 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from core.fair_value_math import lognormal_cdf_above
+
+# Phase 0 signal cooldown — prevents the same (strategy, ticker) from being
+# logged every second when the edge persists. Matches the strategy's existing
+# CRYPTO_FAIR_RECENTLY_FIRED_SECS so Phase 0 and Phase 1 rate-limits align.
+PHASE0_SIGNAL_COOLDOWN_SECS = 60.0
 
 logger = logging.getLogger("crypto_fair_value")
 
@@ -44,7 +50,8 @@ class CryptoFairValueStrategy:
         self._scanner = market_scanner
         self._client = kalshi_client
         self._price_feed = price_feed
-        self._recently_fired: dict[str, float] = {}  # ticker → epoch ts
+        self._recently_fired: dict[str, float] = {}  # ticker → epoch ts (paper trade)
+        self._last_phase0_signal: dict[str, float] = {}  # ticker → epoch ts
 
     @staticmethod
     def _is_target_market(m: dict) -> bool:
@@ -163,6 +170,47 @@ class CryptoFairValueStrategy:
         scale = max(0.5, min(3.0, abs(deviation) / cfg.CRYPTO_FAIR_MIN_DEVIATION))
         return min(base * scale, cfg.CRYPTO_FAIR_MAX_POSITION_PER_TICKER)
 
+    async def _maybe_log_phase0_signal(
+        self, *, db, ticker: str, market: dict, side: str,
+        spot: float, strike: float, fair: float, impl: float,
+        deviation: float, vol: float, vol_source: str,
+        size_proposed: float, depth_for_side: float,
+    ) -> None:
+        """Write a crypto_observer_signals row for this edge detection.
+
+        Cooldown-gated so a persistent edge doesn't flood the table. observer
+        column = STRATEGY_NAME so the dashboard's existing /api/crypto-observer
+        query picks it up alongside hypothesis observers. actual_outcome is
+        filled later by scripts/crypto_observer_settlement_backfill.py.
+        """
+        now_epoch = time.time()
+        last = self._last_phase0_signal.get(ticker)
+        if last is not None and (now_epoch - last) < PHASE0_SIGNAL_COOLDOWN_SECS:
+            return
+        try:
+            series = market.get("ticker", "").split("-")[0]
+            # event_key = ticker minus strike suffix → groups all strikes within
+            # the same expiry (e.g., KXBTCD-26MAY1908 across T76699/T76799/...).
+            parts = market.get("ticker", "").rsplit("-", 1)
+            event_key = parts[0] if len(parts) == 2 else market.get("ticker", "")
+            features = {
+                "spot": round(spot, 4), "strike": round(strike, 4),
+                "fair": round(fair, 4), "impl": round(impl, 4),
+                "deviation": round(deviation, 4),
+                "vol": round(vol, 4), "vol_source": vol_source,
+                "size_proposed": round(size_proposed, 2),
+                "depth_for_side": round(depth_for_side, 2),
+            }
+            await db.record_crypto_observer_signal(
+                observer=self.STRATEGY_NAME, series=series,
+                event_key=event_key, market_id=ticker,
+                predicted_outcome=side,
+                features_json=json.dumps(features, sort_keys=True),
+            )
+            self._last_phase0_signal[ticker] = now_epoch
+        except Exception as e:
+            logger.warning(f"phase0 signal log failed {ticker}: {e}")
+
     async def _handle_market(self, market: dict, *, db, cache, now: datetime):
         """9-gate pipeline for a single market — fires market_order if all gates pass."""
         cfg = self.config
@@ -211,7 +259,19 @@ class CryptoFairValueStrategy:
         # Gates 5+6: deviation + EV (handled by _compute_edge)
         if edge is None:
             return
+
+        # Phase 0 signal logging — edge detected (deviation + EV pass), record
+        # before downstream gates so we can compute true alpha WR independent
+        # of execution-side filters. Cooldown matches Phase 1 RECENTLY_FIRED.
+        size_proposed = self._size_for_edge(edge["deviation"])
         depth_for_side = ob.yes_depth if edge["side"] == "yes" else ob.no_depth
+        await self._maybe_log_phase0_signal(
+            db=db, ticker=ticker, market=market, side=edge["side"],
+            spot=spot, strike=strike, fair=fair, impl=(ob.yes_ask + ob.yes_bid) / 2,
+            deviation=edge["deviation"], vol=vol, vol_source=vol_source,
+            size_proposed=size_proposed, depth_for_side=depth_for_side,
+        )
+
         if depth_for_side < cfg.CRYPTO_FAIR_MIN_DEPTH_USDC:
             return
 
@@ -221,7 +281,7 @@ class CryptoFairValueStrategy:
             return
 
         # Gate 8: cross-strategy exposure cap
-        size = self._size_for_edge(edge["deviation"])
+        size = size_proposed
         existing = await db.total_open_exposure(ticker)
         if existing + size > cfg.CRYPTO_FAIR_MAX_TICKER_TOTAL_EXPOSURE:
             return
