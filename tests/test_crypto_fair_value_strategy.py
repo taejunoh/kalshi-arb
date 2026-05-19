@@ -357,3 +357,79 @@ async def test_handle_market_skips_when_depth_insufficient():
     }
     await s._handle_market(market, db=db, cache=cache, now=datetime.now(timezone.utc))
     om.market_order.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_market_logs_phase0_signal_even_when_depth_blocks():
+    """Edge detected (deviation + EV pass) → Phase 0 signal recorded.
+    Then depth gate blocks the paper trade — signal still logged. Lets WR
+    be computed independently of execution-side filters."""
+    import json as _json
+    cfg = _cfg()
+    db = MagicMock()
+    db.fetch_nearest_crypto_iv = AsyncMock(return_value={
+        "asset": "BTC", "expiry_date": "2026-05-13", "atm_iv": 0.50,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    })
+    db.total_open_exposure = AsyncMock(return_value=0.0)
+    db.record_crypto_observer_signal = AsyncMock(return_value=42)
+    pf = MagicMock()
+    pf.get_price = MagicMock(return_value=90000.0)
+    pf.is_stale = MagicMock(return_value=False)
+    pf.get_volatility = MagicMock(return_value=0.50)
+    om = MagicMock()
+    om.is_circuit_breaker_active = MagicMock(return_value=False)
+    om.market_order = AsyncMock()
+    om._db = db
+    cache = MagicMock()
+    cache.get = MagicMock(return_value=_fresh_entry(yes_ask=0.30, no_ask=0.70, depth=5.0))
+    s = CryptoFairValueStrategy(cfg, om, MagicMock(), MagicMock(), price_feed=pf)
+    market = {
+        "ticker": "KXBTC-26MAY1017-T89500",
+        "close_time": (datetime.now(timezone.utc) + timedelta(seconds=3600)).isoformat(),
+    }
+    await s._handle_market(market, db=db, cache=cache, now=datetime.now(timezone.utc))
+
+    om.market_order.assert_not_called()
+    db.record_crypto_observer_signal.assert_called_once()
+    kwargs = db.record_crypto_observer_signal.call_args.kwargs
+    assert kwargs["observer"] == "crypto_fair_value"
+    assert kwargs["series"] == "KXBTC"
+    assert kwargs["event_key"] == "KXBTC-26MAY1017"
+    assert kwargs["market_id"] == "KXBTC-26MAY1017-T89500"
+    assert kwargs["predicted_outcome"] == "yes"
+    features = _json.loads(kwargs["features_json"])
+    assert features["spot"] == 90000.0
+    assert features["strike"] == 89500.0
+    assert features["depth_for_side"] == 5.0
+
+
+@pytest.mark.asyncio
+async def test_phase0_signal_cooldown_dedups_within_60s():
+    """Same ticker logged twice within cooldown → only one DB write."""
+    cfg = _cfg()
+    db = MagicMock()
+    db.fetch_nearest_crypto_iv = AsyncMock(return_value={
+        "asset": "BTC", "expiry_date": "2026-05-13", "atm_iv": 0.50,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    })
+    db.total_open_exposure = AsyncMock(return_value=0.0)
+    db.record_crypto_observer_signal = AsyncMock(return_value=1)
+    pf = MagicMock()
+    pf.get_price = MagicMock(return_value=90000.0)
+    pf.is_stale = MagicMock(return_value=False)
+    pf.get_volatility = MagicMock(return_value=0.50)
+    om = MagicMock()
+    om.is_circuit_breaker_active = MagicMock(return_value=False)
+    om.market_order = AsyncMock()
+    om._db = db
+    cache = MagicMock()
+    cache.get = MagicMock(return_value=_fresh_entry(yes_ask=0.30, no_ask=0.70, depth=5.0))
+    s = CryptoFairValueStrategy(cfg, om, MagicMock(), MagicMock(), price_feed=pf)
+    market = {
+        "ticker": "KXBTC-26MAY1017-T89500",
+        "close_time": (datetime.now(timezone.utc) + timedelta(seconds=3600)).isoformat(),
+    }
+    await s._handle_market(market, db=db, cache=cache, now=datetime.now(timezone.utc))
+    await s._handle_market(market, db=db, cache=cache, now=datetime.now(timezone.utc))
+    assert db.record_crypto_observer_signal.call_count == 1
