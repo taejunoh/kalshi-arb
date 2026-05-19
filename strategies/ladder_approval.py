@@ -6,6 +6,7 @@ prefix and runs framework once per direction. Approval prices move slowly
 → ladder violations are typically structural and persist long enough for
 the fade fallback to converge.
 """
+import asyncio
 import logging
 from collections import defaultdict
 from typing import Optional
@@ -60,6 +61,23 @@ class LadderApprovalStrategy:
         parts = m.get("ticker", "").split("-")
         return "-".join(parts[1:-1]) if len(parts) >= 3 else ""
 
+    @staticmethod
+    def _enrich_markets_sync(markets: list[dict], client) -> list[dict]:
+        # Dispatched via asyncio.to_thread — mirrors ladder_fed pattern.
+        out = []
+        for m in markets:
+            yp, np_ = client.get_market_prices(m["ticker"])
+            if yp is None or np_ is None:
+                continue
+            yd, nd = client.get_order_book_depth(m["ticker"])
+            out.append({
+                **m,
+                "yes_ask": yp, "yes_bid": yp,
+                "no_ask": np_, "no_bid": np_,
+                "yes_depth": yd or 0.0, "no_depth": nd or 0.0,
+            })
+        return out
+
     async def scan_and_execute(self):
         if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
             return
@@ -70,18 +88,7 @@ class LadderApprovalStrategy:
         if not markets:
             return
 
-        enriched = []
-        for m in markets:
-            yes_price, no_price = self._client.get_market_prices(m["ticker"])
-            if yes_price is None or no_price is None:
-                continue
-            yes_depth, no_depth = self._client.get_order_book_depth(m["ticker"])
-            enriched.append({
-                **m,
-                "yes_ask": yes_price, "yes_bid": yes_price,
-                "no_ask": no_price, "no_bid": no_price,
-                "yes_depth": yes_depth or 0.0, "no_depth": no_depth or 0.0,
-            })
+        enriched = await asyncio.to_thread(self._enrich_markets_sync, markets, self._client)
 
         # Partition by direction (asc vs desc series)
         by_dir = defaultdict(list)

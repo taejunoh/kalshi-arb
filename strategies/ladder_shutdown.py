@@ -6,6 +6,7 @@ shutdown_fade replacement that respects the DB dedup invariant. V1 had
 guard; that guard now extends to ladder_* (see core/order_manager.py
 comment block).
 """
+import asyncio
 import logging
 from typing import Optional
 
@@ -54,6 +55,24 @@ class LadderShutdownStrategy:
         series = ticker.split("-")[0]
         return series in TARGET_SERIES
 
+    @staticmethod
+    def _enrich_markets_sync(markets: list[dict], client) -> list[dict]:
+        # Dispatched via asyncio.to_thread so sync httpx.Client calls don't
+        # block the event loop. Mirrors ladder_fed / ladder_crypto pattern.
+        out = []
+        for m in markets:
+            yp, np_ = client.get_market_prices(m["ticker"])
+            if yp is None or np_ is None:
+                continue
+            yd, nd = client.get_order_book_depth(m["ticker"])
+            out.append({
+                **m,
+                "yes_ask": yp, "yes_bid": yp,
+                "no_ask": np_, "no_bid": np_,
+                "yes_depth": yd or 0.0, "no_depth": nd or 0.0,
+            })
+        return out
+
     async def scan_and_execute(self):
         if self._order_manager.is_circuit_breaker_active(strategy=self.STRATEGY_NAME):
             return
@@ -65,19 +84,7 @@ class LadderShutdownStrategy:
         if not markets:
             return
 
-        # Enrich with depth (caller responsibility — sub-strategy fills in)
-        enriched = []
-        for m in markets:
-            yes_price, no_price = self._client.get_market_prices(m["ticker"])
-            if yes_price is None or no_price is None:
-                continue
-            yes_depth, no_depth = self._client.get_order_book_depth(m["ticker"])
-            enriched.append({
-                **m,
-                "yes_ask": yes_price, "yes_bid": yes_price,
-                "no_ask": no_price, "no_bid": no_price,
-                "yes_depth": yes_depth or 0.0, "no_depth": no_depth or 0.0,
-            })
+        enriched = await asyncio.to_thread(self._enrich_markets_sync, markets, self._client)
 
         groups = group_legs_into_ladders(
             enriched, suffix_parser=self._parse_suffix,

@@ -1,4 +1,5 @@
 """Economic indicator trading strategy — CPI/GDP markets."""
+import asyncio
 import json
 import logging
 import os
@@ -100,8 +101,9 @@ class EconTraderStrategy:
             await self._econ.fetch_cpi_history()
             self._data_loaded = True
 
-        # Total exposure limit: max 30% of bankroll
-        total_exposure = self._get_live_econ_exposure()
+        # Total exposure limit: max 30% of bankroll. _get_live_econ_exposure
+        # is sync (calls _client.get_positions) — dispatched via to_thread.
+        total_exposure = await asyncio.to_thread(self._get_live_econ_exposure)
         max_exposure = self._order_manager.bankroll * 0.30
         if total_exposure > max_exposure:
             return
@@ -120,8 +122,9 @@ class EconTraderStrategy:
     async def _scan_cpi_markets(self, estimate: dict) -> int:
         """Scan KXCPI markets and trade based on statistical edge."""
         try:
-            data = self._client._get(
-                "/trade-api/v2/markets?status=open&series_ticker=KXCPI&limit=200"
+            data = await asyncio.to_thread(
+                self._client._get,
+                "/trade-api/v2/markets?status=open&series_ticker=KXCPI&limit=200",
             )
             markets = data.get("markets", []) if data else []
         except Exception as e:
