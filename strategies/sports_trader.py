@@ -1378,6 +1378,35 @@ class SportsTraderStrategy:
                 f"fair={fair_prob:.2f} ask={ya:.2f}/{na:.2f} edge={signal['edge']:.2f} "
                 f"→ {signal['side']} ${size:.2f} LIMIT@{limit_price:.2f}")
 
+    async def scan_loop(self, scan_interval_secs: float = 1.0):
+        """Dedicated scan task — bypasses the shared `_strategy_loop`.
+
+        Use for strategies whose fire rate is choked by upstream slow
+        strategies in the main loop (sports_underdog_v31 etc. can take
+        60-400s each, pushing tennis/UFC paper strategies to the back of
+        the queue). Per-strategy task = independent cadence.
+
+        scan_and_execute already has internal `_get_scan_interval()`
+        throttling, so this loop's `scan_interval_secs` is the polling
+        cadence (default 1 s, mirrors crypto Phase 1 scan_loops). The
+        outer interval just controls how often we *check* whether the
+        inner scan_interval has elapsed.
+
+        2026-05-19: introduced after main loop iter=1 took 30+ minutes
+        to reach tennis_underdog_v1 post-deploy. Main loop's serial
+        await pattern blocks all downstream strategies on any single
+        slow scan.
+        """
+        import asyncio
+        logger.info(f"[{self.STRATEGY_NAME}] dedicated scan_loop started "
+                    f"(poll={scan_interval_secs}s)")
+        while True:
+            try:
+                await self.scan_and_execute()
+            except Exception as e:
+                logger.error(f"{self.STRATEGY_NAME} scan_loop error: {e}")
+            await asyncio.sleep(scan_interval_secs)
+
     async def scan_and_execute(self):
         if not getattr(self.config, "SPORTS_ENABLED", False):
             return
