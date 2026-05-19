@@ -45,6 +45,7 @@ from strategies.sports_atp_gs_bo5_chalk_v1 import SportsAtpGsBo5ChalkV1Strategy
 from strategies.sports_tennis_bid_imbalance_v1 import SportsTennisBidImbalanceV1Strategy
 from strategies.sports_ufc_chalk_fade_v1 import SportsUfcChalkFadeV1Strategy
 from strategies.sports_tennis_surface_skew_v1 import SportsTennisSurfaceSkewV1Strategy
+from strategies.sports_tennis_underdog_v1 import SportsTennisUnderdogV1Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
@@ -249,6 +250,12 @@ class Bot:
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_tennis_surface_skew_v1 = SportsTennisSurfaceSkewV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # Tennis underdog band 0.25-0.35 BUY YES — paper-only. Built from
+        # 2026-05-19 observer backtest (n=55 settled, ya[0.25,0.35] WR 37.5%
+        # vs implied ~30%). Pattern mirrors team-sport v31 underdog edge.
+        self.sports_tennis_underdog_v1 = SportsTennisUnderdogV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
@@ -613,6 +620,9 @@ class Bot:
             # ("sports_tennis_bid_imbalance_v1", self.sports_tennis_bid_imbalance_v1),
             ("sports_ufc_chalk_fade_v1",      self.sports_ufc_chalk_fade_v1),
             ("sports_tennis_surface_skew_v1", self.sports_tennis_surface_skew_v1),
+            # Tennis underdog band — paper-only. Built 2026-05-19 from observer
+            # backtest. See sports_tennis_underdog_v1 module docstring.
+            ("sports_tennis_underdog_v1",     self.sports_tennis_underdog_v1),
             # sports_pinnacle_edge disabled 2026-04-17 — 37 settled trades at
             # -37.5% ROI. Freshness gate was added 2026-04-16 (80ad42e) but
             # only a handful of post-gate entries accumulated before shutdown;

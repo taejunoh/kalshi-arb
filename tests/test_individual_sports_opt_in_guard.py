@@ -35,6 +35,7 @@ def test_individual_sport_series_contents():
     ("strategies.sports_atp_gs_bo5_chalk_v1",    "SportsAtpGsBo5ChalkV1Strategy"),
     ("strategies.sports_tennis_bid_imbalance_v1","SportsTennisBidImbalanceV1Strategy"),
     ("strategies.sports_tennis_surface_skew_v1", "SportsTennisSurfaceSkewV1Strategy"),
+    ("strategies.sports_tennis_underdog_v1",     "SportsTennisUnderdogV1Strategy"),
     ("strategies.sports_ufc_chalk_fade_v1",      "SportsUfcChalkFadeV1Strategy"),
 ])
 def test_tennis_and_ufc_strategies_opt_in(module_path, class_name):
