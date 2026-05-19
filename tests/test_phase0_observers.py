@@ -1,7 +1,8 @@
-"""Smoke tests for the 2 new Phase 0 observers."""
+"""Smoke tests for the 4 new Phase 0 observers (2026-05-19)."""
 from datetime import datetime, timezone
 from strategies.crypto_observer import (
     FundingRateFadeObserver, VolSkewFadeObserver,
+    EtfFlowLagObserver, CmeBasisFadeObserver,
     EventContext, Leg,
 )
 
@@ -15,7 +16,7 @@ def _leg(threshold, ya=0.10, yb_size=50):
     )
 
 
-def _ctx(spot=80000, funding=None, skew=None, mts=1800):
+def _ctx(spot=80000, funding=None, skew=None, etf_z=None, cme_b=None, mts=1800):
     return EventContext(
         series="KXBTC", asset="BTC", event_key="26MAY1822",
         now=datetime.now(timezone.utc), spot=spot,
@@ -23,6 +24,7 @@ def _ctx(spot=80000, funding=None, skew=None, mts=1800):
         b_legs=[_leg(spot - 1000), _leg(spot - 500), _leg(spot + 500), _leg(spot + 1000)],
         t_legs=[], open_time_secs=None, close_time_secs=mts,
         funding_8h=funding, iv_skew=skew,
+        etf_flow_z=etf_z, cme_basis=cme_b,
     )
 
 
@@ -86,6 +88,67 @@ def test_observers_respect_mts_window():
     # mts > 28800 (8h) means signal won't fire
     sigs = f.evaluate(_ctx(funding=0.001, mts=30000))
     assert sigs == []
+
+
+# ── ETF flow lag ───────────────────────────────────────────────────
+
+
+def test_etf_flow_no_signal_when_small_zscore():
+    o = EtfFlowLagObserver()
+    sigs = o.evaluate(_ctx(etf_z=1.0))   # below 1.5σ
+    assert sigs == []
+
+
+def test_etf_flow_fires_downside_strikes_on_positive_z():
+    o = EtfFlowLagObserver()
+    sigs = o.evaluate(_ctx(etf_z=2.0))   # bullish flow
+    # Only strikes < spot
+    assert len(sigs) == 2
+    for s in sigs:
+        assert s.features["side"] == "fade_downside"
+
+
+def test_etf_flow_fires_upside_strikes_on_negative_z():
+    o = EtfFlowLagObserver()
+    sigs = o.evaluate(_ctx(etf_z=-2.0))   # bearish flow
+    assert len(sigs) == 2
+    for s in sigs:
+        assert s.features["side"] == "fade_upside"
+
+
+def test_etf_flow_skip_when_none():
+    o = EtfFlowLagObserver()
+    assert o.evaluate(_ctx(etf_z=None)) == []
+
+
+# ── CME basis ──────────────────────────────────────────────────────
+
+
+def test_cme_basis_no_signal_when_flat():
+    o = CmeBasisFadeObserver()
+    sigs = o.evaluate(_ctx(cme_b=0.001))   # below 0.2% threshold
+    assert sigs == []
+
+
+def test_cme_basis_fires_downside_on_contango():
+    o = CmeBasisFadeObserver()
+    sigs = o.evaluate(_ctx(cme_b=0.005))   # 0.5% contango
+    assert len(sigs) == 2
+    for s in sigs:
+        assert s.features["side"] == "fade_downside"
+
+
+def test_cme_basis_fires_upside_on_backwardation():
+    o = CmeBasisFadeObserver()
+    sigs = o.evaluate(_ctx(cme_b=-0.005))
+    assert len(sigs) == 2
+    for s in sigs:
+        assert s.features["side"] == "fade_upside"
+
+
+def test_cme_basis_skip_when_none():
+    o = CmeBasisFadeObserver()
+    assert o.evaluate(_ctx(cme_b=None)) == []
 
 
 if __name__ == "__main__":
