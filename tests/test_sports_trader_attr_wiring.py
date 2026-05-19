@@ -28,14 +28,10 @@ def test_stash_market_context_populates_attributes():
     s = _CaptureStrategy()
     market = {
         "ticker": "KXATPMATCH-X",
+        "tournament_slug": "tennis_atp_french_open",
         "yes_sub_title": "Will X win the X vs Y: Round Of 64 match?",
     }
-    # tournament_slug rides on the matched odds game via _tournament_slug
-    # (injected by _fetch_odds_multi). Kalshi market dicts don't carry it.
-    game = {
-        "commence_time": "2026-06-01T12:00:00+00:00",
-        "_tournament_slug": "tennis_atp_french_open",
-    }
+    game = {"commence_time": "2026-06-01T12:00:00+00:00"}
     s._stash_market_context(market, game)
     assert s._last_tournament_slug == "tennis_atp_french_open"
     assert "Round Of 64" in s._last_yes_sub_title
@@ -45,7 +41,7 @@ def test_stash_market_context_populates_attributes():
 
 def test_stash_market_context_handles_missing_game():
     s = _CaptureStrategy()
-    market = {"ticker": "X", "yes_sub_title": None}
+    market = {"ticker": "X", "tournament_slug": None, "yes_sub_title": None}
     s._stash_market_context(market, None)
     assert s._last_tournament_slug is None
     assert s._last_yes_sub_title is None
@@ -53,7 +49,7 @@ def test_stash_market_context_handles_missing_game():
 
 
 def test_stash_market_context_handles_missing_keys():
-    """game dict without _tournament_slug + market dict without keys."""
+    """market dict without tournament_slug/yes_sub_title keys."""
     s = _CaptureStrategy()
     s._stash_market_context({"ticker": "X"}, {"commence_time": None})
     assert s._last_tournament_slug is None
