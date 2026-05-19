@@ -1136,29 +1136,35 @@ class SportsTraderStrategy:
         is_yes_home: Optional[bool] = None,
     ):
         """Record entry snapshot with parallel us/eu consensus + freshness."""
-        try:
-            yes_ask, no_ask = self._client.get_market_prices(ticker)
-        except Exception:
-            yes_ask, no_ask = None, None
-        kalshi_yes_bid, kalshi_yes_ask = None, None
-        get_top = getattr(self._client, "get_top_of_book", None)
-        if callable(get_top):
+        # 2026-05-19 evening: combine the three sync httpx.Client calls into a
+        # single asyncio.to_thread hop so this entry-snapshot path doesn't
+        # block the event loop. Companion fixes in ladder_fed/crypto/xvenue;
+        # see [[odds_api_semaphore_2026-05-19]] for full diagnosis.
+        def _snapshot_book_sync(client, t):
             try:
-                tob = get_top(ticker)
-                if tob and len(tob) >= 2:
-                    kalshi_yes_bid, kalshi_yes_ask = tob[0], tob[1]
+                ya, na = client.get_market_prices(t)
             except Exception:
-                pass
-        if kalshi_yes_ask is None:
-            kalshi_yes_ask = yes_ask
-        # Snapshot book depth at entry (2026-04-24). Recorded regardless of
-        # the strategy's MIN_DEPTH_USDC gate so post-hoc analysis can filter
-        # by depth (e.g., chalk_shadow has gate=0 for hypothesis testing).
-        kalshi_yes_depth, kalshi_no_depth = None, None
-        try:
-            kalshi_yes_depth, kalshi_no_depth = self._client.get_order_book_depth(ticker)
-        except Exception:
-            pass
+                ya, na = None, None
+            kyb, kya = None, None
+            get_top = getattr(client, "get_top_of_book", None)
+            if callable(get_top):
+                try:
+                    tob = get_top(t)
+                    if tob and len(tob) >= 2:
+                        kyb, kya = tob[0], tob[1]
+                except Exception:
+                    pass
+            if kya is None:
+                kya = ya
+            try:
+                kyd, knd = client.get_order_book_depth(t)
+            except Exception:
+                kyd, knd = None, None
+            return ya, na, kyb, kya, kyd, knd
+
+        yes_ask, no_ask, kalshi_yes_bid, kalshi_yes_ask, kalshi_yes_depth, kalshi_no_depth = (
+            await asyncio.to_thread(_snapshot_book_sync, self._client, ticker)
+        )
         us_prob, eu_prob, _pin_dual, age_s = await self._dual_region_consensus(sport, game)
         try:
             await self._order_manager._db.record_clv_snapshot(
@@ -1180,7 +1186,13 @@ class SportsTraderStrategy:
             logger.warning(f"[SPORTS] CLV entry snapshot failed for trade {trade_id}: {e}")
 
     def _has_sufficient_depth(self, ticker: str, side: str, size_usdc: float) -> bool:
-        """True iff the ticker's orderbook on `side` has at least size_usdc of resting liquidity."""
+        """True iff the ticker's orderbook on `side` has at least size_usdc of resting liquidity.
+
+        SYNC — dispatched via asyncio.to_thread at the caller in scan_and_execute
+        so the inner httpx.Client call doesn't block the event loop. Kept sync
+        here so unit tests (test_v31_depth_filter, test_sports_depth_helper)
+        keep their direct call shape.
+        """
         yes_depth, no_depth = self._client.get_order_book_depth(ticker)
         available = yes_depth if side == "yes" else no_depth
         return available >= size_usdc
@@ -1525,7 +1537,7 @@ class SportsTraderStrategy:
         # confirmed cap is not the binding constraint — cash deposit is the
         # remedy, not cap further raises.
         try:
-            all_positions = self._client.get_positions() or []
+            all_positions = await asyncio.to_thread(self._client.get_positions) or []
         except Exception:
             all_positions = []
         all_exp = sum(
@@ -1539,7 +1551,7 @@ class SportsTraderStrategy:
             if any(s in p.get("ticker", "") for s in SPORT_GAME_TOKENS)
             and float(p.get("position_fp", 0)) != 0
         )
-        kalshi_balance = self._client.get_balance(max_age_s=60)
+        kalshi_balance = await asyncio.to_thread(self._client.get_balance, 60)
         kalshi_total = (kalshi_balance or 0.0) + all_exp
         # Proactive low-balance alert (hysteresis: armed → fire → re-arm at
         # recovery line). Sits alongside the post-reject alert and 14:00/22:00
@@ -1855,7 +1867,11 @@ class SportsTraderStrategy:
                         )
                         continue
 
-                size = self._get_trade_size(signal)
+                # _get_trade_size is sync (subclass overrides may call
+                # _client.get_order_book_depth inline — see soccer_underdog_v1,
+                # midshot_v31). Dispatching to a thread keeps any sync httpx
+                # there off the event loop, no per-subclass edit needed.
+                size = await asyncio.to_thread(self._get_trade_size, signal)
                 if size < 1.0:
                     logger.info(
                         f"[{self.STRATEGY_NAME}] {ticker}: signal valid but size "
@@ -1863,8 +1879,8 @@ class SportsTraderStrategy:
                     )
                     continue
 
-                if self.MIN_DEPTH_USDC > 0 and not self._has_sufficient_depth(
-                    ticker, signal["side"], self.MIN_DEPTH_USDC
+                if self.MIN_DEPTH_USDC > 0 and not await asyncio.to_thread(
+                    self._has_sufficient_depth, ticker, signal["side"], self.MIN_DEPTH_USDC
                 ):
                     logger.debug(
                         f"[{self.STRATEGY_NAME}] {ticker}: depth < ${self.MIN_DEPTH_USDC:.0f} "
@@ -1875,7 +1891,7 @@ class SportsTraderStrategy:
                 # MAX_DEPTH gate (2026-05-12). Thick book block — empirically
                 # >$10k depth shows systematic negative ROI on midshot/underdog/v37.
                 if self.MAX_DEPTH_USDC is not None or self.DEPTH_DEAD_ZONE is not None:
-                    yd, nd = self._client.get_order_book_depth(ticker)
+                    yd, nd = await asyncio.to_thread(self._client.get_order_book_depth, ticker)
                     avail = yd if signal["side"] == "yes" else nd
                     if avail is not None:
                         if self.MAX_DEPTH_USDC is not None and avail >= self.MAX_DEPTH_USDC:
@@ -1900,7 +1916,9 @@ class SportsTraderStrategy:
                         and self.THIN_BOOK_EARLY_GATE_DEPTH_MAX_USDC is not None):
                     mts_te = _commence_time_to_minutes(matched_game.get("commence_time"))
                     if mts_te is not None and mts_te >= self.THIN_BOOK_EARLY_GATE_MTS_MIN_MINUTES:
-                        yes_depth, no_depth = self._client.get_order_book_depth(ticker)
+                        yes_depth, no_depth = await asyncio.to_thread(
+                            self._client.get_order_book_depth, ticker
+                        )
                         side_depth = yes_depth if signal["side"] == "yes" else no_depth
                         if side_depth is not None and side_depth < self.THIN_BOOK_EARLY_GATE_DEPTH_MAX_USDC:
                             logger.debug(
