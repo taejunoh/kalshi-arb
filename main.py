@@ -531,6 +531,72 @@ class Bot:
             asyncio.create_task(
                 self.sports_tennis_underdog_v1.scan_loop(scan_interval_secs=1.0)
             ),
+            # 2026-05-19 (eve): P1 — 19 remaining sports strategies moved out
+            # of _strategy_loop's serial queue to dodge upstream tail latency.
+            # All use scan_loop default startup_jitter_secs=60 to spread cold
+            # cache fetches and avoid the Odds API rate-limit burst we saw
+            # in the tennis-only phase. Internal _get_scan_interval (300 s
+            # default) still throttles real work — the 1 s poll is just the
+            # check rate.
+            # LIVE strategies (real money via LIVE_STRATEGIES env)
+            asyncio.create_task(
+                self.sports_longshot_v31.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_midshot_v31.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_underdog_v31.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_underdog_v32.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_playoff_underdog_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_playoff_underdog_v1_us.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_soccer_underdog_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_soccer_draw_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_underdog_v36.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_underdog_v37.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_v4_edge.scan_loop(scan_interval_secs=1.0)
+            ),
+            # PAPER strategies (no LIVE_STRATEGIES entry)
+            asyncio.create_task(
+                self.sports_midshot_v34.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_underdog_v34.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_longshot_v35.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_midshot_v35.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_underdog_v35.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_mls_fade_favorite_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_npb_underdog_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_favorite_v40.scan_loop(scan_interval_secs=1.0)
+            ),
         ]
 
         try:
@@ -625,9 +691,14 @@ class Bot:
             # ("sports_longshot", self.sports_longshot),
             # ("sports_midshot", self.sports_midshot),
             # ("sports_underdog", self.sports_underdog),
-            ("sports_longshot_v31", self.sports_longshot_v31),
-            ("sports_midshot_v31", self.sports_midshot_v31),
-            ("sports_underdog_v31", self.sports_underdog_v31),
+            # 2026-05-19 (eve): MOVED to own scan_loop tasks (see run()) —
+            # serial _strategy_loop iter took 30+ min when Odds API was
+            # degraded, choking signal cadence. Same fix as crypto Phase 1
+            # (fbb0f79) and tennis paper strategies (1e0e9db). Kept as
+            # commented bookkeeping. All sports strategies below moved.
+            # ("sports_longshot_v31", self.sports_longshot_v31),
+            # ("sports_midshot_v31", self.sports_midshot_v31),
+            # ("sports_underdog_v31", self.sports_underdog_v31),
             # V3.2 + V3.3 paper variants — pre-game-only re-analysis 2026-04-24
             # (filtering out pre-2026-04-21 live entries that PRE_GAME_ONLY now
             # blocks anyway). 5 of 6 underperform v31 baseline:
@@ -641,7 +712,7 @@ class Bot:
             # underdog signals = real high-EV). Keep as live-promotion candidate.
             # ("sports_longshot_v32", self.sports_longshot_v32),
             # ("sports_midshot_v32", self.sports_midshot_v32),
-            ("sports_underdog_v32", self.sports_underdog_v32),
+            # ("sports_underdog_v32", self.sports_underdog_v32),
             # ("sports_longshot_v33", self.sports_longshot_v33),
             # ("sports_midshot_v33", self.sports_midshot_v33),
             # ("sports_underdog_v33", self.sports_underdog_v33),
@@ -654,37 +725,37 @@ class Bot:
             # v35 longshot's paper twin (both NBA pre us). v35's PAPER_TWIN
             # already covers paper observation; v34 was duplicate work.
             # ("sports_longshot_v34", self.sports_longshot_v34),
-            ("sports_midshot_v34", self.sports_midshot_v34),
-            ("sports_underdog_v34", self.sports_underdog_v34),
+            # ("sports_midshot_v34", self.sports_midshot_v34),
+            # ("sports_underdog_v34", self.sports_underdog_v34),
             # V3.5 — V3.4's (NBA, pre) us cell promoted to live trading
             # 2026-04-23. Coexists with V3.4 paper on same cell (V3.4 keeps
             # recording paper for matrix continuity; V3.5 fires live + paper
             # twin). Add v35 names to LIVE_STRATEGIES env on EC2 to activate.
-            ("sports_longshot_v35", self.sports_longshot_v35),
-            ("sports_midshot_v35", self.sports_midshot_v35),
-            ("sports_underdog_v35", self.sports_underdog_v35),
+            # ("sports_longshot_v35", self.sports_longshot_v35),
+            # ("sports_midshot_v35", self.sports_midshot_v35),
+            # ("sports_underdog_v35", self.sports_underdog_v35),
             # V3.6 playoff — paper-only NBA-playoff underdog with 35¢ floor.
             # Targets the 35-45¢ band where observer + trades both showed
             # +135% / +153% ROI while 20-30¢ loses catastrophically. Promotion
             # gate: n_games ≥ 25 with ROI ≥ +30%.
-            ("sports_playoff_underdog_v1", self.sports_playoff_underdog_v1),
-            ("sports_playoff_underdog_v1_us", self.sports_playoff_underdog_v1_us),
+            # ("sports_playoff_underdog_v1", self.sports_playoff_underdog_v1),
+            # ("sports_playoff_underdog_v1_us", self.sports_playoff_underdog_v1_us),
             # V3.7 Soccer — paper-twin only at launch. Soccer 20-29c TEAM.
-            ("sports_soccer_underdog_v1", self.sports_soccer_underdog_v1),
+            # ("sports_soccer_underdog_v1", self.sports_soccer_underdog_v1),
             # V3.8 Soccer Draw — DRAW side, EPL+LAL 0.25-0.30 YES only.
-            ("sports_soccer_draw_v1", self.sports_soccer_draw_v1),
+            # ("sports_soccer_draw_v1", self.sports_soccer_draw_v1),
             # MLS Fade-Favorite V1 — paper-twin only. MLS TEAM no_ask 30-45c
             # BUY NO. Built 2026-05-15 from observer scan n=14 +18.6% ROI.
-            ("sports_mls_fade_favorite_v1", self.sports_mls_fade_favorite_v1),
+            # ("sports_mls_fade_favorite_v1", self.sports_mls_fade_favorite_v1),
             # NPB Underdog V1 — paper-only. NPB consensus-strong underdog
             # 0.38-0.40. Built 2026-05-19 from observer n_games=15 +50.8% ROI.
-            ("sports_npb_underdog_v1", self.sports_npb_underdog_v1),
+            # ("sports_npb_underdog_v1", self.sports_npb_underdog_v1),
             # V3.6 WNBA — chalk-favorite 35-55c, WNBA-only.
-            ("sports_underdog_v36", self.sports_underdog_v36),
+            # ("sports_underdog_v36", self.sports_underdog_v36),
             # V3.7 WNBA — TEAM 20-29c band, WNBA-only.
-            ("sports_underdog_v37", self.sports_underdog_v37),
+            # ("sports_underdog_v37", self.sports_underdog_v37),
             # V4.0 Favorite — MLB 0.50-0.55 + NPB 0.55-0.65 paper-only.
-            ("sports_favorite_v40", self.sports_favorite_v40),
+            # ("sports_favorite_v40", self.sports_favorite_v40),
             # 2026-05-15 tennis/MMA portfolio — paper-twin only at launch.
             # 2026-05-19 (eve): MOVED to own scan_loop tasks (see run()) —
             # the serial main loop pushed iter=1 to 30+ min per pass when
@@ -708,7 +779,7 @@ class Bot:
             # re-enable only after a fresh evaluation window if signal quality
             # materially changes.
             # ("sports_pinnacle_edge", self.sports_pinnacle_edge),
-            ("sports_v4_edge", self.sports_v4_edge),
+            # ("sports_v4_edge", self.sports_v4_edge),
             # sports_chalk_shadow retired 2026-04-26 — paper experiment
             # (launched 2026-04-24) closed at n=45 settled / -18.5% ROI.
             # Both price buckets lost: 60-75¢ at 50% win (need 65%), 75¢+ at
