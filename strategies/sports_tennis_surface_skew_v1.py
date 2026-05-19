@@ -49,7 +49,10 @@ class SportsTennisSurfaceSkewV1Strategy(SportsTraderStrategy):
     MAX_ENTRY_PRICE = 0.80
 
     ELIGIBLE_SURFACES = frozenset({"clay", "grass"})
-    MIN_SURFACE_SKEW = 0.04
+    # 2026-05-19: relaxed from 0.04 to 0.03. Backtest on 55 settled clay markets
+    # showed thr=0.04 fires 0 (too strict); thr=0.03 fires n=2 WR 100% PnL +36%.
+    # n is tiny — paper-only result, re-evaluate at 6/1 promotion eval.
+    MIN_SURFACE_SKEW = 0.03
     MAX_PINNACLE_AGE_S = 600
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
