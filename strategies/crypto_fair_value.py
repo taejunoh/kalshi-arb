@@ -265,7 +265,7 @@ class CryptoFairValueStrategy:
                 now = datetime.now(timezone.utc)
                 cfg = self.config
                 all_markets = [
-                    m for m in self._scanner.get_all_markets()
+                    m for m in self._scanner.get_active_markets()
                     if self._is_target_market(m)
                 ]
 
