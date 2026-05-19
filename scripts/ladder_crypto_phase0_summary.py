@@ -25,66 +25,69 @@ PHASE1_GATE_14D_COUNT = 10  # Spec decision tree
 def _query_summary(db_path: str) -> dict:
     """Return dict with 24h + 14d counts and phantom percentile."""
     conn = sqlite3.connect(db_path, timeout=30.0)
-    cur = conn.cursor()
-    # Verify schema is migrated (phase column must exist)
-    cols = {r[1] for r in cur.execute("PRAGMA table_info(ladder_violations)").fetchall()}
-    if "phase" not in cols:
+    try:
+        cur = conn.cursor()
+        # Verify schema is migrated (all Phase 0 columns must exist)
+        cols = {r[1] for r in cur.execute("PRAGMA table_info(ladder_violations)").fetchall()}
+        required_cols = {"phase", "would_fire", "walked_edge_usdc", "top_vs_walked_max_gap_cents"}
+        if not required_cols.issubset(cols):
+            missing = required_cols - cols
+            raise RuntimeError(
+                f"ladder_violations schema not migrated: missing columns {sorted(missing)}. "
+                "Run the Task 2 migration on this DB first."
+            )
+        # 24h would_fire count, split by series
+        cur.execute("""
+            SELECT series, COUNT(*) FROM ladder_violations
+            WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
+              AND would_fire=1 AND ts >= datetime('now', '-1 days')
+            GROUP BY series
+        """)
+        by_series_24h = dict(cur.fetchall())
+        # 24h avg walked_edge
+        cur.execute("""
+            SELECT AVG(walked_edge_usdc) FROM ladder_violations
+            WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
+              AND would_fire=1 AND ts >= datetime('now', '-1 days')
+        """)
+        avg_edge_24h = cur.fetchone()[0]
+        # 14d cumulative would_fire count
+        cur.execute("""
+            SELECT COUNT(*) FROM ladder_violations
+            WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
+              AND would_fire=1 AND ts >= datetime('now', '-14 days')
+        """)
+        count_14d = cur.fetchone()[0]
+        # Phantom rate: p90 of top_vs_walked_max_gap_cents on candidates (all detected, fire or not)
+        cur.execute("""
+            SELECT top_vs_walked_max_gap_cents FROM ladder_violations
+            WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
+              AND top_vs_walked_max_gap_cents IS NOT NULL
+              AND ts >= datetime('now', '-14 days')
+            ORDER BY top_vs_walked_max_gap_cents
+        """)
+        gaps = [r[0] for r in cur.fetchall()]
+        if gaps:
+            p90_idx = int(len(gaps) * 0.9)
+            gap_p90 = gaps[min(p90_idx, len(gaps) - 1)]
+        else:
+            gap_p90 = None
+        # Total candidates (any fire status) in last 48h — early-abort signal
+        cur.execute("""
+            SELECT COUNT(*) FROM ladder_violations
+            WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
+              AND ts >= datetime('now', '-2 days')
+        """)
+        candidates_48h = cur.fetchone()[0]
+        return {
+            "by_series_24h": by_series_24h,
+            "avg_edge_24h": avg_edge_24h,
+            "count_14d": count_14d,
+            "gap_p90": gap_p90,
+            "candidates_48h": candidates_48h,
+        }
+    finally:
         conn.close()
-        raise RuntimeError(
-            "ladder_violations schema not migrated: 'phase' column missing. "
-            "Run the Task 2 migration on this DB first."
-        )
-    # 24h would_fire count, split by series
-    cur.execute("""
-        SELECT series, COUNT(*) FROM ladder_violations
-        WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
-          AND would_fire=1 AND ts >= datetime('now', '-1 days')
-        GROUP BY series
-    """)
-    by_series_24h = dict(cur.fetchall())
-    # 24h avg walked_edge
-    cur.execute("""
-        SELECT AVG(walked_edge_usdc) FROM ladder_violations
-        WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
-          AND would_fire=1 AND ts >= datetime('now', '-1 days')
-    """)
-    avg_edge_24h = cur.fetchone()[0]
-    # 14d cumulative would_fire count
-    cur.execute("""
-        SELECT COUNT(*) FROM ladder_violations
-        WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
-          AND would_fire=1 AND ts >= datetime('now', '-14 days')
-    """)
-    count_14d = cur.fetchone()[0]
-    # Phantom rate: p90 of top_vs_walked_max_gap_cents on candidates (all detected, fire or not)
-    cur.execute("""
-        SELECT top_vs_walked_max_gap_cents FROM ladder_violations
-        WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
-          AND top_vs_walked_max_gap_cents IS NOT NULL
-          AND ts >= datetime('now', '-14 days')
-        ORDER BY top_vs_walked_max_gap_cents
-    """)
-    gaps = [r[0] for r in cur.fetchall()]
-    if gaps:
-        p90_idx = int(len(gaps) * 0.9)
-        gap_p90 = gaps[min(p90_idx, len(gaps) - 1)]
-    else:
-        gap_p90 = None
-    # Total candidates (any fire status) in last 48h — early-abort signal
-    cur.execute("""
-        SELECT COUNT(*) FROM ladder_violations
-        WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
-          AND ts >= datetime('now', '-2 days')
-    """)
-    candidates_48h = cur.fetchone()[0]
-    conn.close()
-    return {
-        "by_series_24h": by_series_24h,
-        "avg_edge_24h": avg_edge_24h,
-        "count_14d": count_14d,
-        "gap_p90": gap_p90,
-        "candidates_48h": candidates_48h,
-    }
 
 
 def _format_message(s: dict) -> str:
