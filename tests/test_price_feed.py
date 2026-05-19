@@ -78,6 +78,73 @@ async def test_is_mid_stale_when_never_seen():
 
 
 @pytest.mark.asyncio
+async def test_kline_threshold_is_lenient_for_60s_candle_cadence():
+    """binance.us @kline_1m emits at candle-close (~60s). is_stale must
+    tolerate that cadence; the pre-5/19 5s threshold made every observer
+    iter skip → 0 contexts → silent observer (see [[price-feed-staleness-
+    watchdog-2026-05-19]])."""
+    feed = PriceFeed()
+    feed._prices["BTC"] = 76800.0
+    feed._last_update["BTC"] = time.time() - 45.0  # 45s old kline tick
+    assert feed.is_stale("BTC") is False
+    feed._last_update["BTC"] = time.time() - 120.0  # 2 min old → truly dead
+    assert feed.is_stale("BTC") is True
+
+
+@pytest.mark.asyncio
+async def test_mid_threshold_stays_tight_for_subsecond_bookticker():
+    """bookTicker is sub-second on binance.us (live probe 52 msgs / 20s).
+    Mid path keeps the 5s threshold so degraded mid feeds are detected
+    early and `get_fresh_spot` can fall through to kline."""
+    feed = PriceFeed()
+    feed._mid_prices["BTC"] = 76805.0
+    feed._mid_last_update["BTC"] = time.time() - 4.0
+    assert feed.is_mid_stale("BTC") is False
+    feed._mid_last_update["BTC"] = time.time() - 10.0
+    assert feed.is_mid_stale("BTC") is True
+
+
+@pytest.mark.asyncio
+async def test_get_fresh_spot_prefers_mid_when_fresh():
+    feed = PriceFeed()
+    feed._prices["BTC"] = 76700.0
+    feed._last_update["BTC"] = time.time()
+    feed._mid_prices["BTC"] = 76705.0
+    feed._mid_last_update["BTC"] = time.time()
+    assert feed.get_fresh_spot("BTC") == 76705.0
+    assert feed.is_spot_stale("BTC") is False
+
+
+@pytest.mark.asyncio
+async def test_get_fresh_spot_falls_back_to_kline_when_mid_stale():
+    feed = PriceFeed()
+    feed._prices["BTC"] = 76700.0
+    feed._last_update["BTC"] = time.time() - 30.0  # kline fresh enough
+    feed._mid_prices["BTC"] = 76705.0
+    feed._mid_last_update["BTC"] = time.time() - 30.0  # mid stale (>5s)
+    assert feed.get_fresh_spot("BTC") == 76700.0
+    assert feed.is_spot_stale("BTC") is False
+
+
+@pytest.mark.asyncio
+async def test_get_fresh_spot_returns_none_when_both_stale():
+    feed = PriceFeed()
+    feed._prices["BTC"] = 76700.0
+    feed._last_update["BTC"] = time.time() - 200.0
+    feed._mid_prices["BTC"] = 76705.0
+    feed._mid_last_update["BTC"] = time.time() - 200.0
+    assert feed.get_fresh_spot("BTC") is None
+    assert feed.is_spot_stale("BTC") is True
+
+
+@pytest.mark.asyncio
+async def test_get_fresh_spot_returns_none_when_never_subscribed():
+    feed = PriceFeed()
+    assert feed.get_fresh_spot("BTC") is None
+    assert feed.is_spot_stale("BTC") is True
+
+
+@pytest.mark.asyncio
 async def test_price_history_dedups_duplicate_prices():
     feed = PriceFeed()
     base = json.dumps({"s": "BTCUSDT", "p": "76000.0", "T": 0})
