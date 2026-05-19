@@ -8,7 +8,7 @@ import httpx
 
 logger = logging.getLogger("kalshi_client")
 
-CRYPTO_SERIES_PREFIXES = {"KXBTC", "KXETH", "KXSOL", "KXXRP"}
+CRYPTO_SERIES_PREFIXES = {"KXBTC", "KXBTCD", "KXETH", "KXETHD", "KXSOL", "KXXRP"}
 
 # TTL cache for portfolio endpoints (positions, settlements). The dashboard
 # auto-refreshes every 15s — without this, any open browser tab generates

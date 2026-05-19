@@ -25,10 +25,11 @@ def test_get_active_markets_queries_per_prefix():
         raise_for_status=lambda: None,
     )
     markets = client.get_active_markets()
-    # Should have called _get once per crypto prefix (KXBTC, KXETH, KXSOL, KXXRP)
-    assert client._http.get.call_count == 4
-    # Each call returns 1 market, so total = 4
-    assert len(markets) == 4
+    # Should have called _get once per crypto prefix
+    # (KXBTC, KXBTCD, KXETH, KXETHD, KXSOL, KXXRP)
+    assert client._http.get.call_count == 6
+    # Each call returns 1 market, so total = 6
+    assert len(markets) == 6
 
 
 def test_get_market_prices():
