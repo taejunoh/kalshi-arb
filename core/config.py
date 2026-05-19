@@ -107,6 +107,14 @@ class Config:
             "SOL": f"{binance_base}/ws/solusdt@kline_1m",
             "XRP": f"{binance_base}/ws/xrpusdt@kline_1m",
         }
+        # bookTicker streams for crypto_fair_value_mid_v1 (paper-only A/B against
+        # last-trade spot from kline). Mid = (bid + ask) / 2, updated on every L1
+        # change. SOL omitted — no live crypto_fair_value market universe for SOL.
+        self.BINANCE_BOOK_TICKER_URLS = {
+            "BTC": f"{binance_base}/ws/btcusdt@bookTicker",
+            "ETH": f"{binance_base}/ws/ethusdt@bookTicker",
+            "XRP": f"{binance_base}/ws/xrpusdt@bookTicker",
+        }
 
         # Crypto Fair-Value Trader (B2) — single sub-strategy crypto_fair_value.
         # Spec: docs/superpowers/specs/2026-05-10-crypto-fair-value-trader-design.md
