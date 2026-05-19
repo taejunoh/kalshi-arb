@@ -94,6 +94,11 @@ class _Phase1Base:
                 continue
             if ts < cutoff:
                 # Aged out without action — never retroactively fire.
+                age_s = (datetime.now(timezone.utc) - ts).total_seconds()
+                logger.debug(
+                    f"[{self.STRATEGY_NAME}] SKIP sig={sig_id} ticker={sig.get('market_id')} "
+                    f"reason=signal_aged_out age_s={age_s:.1f} freshness_window_s={self.SIGNAL_FRESHNESS_S}"
+                )
                 self._processed.add(sig_id)
                 continue
             ticker = sig["market_id"]
