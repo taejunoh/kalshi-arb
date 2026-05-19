@@ -63,6 +63,7 @@ from strategies.crypto_observer_phase1 import (
 from strategies.ladder_fed import LadderFedStrategy
 from strategies.ladder_approval import LadderApprovalStrategy
 from strategies.ladder_shutdown import LadderShutdownStrategy
+from strategies.ladder_crypto import LadderCryptoStrategy
 from strategies.macro_event import MacroEventStrategy
 from strategies.crypto_fair_value import CryptoFairValueStrategy
 from strategies.crypto_fair_value_mid_v1 import CryptoFairValueMidV1Strategy
@@ -288,11 +289,14 @@ class Bot:
         self.ladder_fed = LadderFedStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client
         )
-        # ladder_crypto retired 2026-05-13: n=54 paper / -77.5% ROI. Root
-        # cause was B-bucketed vs T-cumulative mismatch (commit d30efb5);
-        # post-fix the strategy was structurally silent (phantom-quote
-        # pollution made sum_mid gate impossible). Replaced by
-        # crypto_observer (8-hypothesis Phase 0 prevalence scanner).
+        # ladder_crypto Phase 0 resurrection (2026-05-19): paper-only
+        # walked-edge logging via core.orderbook_walk. No market_order calls.
+        # Phantom-quote defense: top-vs-walked gap gate (2c) + fillability gate.
+        # Spec: docs/superpowers/specs/2026-05-19-ladder-crypto-resurrection-design.md
+        self.ladder_crypto = LadderCryptoStrategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client,
+            db=self.db,
+        )
         self.crypto_observer = CryptoObserverStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client,
             price_feed=self.price_feed,
@@ -686,11 +690,10 @@ class Bot:
             ("ladder_shutdown", self.ladder_shutdown),
             ("ladder_approval", self.ladder_approval),
             ("ladder_fed", self.ladder_fed),
-            # ladder_crypto retired 2026-05-13 — see CryptoObserverStrategy
-            # init for full postmortem. Replacement runs 8 hypothesis-based
-            # observers in parallel; first promotion eval in ~1 week.
-            # crypto_observer + 7 Phase 1 traders moved to top of strategy
-            # list 2026-05-19 to bypass slow sports portfolio.
+            # ladder_crypto Phase 0 resurrection (2026-05-19) — paper-only
+            # walked-edge logging. No market_order calls. Phantom-quote defense
+            # via orderbook walk. Gated by LADDER_PHASE0_ENABLED env var.
+            ("ladder_crypto", self.ladder_crypto),
             # Macro Event Trader (C1) — paper-only. Requires consensus cron.
             ("macro_event", self.macro_event),
             # Cross-Venue Polymarket Trader (B1) — paper-only. Requires
