@@ -476,6 +476,13 @@ class Bot:
                     scan_interval_secs=1.0,
                 )
             ),
+            # 2026-05-19: crypto_observer moved out of _strategy_loop. Sports
+            # portfolio's degraded-odds-API path takes 30+ min per iter,
+            # which choked observer scan rate to ~0 (12:13 UTC silent fail).
+            # Dedicated 1 s scan_loop matches BTC/ETH market freshness.
+            asyncio.create_task(
+                self.crypto_observer.scan_loop(scan_interval_secs=1.0)
+            ),
         ]
 
         try:
@@ -539,15 +546,11 @@ class Bot:
             # shutdown_fade deprecated — see docs/future-work/shutdown-fade-redesign.md
             ("spread_scanner", self.spread_scanner),
             ("market_maker", self.market_maker),
-            # 2026-05-19: crypto_observer moved to top of strategy list. The
-            # sports portfolio (~28 strategies) takes 70s+ each on cold-cache
-            # iters, pushing crypto_observer's wait to 10+ min per call. With
-            # SIGNAL_COOLDOWN_S=60s, that wastes ~9 min of every cooldown
-            # window. Moving it ahead of sports gives it ≤2 s wait per iter,
-            # so the cooldown reflects actual signal cadence again. Phase 1
-            # consumer traders (atm_hold_v1, deribit_tail_fade_v1, etc.) also
-            # moved up so they see the latest signals on the same scan tick.
-            ("crypto_observer", self.crypto_observer),
+            # 2026-05-19: crypto_observer moved to its own scan_loop task
+            # (1 s cadence) — see _strategy_loop's task list. Reordered the
+            # Phase 1 consumer traders here so they see fresh observer signals
+            # before the slow sports portfolio runs (~28 strategies, ~7-73 s
+            # each on cold-cache iters under degraded Odds API).
             ("deribit_tail_fade_v1", self.deribit_tail_fade_v1),
             ("bid_imbalance_v1", self.bid_imbalance_v1),
             ("open_no_touch_v1", self.open_no_touch_v1),

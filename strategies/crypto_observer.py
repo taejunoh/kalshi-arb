@@ -1389,3 +1389,17 @@ class CryptoObserverStrategy:
                 f"[OBS_DEBUG] tick_done emitted={n_emitted} recorded={n_recorded} "
                 f"cooldown={n_cooldown} db_err={n_db_err} by_observer={by_obs}"
             )
+
+    async def scan_loop(self, scan_interval_secs: float = 1.0):
+        """Dedicated fast-scan task — bypasses the main strategy loop so the
+        17-observer pipeline isn't bottlenecked by slow sports portfolio
+        scans. Pattern mirrors crypto_fair_value.scan_loop. 1 s cadence
+        matches the BTC/ETH market freshness window; observer-side
+        SIGNAL_COOLDOWN_S (60 s) handles cooldown dedup.
+        """
+        while True:
+            try:
+                await self.scan_and_execute()
+            except Exception as e:
+                logger.error(f"crypto_observer scan_loop error: {e}")
+            await asyncio.sleep(scan_interval_secs)
