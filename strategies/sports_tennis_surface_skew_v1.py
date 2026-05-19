@@ -31,6 +31,8 @@ class SportsTennisSurfaceSkewV1Strategy(SportsTraderStrategy):
         SportsTraderStrategy.OBSERVATION_ONLY_SPORTS - {"ATP", "WTA"}
     )
 
+    INDIVIDUAL_SPORTS_OPT_IN = True
+
     # Hard blocklist — OBSERVATION_ONLY_SPORTS subtraction only removes
     # ATP/WTA from the observation set; team sports were never in that set
     # so without this they'd flow through. Targets: ATP, WTA only.
