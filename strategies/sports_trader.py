@@ -1288,10 +1288,17 @@ class SportsTraderStrategy:
 
         Called by scan_and_execute() immediately before evaluate(). Subclasses
         (A2/A3/C tennis strategies) read these as self._last_tournament_slug,
-        self._last_yes_sub_title, self._last_mts. tournament_slug is sourced
-        from the matched game's `_tournament_slug` (injected by
-        _fetch_odds_multi) — Kalshi market dicts don't carry tournament_slug.
-        Market dicts may pre-populate `tournament_slug` for tests.
+        self._last_yes_sub_title, self._last_market_title, self._last_mts.
+
+        - `_last_yes_sub_title`: just the YES-side label (tennis: player name;
+          team sports: city/team token). Use for player matching.
+        - `_last_market_title`: full Kalshi market title (e.g. "Will Sinner
+          win the Sinner vs Nadal: Round Of 64 match?"). Use for round parsing
+          since round info only appears here, not in yes_sub_title.
+
+        tournament_slug is sourced from the matched game's `_tournament_slug`
+        (injected by _fetch_odds_multi) — Kalshi market dicts don't carry
+        tournament_slug. Market dicts may pre-populate `tournament_slug` for tests.
         """
         if game is not None:
             self._last_tournament_slug = (
@@ -1302,6 +1309,7 @@ class SportsTraderStrategy:
             self._last_tournament_slug = market.get("tournament_slug")
             self._last_mts = None
         self._last_yes_sub_title = market.get("yes_sub_title")
+        self._last_market_title = market.get("title")
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,

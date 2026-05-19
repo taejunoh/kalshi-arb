@@ -3,7 +3,17 @@ from unittest.mock import MagicMock
 from strategies.sports_atp_gs_bo5_chalk_v1 import SportsAtpGsBo5ChalkV1Strategy
 
 
-def _make_strategy(slug="tennis_atp_french_open", title="Will Sinner win the Sinner vs Nadal: Round Of 64 match?"):
+def _make_strategy(slug="tennis_atp_french_open",
+                   title="Will Sinner win the Sinner vs Nadal: Round Of 64 match?",
+                   yes_sub_title="sinner"):
+    """Build an A2 strategy with both stashed fields populated.
+
+    Production behavior (2026-05-18 fix):
+    - `_last_market_title` is the full Kalshi market title (used for round parsing)
+    - `_last_yes_sub_title` is just the player name (used by individual matcher)
+    Earlier test setups conflated the two — passing a full sentence as
+    yes_sub_title hid the round-parse bug.
+    """
     cfg = MagicMock(KALSHI_FEE_PER_CONTRACT=0.07, INITIAL_BANKROLL=10000)
     s = SportsAtpGsBo5ChalkV1Strategy.__new__(SportsAtpGsBo5ChalkV1Strategy)
     s.config = cfg
@@ -12,7 +22,8 @@ def _make_strategy(slug="tennis_atp_french_open", title="Will Sinner win the Sin
     s._last_pinnacle_age_s = 100
     s._traded_tickers = {}
     s._last_tournament_slug = slug
-    s._last_yes_sub_title = title
+    s._last_yes_sub_title = yes_sub_title
+    s._last_market_title = title
     return s
 
 
@@ -64,6 +75,35 @@ def test_skips_when_pinnacle_disagrees():
 def test_skips_when_slug_missing():
     s = _make_strategy(slug=None)
     sig = s.evaluate(kalshi_yes=0.75, kalshi_no=0.25, fair_prob=0.78,
+                     ticker="KXATPMATCH-X")
+    assert sig is None
+
+
+def test_round_parses_from_market_title_not_yes_sub_title():
+    """Regression — 2026-05-18 incident.
+
+    In production yes_sub_title is just the player name ("emilio nava")
+    while round info ("Round Of 64") lives in market title only. Earlier
+    code read yes_sub_title for round parsing, so A2 never fired even when
+    all other gates passed (player names don't contain round tokens).
+    """
+    s = _make_strategy(
+        title="Will Khachanov win the Gaston vs Khachanov: Round Of 64 match?",
+        yes_sub_title="karen khachanov",  # realistic — player name only
+    )
+    sig = s.evaluate(kalshi_yes=0.80, kalshi_no=0.20, fair_prob=0.78,
+                     ticker="KXATPMATCH-26MAY26GASKHA-KHA")
+    assert sig is not None, "Round Of 64 in title should parse to R64 and fire"
+    assert sig["side"] == "yes"
+
+
+def test_no_fire_when_market_title_missing_round():
+    """If the market title is junk (e.g. an unusual round name), skip."""
+    s = _make_strategy(
+        title="Will Federer win the Federer vs Nadal: Championship match?",
+        yes_sub_title="roger federer",
+    )
+    sig = s.evaluate(kalshi_yes=0.80, kalshi_no=0.20, fair_prob=0.78,
                      ticker="KXATPMATCH-X")
     assert sig is None
 

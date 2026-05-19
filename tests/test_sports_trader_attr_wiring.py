@@ -13,12 +13,14 @@ class _CaptureStrategy(SportsTraderStrategy):
         self._traded_tickers = {}
         self._last_tournament_slug = None
         self._last_yes_sub_title = None
+        self._last_market_title = None
         self._last_mts = None
 
     def evaluate(self, kalshi_yes, kalshi_no, fair_prob, **kwargs):
         self._captured = {
             "slug": getattr(self, "_last_tournament_slug", "<unset>"),
-            "title": getattr(self, "_last_yes_sub_title", "<unset>"),
+            "yes_sub": getattr(self, "_last_yes_sub_title", "<unset>"),
+            "title": getattr(self, "_last_market_title", "<unset>"),
             "mts": getattr(self, "_last_mts", "<unset>"),
         }
         return None
@@ -28,7 +30,8 @@ def test_stash_market_context_populates_attributes():
     s = _CaptureStrategy()
     market = {
         "ticker": "KXATPMATCH-X",
-        "yes_sub_title": "Will X win the X vs Y: Round Of 64 match?",
+        "yes_sub_title": "karen khachanov",  # production shape: player name only
+        "title": "Will Khachanov win the Gaston vs Khachanov: Round Of 64 match?",
     }
     # tournament_slug rides on the matched odds game via _tournament_slug
     # (injected by _fetch_odds_multi). Kalshi market dicts don't carry it.
@@ -38,17 +41,21 @@ def test_stash_market_context_populates_attributes():
     }
     s._stash_market_context(market, game)
     assert s._last_tournament_slug == "tennis_atp_french_open"
-    assert "Round Of 64" in s._last_yes_sub_title
+    assert s._last_yes_sub_title == "karen khachanov"
+    # Round parsing (A2 strategy) reads market title, not yes_sub_title —
+    # must stash both. 2026-05-18 incident.
+    assert "Round Of 64" in s._last_market_title
     # mts depends on now() — just confirm it's a finite number or None
     assert s._last_mts is None or isinstance(s._last_mts, (int, float))
 
 
 def test_stash_market_context_handles_missing_game():
     s = _CaptureStrategy()
-    market = {"ticker": "X", "yes_sub_title": None}
+    market = {"ticker": "X", "yes_sub_title": None, "title": None}
     s._stash_market_context(market, None)
     assert s._last_tournament_slug is None
     assert s._last_yes_sub_title is None
+    assert s._last_market_title is None
     assert s._last_mts is None
 
 
@@ -58,4 +65,5 @@ def test_stash_market_context_handles_missing_keys():
     s._stash_market_context({"ticker": "X"}, {"commence_time": None})
     assert s._last_tournament_slug is None
     assert s._last_yes_sub_title is None
+    assert s._last_market_title is None
     assert s._last_mts is None
