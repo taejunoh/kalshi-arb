@@ -50,36 +50,33 @@ class OrderbookCache:
             return None
         return e
 
-    @staticmethod
-    def _fetch_ticker_sync(client, ticker):
-        # 2026-05-19 night: this block used to run inline in refresh_loop
-        # below, two sync httpx.Client calls per ticker × ~10-20 tickers
-        # per OrderbookCache × 2 cache instances (crypto_fair_value +
-        # crypto_fair_value_mid_v1), all on the main event loop every
-        # refresh_interval=5s. That continuous blocking was the dominant
-        # remaining contributor to the ~17 ConnectTimeout/min residual
-        # after the main-loop sync-in-async sweep (see
-        # [[sync-in-async-sweep-2026-05-19]]). Moved to a worker thread
-        # so the loop stays responsive between fetches.
-        try:
-            prices = client.get_market_prices(ticker)
-            if prices is None or prices[0] is None:
-                return None
-            yes_price, no_price = prices
-            depths = client.get_order_book_depth(ticker)
-            yes_depth, no_depth = depths if depths else (0.0, 0.0)
-            return OrderbookEntry(
-                yes_ask=yes_price,
-                yes_bid=max(0.0, 1.0 - no_price),
-                no_ask=no_price,
-                no_bid=max(0.0, 1.0 - yes_price),
-                yes_depth=yes_depth or 0.0,
-                no_depth=no_depth or 0.0,
-                ts=time.time(),
-            )
-        except Exception as e:
-            logger.warning(f"orderbook fetch error for {ticker}: {e}")
-            return None
+    def _refresh_all_sync(self, tickers: list[str]) -> None:
+        # 2026-05-19 night: original inline loop blocked the event loop.
+        # First fix (e52e87f) parallelized via asyncio.gather + to_thread,
+        # which dropped ConnectTimeout 17→0/min — but burst-fired all
+        # ticker requests in <0.2s and produced 19k+ Kalshi 429s in 23min
+        # (vs 0 pre-fix). The right shape is serial-in-a-thread: same
+        # Kalshi load as pre-fix (0 429s observed) but the event loop
+        # stays free to service sports scan_loops between fetches.
+        for ticker in tickers:
+            try:
+                prices = self._client.get_market_prices(ticker)
+                if prices is None or prices[0] is None:
+                    continue
+                yes_price, no_price = prices
+                depths = self._client.get_order_book_depth(ticker)
+                yes_depth, no_depth = depths if depths else (0.0, 0.0)
+                self._cache[ticker] = OrderbookEntry(
+                    yes_ask=yes_price,
+                    yes_bid=max(0.0, 1.0 - no_price),
+                    no_ask=no_price,
+                    no_bid=max(0.0, 1.0 - yes_price),
+                    yes_depth=yes_depth or 0.0,
+                    no_depth=no_depth or 0.0,
+                    ts=time.time(),
+                )
+            except Exception as e:
+                logger.warning(f"orderbook fetch error for {ticker}: {e}")
 
     async def refresh_loop(self):
         """Background task — poll each target ticker every refresh_interval."""
@@ -87,18 +84,7 @@ class OrderbookCache:
             try:
                 tickers = list(self._target_tickers)
                 if tickers:
-                    # Parallel fan-out: each ticker fetched in a worker
-                    # thread, gather results. With 32-worker executor +
-                    # ~10-20 tickers, all complete in ~1× single-fetch
-                    # latency (was previously ~N× under serial sync).
-                    entries = await asyncio.gather(
-                        *(asyncio.to_thread(self._fetch_ticker_sync, self._client, t)
-                          for t in tickers),
-                        return_exceptions=True,
-                    )
-                    for ticker, entry in zip(tickers, entries):
-                        if isinstance(entry, OrderbookEntry):
-                            self._cache[ticker] = entry
+                    await asyncio.to_thread(self._refresh_all_sync, tickers)
             except Exception as e:
                 logger.exception(f"refresh_loop iteration error: {e}")
             await asyncio.sleep(self._refresh_interval)
