@@ -125,7 +125,8 @@ class _Phase1Base:
             side, price = choice
             size_usdc = self._size_usdc_for(side, price, market)
             if size_usdc is None or size_usdc <= 0:
-                depth_key = "no_ask_size_fp" if side == "no" else "yes_ask_size_fp"
+                # Complementarity: no_ask depth = yes_bid qty; yes_ask depth = yes_ask qty.
+                depth_key = "yes_bid_size_fp" if side == "no" else "yes_ask_size_fp"
                 logger.debug(
                     f"[{self.STRATEGY_NAME}] SKIP sig={sig_id} ticker={ticker} "
                     f"reason=size_returned_none "
@@ -193,7 +194,12 @@ class DeribitTailFadeV1Strategy(_Phase1Base):
         # what's actually fillable at top-of-book, skip if depth is below
         # MIN_FIRE_CONTRACTS (avoids dust trades that aren't worth the slot
         # in trade history / dedup state).
-        depth = _safe_float(market.get("no_ask_size_fp"))
+        # Kalshi API only returns yes_*_size_fp fields; no_ask_size is the
+        # complementary qty (yes_bid at price (1-no_ask)). See kalshi_client.py
+        # get_top_of_book_sizes. 2026-05-19: bug fix — was reading non-existent
+        # no_ask_size_fp which always returned None → strategy silent-skipped
+        # every in-band signal.
+        depth = _safe_float(market.get("yes_bid_size_fp"))
         if depth is None or depth <= 0:
             return None
         if price <= 0:
@@ -439,7 +445,12 @@ class LateCloseTailV1Strategy(_Phase1Base):
         return ("no", no_ask)
 
     def _size_usdc_for(self, side, price, market):
-        depth = _safe_float(market.get("no_ask_size_fp"))
+        # Kalshi API only returns yes_*_size_fp fields; no_ask_size is the
+        # complementary qty (yes_bid at price (1-no_ask)). See kalshi_client.py
+        # get_top_of_book_sizes. 2026-05-19: bug fix — was reading non-existent
+        # no_ask_size_fp which always returned None → strategy silent-skipped
+        # every in-band signal.
+        depth = _safe_float(market.get("yes_bid_size_fp"))
         if depth is None or depth <= 0 or price <= 0:
             return None
         target_count = self.SIZE_USDC / price
@@ -483,7 +494,12 @@ class DeribitAtmFadeV1Strategy(_Phase1Base):
         return ("no", no_ask)
 
     def _size_usdc_for(self, side, price, market):
-        depth = _safe_float(market.get("no_ask_size_fp"))
+        # Kalshi API only returns yes_*_size_fp fields; no_ask_size is the
+        # complementary qty (yes_bid at price (1-no_ask)). See kalshi_client.py
+        # get_top_of_book_sizes. 2026-05-19: bug fix — was reading non-existent
+        # no_ask_size_fp which always returned None → strategy silent-skipped
+        # every in-band signal.
+        depth = _safe_float(market.get("yes_bid_size_fp"))
         if depth is None or depth <= 0 or price <= 0:
             return None
         target_count = self.SIZE_USDC / price

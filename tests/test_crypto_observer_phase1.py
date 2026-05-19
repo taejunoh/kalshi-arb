@@ -75,7 +75,7 @@ async def test_deribit_tail_fade_fires_paper_no_on_fresh_signal():
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2220": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
-        "no_ask_size_fp": 50.0,
+        "yes_bid_size_fp": 50.0,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -95,7 +95,7 @@ async def test_deribit_tail_fade_skips_stale_signal():
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2220": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
-        "no_ask_size_fp": 50.0,
+        "yes_bid_size_fp": 50.0,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -144,7 +144,7 @@ async def test_deribit_tail_fade_clamps_size_when_book_thin():
     # target_count = 20 / 0.85 ≈ 23.5, depth is 10 → clamp to 10 contracts
     markets = {"KXETH-26MAY1311-B2220": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
-        "no_ask_size_fp": 10.0,
+        "yes_bid_size_fp": 10.0,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -163,7 +163,7 @@ async def test_deribit_tail_fade_skips_when_depth_below_min():
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2220": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
-        "no_ask_size_fp": 2.0,  # below MIN_FIRE_CONTRACTS=3
+        "yes_bid_size_fp": 2.0,  # below MIN_FIRE_CONTRACTS=3
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -193,7 +193,7 @@ async def test_deribit_tail_fade_dedups_same_signal_id_within_run():
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2220": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
-        "no_ask_size_fp": 50.0,
+        "yes_bid_size_fp": 50.0,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -210,7 +210,7 @@ async def test_deribit_tail_fade_skips_when_predicted_outcome_yes():
            "predicted_outcome": "yes"}
     markets = {"KXETH-26MAY1311-B2220": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
-        "no_ask_size_fp": 50.0,
+        "yes_bid_size_fp": 50.0,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -609,7 +609,7 @@ async def test_late_close_tail_fires_no_on_mid_otm_signal():
            "predicted_outcome": "no"}
     markets = {"KXBTC-26MAY1815-B91000": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
-        "no_ask_size_fp": 50.0,
+        "yes_bid_size_fp": 50.0,
     }}
     s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -629,7 +629,7 @@ async def test_late_close_tail_skips_when_ya_above_max():
            "predicted_outcome": "no"}
     markets = {"KXBTC-26MAY1815-B91000": {
         "yes_ask_dollars": 0.40, "no_ask_dollars": 0.60,
-        "no_ask_size_fp": 50.0,
+        "yes_bid_size_fp": 50.0,
     }}
     s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -644,7 +644,7 @@ async def test_late_close_tail_skips_when_ya_below_min():
            "predicted_outcome": "no"}
     markets = {"KXBTC-26MAY1815-B91000": {
         "yes_ask_dollars": 0.03, "no_ask_dollars": 0.97,
-        "no_ask_size_fp": 50.0,
+        "yes_bid_size_fp": 50.0,
     }}
     s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -658,7 +658,7 @@ async def test_late_close_tail_clamps_size_when_book_thin():
            "predicted_outcome": "no"}
     markets = {"KXBTC-26MAY1815-B91000": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
-        "no_ask_size_fp": 10.0,
+        "yes_bid_size_fp": 10.0,
     }}
     s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -674,7 +674,7 @@ async def test_late_close_tail_skips_when_depth_below_min():
            "predicted_outcome": "no"}
     markets = {"KXBTC-26MAY1815-B91000": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
-        "no_ask_size_fp": 2.0,
+        "yes_bid_size_fp": 2.0,
     }}
     s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -689,7 +689,7 @@ async def test_late_close_tail_skips_when_predicted_yes():
            "predicted_outcome": "yes"}
     markets = {"KXBTC-26MAY1815-B91000": {
         "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
-        "no_ask_size_fp": 50.0,
+        "yes_bid_size_fp": 50.0,
     }}
     s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -706,7 +706,7 @@ async def test_deribit_atm_fade_fires_no_on_atm_overshoot():
            "predicted_outcome": "no"}
     markets = {"KXBTC-26MAY1815-B89750": {
         "yes_ask_dollars": 0.60, "no_ask_dollars": 0.40,
-        "no_ask_size_fp": 100.0,
+        "yes_bid_size_fp": 100.0,
     }}
     s, om = _build_strategy(DeribitAtmFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -726,7 +726,7 @@ async def test_deribit_atm_fade_skips_when_ya_above_max():
            "predicted_outcome": "no"}
     markets = {"KXBTC-26MAY1815-B89750": {
         "yes_ask_dollars": 0.75, "no_ask_dollars": 0.25,
-        "no_ask_size_fp": 100.0,
+        "yes_bid_size_fp": 100.0,
     }}
     s, om = _build_strategy(DeribitAtmFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -742,7 +742,7 @@ async def test_deribit_atm_fade_skips_when_ya_below_min():
            "predicted_outcome": "no"}
     markets = {"KXBTC-26MAY1815-B89750": {
         "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
-        "no_ask_size_fp": 100.0,
+        "yes_bid_size_fp": 100.0,
     }}
     s, om = _build_strategy(DeribitAtmFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -757,7 +757,7 @@ async def test_deribit_atm_fade_clamps_size_when_book_thin():
     # target_count = 20/0.40 = 50; depth=20 → clamp to 20 * 0.40 = $8
     markets = {"KXBTC-26MAY1815-B89750": {
         "yes_ask_dollars": 0.60, "no_ask_dollars": 0.40,
-        "no_ask_size_fp": 20.0,
+        "yes_bid_size_fp": 20.0,
     }}
     s, om = _build_strategy(DeribitAtmFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -773,7 +773,7 @@ async def test_deribit_atm_fade_skips_when_predicted_yes():
            "predicted_outcome": "yes"}
     markets = {"KXBTC-26MAY1815-B89750": {
         "yes_ask_dollars": 0.60, "no_ask_dollars": 0.40,
-        "no_ask_size_fp": 100.0,
+        "yes_bid_size_fp": 100.0,
     }}
     s, om = _build_strategy(DeribitAtmFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
