@@ -107,13 +107,32 @@ class Database:
                     leg_a_depth REAL,
                     leg_b_depth REAL,
                     action_taken TEXT NOT NULL,
-                    sub_strategy TEXT NOT NULL
+                    sub_strategy TEXT NOT NULL,
+                    walked_edge_usdc REAL,
+                    walked_legs_json TEXT,
+                    top_vs_walked_max_gap_cents REAL,
+                    would_fire INTEGER DEFAULT 0,
+                    phase TEXT DEFAULT 'phase0_paper'
                 )
             """)
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_lv_strategy_ts "
                 "ON ladder_violations(sub_strategy, ts)"
             )
+            # Idempotent column additions (Phase 0 resurrection 2026-05-19).
+            # SQLite has no ADD COLUMN IF NOT EXISTS — use try/except per column.
+            for col_def in (
+                "walked_edge_usdc REAL",
+                "walked_legs_json TEXT",
+                "top_vs_walked_max_gap_cents REAL",
+                "would_fire INTEGER DEFAULT 0",
+                "phase TEXT DEFAULT 'phase0_paper'",
+            ):
+                col_name = col_def.split()[0]
+                try:
+                    await conn.execute(f"ALTER TABLE ladder_violations ADD COLUMN {col_def}")
+                except Exception:
+                    pass  # column already exists
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS macro_consensus (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -510,16 +529,26 @@ class Database:
         inversion_amount: float,
         leg_a_depth: float | None, leg_b_depth: float | None,
         action_taken: str, sub_strategy: str,
+        # NEW Phase 0 fields (default None = backward compatible)
+        walked_edge_usdc: float | None = None,
+        walked_legs_json: str | None = None,
+        top_vs_walked_max_gap_cents: float | None = None,
+        would_fire: bool = False,
+        phase: str = "phase0_paper",
     ) -> int:
         ts = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             cur = await conn.execute(
                 "INSERT INTO ladder_violations "
                 "(ts, series, event_key, ladder_type, leg_a_ticker, leg_b_ticker, "
-                " inversion_amount, leg_a_depth, leg_b_depth, action_taken, sub_strategy) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                " inversion_amount, leg_a_depth, leg_b_depth, action_taken, sub_strategy, "
+                " walked_edge_usdc, walked_legs_json, top_vs_walked_max_gap_cents, "
+                " would_fire, phase) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (ts, series, event_key, ladder_type, leg_a_ticker, leg_b_ticker,
-                 inversion_amount, leg_a_depth, leg_b_depth, action_taken, sub_strategy),
+                 inversion_amount, leg_a_depth, leg_b_depth, action_taken, sub_strategy,
+                 walked_edge_usdc, walked_legs_json, top_vs_walked_max_gap_cents,
+                 1 if would_fire else 0, phase),
             )
             await conn.commit()
             return cur.lastrowid
