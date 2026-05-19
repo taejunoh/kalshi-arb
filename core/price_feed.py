@@ -24,6 +24,7 @@ class PriceFeed:
         self._candle_window_start: dict[str, int] = {}
         self._price_history: dict[str, deque] = {}  # symbol -> deque of (time, price)
         self._subscribed: set[str] = set()
+        self._subscribe_time: dict[str, float] = {}
         self._warned_stale: set[str] = set()
 
     def get_price(self, symbol: str) -> Optional[float]:
@@ -104,6 +105,10 @@ class PriceFeed:
             for symbol in list(self._subscribed):
                 last = self._last_update.get(symbol)
                 if last is None:
+                    sub_time = self._subscribe_time.get(symbol, now)
+                    age = now - sub_time
+                    if age <= self.STALENESS_WARN_THRESHOLD:
+                        continue
                     gap = None
                 else:
                     gap = now - last
@@ -122,6 +127,7 @@ class PriceFeed:
 
     async def subscribe(self, symbol: str, ws_url: str):
         self._subscribed.add(symbol)
+        self._subscribe_time.setdefault(symbol, time.time())
         backoff = 1
         logged_max_backoff = False
         while True:
