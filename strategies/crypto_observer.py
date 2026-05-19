@@ -1172,7 +1172,7 @@ class CryptoObserverStrategy:
 
     def _update_spot_history(self, now: float):
         for asset in ("BTC", "ETH"):
-            p = self._price_feed.get_price(asset)
+            p = self._price_feed.get_fresh_spot(asset)
             if p is not None and p > 0:
                 self._spot_history[asset].append((now, p))
 
@@ -1237,10 +1237,8 @@ class CryptoObserverStrategy:
             asset = SERIES_ASSET.get(series)
             if asset is None:
                 continue
-            spot = self._price_feed.get_price(asset)
+            spot = self._price_feed.get_fresh_spot(asset)
             if spot is None or spot <= 0:
-                continue
-            if self._price_feed.is_stale(asset):
                 continue
             b_legs = sorted([l for l in legs if l.kind == "bucketed"],
                             key=lambda l: l.threshold)
@@ -1285,8 +1283,10 @@ class CryptoObserverStrategy:
             series_cnt = _Counter(m.get("ticker", "").split("-")[0] for m in markets)
             target_cnt = sum(1 for m in markets
                              if m.get("ticker", "").split("-")[0] in TARGET_SERIES)
-            stale_info = {a: (self._price_feed.get_price(a),
-                              self._price_feed.is_stale(a))
+            stale_info = {a: (self._price_feed.get_fresh_spot(a),
+                              self._price_feed.is_spot_stale(a),
+                              self._price_feed.is_stale(a),
+                              self._price_feed.is_mid_stale(a))
                           for a in ("BTC", "ETH")}
             logger.warning(
                 f"[OBS_DEBUG] markets={len(markets)} target_series={target_cnt} "

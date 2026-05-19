@@ -12,7 +12,17 @@ logger = logging.getLogger("price_feed")
 
 
 class PriceFeed:
-    STALE_THRESHOLD = 5.0
+    # kline_1m on binance.us emits at candle-close cadence — BTC measured at
+    # ~60s between ticks (live probe 2026-05-19 PM: 0 msgs in 20s window),
+    # ETH p50 ~9s. The pre-2026-05-19 5s threshold (sized for @trade 1Hz)
+    # made `is_stale` True every observer iter → contexts=0 → silent
+    # crypto_observer. 90s covers one full kline cycle + 30s grace, with
+    # the 60s watchdog still alerting on truly silent streams.
+    KLINE_STALE_THRESHOLD = 90.0
+    # bookTicker is sub-second (live probe 2026-05-19 PM: 52 msgs / 20s,
+    # gap p50=0.01s, max=3s). Keep mid path tight so `get_fresh_spot` can
+    # tell a healthy mid feed from a degraded one.
+    MID_STALE_THRESHOLD = 5.0
     STALENESS_WARN_THRESHOLD = 60.0
     STALENESS_CHECK_INTERVAL = 15.0
     VOLATILITY_WINDOW = 120  # keep last 120 ticks for volatility calculation
@@ -42,7 +52,7 @@ class PriceFeed:
         last = self._last_update.get(symbol)
         if last is None:
             return True
-        return (time.time() - last) > self.STALE_THRESHOLD
+        return (time.time() - last) > self.KLINE_STALE_THRESHOLD
 
     def get_mid(self, symbol: str) -> Optional[float]:
         return self._mid_prices.get(symbol)
@@ -51,7 +61,30 @@ class PriceFeed:
         last = self._mid_last_update.get(symbol)
         if last is None:
             return True
-        return (time.time() - last) > self.STALE_THRESHOLD
+        return (time.time() - last) > self.MID_STALE_THRESHOLD
+
+    def get_fresh_spot(self, symbol: str) -> Optional[float]:
+        """Prefer bookTicker mid (sub-second fresh) over kline last-trade
+        (60s candle cadence on binance.us). Falls back to kline if mid is
+        stale or never seen; returns None only when both sources are stale.
+        Use this in any strategy whose hypothesis depends on accurate
+        real-time spot (e.g., strike comparisons, ATM-bucket selection).
+        """
+        if not self.is_mid_stale(symbol):
+            mid = self._mid_prices.get(symbol)
+            if mid is not None and mid > 0:
+                return mid
+        if not self.is_stale(symbol):
+            price = self._prices.get(symbol)
+            if price is not None and price > 0:
+                return price
+        return None
+
+    def is_spot_stale(self, symbol: str) -> bool:
+        """True only when both mid (5s) and kline (90s) are stale. Mirrors
+        get_fresh_spot's fallback chain — they should be used together.
+        """
+        return self.is_mid_stale(symbol) and self.is_stale(symbol)
 
     def get_volatility(self, symbol: str) -> Optional[float]:
         """Annualized realized volatility from recent trade ticks.
