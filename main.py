@@ -443,6 +443,14 @@ class Bot:
             logger.info("Pre-flight checks passed. Starting live trading.")
 
         loop = asyncio.get_event_loop()
+        # Bump default ThreadPoolExecutor from min(32, cpu+4) = 6 workers on
+        # t3.small to 32, since asyncio.to_thread() now fans out ~13+ sync
+        # kalshi_client calls per sports scan (× 24 sports scan_loops) plus
+        # the ladder/xvenue main-loop helpers. Default cap would queue them
+        # and re-introduce the latency-tail pattern the to_thread fix is
+        # meant to eliminate. 32 matches the asyncio absolute default ceiling.
+        from concurrent.futures import ThreadPoolExecutor
+        loop.set_default_executor(ThreadPoolExecutor(max_workers=32, thread_name_prefix="kalshi-thread"))
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, lambda: asyncio.create_task(self.shutdown()))
 
