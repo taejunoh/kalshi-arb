@@ -37,6 +37,7 @@ from strategies.sports_playoff_underdog_v1_us import SportsPlayoffUnderdogV1USSt
 from strategies.sports_soccer_underdog_v1 import SportsSoccerUnderdogV1Strategy
 from strategies.sports_soccer_draw_v1 import SportsSoccerDrawV1Strategy
 from strategies.sports_mls_fade_favorite_v1 import SportsMLSFadeFavoriteV1Strategy
+from strategies.sports_npb_underdog_v1 import SportsNpbUnderdogV1Strategy
 from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
 from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
 from strategies.sports_favorite_v40 import SportsFavoriteV40Strategy
@@ -209,6 +210,16 @@ class Bot:
         # Paper-twin only at launch. Promotion gate: n>=25 + ROI>=+10% +
         # drop-top-3 > 0 by ~6/22.
         self.sports_mls_fade_favorite_v1 = SportsMLSFadeFavoriteV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # NPB Underdog V1 — Japanese baseball deep-underdog 0.38-0.40.
+        # Built 2026-05-19 from full-band NPB/KBO observer scan. NPB
+        # consensus-strong underdog 0.38-0.40 first-fire n_games=15
+        # ROI +50.8% / drop-top-3 +39.7% / Wilson 95% low edge +1.8pp.
+        # KBO showed no alpha at any band — excluded. Paper-only at launch
+        # (n_games=15 below promotion gate n>=25). Promotion gate:
+        # paper n_games >= 15 AND ROI >= +30% AND drop-top-3 > 0 by ~6/09.
+        self.sports_npb_underdog_v1 = SportsNpbUnderdogV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         # V3.6 WNBA — chalk-favorite YES/NO at 35-55c with fair_prob > 0.55.
@@ -604,6 +615,9 @@ class Bot:
             # MLS Fade-Favorite V1 — paper-twin only. MLS TEAM no_ask 30-45c
             # BUY NO. Built 2026-05-15 from observer scan n=14 +18.6% ROI.
             ("sports_mls_fade_favorite_v1", self.sports_mls_fade_favorite_v1),
+            # NPB Underdog V1 — paper-only. NPB consensus-strong underdog
+            # 0.38-0.40. Built 2026-05-19 from observer n_games=15 +50.8% ROI.
+            ("sports_npb_underdog_v1", self.sports_npb_underdog_v1),
             # V3.6 WNBA — chalk-favorite 35-55c, WNBA-only.
             ("sports_underdog_v36", self.sports_underdog_v36),
             # V3.7 WNBA — TEAM 20-29c band, WNBA-only.
