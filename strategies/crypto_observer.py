@@ -1263,16 +1263,13 @@ class CryptoObserverStrategy:
 
     async def scan_and_execute(self):
         # Observer is read-only: no circuit-breaker / kill switch needed.
-        # ── TEMP DEBUG 2026-05-19 (silent-fail probe) ──
-        # Unthrottled entry counter (proves function is called at all).
-        self._entry_count = getattr(self, "_entry_count", 0) + 1
-        if self._entry_count <= 5 or self._entry_count % 100 == 0:
-            logger.warning(f"[OBS_DEBUG] scan_and_execute ENTRY n={self._entry_count}")
         markets = self._scanner.get_active_markets()
-        # Throttled gate-by-gate diagnostic (1 log per 30s).
+        # 2026-05-19: throttled gate-by-gate diagnostic (1 log per 5 min) so we
+        # can detect another silent-fail without redeploying. Cheap enough to
+        # keep on permanently — 1 WARNING line every 5 min is noise-free.
         debug_now = time.time()
         last_debug = getattr(self, "_last_debug_log", 0.0)
-        debug = (debug_now - last_debug) >= 30.0
+        debug = (debug_now - last_debug) >= 300.0
         if debug:
             self._last_debug_log = debug_now
         if not markets:

@@ -539,6 +539,22 @@ class Bot:
             # shutdown_fade deprecated — see docs/future-work/shutdown-fade-redesign.md
             ("spread_scanner", self.spread_scanner),
             ("market_maker", self.market_maker),
+            # 2026-05-19: crypto_observer moved to top of strategy list. The
+            # sports portfolio (~28 strategies) takes 70s+ each on cold-cache
+            # iters, pushing crypto_observer's wait to 10+ min per call. With
+            # SIGNAL_COOLDOWN_S=60s, that wastes ~9 min of every cooldown
+            # window. Moving it ahead of sports gives it ≤2 s wait per iter,
+            # so the cooldown reflects actual signal cadence again. Phase 1
+            # consumer traders (atm_hold_v1, deribit_tail_fade_v1, etc.) also
+            # moved up so they see the latest signals on the same scan tick.
+            ("crypto_observer", self.crypto_observer),
+            ("deribit_tail_fade_v1", self.deribit_tail_fade_v1),
+            ("bid_imbalance_v1", self.bid_imbalance_v1),
+            ("open_no_touch_v1", self.open_no_touch_v1),
+            ("atm_hold_v1", self.atm_hold_v1),
+            ("bid_imbalance_fade_v1", self.bid_imbalance_fade_v1),
+            ("late_close_tail_v1", self.late_close_tail_v1),
+            ("deribit_atm_fade_v1", self.deribit_atm_fade_v1),
             # mentions_trader disabled 2026-04-17 — sports v31 trio is now the
             # main live strategy. Mentions accumulated 110 Kalshi positions
             # (~$200 tied capital) in KXFEDMENTION-* markets settling end of
@@ -670,40 +686,32 @@ class Bot:
             # ladder_crypto retired 2026-05-13 — see CryptoObserverStrategy
             # init for full postmortem. Replacement runs 8 hypothesis-based
             # observers in parallel; first promotion eval in ~1 week.
-            ("crypto_observer", self.crypto_observer),
-            # Phase 1 paper traders promoted from crypto_observer 2026-05-14.
-            # Paper-only until n ≥ 100 settled + ROI ≥ +5% for live promotion.
-            ("deribit_tail_fade_v1", self.deribit_tail_fade_v1),
-            ("bid_imbalance_v1", self.bid_imbalance_v1),
-            ("open_no_touch_v1", self.open_no_touch_v1),
-            ("atm_hold_v1", self.atm_hold_v1),
-            ("bid_imbalance_fade_v1", self.bid_imbalance_fade_v1),
-            ("late_close_tail_v1", self.late_close_tail_v1),
-            ("deribit_atm_fade_v1", self.deribit_atm_fade_v1),
+            # crypto_observer + 7 Phase 1 traders moved to top of strategy
+            # list 2026-05-19 to bypass slow sports portfolio.
             # Macro Event Trader (C1) — paper-only. Requires consensus cron.
             ("macro_event", self.macro_event),
             # Cross-Venue Polymarket Trader (B1) — paper-only. Requires
             # scripts/polymarket_quote_cron.py running separately.
             ("xvenue_polymarket", self.xvenue_polymarket),
         ]
-        # ── TEMP DEBUG 2026-05-19: log per-strategy entry to find hang ──
+        # 2026-05-19: log per-strategy timing when a single strategy stalls
+        # the loop. Threshold > 5s catches the sports-portfolio bottleneck
+        # that pushed crypto_observer to 10+ min/call. Lightweight; no
+        # per-call log noise in the steady-state fast path.
         _strat_iter = 0
         while self._running:
             _strat_iter += 1
             _iter_start = time.time()
             for name, strategy in strategies:
                 _t0 = time.time()
-                if _strat_iter <= 3:
-                    logger.warning(f"[STRAT_DEBUG] iter={_strat_iter} start={name}")
                 try:
                     await strategy.scan_and_execute()
                 except Exception as e:
                     logger.error(f"{name} loop error: {e}")
                     await self.notifier.notify_error(f"{name}: {e}")
                 _dt = time.time() - _t0
-                if _dt > 5.0 or _strat_iter <= 3:
-                    logger.warning(f"[STRAT_DEBUG] iter={_strat_iter} done={name} dt={_dt:.2f}s")
-            logger.warning(f"[STRAT_DEBUG] iter={_strat_iter} FULL_LOOP dt={time.time()-_iter_start:.2f}s")
+                if _dt > 5.0:
+                    logger.warning(f"[SLOW_STRAT] iter={_strat_iter} {name} dt={_dt:.2f}s")
             await asyncio.sleep(0.2)
 
     def _reconcile_resting_orders(self):
