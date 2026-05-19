@@ -254,7 +254,16 @@ class LadderCryptoStrategy:
             walked_per_unit_cost += wr.avg_fill_price
         n = len(arb.legs)
         fee_legs = 2 if group.ladder_type == "cumulative" else n
-        walked_edge = 1.0 - walked_per_unit_cost - fee_legs * cfg.KALSHI_FEE_PER_CONTRACT
+        # Payoff per contract-group:
+        #   cumulative: $1 (exactly one of (t1.yes, t2.no) wins)
+        #   bucketed BUY-YES: $1 (exactly one of N mutually-exclusive YES legs wins)
+        #   bucketed BUY-NO: $n-1 (exactly one leg resolves YES → its NO loses,
+        #     other n-1 NOs each win $1)
+        if group.ladder_type == "bucketed" and arb.legs[0].side == "no":
+            payoff = n - 1.0
+        else:
+            payoff = 1.0
+        walked_edge = payoff - walked_per_unit_cost - fee_legs * cfg.KALSHI_FEE_PER_CONTRACT
         would_fire = (
             walked_edge >= cfg.LADDER_PHASE0_MIN_WALKED_EDGE_USDC
             and all_fillable

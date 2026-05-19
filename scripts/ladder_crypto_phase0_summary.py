@@ -44,11 +44,13 @@ def _query_summary(db_path: str) -> dict:
             GROUP BY series
         """)
         by_series_24h = dict(cur.fetchall())
-        # 24h avg walked_edge
+        # 24h avg walked_edge — arb rows only (fade rows have different semantics:
+        # inversion - slippage - fee, not 1 - cost - n*fee; mixing them is misleading)
         cur.execute("""
             SELECT AVG(walked_edge_usdc) FROM ladder_violations
             WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
-              AND would_fire=1 AND ts >= datetime('now', '-1 days')
+              AND would_fire=1 AND action_taken='phase0_arb_log'
+              AND ts >= datetime('now', '-1 days')
         """)
         avg_edge_24h = cur.fetchone()[0]
         # 14d cumulative would_fire count
@@ -79,12 +81,20 @@ def _query_summary(db_path: str) -> dict:
               AND ts >= datetime('now', '-2 days')
         """)
         candidates_48h = cur.fetchone()[0]
+        # Distinct event_key count in 14d (concentration vs distribution signal)
+        cur.execute("""
+            SELECT COUNT(DISTINCT event_key) FROM ladder_violations
+            WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
+              AND would_fire=1 AND ts >= datetime('now', '-14 days')
+        """)
+        distinct_events_14d = cur.fetchone()[0]
         return {
             "by_series_24h": by_series_24h,
             "avg_edge_24h": avg_edge_24h,
             "count_14d": count_14d,
             "gap_p90": gap_p90,
             "candidates_48h": candidates_48h,
+            "distinct_events_14d": distinct_events_14d,
         }
     finally:
         conn.close()
@@ -109,6 +119,7 @@ def _format_message(s: dict) -> str:
         f"  avg walked_edge 24h: {avg_edge_str}",
         f"  phantom p90 gap (14d): {gap_p90_str}",
         gate_line,
+        f"  distinct events 14d: {s['distinct_events_14d']}",
     ]
     # Early-abort flag
     if s["candidates_48h"] == 0:

@@ -232,3 +232,82 @@ async def test_phase0_fade_logs_with_walked_slippage(monkeypatch):
     # slippage = 0.14 - 0.10 = 0.04
     # walked_edge = 0.60 - 0.04 - 0.07 = 0.49
     assert kw["walked_edge_usdc"] == pytest.approx(0.49, abs=0.01)
+
+
+@pytest.mark.asyncio
+async def test_phase0_bucketed_buy_no_payoff_n_minus_1(monkeypatch):
+    """Bucketed BUY-NO arb uses payoff n-1, not 1.
+
+    Construct 4 legs whose yes_bids sum to 1.40 (sum_mid in [0.90, 1.10]
+    range fails — so use yes_bid=0.35, yes_ask=0.35: sum_mid=1.40 → above
+    bucketed gate). To get inside the gate, use yes_bid=0.27 (sum=1.08 OK)
+    and let walked simulate a BUY-NO arb where total NO cost is high.
+
+    Math check: 4 legs, each yes_bid=0.27 → no_bid=0.73, no_ask=0.73.
+    sum_yes_bid = 1.08 (passes BUCKETED_SUM_MID gate).
+    Bucketed BUY-NO arb: cost = (n - sum_yes_bid) + n*fee = 2.92 + 0.28 = 3.20
+                         payoff = n-1 = 3.0; edge = 3.0 - 3.20 = -0.20 NEGATIVE
+    So this scenario won't be detected as arb by find_arb_opportunities.
+
+    Instead, mock find_arb_opportunities to inject a bucketed BUY-NO arb
+    directly, then verify _log_phase0_arb's payoff branch.
+    """
+    from core import orderbook_walk
+    from core.ladder_framework import ArbTrade, ArbLeg
+
+    # Skip the framework gate — directly construct a bucketed BUY-NO arb
+    bucketed_buy_no_arb = ArbTrade(
+        group_key="KXBTC-FAKE",
+        legs=tuple(
+            ArbLeg(ticker=f"KXBTC-FAKE-B{i}", side="no", size_usdc=12.5, price=0.73)
+            for i in range(4)
+        ),
+        expected_edge_usdc=0.0,
+    )
+    monkeypatch.setattr(
+        "strategies.ladder_crypto.find_arb_opportunities",
+        lambda *a, **kw: [bucketed_buy_no_arb],
+    )
+    monkeypatch.setattr(
+        "strategies.ladder_crypto.find_fade_opportunities",
+        lambda *a, **kw: [],
+    )
+
+    def fake_walk(client, ticker, side, target_notional_usdc):
+        return orderbook_walk.WalkResult(
+            avg_fill_price=0.73, max_fillable_usdc=25.0,
+            levels_consumed=1, top_ask=0.73, top_vs_walked_gap_cents=0.0,
+        )
+    monkeypatch.setattr("strategies.ladder_crypto.walk_orderbook", fake_walk)
+
+    cfg = _make_config()
+    om = MagicMock(); om.market_order = AsyncMock()
+    db = MagicMock(); db.record_ladder_violation = AsyncMock(return_value=1)
+    strat = LadderCryptoStrategy(cfg, om, MagicMock(), MagicMock())
+    strat._db = db
+
+    # Bucketed legs to satisfy BUCKETED_SUM_MID gate (need 0.90 <= sum_mid <= 1.10)
+    bucketed_legs = tuple(
+        LadderLeg(
+            ticker=f"KXBTC-FAKE-B{i}", threshold=float(i),
+            yes_ask=0.27, yes_bid=0.27, no_ask=0.73, no_bid=0.73,
+            yes_depth=100.0, no_depth=100.0,
+        )
+        for i in range(4)
+    )
+    group = LadderGroup(series="KXBTC", event_key="FAKE",
+                        ladder_type="bucketed", direction="asc",
+                        legs=bucketed_legs)
+    await strat._handle_group(group)
+
+    arb_calls = [
+        c for c in db.record_ladder_violation.await_args_list
+        if c.kwargs.get("action_taken") == "phase0_arb_log"
+    ]
+    assert len(arb_calls) == 1
+    kw = arb_calls[0].kwargs
+    # walked: 4 × $0.73 = $2.92, fee = 4 × 0.07 = $0.28, payoff = n-1 = 3.0
+    # walked_edge = 3.0 - 2.92 - 0.28 = -0.20 (negative, would_fire=False)
+    # BUT verify the payoff branch was taken: with WRONG payoff=1.0, edge = 1.0 - 2.92 - 0.28 = -2.20
+    assert kw["walked_edge_usdc"] == pytest.approx(-0.20, abs=0.01)
+    assert kw["would_fire"] is False
