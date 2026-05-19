@@ -38,6 +38,16 @@ def _get_odds_http_client():
         limits = httpx.Limits(max_connections=50, max_keepalive_connections=20)
         _ODDS_HTTP_CLIENT = httpx.AsyncClient(timeout=10, limits=limits)
     return _ODDS_HTTP_CLIENT
+
+
+# 429-aware global Odds API cooldown (2026-05-19 evening). When Odds API
+# returns 429 Too Many Requests, we set this timestamp and skip ALL further
+# _fetch_odds HTTP requests until it elapses — strategies serve stale cache
+# instead of stacking more rate-limit hits. Restart burst at 18:19:18 hit
+# 429 for mma + tennis_wta_strasbourg before any successful response; without
+# a cooldown, every subsequent strategy retried into the same rate limit.
+_ODDS_429_COOLDOWN_UNTIL: float = 0.0
+_ODDS_429_COOLDOWN_SECS: float = 30.0
 # Per-region TTL matched to upstream tick cadence (2026-04-14 freshness measurement):
 # us retail (matchbook/betfair) ticks 63~98s → 60s TTL keeps every scan fresh.
 # eu (Pinnacle dominant) upstream gap ~883s → 600s TTL avoids duplicate fetch.
@@ -895,6 +905,16 @@ class SportsTraderStrategy:
                 _PINNACLE_AGE.observe(region, sport, _compute_pinnacle_payload_hash(data))
                 return data
 
+        # Global 429 cooldown — serve stale cache (or empty) without retrying
+        # the network until the cooldown elapses. Prevents the burst-of-rate-
+        # limit-hits pattern observed at 2026-05-19 restart.
+        global _ODDS_429_COOLDOWN_UNTIL
+        if now < _ODDS_429_COOLDOWN_UNTIL:
+            if hit is not None:
+                self.odds_api_usage = hit[2]
+                return hit[1]
+            return []
+
         try:
             client = _get_odds_http_client()
             resp = await client.get(
@@ -923,9 +943,19 @@ class SportsTraderStrategy:
             # 2026-05-19: include exception type — many failures today logged
             # blank message ("Odds API error for X:"). Without type+repr we
             # can't distinguish ReadTimeout vs ConnectError vs HTTP status.
-            logger.error(
-                f"Odds API error for {sport}: {type(e).__name__}: {e!r}"
-            )
+            # 429 detection: arm the global cooldown so every other strategy
+            # skips HTTP for the next _ODDS_429_COOLDOWN_SECS seconds.
+            is_429 = "429" in str(e) or "Too Many Requests" in str(e)
+            if is_429:
+                _ODDS_429_COOLDOWN_UNTIL = now + _ODDS_429_COOLDOWN_SECS
+                logger.warning(
+                    f"Odds API 429 for {sport} — global cooldown armed for "
+                    f"{_ODDS_429_COOLDOWN_SECS:.0f}s"
+                )
+            else:
+                logger.error(
+                    f"Odds API error for {sport}: {type(e).__name__}: {e!r}"
+                )
             # Keep serving stale cache rather than failing all strategies
             if hit is not None:
                 self.odds_api_usage = hit[2]
@@ -1378,13 +1408,18 @@ class SportsTraderStrategy:
                 f"fair={fair_prob:.2f} ask={ya:.2f}/{na:.2f} edge={signal['edge']:.2f} "
                 f"→ {signal['side']} ${size:.2f} LIMIT@{limit_price:.2f}")
 
-    async def scan_loop(self, scan_interval_secs: float = 1.0):
+    async def scan_loop(
+        self, scan_interval_secs: float = 1.0, startup_jitter_secs: float = 60.0,
+    ):
         """Dedicated scan task — bypasses the shared `_strategy_loop`.
 
-        Use for strategies whose fire rate is choked by upstream slow
-        strategies in the main loop (sports_underdog_v31 etc. can take
-        60-400s each, pushing tennis/UFC paper strategies to the back of
-        the queue). Per-strategy task = independent cadence.
+        `startup_jitter_secs` (2026-05-19 evening): spread first-scan
+        timing across a [0, jitter) window so multiple strategies don't
+        all cold-fetch Odds API simultaneously at restart and trip its
+        rate limiter. We saw `429 Too Many Requests` bursts at
+        18:19:18 post-deploy when 5 tennis scan_loops + 19 main strategies
+        all started their first scan in the same ~5 s window. Default
+        60 s = first scan happens uniformly over the first minute.
 
         scan_and_execute already has internal `_get_scan_interval()`
         throttling, so this loop's `scan_interval_secs` is the polling
@@ -1398,8 +1433,17 @@ class SportsTraderStrategy:
         slow scan.
         """
         import asyncio
-        logger.info(f"[{self.STRATEGY_NAME}] dedicated scan_loop started "
-                    f"(poll={scan_interval_secs}s)")
+        import random
+        if startup_jitter_secs > 0:
+            jitter = random.uniform(0, startup_jitter_secs)
+            logger.info(
+                f"[{self.STRATEGY_NAME}] dedicated scan_loop started "
+                f"(poll={scan_interval_secs}s, first-scan in {jitter:.1f}s)"
+            )
+            await asyncio.sleep(jitter)
+        else:
+            logger.info(f"[{self.STRATEGY_NAME}] dedicated scan_loop started "
+                        f"(poll={scan_interval_secs}s)")
         while True:
             try:
                 await self.scan_and_execute()
