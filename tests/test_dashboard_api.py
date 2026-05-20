@@ -359,6 +359,64 @@ async def test_performance_live_pre_live_split_includes_demoted_strategy(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_performance_live_includes_crypto_phase1_db_attribution(tmp_path):
+    """Crypto Phase 1 LIVE trades must be DB-attributed to the dashboard's
+    'Strategy Performance (Live)' bucket. Kalshi settlements API can't
+    disambiguate which Phase 1 trader (atm_hold / atm_fade / deribit_tail_fade
+    / late_close_tail / bid_imbalance) bought a given KXBTC/KXETH ticker, so
+    the pre-fix logic (sports prefix only) dropped these on the floor — the
+    case observed 2026-05-20 where 6 atm_hold_v1 + 3 deribit_tail_fade_v1
+    LIVE settled rows existed in DB but rendered 0 on the dashboard.
+    """
+    database = Database(str(tmp_path / "t.db"))
+    await database.initialize()
+    # 1 winning live atm_hold_v1
+    await database.record_trade(
+        strategy="atm_hold_v1", market_id="KXBTC-26MAY2001-B76750",
+        direction="yes", price=0.63, size=19.53, fee=2.66,
+        status="settled", pnl=9.30,
+    )
+    # 1 losing live atm_hold_v1
+    await database.record_trade(
+        strategy="atm_hold_v1", market_id="KXBTC-26MAY2005-B77450",
+        direction="yes", price=0.51, size=19.89, fee=2.73,
+        status="settled", pnl=-19.89,
+    )
+    # 1 winning live deribit_tail_fade_v1
+    await database.record_trade(
+        strategy="deribit_tail_fade_v1", market_id="KXBTC-26MAY2002-B76750",
+        direction="no", price=0.92, size=19.32, fee=0.4,
+        status="settled", pnl=0.21,
+    )
+
+    class FakeConfig:
+        LIVE_STRATEGIES = {"atm_hold_v1", "deribit_tail_fade_v1"}
+
+    class MockKalshi:
+        def get_positions(self): return []
+        def get_settlements(self, limit=200): return []
+
+    app = create_app(
+        database, bankroll=1000.0, config=FakeConfig(), kalshi_client=MockKalshi(),
+    )
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.get("/api/performance")
+    data = resp.json()
+
+    atm = data["atm_hold_v1"]["live"]
+    assert atm["trade_count"] == 2
+    assert atm["wins"] == 1
+    assert atm["losses"] == 1
+    assert atm["total_pnl"] == pytest.approx(9.30 - 19.89, abs=0.01)
+
+    deribit = data["deribit_tail_fade_v1"]["live"]
+    assert deribit["trade_count"] == 1
+    assert deribit["wins"] == 1
+    assert deribit["total_pnl"] == pytest.approx(0.21, abs=0.01)
+
+
+@pytest.mark.asyncio
 async def test_performance_splits_sports_paper_pre_live(tmp_path):
     database = Database(str(tmp_path / "t.db"))
     await database.initialize()

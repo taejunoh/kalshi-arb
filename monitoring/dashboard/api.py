@@ -150,6 +150,23 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             return {"trade_count": 0, "total_pnl": 0.0, "wins": 0, "losses": 0}
 
         SPORTS_PREFIX = "sports_"
+        # Crypto Phase 1 strategies use the DB strategy column for Live
+        # attribution. _categorize_live_ticker can't disambiguate which
+        # crypto trader (atm_hold vs atm_fade vs deribit_tail_fade vs
+        # late_close_tail vs bid_imbalance, etc.) bought a given KXBTC/
+        # KXETH ticker — multiple Phase 1 strategies share the same
+        # ticker pattern. Mirrors the sports_* DB-attribution path that
+        # exists for the same reason (v31/v32/v33 subtypes collide on
+        # *GAME tickers). Pre-fix (2026-05-20) crypto LIVE trades fell
+        # through both paths and rendered as 0 on the dashboard despite
+        # populating trades.status='settled' rows correctly.
+        CRYPTO_DB_ATTRIBUTED = {
+            "deribit_tail_fade_v1", "atm_hold_v1",
+            "bid_imbalance_v1", "bid_imbalance_fade_v1",
+            "open_no_touch_v1", "late_close_tail_v1",
+            "deribit_atm_fade_v1",
+            "crypto_fair_value", "crypto_fair_value_mid_v1",
+        }
         # Retired strategies — still rendered but flagged via `archived: true`
         # so the frontend can show them in a separate Archived section.
         RETIRED = {
@@ -296,13 +313,16 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 elif cost > 0:
                     bucket["losses"] += 1
 
-            # Sports live aggregates: use DB strategy column since Kalshi
-            # ticker alone can't distinguish v31 subtypes.
+            # Sports + crypto Phase 1 live aggregates: use DB strategy column
+            # since Kalshi ticker alone can't distinguish subtypes (sports v31
+            # vs v32 etc., crypto atm_hold vs atm_fade etc.).
             for trade in all_trades:
                 if trade.get("status") != "settled":
                     continue
                 strat = trade["strategy"]
-                if not strat.startswith(SPORTS_PREFIX) or strat in RETIRED:
+                if strat in RETIRED:
+                    continue
+                if not (strat.startswith(SPORTS_PREFIX) or strat in CRYPTO_DB_ATTRIBUTED):
                     continue
                 if strat not in strategies:
                     continue
@@ -328,14 +348,17 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
 
             # Also count live filled (open) as entries in today's sub-bucket — they
             # aren't settled yet so PnL stays 0 until finalization, but the user
-            # sees a signal was taken today.
+            # sees a signal was taken today. Sports + crypto Phase 1 share the
+            # same DB-attribution path (Kalshi can't disambiguate subtypes).
             for trade in all_trades:
                 if trade.get("status") != "filled":
                     continue
                 if trade.get("timestamp", "") < today_cutoff:
                     continue
                 strat = trade["strategy"]
-                if not strat.startswith(SPORTS_PREFIX) or strat in RETIRED:
+                if strat in RETIRED:
+                    continue
+                if not (strat.startswith(SPORTS_PREFIX) or strat in CRYPTO_DB_ATTRIBUTED):
                     continue
                 if strat not in strategies:
                     continue
