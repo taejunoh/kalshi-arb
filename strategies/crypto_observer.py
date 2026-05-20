@@ -1240,9 +1240,12 @@ class CryptoObserverStrategy:
         self._last_fire: dict[tuple[str, str], float] = {}
         # Per-asset spot history for spot_60s_ago lookups
         # (PriceFeed has its own deque but resolution-time access is awkward.)
+        # 2026-05-20: maxlen extended 180 → 1800 to cover 15-min correlation
+        # window for cross-asset observers. Memory: ~57 KB total (1800 entries
+        # × 16 bytes × 2 assets), negligible.
         self._spot_history: dict[str, deque] = {
-            "BTC": deque(maxlen=180),  # ~3 min at 1Hz
-            "ETH": deque(maxlen=180),
+            "BTC": deque(maxlen=1800),  # ~30 min at 1Hz
+            "ETH": deque(maxlen=1800),
         }
 
     def _update_spot_history(self, now: float):
@@ -1265,6 +1268,47 @@ class CryptoObserverStrategy:
             else:
                 break
         return best
+
+    def _correlation_lookback(self, window_secs: float, now_ts: float
+                              ) -> Optional[float]:
+        """BTC-ETH Pearson correlation over the last `window_secs` seconds.
+
+        Joins BTC and ETH spot streams on nearest timestamp (within 5s
+        tolerance). Returns None on sparse data (< CORR_MIN_SAMPLES) per
+        _pearson_correlation contract.
+        """
+        from strategies.crypto_cross_asset_observer import _pearson_correlation
+        btc_hist = self._spot_history.get("BTC")
+        eth_hist = self._spot_history.get("ETH")
+        if not btc_hist or not eth_hist:
+            return None
+        cutoff = now_ts - window_secs
+        btc_window = [(ts, p) for ts, p in btc_hist if ts >= cutoff]
+        eth_window = [(ts, p) for ts, p in eth_hist if ts >= cutoff]
+        # Join on nearest ts (5s tolerance). Walk both sorted lists.
+        btc_window.sort(key=lambda x: x[0])
+        eth_window.sort(key=lambda x: x[0])
+        # One-to-one timestamp join: each ETH sample can match at most one BTC
+        # sample. Tolerance: 5s (within-cadence noise on binance.us 60s kline).
+        # j is the next-available ETH index — never goes backward.
+        xs: list[float] = []
+        ys: list[float] = []
+        j = 0
+        for bts, bp in btc_window:
+            # Advance j past ETH samples too old to match this BTC's window
+            # (5s tolerance) — they can't be closer than the next sample.
+            while j < len(eth_window) and (bts - eth_window[j][0]) > 5.0:
+                j += 1
+            if j >= len(eth_window):
+                break
+            # If next ETH is closer (forward in time), prefer it
+            while j + 1 < len(eth_window) and abs(eth_window[j + 1][0] - bts) < abs(eth_window[j][0] - bts):
+                j += 1
+            if abs(eth_window[j][0] - bts) <= 5.0:
+                xs.append(bp)
+                ys.append(eth_window[j][1])
+                j += 1  # Consume — each ETH sample used at most once
+        return _pearson_correlation(xs, ys)
 
     async def _deribit_iv(self, asset: str) -> Optional[float]:
         """Return ATM IV as a decimal (e.g. 0.60 for 60% annualized).
