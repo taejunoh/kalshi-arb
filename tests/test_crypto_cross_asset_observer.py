@@ -543,3 +543,18 @@ def test_book_lag_skips_when_no_cache_attached():
         book_mid_cache=None,
     )
     assert KalshiBookLagObserver().evaluate(ctx) == []
+
+
+# ---------------------------------------------------------------------------
+# Observer registration harness tests
+# ---------------------------------------------------------------------------
+
+from strategies.crypto_observer import OBSERVER_CLASSES
+
+
+def test_observers_registered_in_observer_classes():
+    """Verify all 3 cross-asset observers are registered in OBSERVER_CLASSES."""
+    names = [cls().name for cls in OBSERVER_CLASSES]
+    assert "btc_eth_lead_lag" in names
+    assert "cross_asset_corr_break" in names
+    assert "kalshi_book_lag" in names
