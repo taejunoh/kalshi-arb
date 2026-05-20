@@ -449,7 +449,6 @@ class LateCloseTailV1Strategy(_Phase1Base):
         self.SIZE_USDC = config.LATE_CLOSE_TAIL_SIZE_USDC
         self._min_ya = config.LATE_CLOSE_TAIL_MIN_YA
         self._max_ya = config.LATE_CLOSE_TAIL_MAX_YA
-        self._max_no_ask = config.LATE_CLOSE_TAIL_MAX_NO_ASK
         self._min_fire_contracts = config.LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS
 
     def _select_side_and_price(self, sig, market):
@@ -462,8 +461,6 @@ class LateCloseTailV1Strategy(_Phase1Base):
         if no_ask <= 0 or no_ask >= 1:
             return None
         if ya < self._min_ya or ya > self._max_ya:
-            return None
-        if no_ask > self._max_no_ask:
             return None
         return ("no", no_ask)
 
@@ -501,7 +498,6 @@ class DeribitAtmFadeV1Strategy(_Phase1Base):
         self.SIZE_USDC = config.DERIBIT_ATM_FADE_SIZE_USDC
         self._min_ya = config.DERIBIT_ATM_FADE_MIN_YA
         self._max_ya = config.DERIBIT_ATM_FADE_MAX_YA
-        self._max_no_ask = config.DERIBIT_ATM_FADE_MAX_NO_ASK
         self._min_fire_contracts = config.DERIBIT_ATM_FADE_MIN_FIRE_CONTRACTS
 
     def _select_side_and_price(self, sig, market):
@@ -514,8 +510,6 @@ class DeribitAtmFadeV1Strategy(_Phase1Base):
         if no_ask <= 0 or no_ask >= 1:
             return None
         if ya < self._min_ya or ya > self._max_ya:
-            return None
-        if no_ask > self._max_no_ask:
             return None
         return ("no", no_ask)
 

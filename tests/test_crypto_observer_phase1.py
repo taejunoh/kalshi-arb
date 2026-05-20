@@ -41,13 +41,11 @@ def _cfg():
         LATE_CLOSE_TAIL_SIGNAL_FRESHNESS_S=15.0,
         LATE_CLOSE_TAIL_MIN_YA=0.05,
         LATE_CLOSE_TAIL_MAX_YA=0.30,
-        LATE_CLOSE_TAIL_MAX_NO_ASK=0.95,
         LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS=3.0,
         DERIBIT_ATM_FADE_SIZE_USDC=20.0,
         DERIBIT_ATM_FADE_SIGNAL_FRESHNESS_S=15.0,
         DERIBIT_ATM_FADE_MIN_YA=0.30,
         DERIBIT_ATM_FADE_MAX_YA=0.70,
-        DERIBIT_ATM_FADE_MAX_NO_ASK=0.95,
         DERIBIT_ATM_FADE_MIN_FIRE_CONTRACTS=3.0,
     )
 
@@ -676,23 +674,6 @@ async def test_late_close_tail_skips_when_ya_below_min():
 
 
 @pytest.mark.asyncio
-async def test_late_close_tail_skips_when_no_ask_above_cap():
-    """2026-05-20: MAX_NO_ASK=0.95. Wide-spread cells (ya in band but
-    no_ask >= 0.95) are net-EV-negative + FOK-prone in live."""
-    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
-           "predicted_outcome": "no"}
-    # ya=0.10 in [0.05, 0.30] band; no_ask=0.98 above cap → skip
-    markets = {"KXBTC-26MAY1815-B91000": {
-        "yes_ask_dollars": 0.10, "no_ask_dollars": 0.98,
-        "yes_bid_size_fp": 50.0,
-    }}
-    s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
-                            market_lookup=markets.get)
-    await s.scan_and_execute()
-    assert om.market_order.await_count == 0
-
-
-@pytest.mark.asyncio
 async def test_late_close_tail_clamps_size_when_book_thin():
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
            "predicted_outcome": "no"}
@@ -782,23 +763,6 @@ async def test_deribit_atm_fade_skips_when_ya_below_min():
            "predicted_outcome": "no"}
     markets = {"KXBTC-26MAY1815-B89750": {
         "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
-        "yes_bid_size_fp": 100.0,
-    }}
-    s, om = _build_strategy(DeribitAtmFadeV1Strategy, signals=[sig],
-                            market_lookup=markets.get)
-    await s.scan_and_execute()
-    assert om.market_order.await_count == 0
-
-
-@pytest.mark.asyncio
-async def test_deribit_atm_fade_skips_when_no_ask_above_cap():
-    """2026-05-20: MAX_NO_ASK=0.95 for parity with sister BUY-NO strategies.
-    ATM rarely crosses this by design, but wide-spread cells could."""
-    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B89750",
-           "predicted_outcome": "no"}
-    # ya=0.50 in [0.30, 0.70] band; no_ask=0.96 above cap → skip
-    markets = {"KXBTC-26MAY1815-B89750": {
-        "yes_ask_dollars": 0.50, "no_ask_dollars": 0.96,
         "yes_bid_size_fp": 100.0,
     }}
     s, om = _build_strategy(DeribitAtmFadeV1Strategy, signals=[sig],
