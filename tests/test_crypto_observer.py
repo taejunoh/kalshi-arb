@@ -849,3 +849,33 @@ def test_settlement_edge_fires_exactly_at_skew_threshold():
     ]
     ctx_skip = _ctx(b_legs=b_legs_skip, spot=70000.0, close_s=20.0)
     assert SettlementEdgeObserver().evaluate(ctx_skip) == []
+
+
+def test_settlement_edge_skips_thin_book():
+    """ask_size + bid_size ≤ MIN_SIDE_SIZE → no signal (no MM presence)."""
+    # All sizes zero
+    b_legs_zero = [
+        _b(70000, ya=0.50, yb=0.48, ya_size=0, yb_size=0),
+    ]
+    ctx_zero = _ctx(b_legs=b_legs_zero, spot=70000.0, close_s=15.0)
+    assert SettlementEdgeObserver().evaluate(ctx_zero) == []
+
+    # Total exactly at MIN_SIDE_SIZE (1) — still skipped (<=)
+    b_legs_min = [
+        _b(70000, ya=0.50, yb=0.48, ya_size=1, yb_size=0),
+    ]
+    ctx_min = _ctx(b_legs=b_legs_min, spot=70000.0, close_s=15.0)
+    assert SettlementEdgeObserver().evaluate(ctx_min) == []
+
+
+def test_settlement_edge_fires_on_negative_skew_predicts_yes():
+    """Pure direction-mapping check: skew < 0 → predicted='yes'."""
+    # ask=10, bid=100 → skew = -90/110 = -0.818
+    b_legs = [
+        _b(70000, ya=0.50, yb=0.48, ya_size=10, yb_size=100),
+    ]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=10.0)
+    sigs = SettlementEdgeObserver().evaluate(ctx)
+    assert len(sigs) == 1
+    assert sigs[0].predicted_outcome == "yes"
+    assert sigs[0].features["skew"] < 0
