@@ -249,6 +249,18 @@ class Config:
         self.LATE_CLOSE_TAIL_SIGNAL_FRESHNESS_S = float(os.getenv("LATE_CLOSE_TAIL_SIGNAL_FRESHNESS_S", "15"))
         self.LATE_CLOSE_TAIL_MIN_YA = float(os.getenv("LATE_CLOSE_TAIL_MIN_YA", "0.05"))
         self.LATE_CLOSE_TAIL_MAX_YA = float(os.getenv("LATE_CLOSE_TAIL_MAX_YA", "0.30"))
+        # ─ cme_basis_fade_v1 (2026-05-20): paper-only. Phase 0 cohort audit
+        #   2026-05-20 (n=1627) showed 74% WR but −$107 net after Kalshi fees.
+        #   Per-ya bucket breakdown: ya ∈ [0.17, 0.42] is the fee-positive
+        #   sub-cohort (n=292, +$15.29 backtest PnL, avg +$0.05/contract).
+        #   Outside this band (ya 0.05-0.15 or ya 0.43+) the fee math is
+        #   negative even at the observed high WR. BUY NO at no_ask.
+        #   See: [[fee_adjusted_promotion_criteria_2026-05-20]].
+        self.CME_BASIS_FADE_SIZE_USDC = float(os.getenv("CME_BASIS_FADE_SIZE_USDC", "20"))
+        self.CME_BASIS_FADE_SIGNAL_FRESHNESS_S = float(os.getenv("CME_BASIS_FADE_SIGNAL_FRESHNESS_S", "15"))
+        self.CME_BASIS_FADE_MIN_YA = float(os.getenv("CME_BASIS_FADE_MIN_YA", "0.17"))
+        self.CME_BASIS_FADE_MAX_YA = float(os.getenv("CME_BASIS_FADE_MAX_YA", "0.42"))
+        self.CME_BASIS_FADE_MIN_FIRE_CONTRACTS = float(os.getenv("CME_BASIS_FADE_MIN_FIRE_CONTRACTS", "1"))
         # Same depth-aware-sizing floor as deribit_tail_fade_v1; skip fires
         # whose effective contract count would be below this threshold to
         # avoid dust trades.

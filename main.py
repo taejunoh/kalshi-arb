@@ -59,6 +59,7 @@ from strategies.crypto_observer_phase1 import (
     OpenNoTouchV1Strategy, AtmHoldV1Strategy,
     BidImbalanceFadeV1Strategy,
     LateCloseTailV1Strategy, DeribitAtmFadeV1Strategy,
+    CmeBasisFadeV1Strategy,
 )
 from strategies.ladder_fed import LadderFedStrategy
 from strategies.ladder_approval import LadderApprovalStrategy
@@ -337,6 +338,12 @@ class Bot:
         self.deribit_atm_fade_v1 = DeribitAtmFadeV1Strategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client,
         )
+        # 2026-05-20: cme_basis_fade_v1 — first Phase 1 trader promoted via
+        # fee-adjusted EV audit. Paper-only at launch; ya gate [0.17, 0.42]
+        # selects the +$0.05/c sub-cohort from the full observer cohort.
+        self.cme_basis_fade_v1 = CmeBasisFadeV1Strategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client,
+        )
         # Macro Event Trader (C1) — paper-only at launch.
         # Requires scripts/macro_consensus_cron.py to populate consensus
         # cache. See spec:
@@ -519,6 +526,9 @@ class Bot:
             ),
             asyncio.create_task(
                 self.deribit_atm_fade_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.cme_basis_fade_v1.scan_loop(scan_interval_secs=1.0)
             ),
             # 2026-05-19 (eve): 5 tennis/UFC paper strategies moved out of
             # _strategy_loop to dodge the upstream serial queue. Each runs

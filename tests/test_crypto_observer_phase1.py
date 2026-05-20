@@ -14,6 +14,7 @@ from strategies.crypto_observer_phase1 import (
     OpenNoTouchV1Strategy, AtmHoldV1Strategy,
     BidImbalanceFadeV1Strategy,
     LateCloseTailV1Strategy, DeribitAtmFadeV1Strategy,
+    CmeBasisFadeV1Strategy,
 )
 
 
@@ -47,6 +48,11 @@ def _cfg():
         DERIBIT_ATM_FADE_MIN_YA=0.30,
         DERIBIT_ATM_FADE_MAX_YA=0.70,
         DERIBIT_ATM_FADE_MIN_FIRE_CONTRACTS=3.0,
+        CME_BASIS_FADE_SIZE_USDC=20.0,
+        CME_BASIS_FADE_SIGNAL_FRESHNESS_S=15.0,
+        CME_BASIS_FADE_MIN_YA=0.17,
+        CME_BASIS_FADE_MAX_YA=0.42,
+        CME_BASIS_FADE_MIN_FIRE_CONTRACTS=3.0,
     )
 
 
@@ -832,3 +838,88 @@ def test_crypto_phase1_per_strategy_ttl():
     assert _ttl_seconds_for("atm_hold_v1") == 20
     assert _ttl_seconds_for("deribit_tail_fade_v1") == 60  # inherits default
     assert _ttl_seconds_for("sports_underdog_v31") == 60  # sports fallback
+
+
+# ── cme_basis_fade_v1 ───────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cme_basis_fade_fires_no_on_signal_in_band():
+    """ya in [0.17, 0.42] + predicted='no' → BUY NO at no_ask."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B89750",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B89750": {
+        "yes_ask_dollars": 0.25, "no_ask_dollars": 0.74,
+        "yes_bid_size_fp": 100.0,
+    }}
+    s, om = _build_strategy(CmeBasisFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["side"] == "no"
+    assert args["price"] == 0.74
+    assert args["size_usdc"] == 20.0
+    assert args["strategy"] == "cme_basis_fade_v1"
+
+
+@pytest.mark.asyncio
+async def test_cme_basis_fade_skips_when_ya_below_min():
+    """ya 0.10 < 0.17 → fee-locked zone, skip."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B89750",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B89750": {
+        "yes_ask_dollars": 0.10, "no_ask_dollars": 0.89,
+        "yes_bid_size_fp": 100.0,
+    }}
+    s, om = _build_strategy(CmeBasisFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_cme_basis_fade_skips_when_ya_above_max():
+    """ya 0.50 > 0.42 → WR drops below BE, skip."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B89750",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B89750": {
+        "yes_ask_dollars": 0.50, "no_ask_dollars": 0.49,
+        "yes_bid_size_fp": 100.0,
+    }}
+    s, om = _build_strategy(CmeBasisFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_cme_basis_fade_skips_when_predicted_yes():
+    """Observer always predicts 'no'; defensive guard against bad signals."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B89750",
+           "predicted_outcome": "yes"}
+    markets = {"KXBTC-26MAY1815-B89750": {
+        "yes_ask_dollars": 0.25, "no_ask_dollars": 0.74,
+        "yes_bid_size_fp": 100.0,
+    }}
+    s, om = _build_strategy(CmeBasisFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_cme_basis_fade_clamps_size_when_book_thin():
+    """target_count=$20/0.74≈27. depth=20 → clamp to 20×0.74≈$14.8."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B89750",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B89750": {
+        "yes_ask_dollars": 0.25, "no_ask_dollars": 0.74,
+        "yes_bid_size_fp": 20.0,
+    }}
+    s, om = _build_strategy(CmeBasisFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["size_usdc"] == pytest.approx(20.0 * 0.74)
