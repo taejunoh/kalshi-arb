@@ -1639,6 +1639,8 @@ OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
     # 2026-05-20: full-ladder + OTM sub-cluster sum-to-1 violation logger
     # (decoupled sibling to cluster_sum / ladder_crypto, no depth gate).
     StrikeLadderLiteralObserver,
+    # 2026-05-20 multi-venue Deribit+OKX+Bybit funding consensus/divergence
+    CrossVenueFundingConsensusObserver,
 )
 
 
