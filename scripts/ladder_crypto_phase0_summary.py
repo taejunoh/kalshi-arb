@@ -16,6 +16,11 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 
+# Systemd runs us as `python scripts/foo.py` with WorkingDirectory at the
+# repo root, but Python only puts scripts/ on sys.path automatically. Add
+# the repo root so `from core.config import Config` resolves.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("ladder_phase0_summary")
 
