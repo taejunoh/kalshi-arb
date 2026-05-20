@@ -577,6 +577,22 @@ def test_late_close_tail_skips_outside_close_window():
     assert obs.evaluate(_ctx(b_legs=legs, close_s=1200.0)) == []
 
 
+def test_late_close_tail_fires_on_t_legs_for_daily_series():
+    """T-cumulative legs (KXBTCD/KXETHD daily contracts) use the same gates.
+
+    Features include leg kind so post-hoc analysis can slice b vs t.
+    """
+    obs = LateCloseTailObserver()
+    # Spot $89,750. T-strike at $91,000 = 1.39% above. ya=0.10, yb_size=50.
+    t_legs = [_t(91000, ya=0.10, yb=0.06)]
+    # Override yb_size to pass active-bid gate (helper defaults yb_size=100).
+    sigs = obs.evaluate(_ctx(t_legs=t_legs, close_s=400.0))
+    assert len(sigs) == 1
+    assert sigs[0].predicted_outcome == "no"
+    assert sigs[0].features["kind"] == "cumulative"
+    assert "T91000" in sigs[0].market_id
+
+
 # ── 9b. MidOtmTail (2026-05-20) ────────────────────────────────────
 
 
@@ -628,6 +644,16 @@ def test_mid_otm_tail_skips_inactive_bucket():
     obs = MidOtmTailObserver()
     legs = [_b(90250, ya=0.15, yb=0.0, yb_size=0)]
     assert obs.evaluate(_ctx(b_legs=legs, close_s=1800.0)) == []
+
+
+def test_mid_otm_tail_fires_on_t_legs_for_daily_series():
+    """T-cumulative legs use the same gates as B-bucketed in the (600, 7200]
+    window. Features include leg kind for post-hoc slicing."""
+    obs = MidOtmTailObserver()
+    t_legs = [_t(91000, ya=0.10, yb=0.06)]
+    sigs = obs.evaluate(_ctx(t_legs=t_legs, close_s=1800.0))
+    assert len(sigs) == 1
+    assert sigs[0].features["kind"] == "cumulative"
 
 
 # ── 10. DeribitAtmSkew (2026-05-18) ────────────────────────────────
