@@ -79,6 +79,17 @@ MID_OTM_TAIL_YA_MIN = 0.05
 MID_OTM_TAIL_YA_MAX = 0.30
 MID_OTM_TAIL_YB_SIZE_MIN = 30
 
+# settlement_edge (2026-05-20): static micro-timing depth-skew observer.
+# Watches mts_s ≤ 30s window for bid/ask size asymmetry on ATM±N
+# bucket cluster. Tests the thesis that market makers withdraw quotes
+# asymmetrically near settlement, leaving a depth-skew tell about the
+# resolution direction. Phase 0 logging only — promotion gate per
+# fee-adjusted-EV methodology.
+SETTLEMENT_EDGE_MTS_MAX_S = 30
+SETTLEMENT_EDGE_ATM_RADIUS = 2
+SETTLEMENT_EDGE_MIN_SIDE_SIZE = 1         # ask_size + bid_size must exceed this
+SETTLEMENT_EDGE_ABS_SKEW_MIN = 0.20       # |skew| ≥ this to fire
+
 ATM_FADE_MTS_MAX_S = 300
 ATM_FADE_BUCKET_RADIUS = 0.25         # |bucket - spot| ≤ 0.25 × grid
 ATM_FADE_YA_MIN = 0.40
@@ -488,6 +499,70 @@ class ClusterSumObserver(BaseObserver):
                           "mts_s": round(ctx.close_time_secs, 1)},
             ))
         return signals
+
+
+# ── 3b. settlement_edge ────────────────────────────────────────────
+
+
+class SettlementEdgeObserver(BaseObserver):
+    """Phase 0: bid/ask depth-skew tell in the final 30s before settlement.
+
+    Thesis: as MMs withdraw quotes near settlement, the bucket's
+    ask/bid depth becomes asymmetric in a direction that correlates
+    with the resolution. We measure
+        skew = (ask_size - bid_size) / (ask_size + bid_size)
+    on each leg in the ATM ± SETTLEMENT_EDGE_ATM_RADIUS cluster when
+    mts_s ≤ SETTLEMENT_EDGE_MTS_MAX_S, and predict:
+        skew > 0  (ask thicker → MMs not selling) → predict 'no'
+        skew < 0  (bid thicker → MMs willing buy) → predict 'yes'
+
+    Sibling to KalshiBookLagObserver (dynamic event-driven on spot move).
+    This observer is static — fires every tick within the window.
+    """
+    name = "settlement_edge"
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        if ctx.close_time_secs is None:
+            return []
+        if ctx.close_time_secs <= 0 or ctx.close_time_secs > SETTLEMENT_EDGE_MTS_MAX_S:
+            return []
+        if not ctx.b_legs:
+            return []
+        atm_idx = ctx.atm_bucket_index()
+        if atm_idx is None:
+            return []
+
+        lo = max(0, atm_idx - SETTLEMENT_EDGE_ATM_RADIUS)
+        hi = min(len(ctx.b_legs), atm_idx + SETTLEMENT_EDGE_ATM_RADIUS + 1)
+
+        out: list[Signal] = []
+        for i in range(lo, hi):
+            leg = ctx.b_legs[i]
+            total_size = leg.ya_size + leg.yb_size
+            if total_size <= SETTLEMENT_EDGE_MIN_SIDE_SIZE:
+                continue
+            skew = (leg.ya_size - leg.yb_size) / total_size
+            if abs(skew) < SETTLEMENT_EDGE_ABS_SKEW_MIN:
+                continue
+            predicted = "no" if skew > 0 else "yes"
+            out.append(Signal(
+                observer=self.name, series=ctx.series,
+                event_key=ctx.event_key, market_id=leg.ticker,
+                predicted_outcome=predicted,
+                features={
+                    "skew": round(skew, 4),
+                    "ask_size": leg.ya_size,
+                    "bid_size": leg.yb_size,
+                    "ya": round(leg.ya, 4),
+                    "yb": round(leg.yb, 4),
+                    "na": round(leg.na, 4),
+                    "mts_s": round(ctx.close_time_secs, 2),
+                    "bucket_dist_from_atm": i - atm_idx,
+                    "spot": ctx.spot,
+                    "strike": leg.threshold,
+                },
+            ))
+        return out
 
 
 # ── 4. bvt_consistency ─────────────────────────────────────────────

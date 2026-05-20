@@ -16,6 +16,7 @@ from strategies.crypto_observer import (
     OpenNoTouchObserver, AtmHoldObserver, BidImbalanceFadeObserver,
     LateCloseTailObserver, DeribitAtmSkewObserver,
     MidOtmTailObserver,
+    SettlementEdgeObserver,
     _parse_suffix_threshold, _suffix_kind, _event_key, _build_leg,
     _lognormal_p_above, _flip,
 )
@@ -758,3 +759,35 @@ def test_deribit_atm_skew_skips_outside_close_window():
     # >10min to close
     ctx = _ctx(b_legs=legs, spot=89750.0, close_s=1200.0, iv=0.80)
     assert obs.evaluate(ctx) == []
+
+
+# ── settlement_edge observer ──────────────────────────────────────
+
+
+def test_settlement_edge_fires_on_asymmetric_depth_in_atm():
+    """ATM bucket within mts_s ≤ 30 with ask much thinner than bid →
+    predict_outcome='yes' (bid heavier → market expects touch)."""
+    # Build a ladder with $250 spacing, spot 70000, ATM bucket = B70000.
+    # ATM bucket has ask_size=20, bid_size=100 → skew = (20-100)/120 = -0.667
+    # Predicted='yes' since skew < 0.
+    b_legs = [
+        _b(69500, ya=0.30, yb=0.28, ya_size=15, yb_size=60),
+        _b(69750, ya=0.40, yb=0.38, ya_size=10, yb_size=80),
+        _b(70000, ya=0.50, yb=0.48, ya_size=20, yb_size=100),   # ATM (closest to spot 70000)
+        _b(70250, ya=0.40, yb=0.38, ya_size=10, yb_size=80),
+        _b(70500, ya=0.30, yb=0.28, ya_size=15, yb_size=60),
+    ]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=15.0)
+    sigs = SettlementEdgeObserver().evaluate(ctx)
+    # ATM±2 covers all 5 legs (radius 2 → indices 0..4 in this 5-leg ladder).
+    # Every leg has skew magnitude ≥ 0.20 (all are 60-80% bid-heavy).
+    # Expect a signal on the ATM leg.
+    atm_sigs = [s for s in sigs if s.market_id.endswith("B70000")]
+    assert len(atm_sigs) == 1, f"expected 1 ATM signal, got {len(atm_sigs)}: {sigs}"
+    atm = atm_sigs[0]
+    assert atm.predicted_outcome == "yes"
+    assert atm.features["skew"] == pytest.approx(-0.667, abs=0.01)
+    assert atm.features["ask_size"] == 20
+    assert atm.features["bid_size"] == 100
+    assert atm.features["mts_s"] == pytest.approx(15.0, abs=0.01)
+    assert atm.features["bucket_dist_from_atm"] == 0
