@@ -380,6 +380,45 @@ def test_lead_lag_skips_when_stale_data():
     assert BtcEthLeadLagObserver().evaluate(ctx) == []
 
 
+def test_lead_lag_fires_on_kxbtc_reverse_direction():
+    """Reverse case: ETH jumps +0.5%, BTC static → fire on KXBTC bucket
+    above spot with lead_asset='ETH'."""
+    # BTC spot 60000, target bucket 60500 (above, catch-up direction)
+    legs = [_make_leg("KXBTC", 60500, ya=0.15, yb=0.10, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXBTC", asset="BTC", spot=60000.0, b_legs=legs,
+        spot_btc=60000.0, spot_btc_30s_ago=59980.0,    # +0.033% — static
+        spot_eth=2130.0, spot_eth_30s_ago=2119.4,      # +0.500% — leading
+        spot_btc_10s_ago=60000.0, spot_eth_10s_ago=2130.0,
+        corr_5min=0.85, corr_15min=0.85,
+        close_s=1200.0,
+    )
+    obs = BtcEthLeadLagObserver()
+    sigs = obs.evaluate(ctx)
+    assert len(sigs) == 1
+    sig = sigs[0]
+    assert sig.observer == "btc_eth_lead_lag"
+    assert sig.series == "KXBTC"
+    assert sig.predicted_outcome == "yes"
+    assert sig.features["lead_asset"] == "ETH"
+    assert sig.features["predicted_direction"] == "up"
+
+
+def test_lead_lag_kxbtc_skips_when_btc_also_moved():
+    """KXBTC reverse case: ETH moved +0.5% BUT BTC also moved +0.3% — BTC isn't
+    lagging, skip."""
+    legs = [_make_leg("KXBTC", 60500, ya=0.15, yb=0.10, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXBTC", asset="BTC", spot=60000.0, b_legs=legs,
+        spot_btc=60000.0, spot_btc_30s_ago=59820.0,    # +0.30% — above lag
+        spot_eth=2130.0, spot_eth_30s_ago=2119.4,      # +0.50% — leading
+        spot_btc_10s_ago=60000.0, spot_eth_10s_ago=2130.0,
+        corr_5min=0.85, corr_15min=0.85,
+        close_s=1200.0,
+    )
+    assert BtcEthLeadLagObserver().evaluate(ctx) == []
+
+
 # ---------------------------------------------------------------------------
 # CrossAssetCorrBreakObserver tests
 # ---------------------------------------------------------------------------
