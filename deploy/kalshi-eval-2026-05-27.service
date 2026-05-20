@@ -1,0 +1,17 @@
+[Unit]
+Description=One-shot eval snapshot — 4 cohorts due 2026-05-27
+After=network.target kalshi-bot.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+EnvironmentFile=/home/ubuntu/kalshi-arb/.env
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/eval_2026_05_27_snapshot.py
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs

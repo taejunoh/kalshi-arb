@@ -1,0 +1,17 @@
+[Unit]
+Description=Weekly LIVE-vs-paper divergence + slow-decay alert
+After=network.target kalshi-bot.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+EnvironmentFile=/home/ubuntu/kalshi-arb/.env
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/weekly_live_paper_divergence.py --send
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs

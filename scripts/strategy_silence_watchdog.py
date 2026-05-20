@@ -42,7 +42,12 @@ BASELINE_DAYS = 14
 RECENT_HOURS = 24
 
 # Statuses that count as "the strategy fired" (signal generation + execution).
-ACTIVITY_STATUSES = ("filled", "paper_filled")
+# Must include both pre-settlement (`filled`/`paper_filled`) AND settled
+# (`settled`/`paper_settled`) — otherwise fast-settling intraday strategies
+# (crypto: atm_hold_v1, deribit_tail_fade_v1) show baseline=0 because every
+# fire has already transitioned to `settled` by the next-day audit window,
+# and the watchdog would never flag them as silent.
+ACTIVITY_STATUSES = ("filled", "paper_filled", "settled", "paper_settled")
 
 
 def _now_utc() -> datetime:
