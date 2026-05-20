@@ -33,6 +33,15 @@ LIMIT_TTL_STRATEGIES = {
     # Same failure mode that retired v36_nhl_playoff (5/3) — same fix.
     "sports_underdog_v36",
     "sports_underdog_v37",
+    # 2026-05-19 crypto Phase 1 LIVE traders. deribit_tail_fade_v1 hit
+    # `fill_or_kill_insufficient_resting_volume` 5/19 22:54-22:58 on
+    # KXETH-26MAY1919-B2090 NO @ 0.98 — 6 cancelled live attempts since
+    # 5/18 promo, 0 real fills. Same pattern as the WNBA / NHL playoff
+    # FOK rejects above. atm_hold_v1 added defensively — ATM-bucket
+    # books are thicker than tails but signal cohort overlaps the same
+    # 5-min-to-close window so prevention is cheap.
+    "deribit_tail_fade_v1",
+    "atm_hold_v1",
 }
 LIMIT_TTL_SECONDS = 60
 LIMIT_TTL_POLL_INTERVAL = 5

@@ -836,3 +836,16 @@ async def test_deribit_atm_fade_skips_when_predicted_yes():
                             market_lookup=markets.get)
     await s.scan_and_execute()
     assert om.market_order.await_count == 0
+
+
+def test_live_crypto_phase1_use_limit_ttl():
+    """LIVE crypto Phase 1 traders must route through limit+TTL, not market.
+    Reason: 5/19 22:54-22:58 deribit_tail_fade_v1 had 5 consecutive live
+    market orders rejected as `fill_or_kill_insufficient_resting_volume`
+    on KXETH-26MAY1919-B2090 NO @ 0.98 — Kalshi crypto tail books are too
+    thin for FOK on $20 stake. Same root cause as the WNBA/NHL playoff
+    FOK fix that lives in LIMIT_TTL_STRATEGIES already.
+    """
+    from core.order_manager import LIMIT_TTL_STRATEGIES
+    assert "deribit_tail_fade_v1" in LIMIT_TTL_STRATEGIES
+    assert "atm_hold_v1" in LIMIT_TTL_STRATEGIES
