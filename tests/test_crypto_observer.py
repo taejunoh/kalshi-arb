@@ -791,3 +791,29 @@ def test_settlement_edge_fires_on_asymmetric_depth_in_atm():
     assert atm.features["bid_size"] == 100
     assert atm.features["mts_s"] == pytest.approx(15.0, abs=0.01)
     assert atm.features["bucket_dist_from_atm"] == 0
+
+
+def test_settlement_edge_does_not_fire_outside_30s_window():
+    """mts_s = 60 (outside ≤30 window) → no signal even with strong skew."""
+    b_legs = [
+        _b(70000, ya=0.50, yb=0.48, ya_size=10, yb_size=100),  # skew = -0.818
+    ]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=60.0)
+    sigs = SettlementEdgeObserver().evaluate(ctx)
+    assert sigs == [], f"expected no signals at mts_s=60, got: {sigs}"
+
+
+def test_settlement_edge_does_not_fire_at_or_below_zero_mts():
+    """mts_s ≤ 0 (post-close or missing) → no signal."""
+    b_legs = [
+        _b(70000, ya=0.50, yb=0.48, ya_size=10, yb_size=100),
+    ]
+    # Zero
+    ctx_zero = _ctx(b_legs=b_legs, spot=70000.0, close_s=0.0)
+    assert SettlementEdgeObserver().evaluate(ctx_zero) == []
+    # Negative (already past close)
+    ctx_neg = _ctx(b_legs=b_legs, spot=70000.0, close_s=-5.0)
+    assert SettlementEdgeObserver().evaluate(ctx_neg) == []
+    # None
+    ctx_none = _ctx(b_legs=b_legs, spot=70000.0, close_s=None)
+    assert SettlementEdgeObserver().evaluate(ctx_none) == []
