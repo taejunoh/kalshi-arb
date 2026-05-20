@@ -66,11 +66,8 @@ from strategies.ladder_approval import LadderApprovalStrategy
 from strategies.ladder_shutdown import LadderShutdownStrategy
 from strategies.ladder_crypto import LadderCryptoStrategy
 from strategies.macro_event import MacroEventStrategy
-from strategies.crypto_fair_value import CryptoFairValueStrategy
-from strategies.crypto_fair_value_mid_v1 import CryptoFairValueMidV1Strategy
 from strategies.xvenue_polymarket import XVenuePolymarketStrategy
 from core.polymarket_mapping import PolymarketKalshiMapping
-from core.kalshi_orderbook_cache import OrderbookCache
 from core.settlement import SettlementChecker
 from core.clv_tracker import CLVTracker
 from monitoring.logger import setup_logger, TradeLogger
@@ -351,30 +348,6 @@ class Bot:
         self.macro_event = MacroEventStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client
         )
-        # Crypto Fair-Value Trader (B2) — paper-only at launch.
-        # Uses existing PriceFeed (Binance WS) + Deribit IV cron.
-        # Spec: docs/superpowers/specs/2026-05-10-crypto-fair-value-trader-design.md
-        self.crypto_fair_value_orderbook_cache = OrderbookCache(
-            client=self.kalshi_client,
-            refresh_interval_secs=5.0,
-            stale_threshold_secs=10.0,
-        )
-        self.crypto_fair_value = CryptoFairValueStrategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client,
-            price_feed=self.price_feed,
-        )
-        # Mid-price variant (paper-only A/B): uses bookTicker mid as spot
-        # instead of kline-derived last-trade. Separate orderbook cache so
-        # ATM windowing per variant stays independent.
-        self.crypto_fair_value_mid_orderbook_cache = OrderbookCache(
-            client=self.kalshi_client,
-            refresh_interval_secs=5.0,
-            stale_threshold_secs=10.0,
-        )
-        self.crypto_fair_value_mid_v1 = CryptoFairValueMidV1Strategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client,
-            price_feed=self.price_feed,
-        )
         # Cross-Venue Polymarket Trader (B1) — paper-only at launch.
         # Reads gamma-api via 1-min cron. Spec:
         # docs/superpowers/specs/2026-05-11-xvenue-polymarket-trader-design.md
@@ -473,28 +446,6 @@ class Bot:
             asyncio.create_task(self._freshness_sample_loop()),
             asyncio.create_task(self._scan_observer_task()),
             asyncio.create_task(self._balance_schedule_task()),
-            # B2 Crypto Fair-Value — its own asyncio task pair (1s scan +
-            # 5s orderbook cache refresh). Separate from _strategy_loop
-            # because of higher cadence.
-            asyncio.create_task(
-                self.crypto_fair_value_orderbook_cache.refresh_loop()
-            ),
-            asyncio.create_task(
-                self.crypto_fair_value.scan_loop(
-                    cache=self.crypto_fair_value_orderbook_cache,
-                    scan_interval_secs=1.0,
-                )
-            ),
-            # Mid-price variant: own cache refresh + scan loop. Paper-only.
-            asyncio.create_task(
-                self.crypto_fair_value_mid_orderbook_cache.refresh_loop()
-            ),
-            asyncio.create_task(
-                self.crypto_fair_value_mid_v1.scan_loop(
-                    cache=self.crypto_fair_value_mid_orderbook_cache,
-                    scan_interval_secs=1.0,
-                )
-            ),
             # 2026-05-19: crypto_observer moved out of _strategy_loop. Sports
             # portfolio's degraded-odds-API path takes 30+ min per iter,
             # which choked observer scan rate to ~0 (12:13 UTC silent fail).

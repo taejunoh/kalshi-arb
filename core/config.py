@@ -121,25 +121,14 @@ class Config:
             "SOL": f"{binance_base}/ws/solusdt@kline_1m",
             "XRP": f"{binance_base}/ws/xrpusdt@kline_1m",
         }
-        # bookTicker streams for crypto_fair_value_mid_v1 (paper-only A/B against
-        # last-trade spot from kline). Mid = (bid + ask) / 2, updated on every L1
-        # change. SOL omitted — no live crypto_fair_value market universe for SOL.
+        # bookTicker mid feed — consumed by crypto_observer's get_fresh_spot
+        # fallback (sub-second mid > 60s kline). SOL omitted — no live market
+        # universe for SOL strike grids.
         self.BINANCE_BOOK_TICKER_URLS = {
             "BTC": f"{binance_base}/ws/btcusdt@bookTicker",
             "ETH": f"{binance_base}/ws/ethusdt@bookTicker",
             "XRP": f"{binance_base}/ws/xrpusdt@bookTicker",
         }
-
-        # Crypto Fair-Value Trader (B2) — single sub-strategy crypto_fair_value.
-        # Spec: docs/superpowers/specs/2026-05-10-crypto-fair-value-trader-design.md
-        self.CRYPTO_FAIR_MIN_DEVIATION = float(os.getenv("CRYPTO_FAIR_MIN_DEVIATION", "0.10"))
-        self.CRYPTO_FAIR_MIN_DEPTH_USDC = float(os.getenv("CRYPTO_FAIR_MIN_DEPTH_USDC", "30"))
-        self.CRYPTO_FAIR_BASE_SIZE_USDC = float(os.getenv("CRYPTO_FAIR_BASE_SIZE_USDC", "20"))
-        self.CRYPTO_FAIR_MAX_POSITION_PER_TICKER = float(os.getenv("CRYPTO_FAIR_MAX_POSITION_PER_TICKER", "30"))
-        self.CRYPTO_FAIR_MAX_TICKER_TOTAL_EXPOSURE = float(os.getenv("CRYPTO_FAIR_MAX_TICKER_TOTAL_EXPOSURE", "80"))
-        self.CRYPTO_FAIR_RECENTLY_FIRED_SECS = float(os.getenv("CRYPTO_FAIR_RECENTLY_FIRED_SECS", "60"))
-        self.CRYPTO_FAIR_ATM_WINDOW_N = int(os.getenv("CRYPTO_FAIR_ATM_WINDOW_N", "5"))
-        self.CRYPTO_FAIR_MIN_TIME_TO_CLOSE_SECS = float(os.getenv("CRYPTO_FAIR_MIN_TIME_TO_CLOSE_SECS", "60"))
 
         # Cross-Venue Polymarket Trader (B1) — single sub-strategy xvenue_polymarket.
         # Spec: docs/superpowers/specs/2026-05-11-xvenue-polymarket-trader-design.md

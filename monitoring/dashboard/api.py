@@ -185,6 +185,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v34",
             # Non-sports retired
             "econ_trader",
+            # 2026-05-20: crypto_fair_value pair retired — both deeply -EV.
+            # parent -$870/104 (41% WR), mid_v1 -$1,017/55 (20% WR). Lognormal
+            # fair systematically overstates short-dated tail prob;
+            # deribit_tail_fade_v1 already captures the inverse.
+            "crypto_fair_value", "crypto_fair_value_mid_v1",
         }
 
         def _stats_with_split(strat_name: str) -> dict:
@@ -545,6 +550,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v34",
             # Non-sports retired
             "econ_trader",
+            # 2026-05-20: crypto_fair_value pair retired — both deeply -EV.
+            # parent -$870/104 (41% WR), mid_v1 -$1,017/55 (20% WR). Lognormal
+            # fair systematically overstates short-dated tail prob;
+            # deribit_tail_fade_v1 already captures the inverse.
+            "crypto_fair_value", "crypto_fair_value_mid_v1",
         }
         # Strategies removed from main.py _strategy_loop (no env flag to toggle).
         # Keep in sync with main.py; see commits 59f7e44 (sports_trader) and
