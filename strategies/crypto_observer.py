@@ -1544,6 +1544,27 @@ class CryptoObserverStrategy:
                                 "cme_basis", None))
                     for a in ("BTC", "ETH")}
             logger.warning(f"[OBS_DEBUG] features {{asset: (funding, skew, etf_z, cme_basis)}} = {feat}")
+            # 2026-05-20: cross-asset diagnostic. Verifies that the new ctx
+            # fields populated in Task 5 actually contain values (not None).
+            # Remove this log line once cross-asset observers fire at least
+            # once (proving the data path works).
+            sample_ctx = contexts[0] if contexts else None
+            if sample_ctx is not None:
+                ca = {
+                    "spot_btc": sample_ctx.spot_btc,
+                    "spot_eth": sample_ctx.spot_eth,
+                    "spot_btc_30s": sample_ctx.spot_btc_30s_ago,
+                    "spot_eth_30s": sample_ctx.spot_eth_30s_ago,
+                    "spot_btc_10s": sample_ctx.spot_btc_10s_ago,
+                    "spot_eth_10s": sample_ctx.spot_eth_10s_ago,
+                    "corr_5min": sample_ctx.corr_5min,
+                    "corr_15min": sample_ctx.corr_15min,
+                    "book_cache_size": (
+                        sample_ctx.book_mid_cache.size()
+                        if sample_ctx.book_mid_cache is not None else None
+                    ),
+                }
+                logger.warning(f"[OBS_DEBUG] cross_asset = {ca}")
 
         # Per-tick counters for debug
         n_emitted = 0
