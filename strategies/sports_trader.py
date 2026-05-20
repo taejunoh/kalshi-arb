@@ -1997,7 +1997,7 @@ class SportsTraderStrategy:
                 task = asyncio.create_task(self._dispatch_entry(
                     ticker=ticker, side=signal["side"], size=size,
                     limit_price=limit_price, minutes_to_start=minutes_to_start,
-                    matched_game=matched_game, sport=sport_map.get(series, series),
+                    matched_game=matched_game, sport=sport_key,
                     pinnacle_prob=pin_prob_for_side,
                     is_yes_home=is_yes_home,
                 ))
