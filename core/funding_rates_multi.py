@@ -1,23 +1,30 @@
 """Cross-venue perpetual funding-rate fetcher (Phase 0).
 
-Reads BTC/ETH funding rates from Deribit, OKX, and Bybit in parallel
-using httpx.AsyncClient + asyncio.gather. Each venue's fetch is
-isolated: one venue failing returns None for that key, the other
+Reads BTC/ETH funding rates from Deribit, OKX, Gate.io, and MEXC in
+parallel using httpx.AsyncClient + asyncio.gather. Each venue's fetch
+is isolated: one venue failing returns None for that key, the other
 venues still populate.
+
+**Venue selection** (2026-05-20 evening): Bybit and Binance Futures are
+permanently geo-blocked from AWS us-east-2 (Bybit CloudFront 403,
+Binance fapi HTTP 451). Both confirmed inaccessible from prod EC2. Gate.io
+and MEXC verified accessible 2026-05-20 evening (HTTP 200, clean 8h-native
+funding-rate fields). 4-venue mode preserves robust consensus signal
+even if one venue drops out.
 
 Per [[sync_in_async_sweep_2026-05-19]] this module uses async httpx
 exclusively. Do NOT mix in sync httpx.get inside the crypto_observer
 harness scan_loop — it will block other observers.
 
 API:
-  VENUES = ("deribit", "okx", "bybit")
+  VENUES = ("deribit", "okx", "gate", "mexc")
   get_funding(asset, venue) -> Optional[float]   # 8h-normalized decimal
-  get_all_funding(asset)    -> dict[str, Optional[float]]   # 3 keys
+  get_all_funding(asset)    -> dict[str, Optional[float]]   # 4 keys
 
 All return values are signed 8h-decimal funding rates
 (e.g. 0.0005 = 0.05%/8h ≈ 55% APR for longs paying shorts).
-TTL-cached at 60s — funding rate updates every 8h on Deribit and
-4-8h on OKX/Bybit, so polling more often is wasted.
+TTL-cached at 60s — funding rate updates every 8h on all 4 venues,
+so polling more often is wasted.
 """
 from __future__ import annotations
 import asyncio
@@ -29,7 +36,7 @@ import httpx
 
 logger = logging.getLogger("funding_rates_multi")
 
-VENUES: tuple[str, ...] = ("deribit", "okx", "bybit")
+VENUES: tuple[str, ...] = ("deribit", "okx", "gate", "mexc")
 _TTL_S: float = 60.0
 _HTTP_TIMEOUT_S: float = 5.0
 
@@ -49,8 +56,10 @@ _VENUE_ENDPOINTS: dict[str, str] = {
                "?instrument_name={asset}-PERPETUAL",
     "okx":     "https://www.okx.com/api/v5/public/funding-rate"
                "?instId={asset}-USDT-SWAP",
-    "bybit":   "https://api.bybit.com/v5/market/tickers"
-               "?category=linear&symbol={asset}USDT",
+    "gate":    "https://api.gateio.ws/api/v4/futures/usdt/contracts"
+               "/{asset}_USDT",
+    "mexc":    "https://contract.mexc.com/api/v1/contract/funding_rate"
+               "/{asset}_USDT",
 }
 
 
@@ -81,19 +90,40 @@ def _parse_okx(payload: dict) -> Optional[float]:
         return None
 
 
-def _parse_bybit(payload: dict) -> Optional[float]:
-    # Bybit V5 linear BTCUSDT/ETHUSDT: fundingRate is per-interval (8h).
-    # Verified 2026-05-20 from docs: instruments-info returns
-    # fundingInterval=480 min = 8h and fundingIntervalHour="8" for these
-    # symbols. No 8h normalization required.
-    result = payload.get("result")
-    if not isinstance(result, dict):
+def _parse_gate(payload: dict) -> Optional[float]:
+    # Gate.io V4 USDT-perp /contracts/{asset}_USDT returns
+    # funding_rate as a decimal string + funding_interval in seconds.
+    # Verified 2026-05-20 from live API: funding_interval=28800
+    # (= 8h). No 8h normalization required for BTC/ETH USDT perps.
+    # Returns the whole contract object at top level (not wrapped).
+    if not isinstance(payload, dict):
         return None
-    legs = result.get("list")
-    if not isinstance(legs, list) or not legs:
+    v = payload.get("funding_rate")
+    if v is None:
         return None
     try:
-        return float(legs[0].get("fundingRate"))
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_mexc(payload: dict) -> Optional[float]:
+    # MEXC V1 /contract/funding_rate/{asset}_USDT returns
+    # data.fundingRate (number) + data.collectCycle (hours).
+    # Verified 2026-05-20 from live API: collectCycle=8.
+    # No 8h normalization required for BTC/ETH USDT perps.
+    if not isinstance(payload, dict):
+        return None
+    if not payload.get("success", True):
+        return None
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return None
+    v = data.get("fundingRate")
+    if v is None:
+        return None
+    try:
+        return float(v)
     except (TypeError, ValueError):
         return None
 
@@ -101,7 +131,8 @@ def _parse_bybit(payload: dict) -> Optional[float]:
 _VENUE_PARSERS = {
     "deribit": _parse_deribit,
     "okx":     _parse_okx,
-    "bybit":   _parse_bybit,
+    "gate":    _parse_gate,
+    "mexc":    _parse_mexc,
 }
 
 

@@ -1498,18 +1498,20 @@ class CrossVenueFundingConsensusObserver(BaseObserver):
         spread = max(values) - min(values)
         consensus_sign = nonzero_signs[0] if all_agree else 0
 
-        # Helpful feature-shared dict for both kinds
+        # Helpful feature-shared dict for both kinds. Venue keys are
+        # added dynamically from VENUES so adding/removing a venue in
+        # core.funding_rates_multi doesn't require updating this observer.
+        from core.funding_rates_multi import VENUES as _FR_VENUES
         base_features = {
             "venues_reporting": sorted(rates.keys()),
-            "funding_deribit": rates.get("deribit"),
-            "funding_okx":     rates.get("okx"),
-            "funding_bybit":   rates.get("bybit"),
             "min_abs":   round(min_abs, 6),
             "spread":    round(spread, 6),
             "consensus_sign": consensus_sign,
             "spot":      ctx.spot,
             "mts_s":     round(ctx.close_time_secs, 1),
         }
+        for _v in _FR_VENUES:
+            base_features[f"funding_{_v}"] = rates.get(_v)
 
         out: list[Signal] = []
 
