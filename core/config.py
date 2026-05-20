@@ -253,10 +253,13 @@ class Config:
         # whose effective contract count would be below this threshold to
         # avoid dust trades.
         self.LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS = float(os.getenv("LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS", "1"))
-        # Same no_ask cap as deribit_tail_fade_v1 (2026-05-20). Sister BUY-NO
-        # strategy on the same Kalshi crypto family; >=0.97 zone has the same
-        # adverse-selection / FOK profile.
-        self.LATE_CLOSE_TAIL_MAX_NO_ASK = float(os.getenv("LATE_CLOSE_TAIL_MAX_NO_ASK", "0.95"))
+        # NOTE 2026-05-20: MAX_NO_ASK cap intentionally NOT applied here.
+        # late_close_tail covers mid-OTM (ya 0.05-0.30) in the 10-min pre-close
+        # window — by design it operates in the high-no_ask zone (ya=0.05 →
+        # no_ask~0.95). Capping at 0.95 would block ALL n=11 paper fires
+        # (100% WR +$0.11 total, BE-positive). Revisit if/when n grows and
+        # band-level EV shows the same ≥0.97 net-loss pattern as
+        # deribit_tail_fade_v1.
         # ─ deribit_atm_fade_v1: ATM-bucket parallel of deribit_tail_fade.
         #   New hypothesis — Kalshi ATM may be overpriced vs Deribit-IV
         #   lognormal (most existing alpha is in tails). BUY NO at no_ask
@@ -266,11 +269,9 @@ class Config:
         self.DERIBIT_ATM_FADE_MIN_YA = float(os.getenv("DERIBIT_ATM_FADE_MIN_YA", "0.30"))
         self.DERIBIT_ATM_FADE_MAX_YA = float(os.getenv("DERIBIT_ATM_FADE_MAX_YA", "0.70"))
         self.DERIBIT_ATM_FADE_MIN_FIRE_CONTRACTS = float(os.getenv("DERIBIT_ATM_FADE_MIN_FIRE_CONTRACTS", "1"))
-        # Same no_ask cap as deribit_tail_fade_v1 (2026-05-20). ATM band
-        # rarely sees no_ask>=0.95 by design (ya 0.30-0.70 → no_ask <=0.70
-        # with tight spreads) but cap defends against wide-spread degenerate
-        # cells.
-        self.DERIBIT_ATM_FADE_MAX_NO_ASK = float(os.getenv("DERIBIT_ATM_FADE_MAX_NO_ASK", "0.95"))
+        # NOTE 2026-05-20: no MAX_NO_ASK cap. ATM band ya 0.30-0.70 rarely
+        # crosses 0.95 by design; paper data is n=0 (strategy has not yet
+        # fired). Add cap only if/when band data warrants it.
 
     @property
     def is_paper_mode(self) -> bool:
