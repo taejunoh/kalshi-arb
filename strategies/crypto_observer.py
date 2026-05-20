@@ -1200,6 +1200,15 @@ OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
 )
 
 
+# 2026-05-20 Phase 0: cross-asset observers (separate module — own thesis class)
+from strategies.crypto_cross_asset_observer import (
+    BtcEthLeadLagObserver, CrossAssetCorrBreakObserver, KalshiBookLagObserver,
+)
+OBSERVER_CLASSES = OBSERVER_CLASSES + (
+    BtcEthLeadLagObserver, CrossAssetCorrBreakObserver, KalshiBookLagObserver,
+)
+
+
 # ── Harness ────────────────────────────────────────────────────────
 
 
