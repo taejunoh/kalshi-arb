@@ -891,24 +891,22 @@ def test_settlement_edge_registered_in_observer_classes():
 # ── LognormalFairDev ───────────────────────────────────────────────
 
 
-def test_lognormal_fair_dev_fires_when_kalshi_underprices_atm():
-    """ATM bucket where Kalshi impl << lognormal fair → predict 'yes'.
+def test_lognormal_fair_dev_fires_when_kalshi_underprices_itm():
+    """ITM T-cumulative leg where Kalshi impl << P_LN → predict 'yes'.
 
-    Need ≥2 b_legs for bucket_grid() to resolve. ATM bucket at 89750
-    with impl=0.02 vs P_LN ~0.4-0.5 at iv=0.80, mts=3600s, $100 grid.
+    T-leg uses P(S_T ≥ strike) directly (no grid needed). Spot=89750,
+    strike=80000 (~11% ITM), iv=0.80, mts=3600s → P(S_T≥80000) ≈ 0.9+.
+    Set impl=0.20 (artificially cheap) → dev > +0.10, fires 'yes'.
     """
     obs = LognormalFairDevObserver()
-    legs = [_b(89650, ya=0.02, yb=0.02),
-            _b(89750, ya=0.02, yb=0.02)]
-    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=3600.0, iv=0.80)
+    legs = [_t(80000.0, ya=0.20, yb=0.20)]
+    ctx = _ctx(t_legs=legs, spot=89750.0, close_s=3600.0, iv=0.80)
     sigs = obs.evaluate(ctx)
-    # Both legs are equally far from spot so both can fire; we expect
-    # at least one with dev > 0 (cheap YES vs fair).
-    yes_sigs = [s for s in sigs if s.predicted_outcome == "yes"]
-    assert len(yes_sigs) >= 1
-    assert yes_sigs[0].features["deviation"] > 0
-    assert yes_sigs[0].features["kind"] == "bucketed"
-    assert "fair" in yes_sigs[0].features and "impl" in yes_sigs[0].features
+    assert len(sigs) == 1
+    assert sigs[0].predicted_outcome == "yes"
+    assert sigs[0].features["deviation"] > 0
+    assert sigs[0].features["kind"] == "cumulative"
+    assert "fair" in sigs[0].features and "impl" in sigs[0].features
 
 
 def test_lognormal_fair_dev_fires_when_kalshi_overprices_tail():
