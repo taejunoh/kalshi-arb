@@ -1209,3 +1209,9 @@ def test_cross_venue_funding_skips_outside_mts_window():
     # None
     ctx_none = _ctx_for_funding(funding_by_venue=funding, close_s=None)
     assert CrossVenueFundingConsensusObserver().evaluate(ctx_none) == []
+
+
+def test_cross_venue_funding_consensus_registered_in_observer_classes():
+    """Harness picks up cross_venue_funding_consensus via OBSERVER_CLASSES."""
+    from strategies.crypto_observer import OBSERVER_CLASSES
+    assert CrossVenueFundingConsensusObserver in OBSERVER_CLASSES
