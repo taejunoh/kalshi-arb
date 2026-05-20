@@ -119,3 +119,47 @@ async def test_get_all_funding_one_venue_failure_others_succeed():
     assert result["okx"] is None
     assert result["gate"]    == pytest.approx(0.0007)
     assert result["mexc"]    == pytest.approx(0.0006)
+
+
+@pytest.mark.asyncio
+async def test_get_all_funding_xrp_skips_deribit_silently():
+    """Deribit has no XRP-PERPETUAL — should return None for that venue
+    without making the HTTP call (no warning log spam). OKX/Gate/MEXC
+    should still be fetched and parsed."""
+    _clear_cache_for_tests()
+
+    # Track which URLs were actually called
+    called_urls: list[str] = []
+
+    fake_payloads = {
+        # Deribit should NOT be called — if it is, this payload will surface
+        "deribit.com": _deribit_payload(0.0001),
+        "okx.com":     _okx_payload(0.0003),
+        "gateio.ws":   _gate_payload(0.0004),
+        "mexc.com":    _mexc_payload(0.0005),
+    }
+
+    async def fake_get(*a, **k):
+        url = a[0] if a else k.get("url", "")
+        called_urls.append(url)
+        for needle, payload in fake_payloads.items():
+            if needle in url:
+                return _FakeResponse(200, payload)
+        return _FakeResponse(404, {})
+
+    with patch("httpx.AsyncClient.get", new=AsyncMock(side_effect=fake_get)):
+        result = await get_all_funding("XRP")
+
+    # Deribit was never called → no URL containing 'deribit.com' should appear
+    assert not any("deribit.com" in u for u in called_urls), (
+        f"deribit.com was called for XRP — expected silent skip. URLs: {called_urls}"
+    )
+    # Other 3 venues were called
+    assert any("okx.com" in u for u in called_urls)
+    assert any("gateio.ws" in u for u in called_urls)
+    assert any("mexc.com" in u for u in called_urls)
+    # Result: deribit=None (skipped), others populated
+    assert result["deribit"] is None
+    assert result["okx"]  == pytest.approx(0.0003)
+    assert result["gate"] == pytest.approx(0.0004)
+    assert result["mexc"] == pytest.approx(0.0005)
