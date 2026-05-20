@@ -19,6 +19,7 @@ from strategies.crypto_observer import (
     SettlementEdgeObserver,
     LognormalFairDevObserver,
     StrikeLadderLiteralObserver,
+    CrossVenueFundingConsensusObserver,
     _parse_suffix_threshold, _suffix_kind, _event_key, _build_leg,
     _lognormal_p_above, _flip,
 )
@@ -1109,3 +1110,47 @@ def test_event_context_has_funding_8h_by_venue_default_empty():
     ctx = _ctx(b_legs=[], close_s=600.0)
     assert hasattr(ctx, "funding_8h_by_venue")
     assert ctx.funding_8h_by_venue == {}
+
+
+# ── cross_venue_funding_consensus observer ────────────────────────
+
+
+def _ctx_for_funding(funding_by_venue, *, spot=70_000.0, close_s=300.0,
+                     b_legs=None):
+    """Build an EventContext with the cross-venue funding field set.
+
+    The standard _ctx() helper doesn't accept funding_8h_by_venue
+    because the field is new; this wrapper sets it after construction.
+    """
+    if b_legs is None:
+        b_legs = [_b(70_000, ya=0.10, yb=0.08, yb_size=200),
+                  _b(71_000, ya=0.10, yb=0.08, yb_size=200)]
+    ctx = _ctx(b_legs=b_legs, spot=spot, close_s=close_s)
+    ctx.funding_8h_by_venue = funding_by_venue
+    return ctx
+
+
+def test_cross_venue_funding_consensus_fires_on_agreement():
+    """All 3 venues funding > +0.0002 → consensus_fade signal,
+    predicted='no' on strikes above spot (fade upside)."""
+    ctx = _ctx_for_funding(
+        funding_by_venue={"deribit": 0.0005, "okx": 0.0004, "bybit": 0.0006},
+        spot=70_000.0, close_s=300.0,
+        b_legs=[_b(70_000, ya=0.10, yb=0.08, yb_size=200),
+                _b(71_000, ya=0.10, yb=0.08, yb_size=200)],
+    )
+    sigs = CrossVenueFundingConsensusObserver().evaluate(ctx)
+
+    consensus = [s for s in sigs if s.features["kind"] == "consensus_fade"]
+    assert len(consensus) >= 1, f"expected consensus_fade signal, got {sigs}"
+    sig = consensus[0]
+    assert sig.predicted_outcome == "no"
+    assert sig.features["consensus_sign"] == 1   # all positive
+    assert set(sig.features["venues_reporting"]) == {"deribit", "okx", "bybit"}
+    assert sig.features["funding_deribit"] == pytest.approx(0.0005)
+    assert sig.features["funding_okx"]     == pytest.approx(0.0004)
+    assert sig.features["funding_bybit"]   == pytest.approx(0.0006)
+    assert sig.features["min_abs"] == pytest.approx(0.0004, abs=1e-6)
+    # Strike must be above spot for positive-funding fade (fade upside)
+    assert sig.features["side"] == "fade_upside"
+    assert sig.features["strike"] > sig.features["spot"]
