@@ -128,6 +128,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "open_no_touch_v1", "atm_hold_v1",
             # 2026-05-18 additions
             "late_close_tail_v1", "deribit_atm_fade_v1",
+            "cme_basis_fade_v1",
             # Archived — historical data surfaced in dashboard's Archived section.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
@@ -164,7 +165,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "deribit_tail_fade_v1", "atm_hold_v1",
             "bid_imbalance_v1", "bid_imbalance_fade_v1",
             "open_no_touch_v1", "late_close_tail_v1",
-            "deribit_atm_fade_v1",
+            "deribit_atm_fade_v1", "cme_basis_fade_v1",
             "crypto_fair_value", "crypto_fair_value_mid_v1",
         }
         # Retired strategies — still rendered but flagged via `archived: true`
@@ -524,6 +525,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "bid_imbalance_fade_v1",
             # 2026-05-18 additions
             "late_close_tail_v1", "deribit_atm_fade_v1",
+            "cme_basis_fade_v1",
             # Archived — surfaced in dashboard Archived section with reason.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
@@ -1293,6 +1295,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             ("deribit_atm_fade_v1",   "DERIBIT_ATM_FADE",
              "Inverse of tail_fade for high-ya (ITM) strikes",
              True),
+            ("cme_basis_fade_v1",     "CME_BASIS_FADE",
+             "BUY NO when Kalshi pricing diverges from CME futures basis, "
+             "fee-positive ya band only",
+             True),
             ("open_no_touch_v1",      "OPEN_NO_TOUCH",
              "BUY NO at event open on ATM±1% buckets",
              False),
@@ -1429,6 +1435,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "atm_hold":           "atm_hold_v1",
             "late_close_tail":    "late_close_tail_v1",
             "deribit_atm_skew":   "deribit_atm_fade_v1",
+            "cme_basis_fade":     "cme_basis_fade_v1",
             # Direct traders that write Phase 0 signals under their own name
             # (observer == phase 1 strategy). See
             # [[crypto_fair_value_mid_v1_2026-05-19]].
