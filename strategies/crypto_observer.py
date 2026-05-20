@@ -1945,6 +1945,7 @@ class CryptoObserverStrategy:
         iv_by_asset: dict[str, Optional[float]] = {}
         funding_by_asset: dict[str, Optional[float]] = {}
         skew_by_asset: dict[str, Optional[float]] = {}
+        funding_by_venue_by_asset: dict[str, dict[str, Optional[float]]] = {}
         for ctx in contexts:
             if ctx.asset not in iv_by_asset:
                 iv_by_asset[ctx.asset] = await self._deribit_iv(ctx.asset)
@@ -1962,6 +1963,16 @@ class CryptoObserverStrategy:
                     skew_by_asset[ctx.asset] = None
             ctx.funding_8h = funding_by_asset[ctx.asset]
             ctx.iv_skew = skew_by_asset[ctx.asset]
+            # 2026-05-20 multi-venue funding (Deribit + OKX + Bybit) — async-native
+            # per sync_in_async_sweep_2026-05-19. Cached per asset per tick.
+            if ctx.asset not in funding_by_venue_by_asset:
+                try:
+                    from core.funding_rates_multi import get_all_funding
+                    funding_by_venue_by_asset[ctx.asset] = await get_all_funding(ctx.asset)
+                except Exception as e:
+                    logger.warning(f"funding_rates_multi fetch failed {ctx.asset}: {e}")
+                    funding_by_venue_by_asset[ctx.asset] = {}
+            ctx.funding_8h_by_venue = funding_by_venue_by_asset[ctx.asset]
             # 2026-05-19: yfinance-backed external-data observers.
             # TTL-cached 10 min — daily data, ok to call every scan.
             try:
