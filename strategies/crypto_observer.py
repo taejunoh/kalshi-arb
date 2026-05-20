@@ -1257,6 +1257,10 @@ class CryptoObserverStrategy:
             "BTC": deque(maxlen=1800),  # ~30 min at 1Hz
             "ETH": deque(maxlen=1800),
         }
+        # 2026-05-20: rolling bucket-mid cache for kalshi_book_lag observer.
+        from strategies.crypto_cross_asset_observer import _BookMidCache
+        self._book_mid_cache = _BookMidCache()
+        self._last_book_prune_ts = 0.0
 
     def _update_spot_history(self, now: float):
         for asset in ("BTC", "ETH"):
@@ -1361,6 +1365,16 @@ class CryptoObserverStrategy:
                 continue
             by_event.setdefault((series, ev), []).append(leg)
 
+        # 2026-05-20: cross-asset features computed ONCE per scan (not per event).
+        spot_btc_now = self._price_feed.get_fresh_spot("BTC")
+        spot_eth_now = self._price_feed.get_fresh_spot("ETH")
+        spot_btc_30s = self._spot_n_seconds_ago("BTC", 30.0, now_epoch)
+        spot_eth_30s = self._spot_n_seconds_ago("ETH", 30.0, now_epoch)
+        spot_btc_10s = self._spot_n_seconds_ago("BTC", 10.0, now_epoch)
+        spot_eth_10s = self._spot_n_seconds_ago("ETH", 10.0, now_epoch)
+        corr_5min = self._correlation_lookback(300.0, now_epoch)
+        corr_15min = self._correlation_lookback(900.0, now_epoch)
+
         contexts: list[EventContext] = []
         for (series, ev), legs in by_event.items():
             asset = SERIES_ASSET.get(series)
@@ -1385,6 +1399,11 @@ class CryptoObserverStrategy:
                 deribit_iv=None,  # filled async below
                 b_legs=b_legs, t_legs=t_legs,
                 open_time_secs=open_s, close_time_secs=close_s,
+                spot_btc=spot_btc_now, spot_eth=spot_eth_now,
+                spot_btc_30s_ago=spot_btc_30s, spot_eth_30s_ago=spot_eth_30s,
+                spot_btc_10s_ago=spot_btc_10s, spot_eth_10s_ago=spot_eth_10s,
+                corr_5min=corr_5min, corr_15min=corr_15min,
+                book_mid_cache=self._book_mid_cache,
             ))
         return contexts
 
@@ -1406,6 +1425,45 @@ class CryptoObserverStrategy:
         now = datetime.now(timezone.utc)
         now_epoch = time.time()
         self._update_spot_history(now_epoch)
+        # 2026-05-20: cross-asset bookkeeping.
+        for m in markets:
+            t = m.get("ticker", "")
+            series = t.split("-")[0]
+            if series not in TARGET_SERIES:
+                continue
+            ya = _safe_float(m.get("yes_ask_dollars"))
+            yb = _safe_float(m.get("yes_bid_dollars"))
+            if ya is None or yb is None:
+                continue
+            suffix = t.rsplit("-", 1)[-1]
+            kind = _suffix_kind(suffix)
+            if kind != "bucketed":
+                continue
+            strike = _parse_suffix_threshold(suffix)
+            if strike is None:
+                continue
+            mid = (ya + yb) / 2.0
+            flushed = self._book_mid_cache.update(series, strike, now_epoch, mid)
+            if flushed:
+                logger.error(
+                    "[BOOK_MID_CACHE_FLUSH] hard cap hit — alert ops"
+                )
+        # Prune stale book entries every 60s
+        if (now_epoch - self._last_book_prune_ts) >= 60.0:
+            removed = self._book_mid_cache.prune_stale(now_epoch, max_age_s=120.0)
+            self._last_book_prune_ts = now_epoch
+            if debug:
+                logger.warning(
+                    f"[BOOK_MID_CACHE_PRUNE] size={self._book_mid_cache.size()} "
+                    f"removed={removed}"
+                )
+        # Soft watchdog
+        if self._book_mid_cache.size() > 10_000:
+            if debug:
+                logger.warning(
+                    f"[BOOK_MID_CACHE_SIZE_WARN] size={self._book_mid_cache.size()} "
+                    f"approaching hard cap"
+                )
 
         if debug:
             from collections import Counter as _Counter
