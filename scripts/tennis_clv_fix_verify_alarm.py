@@ -22,6 +22,12 @@ import sqlite3
 import subprocess
 import sys
 
+# systemd runs us as `python scripts/foo.py` which only puts scripts/ on
+# sys.path, not the repo root — so `from core.config import Config` fails.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("tennis_clv_fix_verify")
 
