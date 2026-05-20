@@ -1,0 +1,13 @@
+[Unit]
+Description=One-shot 2026-05-27 13:00 UTC eval snapshot
+Requires=kalshi-eval-2026-05-27.service
+
+[Timer]
+# One-shot — 1 week after the 2026-05-20 deploy of all 4 cohorts.
+# Disable after firing; no further OnCalendar entries.
+OnCalendar=2026-05-27 13:00:00 UTC
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

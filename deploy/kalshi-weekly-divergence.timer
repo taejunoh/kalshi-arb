@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly LIVE divergence audit (Mon 09:00 UTC = Mon 05:00 EDT)
+Requires=kalshi-weekly-divergence.service
+
+[Timer]
+# Mondays 09:00 UTC — after Sunday's late settlements, before US sports
+# Monday afternoon. Catches the prior calendar week + 4w baseline cleanly.
+OnCalendar=Mon *-*-* 09:00:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
