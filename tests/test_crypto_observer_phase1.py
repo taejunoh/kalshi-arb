@@ -849,3 +849,22 @@ def test_live_crypto_phase1_use_limit_ttl():
     from core.order_manager import LIMIT_TTL_STRATEGIES
     assert "deribit_tail_fade_v1" in LIMIT_TTL_STRATEGIES
     assert "atm_hold_v1" in LIMIT_TTL_STRATEGIES
+
+
+def test_crypto_phase1_per_strategy_ttl():
+    """TTL tuned per-strategy by ROI, not fill-rate alone:
+
+    - atm_hold_v1 = 20s. ATM bucket-flip risk dominates above 30s; 60s
+      adverse selection costs ~14% per-trade alpha vs 20s sweet spot.
+    - deribit_tail_fade_v1 = 60s (default). Deep tail is stale-immune;
+      longer TTL captures more partial fills = more alpha.
+    """
+    from core.order_manager import (
+        LIMIT_TTL_SECONDS, LIMIT_TTL_SECONDS_BY_STRATEGY, _ttl_seconds_for,
+    )
+    assert LIMIT_TTL_SECONDS == 60  # default unchanged for sports
+    assert LIMIT_TTL_SECONDS_BY_STRATEGY.get("atm_hold_v1") == 20
+    assert "deribit_tail_fade_v1" not in LIMIT_TTL_SECONDS_BY_STRATEGY
+    assert _ttl_seconds_for("atm_hold_v1") == 20
+    assert _ttl_seconds_for("deribit_tail_fade_v1") == 60  # inherits default
+    assert _ttl_seconds_for("sports_underdog_v31") == 60  # sports fallback
