@@ -307,6 +307,16 @@ class EventContext:
     iv_skew: Optional[float] = None      # put_IV - call_IV at ±10% strike, decimal
     etf_flow_z: Optional[float] = None   # signed volume z-score on IBIT/ETHA
     cme_basis: Optional[float] = None    # (futures_close - spot) / spot
+    # 2026-05-20 Phase 0 cross-asset (filled identically on every ctx by harness)
+    spot_btc: Optional[float] = None
+    spot_eth: Optional[float] = None
+    spot_btc_30s_ago: Optional[float] = None
+    spot_eth_30s_ago: Optional[float] = None
+    spot_btc_10s_ago: Optional[float] = None
+    spot_eth_10s_ago: Optional[float] = None
+    corr_5min: Optional[float] = None
+    corr_15min: Optional[float] = None
+    book_mid_cache: Optional[object] = None  # _BookMidCache, untyped to avoid circular import
 
     def atm_bucket_index(self) -> Optional[int]:
         """Index in b_legs of the bucket whose center is closest to spot."""

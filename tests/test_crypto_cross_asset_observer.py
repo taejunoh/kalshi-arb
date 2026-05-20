@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import deque
+from datetime import datetime, timezone
 
 import pytest
 
@@ -9,6 +10,7 @@ from strategies.crypto_cross_asset_observer import (
     _pearson_correlation,
     _BookMidCache,
 )
+from strategies.crypto_observer import EventContext
 
 
 def test_pearson_correlation_perfect_positive():
@@ -199,3 +201,25 @@ def test_correlation_join_unaligned_streams():
     # Expected: corr ≈ 1.0
     assert corr is not None
     assert corr == pytest.approx(1.0, abs=1e-3)
+
+
+def test_event_context_has_cross_asset_fields():
+    """All new cross-asset fields default to None when omitted."""
+    ctx = EventContext(
+        series="KXBTC", asset="BTC", event_key="26MAY2010",
+        now=datetime.now(timezone.utc),
+        spot=89750.0, spot_60s_ago=89700.0,
+        deribit_iv=None,
+        b_legs=[], t_legs=[],
+        open_time_secs=None, close_time_secs=None,
+    )
+    # New cross-asset fields all default to None
+    assert ctx.spot_btc is None
+    assert ctx.spot_eth is None
+    assert ctx.spot_btc_30s_ago is None
+    assert ctx.spot_eth_30s_ago is None
+    assert ctx.spot_btc_10s_ago is None
+    assert ctx.spot_eth_10s_ago is None
+    assert ctx.corr_5min is None
+    assert ctx.corr_15min is None
+    assert ctx.book_mid_cache is None
