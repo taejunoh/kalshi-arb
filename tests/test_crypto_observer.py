@@ -1102,3 +1102,10 @@ def test_strike_ladder_literal_skips_when_no_violations():
 def test_strike_ladder_literal_registered_in_observer_classes():
     from strategies.crypto_observer import OBSERVER_CLASSES
     assert StrikeLadderLiteralObserver in OBSERVER_CLASSES
+
+
+def test_event_context_has_funding_8h_by_venue_default_empty():
+    """EventContext.funding_8h_by_venue defaults to empty dict."""
+    ctx = _ctx(b_legs=[], close_s=600.0)
+    assert hasattr(ctx, "funding_8h_by_venue")
+    assert ctx.funding_8h_by_venue == {}
