@@ -879,3 +879,9 @@ def test_settlement_edge_fires_on_negative_skew_predicts_yes():
     assert len(sigs) == 1
     assert sigs[0].predicted_outcome == "yes"
     assert sigs[0].features["skew"] < 0
+
+
+def test_settlement_edge_registered_in_observer_classes():
+    """Harness picks up settlement_edge via OBSERVER_CLASSES tuple."""
+    from strategies.crypto_observer import OBSERVER_CLASSES
+    assert SettlementEdgeObserver in OBSERVER_CLASSES

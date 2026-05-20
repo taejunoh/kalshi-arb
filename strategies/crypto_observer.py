@@ -1276,6 +1276,8 @@ OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
     LateCloseTailObserver, DeribitAtmSkewObserver,
     # 2026-05-20: fee-positive zone explorer (paired with late_close_tail)
     MidOtmTailObserver,
+    # 2026-05-20: static micro-timing depth-skew (mts_s ≤ 30, ATM±2)
+    SettlementEdgeObserver,
     # 2026-05-19 Phase 0 additions: cross-venue Deribit signals
     FundingRateFadeObserver, VolSkewFadeObserver,
     # 2026-05-19 Phase 0: external-data signals (yfinance ETF + CME)
