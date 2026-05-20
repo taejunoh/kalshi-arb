@@ -34,8 +34,31 @@ def _okx_payload(funding_rate_per_period: float) -> dict:
     return {"data": [{"fundingRate": str(funding_rate_per_period)}]}
 
 
-def _bybit_payload(funding_rate_per_period: float) -> dict:
-    return {"result": {"list": [{"fundingRate": str(funding_rate_per_period)}]}}
+def _gate_payload(funding_rate_per_period: float) -> dict:
+    # Gate.io V4 /contracts/{asset}_USDT returns the contract object
+    # at the top level with funding_rate as a string and
+    # funding_interval (seconds). 8h-native for BTC/ETH USDT perps.
+    return {
+        "name": "BTC_USDT",
+        "funding_rate": str(funding_rate_per_period),
+        "funding_interval": 28800,
+        "mark_price": "70000",
+    }
+
+
+def _mexc_payload(funding_rate_per_period: float) -> dict:
+    # MEXC V1 /contract/funding_rate/{asset}_USDT returns
+    # success + data{fundingRate, collectCycle}. 8h-native.
+    return {
+        "success": True,
+        "code": 0,
+        "data": {
+            "symbol": "BTC_USDT",
+            "fundingRate": funding_rate_per_period,
+            "collectCycle": 8,
+            "nextSettleTime": 0,
+        },
+    }
 
 
 def _make_fake_get(per_url_payload: dict[str, dict],
@@ -43,7 +66,7 @@ def _make_fake_get(per_url_payload: dict[str, dict],
     """Build a fake httpx.AsyncClient.get that dispatches on URL substring.
 
     per_url_payload keys are substrings to match (e.g. "deribit.com",
-    "okx.com", "bybit.com").
+    "okx.com", "gateio.ws", "mexc.com").
     """
     per_url_status = per_url_status or {}
 
@@ -59,31 +82,34 @@ def _make_fake_get(per_url_payload: dict[str, dict],
 
 
 @pytest.mark.asyncio
-async def test_get_all_funding_returns_all_three_venues():
-    """All three venues respond 200 → dict has 3 entries, all floats."""
+async def test_get_all_funding_returns_all_four_venues():
+    """All four venues respond 200 → dict has 4 entries, all floats."""
     _clear_cache_for_tests()
     fake_get = _make_fake_get({
         "deribit.com": _deribit_payload(0.0005),
         "okx.com":     _okx_payload(0.0003),
-        "bybit.com":   _bybit_payload(0.0006),
+        "gateio.ws":   _gate_payload(0.0007),
+        "mexc.com":    _mexc_payload(0.0006),
     })
     with patch("httpx.AsyncClient.get", new=AsyncMock(side_effect=fake_get)):
         result = await get_all_funding("BTC")
     assert set(result.keys()) == set(VENUES)
     assert result["deribit"] == pytest.approx(0.0005)
     assert result["okx"]     == pytest.approx(0.0003)
-    assert result["bybit"]   == pytest.approx(0.0006)
+    assert result["gate"]    == pytest.approx(0.0007)
+    assert result["mexc"]    == pytest.approx(0.0006)
 
 
 @pytest.mark.asyncio
-async def test_get_all_funding_one_venue_failure_other_two_succeed():
-    """One venue returns 500 → its entry is None, other two still populated."""
+async def test_get_all_funding_one_venue_failure_others_succeed():
+    """One venue returns 500 → its entry is None, others still populated."""
     _clear_cache_for_tests()
     fake_get = _make_fake_get(
         per_url_payload={
             "deribit.com": _deribit_payload(0.0005),
             "okx.com":     {},
-            "bybit.com":   _bybit_payload(0.0006),
+            "gateio.ws":   _gate_payload(0.0007),
+            "mexc.com":    _mexc_payload(0.0006),
         },
         per_url_status={"okx.com": 500},
     )
@@ -91,4 +117,5 @@ async def test_get_all_funding_one_venue_failure_other_two_succeed():
         result = await get_all_funding("BTC")
     assert result["deribit"] == pytest.approx(0.0005)
     assert result["okx"] is None
-    assert result["bybit"] == pytest.approx(0.0006)
+    assert result["gate"]    == pytest.approx(0.0007)
+    assert result["mexc"]    == pytest.approx(0.0006)

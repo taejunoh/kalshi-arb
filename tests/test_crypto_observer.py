@@ -1131,10 +1131,11 @@ def _ctx_for_funding(funding_by_venue, *, spot=70_000.0, close_s=300.0,
 
 
 def test_cross_venue_funding_consensus_fires_on_agreement():
-    """All 3 venues funding > +0.0002 → consensus_fade signal,
+    """All 4 venues funding > +0.0002 → consensus_fade signal,
     predicted='no' on strikes above spot (fade upside)."""
     ctx = _ctx_for_funding(
-        funding_by_venue={"deribit": 0.0005, "okx": 0.0004, "bybit": 0.0006},
+        funding_by_venue={"deribit": 0.0005, "okx": 0.0004,
+                          "gate": 0.0007, "mexc": 0.0006},
         spot=70_000.0, close_s=300.0,
         b_legs=[_b(70_000, ya=0.10, yb=0.08, yb_size=200),
                 _b(71_000, ya=0.10, yb=0.08, yb_size=200)],
@@ -1146,10 +1147,11 @@ def test_cross_venue_funding_consensus_fires_on_agreement():
     sig = consensus[0]
     assert sig.predicted_outcome == "no"
     assert sig.features["consensus_sign"] == 1   # all positive
-    assert set(sig.features["venues_reporting"]) == {"deribit", "okx", "bybit"}
+    assert set(sig.features["venues_reporting"]) == {"deribit", "okx", "gate", "mexc"}
     assert sig.features["funding_deribit"] == pytest.approx(0.0005)
     assert sig.features["funding_okx"]     == pytest.approx(0.0004)
-    assert sig.features["funding_bybit"]   == pytest.approx(0.0006)
+    assert sig.features["funding_gate"]    == pytest.approx(0.0007)
+    assert sig.features["funding_mexc"]    == pytest.approx(0.0006)
     assert sig.features["min_abs"] == pytest.approx(0.0004, abs=1e-6)
     # Strike must be above spot for positive-funding fade (fade upside)
     assert sig.features["side"] == "fade_upside"
@@ -1160,7 +1162,8 @@ def test_cross_venue_funding_divergence_fires():
     """One venue +0.0008, another -0.0003 → spread 0.0011 ≥ 0.0005,
     divergence event-level signal."""
     ctx = _ctx_for_funding(
-        funding_by_venue={"deribit": 0.0008, "okx": -0.0003, "bybit": 0.0001},
+        funding_by_venue={"deribit": 0.0008, "okx": -0.0003,
+                          "gate": 0.0001, "mexc": 0.0002},
         spot=70_000.0, close_s=300.0,
         b_legs=[_b(69_500, ya=0.45, yb=0.43, yb_size=200),
                 _b(70_000, ya=0.50, yb=0.48, yb_size=200),
@@ -1175,7 +1178,7 @@ def test_cross_venue_funding_divergence_fires():
     sig = div_sigs[0]
     # spread = 0.0008 - (-0.0003) = 0.0011
     assert sig.features["spread"] == pytest.approx(0.0011, abs=1e-6)
-    # consensus_sign = 0 (not all agree)
+    # consensus_sign = 0 (not all agree — deribit/gate/mexc positive, okx negative)
     assert sig.features["consensus_sign"] == 0
     # Divergence anchors to ATM bucket (70000)
     assert sig.market_id.endswith("B70000")
@@ -1185,9 +1188,10 @@ def test_cross_venue_funding_divergence_fires():
 
 def test_cross_venue_funding_skips_below_min_venues():
     """Only 1 venue reporting (< MIN_VENUES=2) → no signal."""
-    # Only deribit reports; okx and bybit are None
+    # Only deribit reports; others are None
     ctx = _ctx_for_funding(
-        funding_by_venue={"deribit": 0.0005, "okx": None, "bybit": None},
+        funding_by_venue={"deribit": 0.0005, "okx": None,
+                          "gate": None, "mexc": None},
         spot=70_000.0, close_s=300.0,
     )
     assert CrossVenueFundingConsensusObserver().evaluate(ctx) == []
@@ -1199,7 +1203,8 @@ def test_cross_venue_funding_skips_below_min_venues():
 
 def test_cross_venue_funding_skips_outside_mts_window():
     """mts_s > MAX (7200) or ≤ 0 → no signal."""
-    funding = {"deribit": 0.0005, "okx": 0.0004, "bybit": 0.0006}
+    funding = {"deribit": 0.0005, "okx": 0.0004,
+               "gate": 0.0007, "mexc": 0.0006}
     # Way past the 2-hour window
     ctx_far = _ctx_for_funding(funding_by_venue=funding, close_s=10_000.0)
     assert CrossVenueFundingConsensusObserver().evaluate(ctx_far) == []
