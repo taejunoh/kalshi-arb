@@ -52,6 +52,47 @@ class _Phase1Base:
         self._scanner = market_scanner
         self._client = kalshi_client
         self._processed: set[int] = set()
+        # 2026-05-20: per-ticker cooldown to defend against in-memory dedup
+        # being wiped on bot restart. See _is_in_ticker_cooldown.
+        self._ticker_cooldown_s = getattr(config, "PHASE1_TICKER_COOLDOWN_S", 30.0)
+        self._ticker_price_diff = getattr(config, "PHASE1_TICKER_PRICE_DIFF", 0.03)
+
+    async def _is_in_ticker_cooldown(self, ticker: str, price: float) -> bool:
+        """Return True if a fire on this ticker within the last
+        PHASE1_TICKER_COOLDOWN_S was at a price within PHASE1_TICKER_PRICE_DIFF.
+
+        DB-persisted (survives restart). Promo cohort cascade legitimately
+        fires multiple times per event as ya moves through the band — that's
+        the strategy's edge, not a bug. So we only block when BOTH the time
+        gap is small AND the price hasn't moved meaningfully. A 3c price
+        delta is the threshold: promo n=11 paper cohort multi-fires all
+        moved ya by ≥7c; today's restart-pollution duplicates were at
+        identical price. See [[atm_hold_v1_promo_cohort_audit_2026-05-20]].
+        """
+        db = getattr(self._order_manager, "_db", None)
+        if db is None:
+            return False
+        try:
+            last = await db.get_last_trade_for_ticker(self.STRATEGY_NAME, ticker)
+        except Exception as e:
+            logger.error(f"{self.STRATEGY_NAME}: cooldown query failed: {e}")
+            return False
+        if last is None:
+            return False
+        ts_str = last.get("timestamp")
+        last_price = _safe_float(last.get("price"))
+        if not ts_str or last_price is None:
+            return False
+        try:
+            last_ts = datetime.fromisoformat(ts_str)
+        except Exception:
+            return False
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.replace(tzinfo=timezone.utc)
+        age_s = (datetime.now(timezone.utc) - last_ts).total_seconds()
+        if age_s >= self._ticker_cooldown_s:
+            return False
+        return abs(price - last_price) < self._ticker_price_diff
 
     def _select_side_and_price(self, sig: dict, market: dict
                                ) -> Optional[tuple[str, float]]:
@@ -147,6 +188,15 @@ class _Phase1Base:
                     f"reason=size_returned_none "
                     f"side={side} price={price:.3f} "
                     f"depth_{depth_key}={market.get(depth_key)}"
+                )
+                self._processed.add(sig_id)
+                continue
+            if await self._is_in_ticker_cooldown(ticker, price):
+                logger.info(
+                    f"[{self.STRATEGY_NAME}] SKIP sig={sig_id} ticker={ticker} "
+                    f"reason=ticker_cooldown price={price:.3f} "
+                    f"window_s={self._ticker_cooldown_s} "
+                    f"price_diff_threshold={self._ticker_price_diff}"
                 )
                 self._processed.add(sig_id)
                 continue
@@ -373,6 +423,15 @@ class OpenNoTouchV1Strategy(_Phase1Base):
 
         for ek, (_, sig, no_ask) in best_per_event.items():
             ticker = sig["market_id"]
+            if await self._is_in_ticker_cooldown(ticker, no_ask):
+                logger.info(
+                    f"[{self.STRATEGY_NAME}] SKIP sig={sig['id']} ticker={ticker} "
+                    f"reason=ticker_cooldown price={no_ask:.3f} "
+                    f"window_s={self._ticker_cooldown_s} "
+                    f"price_diff_threshold={self._ticker_price_diff}"
+                )
+                self._processed.add(sig["id"])
+                continue
             try:
                 await self._order_manager.market_order(
                     ticker=ticker, side="no", size_usdc=self.SIZE_USDC,

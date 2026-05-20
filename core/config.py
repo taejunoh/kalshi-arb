@@ -233,6 +233,18 @@ class Config:
         # adding information. Cap=1 + center-of-window strike picker keeps
         # samples independent enough for promotion-gate statistics.
         self.OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT = int(os.getenv("OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT", "1"))
+        # ─ Phase 1 per-ticker cooldown (2026-05-20). DB-persisted gate that
+        #   blocks a fire on (strategy, ticker) if the previous fire was
+        #   within COOLDOWN_S AND at a price within PRICE_DIFF dollars.
+        #   Rationale (atm_hold_v1 5/20 incident): in-memory `_processed`
+        #   dedup is wiped on bot restart. Multiple restarts in 4 minutes
+        #   caused 3 fires on the same ticker at the same $0.49 price
+        #   from 3 different PIDs, losing $60. Promo n=11 paper cohort
+        #   showed legitimate multi-fire cascade always moved ya by ≥7c,
+        #   so 3c price tolerance preserves edge while blocking restart
+        #   pollution. See [[atm_hold_v1_promo_cohort_audit_2026-05-20]].
+        self.PHASE1_TICKER_COOLDOWN_S = float(os.getenv("PHASE1_TICKER_COOLDOWN_S", "30"))
+        self.PHASE1_TICKER_PRICE_DIFF = float(os.getenv("PHASE1_TICKER_PRICE_DIFF", "0.03"))
         # ─ atm_hold_v1: ATM bucket holds (resolves YES) within 5min of close.
         #   BUY YES at ya on each fresh signal. Cohort tiny (n=10 pre-fix);
         #   relies on post-MAX-fix observer keeping ya in [0.40, 0.65].
