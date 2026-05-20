@@ -49,6 +49,17 @@ def _clear_cache_for_tests() -> None:
     _CACHE.clear()
 
 
+# Per-venue supported assets. `None` = venue supports any asset
+# (default); a frozenset gates the asset before HTTP. Deribit perp
+# covers BTC/ETH/SOL/AVAX/MATIC but NOT XRP — earlier each-minute 400
+# warnings on KXXRP contexts came from this gap. Other venues
+# (OKX/Gate/MEXC) all have XRP-USDT-SWAP equivalents, so they default
+# to permissive.
+_VENUE_SUPPORTED_ASSETS: dict[str, Optional[frozenset[str]]] = {
+    "deribit": frozenset({"BTC", "ETH"}),
+}
+
+
 # Venue endpoint templates. Each parser must return the 8h-normalized
 # funding rate as a signed decimal float.
 _VENUE_ENDPOINTS: dict[str, str] = {
@@ -139,6 +150,10 @@ _VENUE_PARSERS = {
 async def _fetch_one(client: httpx.AsyncClient, asset: str,
                      venue: str) -> Optional[float]:
     """Fetch and parse one venue. Returns None on any failure."""
+    allowed = _VENUE_SUPPORTED_ASSETS.get(venue)
+    if allowed is not None and asset not in allowed:
+        # Skip HTTP entirely — known unsupported. No warning log.
+        return None
     url = _VENUE_ENDPOINTS[venue].format(asset=asset)
     try:
         r = await client.get(url, timeout=_HTTP_TIMEOUT_S)
