@@ -1181,3 +1181,31 @@ def test_cross_venue_funding_divergence_fires():
     assert sig.market_id.endswith("B70000")
     # No consensus_fade in the same evaluation (signs disagree)
     assert not any(s.features["kind"] == "consensus_fade" for s in sigs)
+
+
+def test_cross_venue_funding_skips_below_min_venues():
+    """Only 1 venue reporting (< MIN_VENUES=2) → no signal."""
+    # Only deribit reports; okx and bybit are None
+    ctx = _ctx_for_funding(
+        funding_by_venue={"deribit": 0.0005, "okx": None, "bybit": None},
+        spot=70_000.0, close_s=300.0,
+    )
+    assert CrossVenueFundingConsensusObserver().evaluate(ctx) == []
+
+    # Empty dict
+    ctx_empty = _ctx_for_funding(funding_by_venue={}, spot=70_000.0, close_s=300.0)
+    assert CrossVenueFundingConsensusObserver().evaluate(ctx_empty) == []
+
+
+def test_cross_venue_funding_skips_outside_mts_window():
+    """mts_s > MAX (7200) or ≤ 0 → no signal."""
+    funding = {"deribit": 0.0005, "okx": 0.0004, "bybit": 0.0006}
+    # Way past the 2-hour window
+    ctx_far = _ctx_for_funding(funding_by_venue=funding, close_s=10_000.0)
+    assert CrossVenueFundingConsensusObserver().evaluate(ctx_far) == []
+    # Already closed
+    ctx_zero = _ctx_for_funding(funding_by_venue=funding, close_s=0.0)
+    assert CrossVenueFundingConsensusObserver().evaluate(ctx_zero) == []
+    # None
+    ctx_none = _ctx_for_funding(funding_by_venue=funding, close_s=None)
+    assert CrossVenueFundingConsensusObserver().evaluate(ctx_none) == []
