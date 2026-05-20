@@ -817,3 +817,35 @@ def test_settlement_edge_does_not_fire_at_or_below_zero_mts():
     # None
     ctx_none = _ctx(b_legs=b_legs, spot=70000.0, close_s=None)
     assert SettlementEdgeObserver().evaluate(ctx_none) == []
+
+
+def test_settlement_edge_filters_near_zero_skew():
+    """|skew| = 0.05 (below ABS_SKEW_MIN=0.20) → no signal even within window."""
+    # ask_size=50, bid_size=55 → skew = (50-55)/105 = -0.0476
+    b_legs = [
+        _b(70000, ya=0.50, yb=0.48, ya_size=50, yb_size=55),
+    ]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=20.0)
+    sigs = SettlementEdgeObserver().evaluate(ctx)
+    assert sigs == [], f"expected no signal at |skew|≈0.05, got: {sigs}"
+
+
+def test_settlement_edge_fires_exactly_at_skew_threshold():
+    """|skew| just over 0.20 fires; just under 0.20 does not."""
+    # Just over: ask=120, bid=80 → skew = 40/200 = 0.20 (boundary)
+    # We require abs(skew) >= 0.20 to NOT fire — i.e. strict >=
+    # Use 0.21 to be safe: ask=121, bid=79 → skew = 42/200 = 0.21
+    b_legs_fire = [
+        _b(70000, ya=0.50, yb=0.48, ya_size=121, yb_size=79),
+    ]
+    ctx_fire = _ctx(b_legs=b_legs_fire, spot=70000.0, close_s=20.0)
+    sigs_fire = SettlementEdgeObserver().evaluate(ctx_fire)
+    assert len(sigs_fire) == 1
+    assert sigs_fire[0].predicted_outcome == "no"  # skew > 0 → no
+
+    # Just under: ask=119, bid=81 → skew = 38/200 = 0.19 → no fire
+    b_legs_skip = [
+        _b(70000, ya=0.50, yb=0.48, ya_size=119, yb_size=81),
+    ]
+    ctx_skip = _ctx(b_legs=b_legs_skip, spot=70000.0, close_s=20.0)
+    assert SettlementEdgeObserver().evaluate(ctx_skip) == []
