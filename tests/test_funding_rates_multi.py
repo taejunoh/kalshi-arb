@@ -1,0 +1,94 @@
+"""Unit tests for core/funding_rates_multi.py.
+
+Mocks httpx.AsyncClient.get so the venue HTTP endpoints are not hit
+during test runs.
+"""
+from __future__ import annotations
+import asyncio
+import json
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from core.funding_rates_multi import (
+    VENUES, get_all_funding, get_funding, _clear_cache_for_tests,
+)
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, payload: dict):
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+def _deribit_payload(funding_8h: float) -> dict:
+    return {"result": {"funding_8h": funding_8h}}
+
+
+def _okx_payload(funding_rate_per_period: float) -> dict:
+    # OKX returns fundingRate per 8h period (already 8h on USDT-SWAP)
+    # as a string. funding_rates_multi.py is responsible for str->float.
+    return {"data": [{"fundingRate": str(funding_rate_per_period)}]}
+
+
+def _bybit_payload(funding_rate_per_period: float) -> dict:
+    return {"result": {"list": [{"fundingRate": str(funding_rate_per_period)}]}}
+
+
+def _make_fake_get(per_url_payload: dict[str, dict],
+                   per_url_status: dict[str, int] | None = None):
+    """Build a fake httpx.AsyncClient.get that dispatches on URL substring.
+
+    per_url_payload keys are substrings to match (e.g. "deribit.com",
+    "okx.com", "bybit.com").
+    """
+    per_url_status = per_url_status or {}
+
+    async def fake_get(*a, **k):
+        # When patching httpx.AsyncClient.get via AsyncMock(side_effect=...),
+        # side_effect receives (url, ...) — self is NOT passed.
+        url = a[0] if a else k.get("url", "")
+        for needle, payload in per_url_payload.items():
+            if needle in url:
+                return _FakeResponse(per_url_status.get(needle, 200), payload)
+        return _FakeResponse(404, {})
+    return fake_get
+
+
+@pytest.mark.asyncio
+async def test_get_all_funding_returns_all_three_venues():
+    """All three venues respond 200 → dict has 3 entries, all floats."""
+    _clear_cache_for_tests()
+    fake_get = _make_fake_get({
+        "deribit.com": _deribit_payload(0.0005),
+        "okx.com":     _okx_payload(0.0003),
+        "bybit.com":   _bybit_payload(0.0006),
+    })
+    with patch("httpx.AsyncClient.get", new=AsyncMock(side_effect=fake_get)):
+        result = await get_all_funding("BTC")
+    assert set(result.keys()) == set(VENUES)
+    assert result["deribit"] == pytest.approx(0.0005)
+    assert result["okx"]     == pytest.approx(0.0003)
+    assert result["bybit"]   == pytest.approx(0.0006)
+
+
+@pytest.mark.asyncio
+async def test_get_all_funding_one_venue_failure_other_two_succeed():
+    """One venue returns 500 → its entry is None, other two still populated."""
+    _clear_cache_for_tests()
+    fake_get = _make_fake_get(
+        per_url_payload={
+            "deribit.com": _deribit_payload(0.0005),
+            "okx.com":     {},
+            "bybit.com":   _bybit_payload(0.0006),
+        },
+        per_url_status={"okx.com": 500},
+    )
+    with patch("httpx.AsyncClient.get", new=AsyncMock(side_effect=fake_get)):
+        result = await get_all_funding("BTC")
+    assert result["deribit"] == pytest.approx(0.0005)
+    assert result["okx"] is None
+    assert result["bybit"] == pytest.approx(0.0006)
