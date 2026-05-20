@@ -444,3 +444,102 @@ def test_corr_break_skips_outside_atm():
         close_s=900.0,
     )
     assert CrossAssetCorrBreakObserver().evaluate(ctx) == []
+
+
+# ---------------------------------------------------------------------------
+# KalshiBookLagObserver tests
+# ---------------------------------------------------------------------------
+
+from strategies.crypto_cross_asset_observer import (
+    KalshiBookLagObserver, _BookMidCache,
+)
+
+
+def test_book_lag_fires_when_book_static_while_spot_moves():
+    """Spot +0.5% over 30s, bucket mid unchanged → fire on lagging bucket."""
+    cache = _BookMidCache()
+    # Bucket mid 30s ago = 0.20 (no change yet)
+    cache.update("KXBTC", 60100.0, 970.0, 0.20)
+    cache.update("KXBTC", 60100.0, 1000.0, 0.20)  # still 0.20 at now
+    legs = [_make_leg("KXBTC", 60100, ya=0.22, yb=0.18, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXBTC", asset="BTC", spot=60100.0, b_legs=legs,
+        spot_btc=60100.0, spot_btc_30s_ago=59800.0,    # +0.50%
+        spot_eth=2120.0, spot_eth_30s_ago=2120.0,
+        corr_5min=0.85, corr_15min=0.85,
+        close_s=600.0,
+        book_mid_cache=cache,
+    )
+    # Override now for ctx to align with cache ts
+    ctx.now = datetime.fromtimestamp(1000.0, tz=timezone.utc)
+    obs = KalshiBookLagObserver()
+    sigs = obs.evaluate(ctx)
+    assert len(sigs) == 1
+    assert sigs[0].observer == "kalshi_book_lag"
+    assert sigs[0].predicted_outcome == "yes"
+
+
+def test_book_lag_skips_when_book_caught_up():
+    """Spot moved, bucket mid also moved ≥1¢ — caught up, skip."""
+    cache = _BookMidCache()
+    cache.update("KXBTC", 60100.0, 970.0, 0.20)
+    cache.update("KXBTC", 60100.0, 1000.0, 0.25)  # +5¢ change → caught up
+    legs = [_make_leg("KXBTC", 60100, ya=0.25, yb=0.22, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXBTC", asset="BTC", spot=60100.0, b_legs=legs,
+        spot_btc=60100.0, spot_btc_30s_ago=59800.0,
+        spot_eth=2120.0, spot_eth_30s_ago=2120.0,
+        corr_5min=0.85, corr_15min=0.85,
+        close_s=600.0,
+        book_mid_cache=cache,
+    )
+    ctx.now = datetime.fromtimestamp(1000.0, tz=timezone.utc)
+    assert KalshiBookLagObserver().evaluate(ctx) == []
+
+
+def test_book_lag_skips_outside_close_window():
+    """mts_s 1500 > 1200 cap — skip."""
+    cache = _BookMidCache()
+    cache.update("KXBTC", 60100.0, 970.0, 0.20)
+    cache.update("KXBTC", 60100.0, 1000.0, 0.20)
+    legs = [_make_leg("KXBTC", 60100, ya=0.22, yb=0.18, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXBTC", asset="BTC", spot=60100.0, b_legs=legs,
+        spot_btc=60100.0, spot_btc_30s_ago=59800.0,
+        spot_eth=2120.0, spot_eth_30s_ago=2120.0,
+        corr_5min=0.85, corr_15min=0.85,
+        close_s=1500.0,
+        book_mid_cache=cache,
+    )
+    ctx.now = datetime.fromtimestamp(1000.0, tz=timezone.utc)
+    assert KalshiBookLagObserver().evaluate(ctx) == []
+
+
+def test_book_lag_skips_when_no_bucket_history():
+    """Cache has no entry for this strike — n_seconds_ago returns None, skip."""
+    cache = _BookMidCache()  # empty
+    legs = [_make_leg("KXBTC", 60100, ya=0.22, yb=0.18, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXBTC", asset="BTC", spot=60100.0, b_legs=legs,
+        spot_btc=60100.0, spot_btc_30s_ago=59800.0,
+        spot_eth=2120.0, spot_eth_30s_ago=2120.0,
+        corr_5min=0.85, corr_15min=0.85,
+        close_s=600.0,
+        book_mid_cache=cache,
+    )
+    ctx.now = datetime.fromtimestamp(1000.0, tz=timezone.utc)
+    assert KalshiBookLagObserver().evaluate(ctx) == []
+
+
+def test_book_lag_skips_when_no_cache_attached():
+    """ctx.book_mid_cache is None — skip."""
+    legs = [_make_leg("KXBTC", 60100, ya=0.22, yb=0.18, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXBTC", asset="BTC", spot=60100.0, b_legs=legs,
+        spot_btc=60100.0, spot_btc_30s_ago=59800.0,
+        spot_eth=2120.0, spot_eth_30s_ago=2120.0,
+        corr_5min=0.85, corr_15min=0.85,
+        close_s=600.0,
+        book_mid_cache=None,
+    )
+    assert KalshiBookLagObserver().evaluate(ctx) == []

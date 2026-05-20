@@ -331,3 +331,92 @@ class CrossAssetCorrBreakObserver(_CrossAssetBaseObserver):
                 },
             ))
         return out
+
+
+# ---------------------------------------------------------------------------
+# KalshiBookLagObserver
+# ---------------------------------------------------------------------------
+
+# Gates per design spec
+BOOK_LAG_SPOT_THRESHOLD = 0.003      # 0.3% Δspot over 30s
+BOOK_LAG_BOOK_LAG_DOLLAR_MAX = 0.01  # bucket mid moved <1¢ → lagging
+BOOK_LAG_LOOKBACK_S = 30.0
+BOOK_LAG_YA_MIN = 0.10
+BOOK_LAG_YA_MAX = 0.50
+BOOK_LAG_MTS_MAX_S = 1200.0
+BOOK_LAG_YB_SIZE_MIN = 30
+
+
+class KalshiBookLagObserver(_CrossAssetBaseObserver):
+    """Spot moved meaningfully but Kalshi bucket-mid is stale.
+
+    Fires on the bucket whose strike is closest to current spot (the bucket
+    that *should* be ATM after the spot move) when its mid has barely
+    moved. Predicts 'yes' on that bucket. Single-asset thesis but housed
+    here because it shares BookMidCache infrastructure with cross-asset
+    observers.
+    """
+    name = "kalshi_book_lag"
+
+    def evaluate(self, ctx) -> list:
+        from strategies.crypto_observer import Signal
+
+        if ctx.close_time_secs is None or ctx.close_time_secs > BOOK_LAG_MTS_MAX_S:
+            return []
+        if ctx.book_mid_cache is None:
+            return []
+        if not ctx.b_legs:
+            return []
+
+        # Use the asset of this series, not cross-asset BTC default
+        if ctx.asset == "BTC":
+            spot_now = ctx.spot_btc
+            spot_30s = ctx.spot_btc_30s_ago
+        elif ctx.asset == "ETH":
+            spot_now = ctx.spot_eth
+            spot_30s = ctx.spot_eth_30s_ago
+        else:
+            return []
+        delta = self._delta_pct(spot_now, spot_30s)
+        if delta is None or abs(delta) < BOOK_LAG_SPOT_THRESHOLD:
+            return []
+
+        # Target bucket = closest to current spot
+        target = min(ctx.b_legs, key=lambda l: abs(l.threshold - ctx.spot))
+        if target.ya < BOOK_LAG_YA_MIN or target.ya > BOOK_LAG_YA_MAX:
+            return []
+        if target.yb_size < BOOK_LAG_YB_SIZE_MIN:
+            return []
+
+        now_ts = ctx.now.timestamp()
+        mid_now = (target.ya + target.yb) / 2.0
+        mid_30s_ago = ctx.book_mid_cache.n_seconds_ago(
+            ctx.series, target.threshold, BOOK_LAG_LOOKBACK_S, now_ts,
+        )
+        if mid_30s_ago is None:
+            return []
+        book_lag_dollars = abs(mid_now - mid_30s_ago)
+        if book_lag_dollars >= BOOK_LAG_BOOK_LAG_DOLLAR_MAX:
+            return []
+
+        dist_pct = abs(target.threshold - ctx.spot) / ctx.spot
+        return [Signal(
+            observer=self.name, series=ctx.series,
+            event_key=ctx.event_key, market_id=target.ticker,
+            predicted_outcome="yes",
+            features={
+                "ya": target.ya, "yb": target.yb, "na": target.na,
+                "yb_size": target.yb_size,
+                "spot": ctx.spot, "strike": target.threshold,
+                "dist_pct": round(dist_pct, 5),
+                "mts_s": round(ctx.close_time_secs, 1),
+                "kind": target.kind,
+                "spot_at_fire": spot_now, "spot_30s_ago": spot_30s,
+                "delta_spot_30s_pct": round(delta, 6),
+                "bucket_mid_now": round(mid_now, 4),
+                "bucket_mid_30s_ago": round(mid_30s_ago, 4),
+                "book_lag_cents": round(book_lag_dollars * 100, 2),
+                "corr_5min": ctx.corr_5min,
+                "corr_15min": ctx.corr_15min,
+            },
+        )]
