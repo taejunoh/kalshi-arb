@@ -730,10 +730,20 @@ class OrderManager:
         order_id = resp.get("id", "unknown")
         # Extract realized fill price from Kalshi response if available
         realized = None
-        fill_cost = resp.get("taker_fill_cost")
+        fill_cost = resp.get("taker_fill_cost")  # cents (legacy market-order resp)
         fill_count = resp.get("taker_fill_count")
         if fill_cost and fill_count and fill_count > 0:
             realized = (fill_cost / fill_count) / 100.0
+        # 2026-05-20: update size + fee from actual Kalshi fill (not signal).
+        # Same fix as _live_limit_ttl_order line ~990 — settlement.calculate_pnl
+        # needs effective stake to compute correct PnL, signal-based intended
+        # stake systematically overstates losses on better-than-signal fills.
+        if realized is not None and fill_count and fill_count > 0:
+            actual_size = (fill_cost or 0) / 100.0  # cents → dollars
+            actual_fee = self.config.estimate_fee(fill_count, int(round(realized * 100)))
+        else:
+            actual_size = size_usdc  # fallback to intended
+            actual_fee = fee
         # UPDATE the pre-recorded row to 'filled' with realized data.
         last_db_error = None
         for attempt, delay in enumerate((0, 1, 2, 5)):
@@ -742,6 +752,7 @@ class OrderManager:
             try:
                 await self._db.update_trade_post_fill(
                     trade_id, status="filled",
+                    size=actual_size, fee=actual_fee,
                     realized_fill_price=realized,
                 )
                 last_db_error = None
@@ -983,8 +994,15 @@ class OrderManager:
         # comparison share the same reference frame; realized_fill_price
         # captures the real entry. Fees also use signal price for the same
         # reason (paper twin uses signal-based estimate).
-        actual_size = filled_count * price
-        actual_fee = self.config.estimate_fee(filled_count, price_cents)
+        # 2026-05-20: use realized fill price for actual_size, not signal.
+        # Kalshi limit orders can fill significantly below cap (08:58 atm_hold
+        # got 40 contracts at realized $0.187 avg vs signal $0.50 — actual
+        # paid $7.48, not the $20 intended). Recording intended stake left
+        # settlement.calculate_pnl computing -$20 loss when actual was -$7.47.
+        effective_price = realized if (realized is not None and realized > 0) else price
+        effective_price_cents = int(round(effective_price * 100))
+        actual_size = filled_count * effective_price
+        actual_fee = self.config.estimate_fee(filled_count, effective_price_cents)
         # P2 (2026-05-11): pre-record row already exists at status='placing'
         # — now UPDATE it to 'filled' with realized data. If this fails, the
         # row stays at 'placing' (still a valid record), orphan_order_check

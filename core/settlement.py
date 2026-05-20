@@ -158,9 +158,19 @@ class SettlementChecker:
             for trade in trades:
                 is_live = trade["status"] == "filled"
                 settled_status = "settled" if is_live else "paper_settled"
+                # 2026-05-20: use realized fill price for LIVE trades so PnL
+                # reflects actual paid, not signal-price intended. Paper trades
+                # have realized_fill_price = NULL and fall back to signal price.
+                # Pair with order_manager fix that stores actual size + fee in
+                # the trade row so contracts = size / effective_price stays
+                # accurate. Past LIVE rows (pre-fix) will need a one-off
+                # backfill if exact PnL matters historically.
+                effective_price = trade.get("realized_fill_price")
+                if effective_price is None or effective_price <= 0:
+                    effective_price = trade["price"]
                 pnl = self.calculate_pnl(
                     direction=trade["direction"],
-                    price=trade["price"],
+                    price=effective_price,
                     size_usdc=trade["size"],
                     fee=trade["fee"],
                     result=result,
