@@ -116,6 +116,33 @@ LIMIT_AGGRESSION_CENTS_BY_STRATEGY = {
 def _aggression_cents_for(strategy: str) -> int:
     return LIMIT_AGGRESSION_CENTS_BY_STRATEGY.get(strategy, LIMIT_AGGRESSION_CENTS)
 
+
+# Per-strategy TTL overrides (2026-05-19). Default 60s targets sports
+# thin-book markets where new makers arrive every 10-20s and 1-min spot
+# drift is small relative to per-trade alpha. Tuned per-strategy by ROI
+# (not fill rate alone — long TTL costs alpha on stale-sensitive signals):
+#
+#   atm_hold_v1 = 20s. ATM bucket-flip threshold ~0.08% spot drift (BTC,
+#   grid ~$250 / 0.33%) / ~0.12% (ETH, grid ~$10 / 0.47%). Empirical 60s
+#   |Δ%| p75 on last 7d: BTC 0.084%, ETH 0.110% — both straddle the flip
+#   line, so ~20-25% of 60s windows invalidate the signal post-placement.
+#   Per-trade EV at 60s = $0.21; at 20s = $0.24 (-14% adverse-selection
+#   saved). 20s catches ~82% fill rate (vs 92% at 60s) with ~8% stale rate
+#   (vs 25%); the smaller fill is more than offset by cleaner alpha.
+#
+#   deribit_tail_fade_v1 = 60s (default). Deep tail (≥1% from spot) is
+#   stale-immune — 1% move in 60s is BTC 0/1947 days, ETH 3/1925 = 0.16%.
+#   Fill rate dominates per-trade alpha: 60s catches ~17 contracts
+#   ($0.17 alpha) vs 15s ~12 contracts ($0.12 alpha). No override =
+#   inherit default 60s.
+LIMIT_TTL_SECONDS_BY_STRATEGY = {
+    "atm_hold_v1": 20,
+}
+
+
+def _ttl_seconds_for(strategy: str) -> int:
+    return LIMIT_TTL_SECONDS_BY_STRATEGY.get(strategy, LIMIT_TTL_SECONDS)
+
 # Strategies that should record a paper twin alongside every live entry.
 # Rationale: keep generating paper_filled rows under the same strategy name
 # so paper and live stats accumulate in parallel from the same signal. The
@@ -869,9 +896,10 @@ class OrderManager:
             return {"status": "failed"}
         self._client.invalidate_balance_cache()
         order_id = resp.get("order_id") or resp.get("id") or "unknown"
+        ttl_seconds = _ttl_seconds_for(strategy)
         logger.info(
             f"[LIVE] Limit placed {side} {count}x {ticker} @ {yes_price_cents}¢ "
-            f"(signal {price:.3f}) order={order_id[:12]} TTL={LIMIT_TTL_SECONDS}s "
+            f"(signal {price:.3f}) order={order_id[:12]} TTL={ttl_seconds}s "
             f"trade={trade_id}"
         )
 
@@ -879,7 +907,7 @@ class OrderManager:
         realized = None
         elapsed = 0
         final_status = None
-        while elapsed < LIMIT_TTL_SECONDS:
+        while elapsed < ttl_seconds:
             await asyncio.sleep(LIMIT_TTL_POLL_INTERVAL)
             elapsed += LIMIT_TTL_POLL_INTERVAL
             info = self._client.get_order(order_id)
