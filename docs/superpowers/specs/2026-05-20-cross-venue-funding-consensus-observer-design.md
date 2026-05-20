@@ -314,22 +314,36 @@ features JSON).
   placeholder `"yes"`). Add post-5/27 if divergence events show
   consistent followups.
 
-## Open question (RESOLVED 2026-05-20)
+## Open question (RESOLVED 2026-05-20 evening)
 
-All three venues' BTC/ETH default-product funding rates verified 8h-native:
+**Venue selection swap (commit f9c1c17):** Bybit replaced by Gate.io +
+MEXC because **Bybit is permanently geo-blocked from AWS us-east-2**
+(CloudFront HTTP 403) and so is Binance Futures fapi (HTTP 451). Initial
+deploy with Bybit produced lifetime n=0 cross_venue_funding_consensus
+fires.
+
+All four production venues' BTC/ETH default-product funding rates verified
+8h-native:
 - **Deribit** BTC/ETH-PERPETUAL: `funding_8h` field, explicit in payload.
 - **OKX** BTC/ETH-USDT-SWAP: derived from live API response
-  `nextFundingTime - fundingTime = 28,800,000 ms = 8h` (verified via
-  `curl https://www.okx.com/api/v5/public/funding-rate?instId=BTC-USDT-SWAP`).
-- **Bybit** BTCUSDT/ETHUSDT linear: docs state `fundingInterval = 480 min`
-  and `fundingIntervalHour = "8"` for these symbols.
+  `nextFundingTime - fundingTime = 28,800,000 ms = 8h`.
+- **Gate.io** BTC/ETH USDT perp `/api/v4/futures/usdt/contracts/{asset}_USDT`:
+  `funding_interval = 28800 sec = 8h` (explicit in payload).
+- **MEXC** BTC/ETH USDT perp `/api/v1/contract/funding_rate/{asset}_USDT`:
+  `collectCycle = 8` hours (explicit in payload).
 
-No normalization scalar required. Comments in `_parse_okx` and `_parse_bybit`
-record the verification date and source.
+No normalization scalar required. Comments in `_parse_okx` / `_parse_gate` /
+`_parse_mexc` record the verification date and source. Live snapshot
+2026-05-20 22:25 UTC BTC perp: Deribit 2.4e-05, OKX 3.9e-05, Gate 7.0e-05,
+MEXC 2.6e-05 — all 4 reading similar values, independent signals.
 
-Re-verify if Bybit/OKX ever expand to altcoin perps that use 4h or 2h
-intervals — the parser would silently treat those as 8h-native and
-distort cross-venue comparisons.
+VENUES = `("deribit", "okx", "gate", "mexc")`. `MIN_VENUES=2` preserved
+— 4-venue mode means 2-venue drop-out is non-blocking.
+
+Re-verify if any venue ever expands to altcoin perps that use 4h or 2h
+intervals (some non-USDT pairs already do on OKX/Bybit/MEXC) — the parser
+would silently treat those as 8h-native and distort cross-venue
+comparisons. Our universe is BTC/ETH USDT only → no risk today.
 
 ## Sequencing note
 
