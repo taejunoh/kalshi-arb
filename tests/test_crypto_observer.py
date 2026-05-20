@@ -369,6 +369,17 @@ def test_open_widening_fires_within_age_window():
         "B89700", "B89750", "B89800"}
 
 
+def test_open_widening_fires_on_t_legs():
+    """T-cumulative legs (daily contracts) use same gates as B."""
+    obs = OpenWideningObserver()
+    # Spot 89750. T-strike at 90250 (~0.56% above, within 1% radius). ya=0.30.
+    t_legs = [_t(90250, ya=0.30, yb=0.25)]
+    ctx = _ctx(t_legs=t_legs, open_s=300.0)
+    sigs = obs.evaluate(ctx)
+    assert len(sigs) == 1
+    assert sigs[0].features["kind"] == "cumulative"
+
+
 def test_open_widening_skips_after_window():
     obs = OpenWideningObserver()
     legs = [_b(89750, 0.50, 0.48)]
@@ -444,6 +455,23 @@ def test_bid_imbalance_skips_when_balanced():
     legs = [_b(89750, 0.50, 0.48,
                yb_size=200, nb_size=200, ya_size=200, na_size=200)]
     assert obs.evaluate(_ctx(b_legs=legs, close_s=300.0)) == []
+
+
+def test_bid_imbalance_fires_on_t_legs():
+    """T-cumulative legs work same as B — depth ratio is leg-shape agnostic."""
+    obs = BidImbalanceObserver()
+    # Construct T-leg directly with imbalanced depth (helper defaults are balanced).
+    t_leg = Leg(
+        ticker="KXBTCD-26MAY1310-T89750.0",
+        kind="cumulative", threshold=89750.0,
+        ya=0.50, yb=0.48, na=0.52, nb=0.50,
+        ya_size=50, yb_size=400, na_size=50, nb_size=100,
+        liquidity=200.0, raw={},
+    )
+    sigs = obs.evaluate(_ctx(t_legs=[t_leg], close_s=300.0))
+    assert len(sigs) == 1
+    assert sigs[0].features["kind"] == "cumulative"
+    assert sigs[0].predicted_outcome == "yes"  # yb (400) > nb (100)
 
 
 # ── Flipped observers — OpenNoTouch / AtmHold ──────────────────────

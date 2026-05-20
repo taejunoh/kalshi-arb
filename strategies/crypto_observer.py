@@ -596,7 +596,10 @@ class SpotDriftMomentumObserver(BaseObserver):
 class OpenWideningObserver(BaseObserver):
     """Within 10min of event open, target the ATM-region buckets and
     predict spot stays near ATM (the bucket touches). Tests the
-    well-known event-open spread collapse pattern."""
+    well-known event-open spread collapse pattern.
+
+    Iterates both b_legs (KXBTC/KXETH bucketed) and t_legs (KXBTCD/KXETHD/
+    KXXRP cumulative). 'kind' feature lets post-hoc analysis slice."""
     name = "open_widening"
 
     def evaluate(self, ctx: EventContext) -> list[Signal]:
@@ -606,7 +609,7 @@ class OpenWideningObserver(BaseObserver):
             return []
         radius = OPEN_WIDENING_BUCKET_RADIUS_PCT * ctx.spot
         out: list[Signal] = []
-        for leg in ctx.b_legs:
+        for leg in (*ctx.b_legs, *ctx.t_legs):
             if abs(leg.threshold - ctx.spot) > radius:
                 continue
             if leg.ya <= 0 or leg.ya >= 1:
@@ -617,7 +620,8 @@ class OpenWideningObserver(BaseObserver):
                 predicted_outcome="yes",
                 features={"ya": leg.ya, "yb": leg.yb,
                           "strike": leg.threshold, "spot": ctx.spot,
-                          "open_age_s": round(ctx.open_time_secs, 1)},
+                          "open_age_s": round(ctx.open_time_secs, 1),
+                          "kind": leg.kind},
             ))
         return out
 
@@ -686,7 +690,10 @@ class BidImbalanceObserver(BaseObserver):
     """Top-of-book size imbalance near close. If (yb_size + nb_size) /
     (ya_size + na_size) ≥ 3, predict YES will resolve YES (assuming
     bids represent stronger conviction than asks — testable hypothesis,
-    could go either way)."""
+    could go either way).
+
+    Iterates both b_legs and t_legs — depth ratio thesis is leg-shape
+    agnostic. 'kind' feature lets post-hoc analysis slice."""
     name = "bid_imbalance"
 
     def evaluate(self, ctx: EventContext) -> list[Signal]:
@@ -695,7 +702,7 @@ class BidImbalanceObserver(BaseObserver):
         if ctx.close_time_secs > BID_IMBALANCE_MTS_MAX_S:
             return []
         out: list[Signal] = []
-        for leg in ctx.b_legs:
+        for leg in (*ctx.b_legs, *ctx.t_legs):
             bid_total = leg.yb_size + leg.nb_size
             ask_total = leg.ya_size + leg.na_size
             if bid_total < 50 or ask_total <= 0:
@@ -715,7 +722,8 @@ class BidImbalanceObserver(BaseObserver):
                           "ratio": round(ratio, 2),
                           "ya": leg.ya, "na": leg.na,
                           "spot": ctx.spot, "strike": leg.threshold,
-                          "mts_s": round(ctx.close_time_secs, 1)},
+                          "mts_s": round(ctx.close_time_secs, 1),
+                          "kind": leg.kind},
             ))
         return out
 
