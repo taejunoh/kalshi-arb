@@ -83,10 +83,11 @@ async def backfill(apply: bool):
         if intended_count <= 0:
             continue
         new_size = round(intended_count * realized, 2)
-        # Infer result from existing PnL sign:
-        #   pnl > 0 → won → result == direction
-        #   pnl <= 0 → lost → result != direction
-        won = old_pnl > 0
+        # Infer result from existing PnL. Cannot use `pnl > 0` alone — a deep
+        # tail NO @ $0.95 win nets ~$0 (size × 0.05/0.95 - fee ≈ 0) yet is a
+        # WIN. calculate_pnl returns -size_usdc on loss, so use distance from
+        # the loss baseline: if pnl ≈ -size, the trade lost; otherwise it won.
+        won = abs(old_pnl + old_size) > 1.0
         result = direction if won else ("no" if direction == "yes" else "yes")
         new_pnl = _calculate_pnl(direction, realized, new_size, fee, result)
         delta_pnl = round(new_pnl - old_pnl, 2)
