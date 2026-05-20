@@ -504,6 +504,31 @@ class Database:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
+    async def get_last_trade_for_ticker(
+        self, strategy: str, market_id: str,
+    ) -> Optional[dict]:
+        """Return the most recent non-cancelled trade for (strategy, ticker).
+
+        Used by Phase 1 traders for DB-persisted per-ticker cooldown:
+        in-memory `_processed` set doesn't survive bot restarts, so the
+        same ticker at the same price can re-fire from different bot
+        processes within seconds. DB-side check survives restarts.
+
+        Returns None if no prior trade exists. Excludes cancelled/failed
+        so an aborted placing-row doesn't block legitimate re-entry.
+        """
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """SELECT timestamp, price FROM trades
+                   WHERE strategy = ? AND market_id = ?
+                     AND status NOT IN ('cancelled', 'failed')
+                   ORDER BY timestamp DESC LIMIT 1""",
+                (strategy, market_id),
+            )
+            row = await cur.fetchone()
+            return dict(row) if row is not None else None
+
     async def has_existing_trade(self, strategy: str, market_id: str) -> bool:
         """Return True if a non-cancelled trade already exists for
         (strategy, market_id). Used by order_manager as a DB-side dedup

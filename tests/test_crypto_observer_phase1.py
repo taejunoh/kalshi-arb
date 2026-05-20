@@ -53,6 +53,8 @@ def _cfg():
         CME_BASIS_FADE_MIN_YA=0.17,
         CME_BASIS_FADE_MAX_YA=0.42,
         CME_BASIS_FADE_MIN_FIRE_CONTRACTS=3.0,
+        PHASE1_TICKER_COOLDOWN_S=30.0,
+        PHASE1_TICKER_PRICE_DIFF=0.03,
     )
 
 
@@ -60,12 +62,19 @@ def _now_iso(seconds_ago: float = 0.0) -> str:
     return (datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)).isoformat()
 
 
-def _build_strategy(cls, *, signals=None, market_lookup=None):
+def _build_strategy(cls, *, signals=None, market_lookup=None, last_trade=None):
+    """Construct a Phase 1 strategy with mocked OM/DB/scanner.
+
+    `last_trade`: dict with keys {timestamp, price} or None. Returned by
+    db.get_last_trade_for_ticker — controls the per-ticker cooldown gate
+    (2026-05-20). Default None = no prior fire, cooldown inactive.
+    """
     om = MagicMock()
     om.is_circuit_breaker_active = MagicMock(return_value=False)
     om.market_order = AsyncMock()
     db = MagicMock()
     db.fetch_recent_crypto_observer_signals = AsyncMock(return_value=signals or [])
+    db.get_last_trade_for_ticker = AsyncMock(return_value=last_trade)
     om._db = db
     scanner = MagicMock()
     scanner.get_market = MagicMock(side_effect=market_lookup or (lambda t: None))
@@ -923,3 +932,149 @@ async def test_cme_basis_fade_clamps_size_when_book_thin():
     assert om.market_order.await_count == 1
     args = om.market_order.await_args.kwargs
     assert args["size_usdc"] == pytest.approx(20.0 * 0.74)
+
+
+# ── Per-ticker cooldown (2026-05-20) ────────────────────────────────
+#
+# DB-persisted cooldown gate added to _Phase1Base after the atm_hold_v1
+# 5/20 incident: 3 fires on the same KXBTC ticker at the same $0.49 within
+# 4 minutes from 3 different bot PIDs (in-memory `_processed` set wiped on
+# each restart). Promo n=11 paper cohort audit confirmed legitimate multi-
+# fire cascades always moved ya by ≥7c, so blocking only when both the
+# time gap is <PHASE1_TICKER_COOLDOWN_S AND the price gap is
+# <PHASE1_TICKER_PRICE_DIFF preserves edge while killing pollution.
+# See [[atm_hold_v1_promo_cohort_audit_2026-05-20]].
+
+
+@pytest.mark.asyncio
+async def test_cooldown_blocks_same_price_within_window():
+    """Same ticker, same price (.49 → .49), 10s gap: BLOCK.
+    Mirrors the 15:55:06 → 15:55:33 atm_hold_v1 restart-pollution case."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2012-B77450",
+           "predicted_outcome": "yes"}
+    markets = {"KXBTC-26MAY2012-B77450": {
+        "yes_ask_dollars": 0.49, "no_ask_dollars": 0.50,
+    }}
+    last = {"timestamp": _now_iso(10.0), "price": 0.49}
+    s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
+                            market_lookup=markets.get, last_trade=last)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_cooldown_allows_price_cascade_within_window():
+    """Same ticker, ya cascade (.49 → .57, 8c gap), 10s gap: ALLOW.
+    Mirrors promo paper 1415-B81550 case (.58 → .51, both wins) — the
+    strategy's edge is independent observations as ya moves through the band."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2001-B76750",
+           "predicted_outcome": "yes"}
+    markets = {"KXBTC-26MAY2001-B76750": {
+        "yes_ask_dollars": 0.57, "no_ask_dollars": 0.42,
+    }}
+    last = {"timestamp": _now_iso(10.0), "price": 0.49}
+    s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
+                            market_lookup=markets.get, last_trade=last)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["price"] == 0.57
+
+
+@pytest.mark.asyncio
+async def test_cooldown_expires_after_window():
+    """Same ticker, same price, but 60s gap (>30s window): ALLOW."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2012-B77450",
+           "predicted_outcome": "yes"}
+    markets = {"KXBTC-26MAY2012-B77450": {
+        "yes_ask_dollars": 0.49, "no_ask_dollars": 0.50,
+    }}
+    last = {"timestamp": _now_iso(60.0), "price": 0.49}
+    s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
+                            market_lookup=markets.get, last_trade=last)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_cooldown_no_prior_trade_allows():
+    """First-ever fire on this ticker: no DB row → ALLOW."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2001-B76750",
+           "predicted_outcome": "yes"}
+    markets = {"KXBTC-26MAY2001-B76750": {
+        "yes_ask_dollars": 0.50, "no_ask_dollars": 0.49,
+    }}
+    s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
+                            market_lookup=markets.get, last_trade=None)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_cooldown_survives_restart_via_db():
+    """Restart pollution defense — fresh strategy instance (in-memory
+    `_processed` empty) but DB still has the previous fire. New process
+    must still honor the cooldown."""
+    sig = {"id": 9001, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2012-B77450",
+           "predicted_outcome": "yes"}
+    markets = {"KXBTC-26MAY2012-B77450": {
+        "yes_ask_dollars": 0.49, "no_ask_dollars": 0.50,
+    }}
+    # Simulate: previous PID fired at 0.49 27s ago. Fresh instance starts.
+    last = {"timestamp": _now_iso(27.0), "price": 0.49}
+    s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
+                            market_lookup=markets.get, last_trade=last)
+    assert s._processed == set()  # fresh in-memory state, as on restart
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_cooldown_applies_to_deribit_tail_fade():
+    """Cooldown is shared by all _Phase1Base subclasses, verify on
+    deribit_tail_fade_v1 too (DB-side restart-pollution defense)."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXETH-26MAY1311-B2220",
+           "predicted_outcome": "no"}
+    markets = {"KXETH-26MAY1311-B2220": {
+        "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
+        "yes_bid_size_fp": 50.0,
+    }}
+    last = {"timestamp": _now_iso(5.0), "price": 0.85}
+    s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get, last_trade=last)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_cooldown_applies_to_open_no_touch():
+    """OpenNoTouchV1 has its own scan_and_execute (event-cap based);
+    cooldown must still hook in to defend against same-event re-fire
+    after restart."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1311-B89000",
+           "predicted_outcome": "no", "event_key": "BTC-26MAY1311"}
+    markets = {"KXBTC-26MAY1311-B89000": {
+        "no_ask_dollars": 0.62,
+    }}
+    # ya = 1 - 0.62 = 0.38, within [0.30, 0.45]. Prior fire at no_ask=0.62 5s ago.
+    last = {"timestamp": _now_iso(5.0), "price": 0.62}
+    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=[sig],
+                            market_lookup=markets.get, last_trade=last)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_cooldown_db_error_does_not_block_fire():
+    """Defensive: if DB query raises, log + allow (don't silently kill
+    the strategy on transient sqlite errors)."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2001-B76750",
+           "predicted_outcome": "yes"}
+    markets = {"KXBTC-26MAY2001-B76750": {
+        "yes_ask_dollars": 0.50, "no_ask_dollars": 0.49,
+    }}
+    s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    om._db.get_last_trade_for_ticker = AsyncMock(side_effect=RuntimeError("db locked"))
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
