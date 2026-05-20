@@ -185,6 +185,7 @@ class DeribitTailFadeV1Strategy(_Phase1Base):
         self.SIZE_USDC = config.DERIBIT_TAIL_FADE_SIZE_USDC
         self._max_ya = config.DERIBIT_TAIL_FADE_MAX_YA
         self._min_ya = config.DERIBIT_TAIL_FADE_MIN_YA
+        self._max_no_ask = config.DERIBIT_TAIL_FADE_MAX_NO_ASK
         self._min_fire_contracts = config.DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS
 
     def _select_side_and_price(self, sig, market):
@@ -197,6 +198,10 @@ class DeribitTailFadeV1Strategy(_Phase1Base):
         # ya band gate — outside [MIN, MAX], the payout math inverts (high
         # end) or signal mis-calibrates (low end). See config comment.
         if ya < self._min_ya or ya > self._max_ya:
+            return None
+        # no_ask cap — high no_ask (>=0.95) zone is net-EV-negative in paper
+        # AND fails Kalshi FOK on thin MM-pulled tail books. See config.
+        if no_ask > self._max_no_ask:
             return None
         # Observer predicts "no" — we BUY NO to express that.
         if sig["predicted_outcome"] != "no":
@@ -444,6 +449,7 @@ class LateCloseTailV1Strategy(_Phase1Base):
         self.SIZE_USDC = config.LATE_CLOSE_TAIL_SIZE_USDC
         self._min_ya = config.LATE_CLOSE_TAIL_MIN_YA
         self._max_ya = config.LATE_CLOSE_TAIL_MAX_YA
+        self._max_no_ask = config.LATE_CLOSE_TAIL_MAX_NO_ASK
         self._min_fire_contracts = config.LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS
 
     def _select_side_and_price(self, sig, market):
@@ -456,6 +462,8 @@ class LateCloseTailV1Strategy(_Phase1Base):
         if no_ask <= 0 or no_ask >= 1:
             return None
         if ya < self._min_ya or ya > self._max_ya:
+            return None
+        if no_ask > self._max_no_ask:
             return None
         return ("no", no_ask)
 
@@ -493,6 +501,7 @@ class DeribitAtmFadeV1Strategy(_Phase1Base):
         self.SIZE_USDC = config.DERIBIT_ATM_FADE_SIZE_USDC
         self._min_ya = config.DERIBIT_ATM_FADE_MIN_YA
         self._max_ya = config.DERIBIT_ATM_FADE_MAX_YA
+        self._max_no_ask = config.DERIBIT_ATM_FADE_MAX_NO_ASK
         self._min_fire_contracts = config.DERIBIT_ATM_FADE_MIN_FIRE_CONTRACTS
 
     def _select_side_and_price(self, sig, market):
@@ -505,6 +514,8 @@ class DeribitAtmFadeV1Strategy(_Phase1Base):
         if no_ask <= 0 or no_ask >= 1:
             return None
         if ya < self._min_ya or ya > self._max_ya:
+            return None
+        if no_ask > self._max_no_ask:
             return None
         return ("no", no_ask)
 

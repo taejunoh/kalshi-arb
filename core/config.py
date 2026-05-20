@@ -182,6 +182,20 @@ class Config:
         # confirms end-to-end correctness, raise back to 3 to avoid
         # dust trades polluting analytics.
         self.DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS = float(os.getenv("DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS", "1"))
+        # 2026-05-20 MAX_NO_ASK = 0.95. Paper 14d bucket analysis (n=537):
+        #   no_ask <0.85    n=130  +$2.04/fire  total +$266
+        #   no_ask 0.85-0.90 n=191 +$1.51/fire  total +$289
+        #   no_ask 0.90-0.93 n= 42 +$0.58/fire  total  +$24
+        #   no_ask 0.93-0.95 n= 11 +$0.03/fire  total +$0.30  (BE)
+        #   no_ask 0.95-0.97 n= 15 +$0.01/fire  total +$0.21  (BE, 47% WR)
+        #   no_ask >=0.97   n=148 -$0.13/fire  total -$18.58  ← net loss
+        # MIN_YA=0.08 was supposed to handle this, but ya gates on yes_ask
+        # which can decouple from no_ask under wide crypto spreads (e.g.,
+        # yes_ask=0.10 + no_ask=0.98 = 8c spread allowed). All 5 live FOK
+        # rejects (5/19 22:54-22:58 KXETH-26MAY1919-B2090) were at 0.98 —
+        # the same band that is net-EV-negative even in paper. Cap targets
+        # both fill-rate and EV simultaneously.
+        self.DERIBIT_TAIL_FADE_MAX_NO_ASK = float(os.getenv("DERIBIT_TAIL_FADE_MAX_NO_ASK", "0.95"))
         # ─ bid_imbalance_v1: original direction (BUY pred side at ask).
         #   5/14 promotion used n=26 cohort @ 69% WR — fluke. Full Phase 0
         #   cohort 2026-05-15 (n=266) showed 36% WR overall; paper trader
@@ -239,6 +253,10 @@ class Config:
         # whose effective contract count would be below this threshold to
         # avoid dust trades.
         self.LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS = float(os.getenv("LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS", "1"))
+        # Same no_ask cap as deribit_tail_fade_v1 (2026-05-20). Sister BUY-NO
+        # strategy on the same Kalshi crypto family; >=0.97 zone has the same
+        # adverse-selection / FOK profile.
+        self.LATE_CLOSE_TAIL_MAX_NO_ASK = float(os.getenv("LATE_CLOSE_TAIL_MAX_NO_ASK", "0.95"))
         # ─ deribit_atm_fade_v1: ATM-bucket parallel of deribit_tail_fade.
         #   New hypothesis — Kalshi ATM may be overpriced vs Deribit-IV
         #   lognormal (most existing alpha is in tails). BUY NO at no_ask
@@ -248,6 +266,11 @@ class Config:
         self.DERIBIT_ATM_FADE_MIN_YA = float(os.getenv("DERIBIT_ATM_FADE_MIN_YA", "0.30"))
         self.DERIBIT_ATM_FADE_MAX_YA = float(os.getenv("DERIBIT_ATM_FADE_MAX_YA", "0.70"))
         self.DERIBIT_ATM_FADE_MIN_FIRE_CONTRACTS = float(os.getenv("DERIBIT_ATM_FADE_MIN_FIRE_CONTRACTS", "1"))
+        # Same no_ask cap as deribit_tail_fade_v1 (2026-05-20). ATM band
+        # rarely sees no_ask>=0.95 by design (ya 0.30-0.70 → no_ask <=0.70
+        # with tight spreads) but cap defends against wide-spread degenerate
+        # cells.
+        self.DERIBIT_ATM_FADE_MAX_NO_ASK = float(os.getenv("DERIBIT_ATM_FADE_MAX_NO_ASK", "0.95"))
 
     @property
     def is_paper_mode(self) -> bool:
