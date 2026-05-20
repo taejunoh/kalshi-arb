@@ -1154,3 +1154,30 @@ def test_cross_venue_funding_consensus_fires_on_agreement():
     # Strike must be above spot for positive-funding fade (fade upside)
     assert sig.features["side"] == "fade_upside"
     assert sig.features["strike"] > sig.features["spot"]
+
+
+def test_cross_venue_funding_divergence_fires():
+    """One venue +0.0008, another -0.0003 → spread 0.0011 ≥ 0.0005,
+    divergence event-level signal."""
+    ctx = _ctx_for_funding(
+        funding_by_venue={"deribit": 0.0008, "okx": -0.0003, "bybit": 0.0001},
+        spot=70_000.0, close_s=300.0,
+        b_legs=[_b(69_500, ya=0.45, yb=0.43, yb_size=200),
+                _b(70_000, ya=0.50, yb=0.48, yb_size=200),
+                _b(70_500, ya=0.45, yb=0.43, yb_size=200)],
+    )
+    sigs = CrossVenueFundingConsensusObserver().evaluate(ctx)
+
+    div_sigs = [s for s in sigs if s.features["kind"] == "divergence"]
+    assert len(div_sigs) == 1, (
+        f"expected exactly 1 divergence signal, got {len(div_sigs)}: {sigs}"
+    )
+    sig = div_sigs[0]
+    # spread = 0.0008 - (-0.0003) = 0.0011
+    assert sig.features["spread"] == pytest.approx(0.0011, abs=1e-6)
+    # consensus_sign = 0 (not all agree)
+    assert sig.features["consensus_sign"] == 0
+    # Divergence anchors to ATM bucket (70000)
+    assert sig.market_id.endswith("B70000")
+    # No consensus_fade in the same evaluation (signs disagree)
+    assert not any(s.features["kind"] == "consensus_fade" for s in sigs)
