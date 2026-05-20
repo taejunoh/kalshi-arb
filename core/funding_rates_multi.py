@@ -68,9 +68,10 @@ def _parse_deribit(payload: dict) -> Optional[float]:
 
 
 def _parse_okx(payload: dict) -> Optional[float]:
-    # OKX V5 returns data[0].fundingRate as a string. fundingRate is
-    # the rate for the next funding interval (8h for USDT-SWAP, the
-    # default product). Treat as already-8h.
+    # OKX V5 BTC-USDT-SWAP: fundingRate is per-interval (8h). Verified
+    # 2026-05-20 from live API: nextFundingTime - fundingTime = 28_800_000ms.
+    # Same instType="SWAP" applies to ETH-USDT-SWAP. No 8h normalization
+    # required.
     data = payload.get("data")
     if not isinstance(data, list) or not data:
         return None
@@ -81,8 +82,10 @@ def _parse_okx(payload: dict) -> Optional[float]:
 
 
 def _parse_bybit(payload: dict) -> Optional[float]:
-    # Bybit V5 returns result.list[0].fundingRate as a string. Linear
-    # USDT perpetuals fund every 8h.
+    # Bybit V5 linear BTCUSDT/ETHUSDT: fundingRate is per-interval (8h).
+    # Verified 2026-05-20 from docs: instruments-info returns
+    # fundingInterval=480 min = 8h and fundingIntervalHour="8" for these
+    # symbols. No 8h normalization required.
     result = payload.get("result")
     if not isinstance(result, dict):
         return None

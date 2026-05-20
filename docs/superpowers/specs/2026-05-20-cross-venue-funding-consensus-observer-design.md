@@ -314,17 +314,22 @@ features JSON).
   placeholder `"yes"`). Add post-5/27 if divergence events show
   consistent followups.
 
-## Open question (defer)
+## Open question (RESOLVED 2026-05-20)
 
-OKX and Bybit return per-funding-period rates (typically 4h or 8h
-depending on venue/period). Need to verify the period and normalize
-correctly. Initial implementation assumes:
-- Deribit: 8h native
-- OKX: 8h native (check API docs at deploy time)
-- Bybit: 8h native (check API docs at deploy time)
+All three venues' BTC/ETH default-product funding rates verified 8h-native:
+- **Deribit** BTC/ETH-PERPETUAL: `funding_8h` field, explicit in payload.
+- **OKX** BTC/ETH-USDT-SWAP: derived from live API response
+  `nextFundingTime - fundingTime = 28,800,000 ms = 8h` (verified via
+  `curl https://www.okx.com/api/v5/public/funding-rate?instId=BTC-USDT-SWAP`).
+- **Bybit** BTCUSDT/ETHUSDT linear: docs state `fundingInterval = 480 min`
+  and `fundingIntervalHour = "8"` for these symbols.
 
-Add a venue-specific normalizer if any venue differs. Document the
-verification in implementation plan.
+No normalization scalar required. Comments in `_parse_okx` and `_parse_bybit`
+record the verification date and source.
+
+Re-verify if Bybit/OKX ever expand to altcoin perps that use 4h or 2h
+intervals — the parser would silently treat those as 8h-native and
+distort cross-venue comparisons.
 
 ## Sequencing note
 
