@@ -44,7 +44,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 CRIT_YESTERDAY = -30.0
 CRIT_7D = -100.0
-CRIT_30D = -300.0
+CRIT_30D_ABS = -300.0          # big absolute loss
+CRIT_30D_ROI_PCT = -15.0       # OR persistent loser
+CRIT_30D_ROI_MIN_N = 10        # only apply ROI criterion at this n+
 WARN_LIVE_PAPER_ROI_GAP_PP = 5.0  # percentage points
 MIN_N_FOR_COMPARISON = 20
 
@@ -99,11 +101,23 @@ async def audit(send: bool):
     for strat, r in rows.items():
         flags: list[str] = []
         if r["live_1d_pnl"] < CRIT_YESTERDAY:
-            flags.append(f"1d=${r['live_1d_pnl']:+.0f} (<${CRIT_YESTERDAY:+.0f})")
+            flags.append(f"1d=${r['live_1d_pnl']:+.0f}")
         if r["live_7d_pnl"] < CRIT_7D:
-            flags.append(f"7d=${r['live_7d_pnl']:+.0f} (<${CRIT_7D:+.0f})")
-        if r["live_30d_pnl"] < CRIT_30D:
-            flags.append(f"30d=${r['live_30d_pnl']:+.0f} (<${CRIT_30D:+.0f})")
+            flags.append(f"7d=${r['live_7d_pnl']:+.0f}")
+        live_30d_roi = (
+            r["live_30d_pnl"] / r["live_30d_stake"] * 100
+            if r["live_30d_stake"] > 0 else 0
+        )
+        if r["live_30d_pnl"] < CRIT_30D_ABS:
+            flags.append(f"30d=${r['live_30d_pnl']:+.0f}")
+        elif (
+            r["live_30d_n"] >= CRIT_30D_ROI_MIN_N
+            and live_30d_roi < CRIT_30D_ROI_PCT
+        ):
+            flags.append(
+                f"30d_ROI={live_30d_roi:+.1f}% (n={r['live_30d_n']}, "
+                f"pnl=${r['live_30d_pnl']:+.0f})"
+            )
         if flags:
             critical.append((strat, " ".join(flags)))
             continue
@@ -153,8 +167,9 @@ async def audit(send: bool):
 
     lines.append("")
     lines.append(
-        f"<i>Thresholds: 1d<${CRIT_YESTERDAY:+.0f}, 7d<${CRIT_7D:+.0f}, "
-        f"30d<${CRIT_30D:+.0f}, LIVE-paper gap >{WARN_LIVE_PAPER_ROI_GAP_PP}pp.</i>"
+        f"<i>Thresholds: 1d&lt;${CRIT_YESTERDAY:+.0f}, 7d&lt;${CRIT_7D:+.0f}, "
+        f"30d&lt;${CRIT_30D_ABS:+.0f} or 30d ROI&lt;{CRIT_30D_ROI_PCT}% (n≥{CRIT_30D_ROI_MIN_N}), "
+        f"LIVE-paper gap >{WARN_LIVE_PAPER_ROI_GAP_PP}pp.</i>"
     )
 
     msg = "\n".join(lines)
