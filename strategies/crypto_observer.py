@@ -60,6 +60,21 @@ LATE_CLOSE_TAIL_YA_MIN = 0.05
 LATE_CLOSE_TAIL_YA_MAX = 0.30
 LATE_CLOSE_TAIL_YB_SIZE_MIN = 30
 
+# mid_otm_tail (2026-05-20): wider-mts sibling of late_close_tail.
+# Tests the same OTM-no-touch thesis at 10 min - 2 hr to close instead
+# of inside 10 min. Motivation: late_close_tail's natural fire zone is
+# na ~0.95-0.98 (market has converged), where Kalshi fee = (1-na) per
+# contract eats 100% of gross profit. Same thesis fired earlier should
+# see na in the 0.85-0.93 fee-positive zone where (1-na) > $0.07 fee
+# floor. Phase 0 data-collection only — no Phase 1 trader until WR is
+# measured per (mts, na) bucket.
+MID_OTM_TAIL_MTS_MIN_S = 600          # exclude late_close_tail window
+MID_OTM_TAIL_MTS_MAX_S = 7200         # ≤2 hr to close
+MID_OTM_TAIL_DIST_MIN_PCT = 0.005
+MID_OTM_TAIL_YA_MIN = 0.05
+MID_OTM_TAIL_YA_MAX = 0.30
+MID_OTM_TAIL_YB_SIZE_MIN = 30
+
 ATM_FADE_MTS_MAX_S = 300
 ATM_FADE_BUCKET_RADIUS = 0.25         # |bucket - spot| ≤ 0.25 × grid
 ATM_FADE_YA_MIN = 0.40
@@ -735,6 +750,54 @@ class LateCloseTailObserver(BaseObserver):
         return out
 
 
+# ── 9b. mid_otm_tail (2026-05-20) ──────────────────────────────────
+
+
+class MidOtmTailObserver(BaseObserver):
+    """Wider-time sibling of late_close_tail covering the fee-positive na band.
+
+    Same OTM-no-touch thesis as late_close_tail, observed earlier in the
+    contract (10 min - 2 hr to close) before the market converges to
+    na ~0.98. Kalshi fee is capped at (1-na) per contract, so at na ≥0.93
+    fees eat 100% of gross profit per win — late_close_tail's natural fire
+    zone is structurally net-zero even at 100% WR. By observing the same
+    setup earlier, we capture the same time-decay effect at lower na where
+    per-win net is materially positive. Phase 0 only — Phase 1 promotion
+    requires bucket-level WR analysis after ≥1 week of data."""
+    name = "mid_otm_tail"
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        if ctx.close_time_secs is None:
+            return []
+        if ctx.close_time_secs <= MID_OTM_TAIL_MTS_MIN_S:
+            return []
+        if ctx.close_time_secs > MID_OTM_TAIL_MTS_MAX_S:
+            return []
+        out: list[Signal] = []
+        for leg in ctx.b_legs:
+            if leg.ya < MID_OTM_TAIL_YA_MIN or leg.ya > MID_OTM_TAIL_YA_MAX:
+                continue
+            if leg.yb_size < MID_OTM_TAIL_YB_SIZE_MIN:
+                continue
+            dist_pct = abs(leg.threshold - ctx.spot) / ctx.spot
+            if dist_pct < MID_OTM_TAIL_DIST_MIN_PCT:
+                continue
+            out.append(Signal(
+                observer=self.name, series=ctx.series,
+                event_key=ctx.event_key, market_id=leg.ticker,
+                predicted_outcome="no",
+                features={
+                    "ya": leg.ya, "yb": leg.yb,
+                    "na": leg.na,
+                    "yb_size": leg.yb_size,
+                    "spot": ctx.spot, "strike": leg.threshold,
+                    "dist_pct": round(dist_pct, 5),
+                    "mts_s": round(ctx.close_time_secs, 1),
+                },
+            ))
+        return out
+
+
 # ── 10. deribit_atm_skew ───────────────────────────────────────────
 
 
@@ -1108,6 +1171,8 @@ OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
     OpenNoTouchObserver, AtmHoldObserver, BidImbalanceFadeObserver,
     # 2026-05-18 additions: gap-fill / new-hypothesis observers
     LateCloseTailObserver, DeribitAtmSkewObserver,
+    # 2026-05-20: fee-positive zone explorer (paired with late_close_tail)
+    MidOtmTailObserver,
     # 2026-05-19 Phase 0 additions: cross-venue Deribit signals
     FundingRateFadeObserver, VolSkewFadeObserver,
     # 2026-05-19 Phase 0: external-data signals (yfinance ETF + CME)

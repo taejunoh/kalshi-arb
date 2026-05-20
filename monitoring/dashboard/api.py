@@ -1444,6 +1444,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "bid_imbalance",
             "open_no_touch", "atm_hold", "bid_imbalance_fade",
             "late_close_tail", "deribit_atm_skew",
+            "mid_otm_tail",
             # Direct traders (write Phase 0 signals under their own observer name).
             "crypto_fair_value", "crypto_fair_value_mid_v1",
         )

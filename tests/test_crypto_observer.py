@@ -15,6 +15,7 @@ from strategies.crypto_observer import (
     OpenWideningObserver, DeribitTailSkewObserver, BidImbalanceObserver,
     OpenNoTouchObserver, AtmHoldObserver, BidImbalanceFadeObserver,
     LateCloseTailObserver, DeribitAtmSkewObserver,
+    MidOtmTailObserver,
     _parse_suffix_threshold, _suffix_kind, _event_key, _build_leg,
     _lognormal_p_above, _flip,
 )
@@ -574,6 +575,59 @@ def test_late_close_tail_skips_outside_close_window():
     obs = LateCloseTailObserver()
     legs = [_b(90250, ya=0.15, yb=0.13, yb_size=50)]
     assert obs.evaluate(_ctx(b_legs=legs, close_s=1200.0)) == []
+
+
+# ── 9b. MidOtmTail (2026-05-20) ────────────────────────────────────
+
+
+def test_mid_otm_tail_fires_in_wider_window():
+    """Same gates as late_close_tail but mts_s ∈ (600, 7200]."""
+    obs = MidOtmTailObserver()
+    legs = [_b(90250, ya=0.15, yb=0.13, yb_size=50)]
+    sigs = obs.evaluate(_ctx(b_legs=legs, close_s=1800.0))
+    assert len(sigs) == 1
+    assert sigs[0].predicted_outcome == "no"
+    assert sigs[0].observer == "mid_otm_tail"
+    assert "na" in sigs[0].features
+    assert sigs[0].features["mts_s"] == 1800.0
+
+
+def test_mid_otm_tail_skips_inside_late_close_window():
+    """≤600s is late_close_tail's domain — avoid double-fire."""
+    obs = MidOtmTailObserver()
+    legs = [_b(90250, ya=0.15, yb=0.13, yb_size=50)]
+    assert obs.evaluate(_ctx(b_legs=legs, close_s=400.0)) == []
+
+
+def test_mid_otm_tail_skips_beyond_2h_window():
+    """>2hr to close — events further out have too much path variance."""
+    obs = MidOtmTailObserver()
+    legs = [_b(90250, ya=0.15, yb=0.13, yb_size=50)]
+    assert obs.evaluate(_ctx(b_legs=legs, close_s=8000.0)) == []
+
+
+def test_mid_otm_tail_skips_below_min_ya():
+    obs = MidOtmTailObserver()
+    legs = [_b(90250, ya=0.03, yb=0.02, yb_size=50)]
+    assert obs.evaluate(_ctx(b_legs=legs, close_s=1800.0)) == []
+
+
+def test_mid_otm_tail_skips_above_max_ya():
+    obs = MidOtmTailObserver()
+    legs = [_b(90250, ya=0.40, yb=0.38, yb_size=50)]
+    assert obs.evaluate(_ctx(b_legs=legs, close_s=1800.0)) == []
+
+
+def test_mid_otm_tail_skips_within_dist_floor():
+    obs = MidOtmTailObserver()
+    legs = [_b(89800, ya=0.20, yb=0.18, yb_size=50)]
+    assert obs.evaluate(_ctx(b_legs=legs, close_s=1800.0)) == []
+
+
+def test_mid_otm_tail_skips_inactive_bucket():
+    obs = MidOtmTailObserver()
+    legs = [_b(90250, ya=0.15, yb=0.0, yb_size=0)]
+    assert obs.evaluate(_ctx(b_legs=legs, close_s=1800.0)) == []
 
 
 # ── 10. DeribitAtmSkew (2026-05-18) ────────────────────────────────
