@@ -205,6 +205,16 @@ FUNDING_RATE_MIN_ABS = 0.0003     # ≥0.03% / 8h ≈ ~33% APR (elevated)
 FUNDING_RATE_MTS_MAX_S = 28800    # within 8h of close (one funding cycle)
 FUNDING_RATE_MIN_YA = 0.05
 FUNDING_RATE_MIN_YB_SIZE = 30
+# cross_venue_funding_consensus (2026-05-20): multi-venue agreement /
+# divergence observer. consensus_fade fires when all reporting venues
+# (≥2) agree in direction AND the minimum |rate| ≥ MIN_ABS. divergence
+# fires when max-min spread ≥ DIVERGENCE_MIN (placeholder predicted_outcome
+# pending 5/27 analysis). Phase 0 — no Phase 1 trader yet.
+CROSS_VENUE_FUNDING_MIN_VENUES = 2
+CROSS_VENUE_FUNDING_CONSENSUS_ABS_MIN = 0.0002    # ≥0.02%/8h on agreeing side
+CROSS_VENUE_FUNDING_DIVERGENCE_MIN = 0.0005       # ≥0.05%/8h max-min spread
+CROSS_VENUE_FUNDING_MTS_MAX_S = 7200              # ≤2hr to close
+CROSS_VENUE_FUNDING_MIN_YA = 0.05
 #
 # VOL_SKEW_FADE: put-call IV asymmetry. Sharp put skew = downside fear
 # priced in options market. Phase 0 thesis: extreme skew (|put_IV - call_IV|
@@ -1445,6 +1455,107 @@ class FundingRateFadeObserver(BaseObserver):
                           "side": "fade_upside" if ctx.funding_8h > 0 else "fade_downside",
                           "mts_s": round(ctx.close_time_secs, 1)},
             ))
+        return out
+
+
+class CrossVenueFundingConsensusObserver(BaseObserver):
+    """Phase 0: multi-venue funding agreement / divergence.
+
+    Two output kinds:
+      consensus_fade : All reporting venues (≥ MIN_VENUES) agree on
+                       sign AND min(|rate|) ≥ CONSENSUS_ABS_MIN.
+                       Per-leg signal fading the agreed direction
+                       (positive → fade upside, negative → fade
+                       downside). predicted='no'.
+      divergence     : max-min spread ≥ DIVERGENCE_MIN. One event-level
+                       signal recording the disagreement. predicted='yes'
+                       is a placeholder pending 5/27 analysis of whether
+                       divergences precede a directional move.
+
+    Sibling to FundingRateFadeObserver (Deribit-only). This observer
+    consumes funding_8h_by_venue populated by the scan-tick harness via
+    core.funding_rates_multi.get_all_funding.
+    """
+    name = "cross_venue_funding_consensus"
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        if ctx.close_time_secs is None:
+            return []
+        if ctx.close_time_secs <= 0 or ctx.close_time_secs > CROSS_VENUE_FUNDING_MTS_MAX_S:
+            return []
+        # Filter out None values
+        rates = {v: r for v, r in (ctx.funding_8h_by_venue or {}).items()
+                 if r is not None}
+        if len(rates) < CROSS_VENUE_FUNDING_MIN_VENUES:
+            return []
+
+        values = list(rates.values())
+        signs = [1 if r > 0 else (-1 if r < 0 else 0) for r in values]
+        nonzero_signs = [s for s in signs if s != 0]
+        all_agree = (len(nonzero_signs) == len(signs)
+                     and len(set(nonzero_signs)) == 1)
+        min_abs = min(abs(r) for r in values)
+        spread = max(values) - min(values)
+        consensus_sign = nonzero_signs[0] if all_agree else 0
+
+        # Helpful feature-shared dict for both kinds
+        base_features = {
+            "venues_reporting": sorted(rates.keys()),
+            "funding_deribit": rates.get("deribit"),
+            "funding_okx":     rates.get("okx"),
+            "funding_bybit":   rates.get("bybit"),
+            "min_abs":   round(min_abs, 6),
+            "spread":    round(spread, 6),
+            "consensus_sign": consensus_sign,
+            "spot":      ctx.spot,
+            "mts_s":     round(ctx.close_time_secs, 1),
+        }
+
+        out: list[Signal] = []
+
+        # consensus_fade
+        if all_agree and min_abs >= CROSS_VENUE_FUNDING_CONSENSUS_ABS_MIN:
+            for leg in ctx.b_legs:
+                if leg.ya < CROSS_VENUE_FUNDING_MIN_YA:
+                    continue
+                # consensus_sign > 0 → fade upside → strike must be > spot
+                # consensus_sign < 0 → fade downside → strike must be < spot
+                if consensus_sign > 0 and leg.threshold <= ctx.spot:
+                    continue
+                if consensus_sign < 0 and leg.threshold >= ctx.spot:
+                    continue
+                features = dict(base_features)
+                features["kind"] = "consensus_fade"
+                features["ya"] = round(leg.ya, 4)
+                features["no_ask"] = round(leg.na, 4)
+                features["strike"] = leg.threshold
+                features["side"] = (
+                    "fade_upside" if consensus_sign > 0 else "fade_downside"
+                )
+                out.append(Signal(
+                    observer=self.name, series=ctx.series,
+                    event_key=ctx.event_key, market_id=leg.ticker,
+                    predicted_outcome="no", features=features,
+                ))
+
+        # divergence (one signal per event, anchored to ATM leg if available)
+        if spread >= CROSS_VENUE_FUNDING_DIVERGENCE_MIN:
+            atm_idx = ctx.atm_bucket_index()
+            anchor_leg = ctx.b_legs[atm_idx] if atm_idx is not None else None
+            anchor_ticker = anchor_leg.ticker if anchor_leg is not None else ctx.event_key
+            features = dict(base_features)
+            features["kind"] = "divergence"
+            features["ya"] = round(anchor_leg.ya, 4) if anchor_leg else None
+            features["strike"] = (
+                anchor_leg.threshold if anchor_leg is not None else None
+            )
+            features["side"] = "divergence"
+            out.append(Signal(
+                observer=self.name, series=ctx.series,
+                event_key=ctx.event_key, market_id=anchor_ticker,
+                predicted_outcome="yes", features=features,
+            ))
+
         return out
 
 
