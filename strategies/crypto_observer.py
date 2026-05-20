@@ -154,6 +154,19 @@ LOGNORMAL_FAIR_DEV_MTS_MIN_S = 60      # match deleted cfv MIN_TIME_TO_CLOSE_SEC
 LOGNORMAL_FAIR_DEV_MTS_MAX_S = 7200    # 2h max — beyond this vol assumption breaks
 LOGNORMAL_FAIR_DEV_DEVIATION_MIN = 0.10  # match deleted cfv MIN_DEVIATION
 
+# strike_ladder_literal (2026-05-20): full-ladder + OTM sub-cluster sum-to-1
+# violations. Fills the measurement gap between cluster_sum (ATM±5 narrow)
+# and ladder_crypto (depth-walk gated). No depth filter — pure signal.
+# Spec: docs/superpowers/specs/2026-05-20-strike-ladder-literal-observer-design.md
+LITERAL_MIN_LEGS = 10                    # event needs ≥10 b_legs for full-ladder math
+LITERAL_FULL_SUM_UNDERPRICED_MAX = 0.95  # full-ladder sum_ya ≤ → "yes"
+LITERAL_FULL_SUM_OVERPRICED_MIN = 1.05   # full-ladder sum_yb ≥ → "no"
+LITERAL_OTM_RADIUS = 5                   # OTM cluster radius (matches cluster_sum)
+LITERAL_OTM_DIST_PCT_MIN = 0.10          # OTM center ≥10% from spot
+LITERAL_OTM_DIST_PCT_MAX = 0.30          # OTM center ≤30% from spot
+LITERAL_OTM_CENTER_PCT = 0.15            # target center at ±15% from spot
+LITERAL_MTS_MIN_S = 60                   # exclude settlement_edge window overlap
+
 BID_IMBALANCE_RATIO_MIN = 3.0         # (yb+nb) / (ya+na) sizes ≥ 3
 BID_IMBALANCE_MTS_MAX_S = 600         # ≤ 10 min to close
 BID_IMBALANCE_FADE_MAX_YA = 0.60      # flipped sibling only fires below this ya —
@@ -1065,6 +1078,133 @@ class LognormalFairDevObserver(BaseObserver):
         return out
 
 
+# ── strike_ladder_literal (2026-05-20) ─────────────────────────────
+
+
+class StrikeLadderLiteralObserver(BaseObserver):
+    """Full-ladder + OTM sub-cluster sum-to-1 violation logger.
+
+    Fills the gap between ClusterSumObserver (ATM±5 narrow) and
+    LadderCryptoStrategy (depth-walk gated): no depth filter, scans
+    the entire event's b_legs plus two OTM sub-clusters centered at
+    ±15% from spot.
+
+    Per scan tick per event, emits up to 4 signals — one per `kind`:
+      - full_underpriced  : sum(all ya) ≤ 0.95 → some leg must touch → 'yes'
+      - full_overpriced   : sum(all yb) ≥ 1.05 → most legs resolve NO → 'no'
+      - otm_underpriced   : OTM sub-cluster sum_ya low → 'yes' on lowest-ya leg
+      - otm_overpriced    : OTM sub-cluster sum_yb high → 'no' on highest-yb leg
+
+    Decoupled from ladder_crypto's 6/02 14d gate. Promotion criteria at
+    5/27 + 6/02 per the spec.
+    """
+    name = "strike_ladder_literal"
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        if ctx.close_time_secs is None or ctx.close_time_secs < LITERAL_MTS_MIN_S:
+            return []
+        if len(ctx.b_legs) < LITERAL_MIN_LEGS:
+            return []
+        if ctx.spot is None or ctx.spot <= 0:
+            return []
+        out: list[Signal] = []
+
+        # ─ Full-ladder sum-to-1 ─
+        full_sum_ya = sum(leg.ya for leg in ctx.b_legs)
+        full_sum_yb = sum(leg.yb for leg in ctx.b_legs)
+        if full_sum_ya <= LITERAL_FULL_SUM_UNDERPRICED_MAX:
+            target = min(ctx.b_legs, key=lambda l: l.ya)
+            out.append(self._mk(
+                ctx, target, kind="full_underpriced",
+                predicted_outcome="yes",
+                full_sum_ya=full_sum_ya, full_sum_yb=full_sum_yb,
+                cluster_n=None, cluster_sum_ya=None,
+                cluster_sum_yb=None, cluster_center_dist_pct=None,
+            ))
+        if full_sum_yb >= LITERAL_FULL_SUM_OVERPRICED_MIN:
+            target = max(ctx.b_legs, key=lambda l: l.yb)
+            out.append(self._mk(
+                ctx, target, kind="full_overpriced",
+                predicted_outcome="no",
+                full_sum_ya=full_sum_ya, full_sum_yb=full_sum_yb,
+                cluster_n=None, cluster_sum_ya=None,
+                cluster_sum_yb=None, cluster_center_dist_pct=None,
+            ))
+
+        # ─ OTM sub-cluster scan (±15% center, each side) ─
+        for sign in (+1, -1):
+            target_threshold = (1.0 + sign * LITERAL_OTM_CENTER_PCT) * ctx.spot
+            center_idx = min(
+                range(len(ctx.b_legs)),
+                key=lambda i: abs(ctx.b_legs[i].threshold - target_threshold),
+            )
+            center = ctx.b_legs[center_idx]
+            center_dist = (center.threshold - ctx.spot) / ctx.spot
+            if (abs(center_dist) < LITERAL_OTM_DIST_PCT_MIN
+                    or abs(center_dist) > LITERAL_OTM_DIST_PCT_MAX):
+                continue
+            lo = max(0, center_idx - LITERAL_OTM_RADIUS)
+            hi = min(len(ctx.b_legs), center_idx + LITERAL_OTM_RADIUS + 1)
+            cluster = ctx.b_legs[lo:hi]
+            if len(cluster) < 5:
+                continue
+            cluster_sum_ya = sum(l.ya for l in cluster)
+            cluster_sum_yb = sum(l.yb for l in cluster)
+            if cluster_sum_ya <= LITERAL_FULL_SUM_UNDERPRICED_MAX:
+                target = min(cluster, key=lambda l: l.ya)
+                out.append(self._mk(
+                    ctx, target, kind="otm_underpriced",
+                    predicted_outcome="yes",
+                    full_sum_ya=full_sum_ya, full_sum_yb=full_sum_yb,
+                    cluster_n=len(cluster), cluster_sum_ya=cluster_sum_ya,
+                    cluster_sum_yb=cluster_sum_yb,
+                    cluster_center_dist_pct=center_dist,
+                ))
+            if cluster_sum_yb >= LITERAL_FULL_SUM_OVERPRICED_MIN:
+                target = max(cluster, key=lambda l: l.yb)
+                out.append(self._mk(
+                    ctx, target, kind="otm_overpriced",
+                    predicted_outcome="no",
+                    full_sum_ya=full_sum_ya, full_sum_yb=full_sum_yb,
+                    cluster_n=len(cluster), cluster_sum_ya=cluster_sum_ya,
+                    cluster_sum_yb=cluster_sum_yb,
+                    cluster_center_dist_pct=center_dist,
+                ))
+        return out
+
+    def _mk(self, ctx: EventContext, target: Leg, *,
+            kind: str, predicted_outcome: str,
+            full_sum_ya: float, full_sum_yb: float,
+            cluster_n, cluster_sum_ya, cluster_sum_yb,
+            cluster_center_dist_pct) -> Signal:
+        return Signal(
+            observer=self.name, series=ctx.series,
+            event_key=ctx.event_key, market_id=target.ticker,
+            predicted_outcome=predicted_outcome,
+            features={
+                "kind": kind,
+                "n_legs_total": len(ctx.b_legs),
+                "full_sum_ya": round(full_sum_ya, 3),
+                "full_sum_yb": round(full_sum_yb, 3),
+                "cluster_n": cluster_n,
+                "cluster_sum_ya": (round(cluster_sum_ya, 3)
+                                   if cluster_sum_ya is not None else None),
+                "cluster_sum_yb": (round(cluster_sum_yb, 3)
+                                   if cluster_sum_yb is not None else None),
+                "cluster_center_dist_pct": (round(cluster_center_dist_pct, 4)
+                                            if cluster_center_dist_pct is not None
+                                            else None),
+                "target_ya": target.ya, "target_yb": target.yb,
+                "target_na": target.na,
+                "target_dist_pct": round(
+                    (target.threshold - ctx.spot) / ctx.spot, 4
+                ),
+                "spot": ctx.spot,
+                "mts_s": round(ctx.close_time_secs, 1),
+            },
+        )
+
+
 # ── Flipped-prediction variants (2026-05-14) ───────────────────────
 #
 # Phase 0 cohort analysis on 24h data revealed that two observers' WR
@@ -1383,6 +1523,9 @@ OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
     # 2026-05-20: lognormal fair-value deviation logger (successor to
     # retired crypto_fair_value Phase 0 signal stream).
     LognormalFairDevObserver,
+    # 2026-05-20: full-ladder + OTM sub-cluster sum-to-1 violation logger
+    # (decoupled sibling to cluster_sum / ladder_crypto, no depth gate).
+    StrikeLadderLiteralObserver,
 )
 
 

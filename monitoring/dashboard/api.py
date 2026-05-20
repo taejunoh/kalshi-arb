@@ -1465,6 +1465,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "btc_eth_lead_lag", "cross_asset_corr_break", "kalshi_book_lag",
             # Successor to retired crypto_fair_value Phase 0 logging.
             "lognormal_fair_dev",
+            # Full-ladder + OTM sub-cluster sum-to-1 (decoupled from ladder_crypto 6/02).
+            "strike_ladder_literal",
             # Historical (retired strategies; rows pre-2026-05-20 may still match).
             "crypto_fair_value", "crypto_fair_value_mid_v1",
         )
