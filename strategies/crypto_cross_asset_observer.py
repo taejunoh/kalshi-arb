@@ -143,3 +143,118 @@ class _BookMidCache:
 
     def size(self) -> int:
         return len(self._cache)
+
+
+# ---------------------------------------------------------------------------
+# BtcEthLeadLagObserver
+# ---------------------------------------------------------------------------
+
+
+def _safe_div(a: float, b: float) -> Optional[float]:
+    if b == 0:
+        return None
+    return a / b
+
+
+class _CrossAssetBaseObserver:
+    """Shared parent for cross-asset observers. Provides feature helpers."""
+    name: str = ""
+
+    def _delta_pct(self, now_val: Optional[float], past_val: Optional[float]
+                   ) -> Optional[float]:
+        if now_val is None or past_val is None or past_val == 0:
+            return None
+        return (now_val - past_val) / past_val
+
+    def _source_signal_hash(self, now_ts: float, delta_btc_pct: float) -> int:
+        bucket_time_15s = int(now_ts // 15) * 15
+        sign = 1 if delta_btc_pct >= 0 else -1
+        return hash((bucket_time_15s, sign, round(delta_btc_pct, 3)))
+
+
+# Gates per design spec
+LEAD_LAG_LEAD_THRESHOLD = 0.003       # 0.3% Δspot_BTC over 30s
+LEAD_LAG_LAG_THRESHOLD = 0.0015       # 0.15% Δspot_ETH over 30s
+LEAD_LAG_YA_MIN = 0.05
+LEAD_LAG_YA_MAX = 0.60
+LEAD_LAG_MTS_MIN_S = 300.0
+LEAD_LAG_DIST_PCT_MAX = 0.020         # 2% from spot
+LEAD_LAG_YB_SIZE_MIN = 30
+LEAD_LAG_TARGET_SERIES = "KXETH"      # Primary — KXBTC reverse-direction also logged
+
+
+class BtcEthLeadLagObserver(_CrossAssetBaseObserver):
+    """BTC moves first, ETH spot/Kalshi hasn't caught up.
+
+    Fires on KXETH bucket near the expected catch-up zone. Logs predicted
+    direction (up/down) corresponding to sign(Δspot_BTC). Phase 0 only.
+    """
+    name = "btc_eth_lead_lag"
+
+    def evaluate(self, ctx) -> list:
+        from strategies.crypto_observer import Signal  # avoid circular at import time
+
+        # Only fires on KXETH primary
+        if ctx.series != LEAD_LAG_TARGET_SERIES:
+            return []
+        if ctx.close_time_secs is None or ctx.close_time_secs < LEAD_LAG_MTS_MIN_S:
+            return []
+        if not ctx.b_legs:
+            return []
+
+        delta_btc = self._delta_pct(ctx.spot_btc, ctx.spot_btc_30s_ago)
+        delta_eth = self._delta_pct(ctx.spot_eth, ctx.spot_eth_30s_ago)
+        if delta_btc is None or delta_eth is None:
+            return []
+        if abs(delta_btc) < LEAD_LAG_LEAD_THRESHOLD:
+            return []
+        if abs(delta_eth) > LEAD_LAG_LAG_THRESHOLD:
+            return []
+
+        direction = "up" if delta_btc > 0 else "down"
+        out: list = []
+        for leg in ctx.b_legs:
+            if leg.ya < LEAD_LAG_YA_MIN or leg.ya > LEAD_LAG_YA_MAX:
+                continue
+            if leg.yb_size < LEAD_LAG_YB_SIZE_MIN:
+                continue
+            dist_pct = abs(leg.threshold - ctx.spot) / ctx.spot
+            if dist_pct > LEAD_LAG_DIST_PCT_MAX:
+                continue
+            # Strike must be on the expected catch-up side
+            if direction == "up" and leg.threshold <= ctx.spot:
+                continue
+            if direction == "down" and leg.threshold >= ctx.spot:
+                continue
+
+            delta_btc_10s = self._delta_pct(ctx.spot_btc, ctx.spot_btc_10s_ago)
+            delta_eth_10s = self._delta_pct(ctx.spot_eth, ctx.spot_eth_10s_ago)
+            now_ts = ctx.now.timestamp()
+
+            out.append(Signal(
+                observer=self.name, series=ctx.series,
+                event_key=ctx.event_key, market_id=leg.ticker,
+                predicted_outcome="yes",
+                features={
+                    "ya": leg.ya, "yb": leg.yb, "na": leg.na,
+                    "yb_size": leg.yb_size,
+                    "spot": ctx.spot, "strike": leg.threshold,
+                    "dist_pct": round(dist_pct, 5),
+                    "mts_s": round(ctx.close_time_secs, 1),
+                    "kind": leg.kind,
+                    "spot_btc": ctx.spot_btc, "spot_eth": ctx.spot_eth,
+                    "spot_btc_30s_ago": ctx.spot_btc_30s_ago,
+                    "spot_eth_30s_ago": ctx.spot_eth_30s_ago,
+                    "spot_btc_10s_ago": ctx.spot_btc_10s_ago,
+                    "spot_eth_10s_ago": ctx.spot_eth_10s_ago,
+                    "delta_btc_30s_pct": round(delta_btc, 6),
+                    "delta_eth_30s_pct": round(delta_eth, 6),
+                    "delta_btc_10s_pct": round(delta_btc_10s, 6) if delta_btc_10s is not None else None,
+                    "delta_eth_10s_pct": round(delta_eth_10s, 6) if delta_eth_10s is not None else None,
+                    "corr_5min": ctx.corr_5min,
+                    "corr_15min": ctx.corr_15min,
+                    "predicted_direction": direction,
+                    "source_signal_hash": self._source_signal_hash(now_ts, delta_btc),
+                },
+            ))
+        return out

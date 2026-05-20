@@ -223,3 +223,158 @@ def test_event_context_has_cross_asset_fields():
     assert ctx.corr_5min is None
     assert ctx.corr_15min is None
     assert ctx.book_mid_cache is None
+
+
+# ---------------------------------------------------------------------------
+# BtcEthLeadLagObserver tests
+# ---------------------------------------------------------------------------
+
+from strategies.crypto_cross_asset_observer import BtcEthLeadLagObserver
+from strategies.crypto_observer import Leg
+
+
+def _make_leg(series: str, strike: float, ya: float, yb: float,
+              yb_size: float = 50) -> Leg:
+    return Leg(
+        ticker=f"{series}-26MAY2010-B{int(strike)}",
+        kind="bucketed", threshold=float(strike),
+        ya=ya, yb=yb, na=1.0 - yb, nb=1.0 - ya,
+        ya_size=100, yb_size=yb_size, na_size=100, nb_size=100,
+        liquidity=200.0, raw={},
+    )
+
+
+def _make_ctx(series: str = "KXETH", asset: str = "ETH",
+              spot: float = 2120.0, b_legs=None,
+              spot_btc=None, spot_eth=None,
+              spot_btc_30s_ago=None, spot_eth_30s_ago=None,
+              spot_btc_10s_ago=None, spot_eth_10s_ago=None,
+              corr_5min=None, corr_15min=None,
+              close_s: float = 1200.0, book_mid_cache=None):
+    return EventContext(
+        series=series, asset=asset, event_key="26MAY2010",
+        now=datetime.now(timezone.utc),
+        spot=spot, spot_60s_ago=None,
+        deribit_iv=None,
+        b_legs=b_legs or [], t_legs=[],
+        open_time_secs=None, close_time_secs=close_s,
+        spot_btc=spot_btc, spot_eth=spot_eth,
+        spot_btc_30s_ago=spot_btc_30s_ago,
+        spot_eth_30s_ago=spot_eth_30s_ago,
+        spot_btc_10s_ago=spot_btc_10s_ago,
+        spot_eth_10s_ago=spot_eth_10s_ago,
+        corr_5min=corr_5min, corr_15min=corr_15min,
+        book_mid_cache=book_mid_cache,
+    )
+
+
+def test_lead_lag_fires_on_btc_jump_eth_static():
+    """BTC +0.5% over 30s, ETH effectively flat (+0.05%) — should fire."""
+    legs = [_make_leg("KXETH", 2130, ya=0.15, yb=0.10, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXETH", asset="ETH", spot=2120.0, b_legs=legs,
+        spot_btc=60500.0, spot_btc_30s_ago=60200.0,   # +0.498%
+        spot_eth=2120.0, spot_eth_30s_ago=2119.0,     # +0.047%
+        spot_btc_10s_ago=60500.0, spot_eth_10s_ago=2120.0,
+        corr_5min=0.85, corr_15min=0.85,
+        close_s=1200.0,
+    )
+    obs = BtcEthLeadLagObserver()
+    sigs = obs.evaluate(ctx)
+    assert len(sigs) == 1
+    sig = sigs[0]
+    assert sig.observer == "btc_eth_lead_lag"
+    assert sig.predicted_outcome == "yes"
+    assert sig.features["predicted_direction"] == "up"
+    assert sig.features["delta_btc_30s_pct"] == pytest.approx(0.00498, abs=1e-5)
+
+
+def test_lead_lag_fires_on_btc_drop_eth_static():
+    """BTC -0.5%, ETH ~flat — fires on bucket BELOW spot, predicted_direction=down."""
+    legs = [_make_leg("KXETH", 2110, ya=0.15, yb=0.10, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXETH", asset="ETH", spot=2120.0, b_legs=legs,
+        spot_btc=60000.0, spot_btc_30s_ago=60300.0,   # -0.497%
+        spot_eth=2120.0, spot_eth_30s_ago=2120.5,
+        spot_btc_10s_ago=60000.0, spot_eth_10s_ago=2120.0,
+        corr_5min=0.85, corr_15min=0.85,
+        close_s=1200.0,
+    )
+    obs = BtcEthLeadLagObserver()
+    sigs = obs.evaluate(ctx)
+    assert len(sigs) == 1
+    assert sigs[0].features["predicted_direction"] == "down"
+
+
+def test_lead_lag_skips_when_eth_also_moves():
+    """ETH moved 0.5% — not lagging. Skip."""
+    legs = [_make_leg("KXETH", 2130, ya=0.15, yb=0.10, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXETH", asset="ETH", spot=2120.0, b_legs=legs,
+        spot_btc=60500.0, spot_btc_30s_ago=60200.0,
+        spot_eth=2120.0, spot_eth_30s_ago=2110.0,   # +0.47% — also moved
+        spot_btc_10s_ago=60500.0, spot_eth_10s_ago=2120.0,
+        corr_5min=0.85, corr_15min=0.85,
+    )
+    assert BtcEthLeadLagObserver().evaluate(ctx) == []
+
+
+def test_lead_lag_skips_when_btc_didnt_move():
+    """BTC moved <0.3% — below trigger. Skip."""
+    legs = [_make_leg("KXETH", 2130, ya=0.15, yb=0.10, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXETH", asset="ETH", spot=2120.0, b_legs=legs,
+        spot_btc=60100.0, spot_btc_30s_ago=60000.0,   # +0.17% — below 0.3%
+        spot_eth=2120.0, spot_eth_30s_ago=2119.0,
+        corr_5min=0.85, corr_15min=0.85,
+    )
+    assert BtcEthLeadLagObserver().evaluate(ctx) == []
+
+
+def test_lead_lag_skips_outside_ya_band():
+    """ya 0.8 outside [0.05, 0.60] — skip."""
+    legs = [_make_leg("KXETH", 2130, ya=0.80, yb=0.75, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXETH", asset="ETH", spot=2120.0, b_legs=legs,
+        spot_btc=60500.0, spot_btc_30s_ago=60200.0,
+        spot_eth=2120.0, spot_eth_30s_ago=2119.0,
+        corr_5min=0.85, corr_15min=0.85,
+    )
+    assert BtcEthLeadLagObserver().evaluate(ctx) == []
+
+
+def test_lead_lag_skips_outside_mts():
+    """mts_s 100s < 300s — skip."""
+    legs = [_make_leg("KXETH", 2130, ya=0.15, yb=0.10, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXETH", asset="ETH", spot=2120.0, b_legs=legs,
+        spot_btc=60500.0, spot_btc_30s_ago=60200.0,
+        spot_eth=2120.0, spot_eth_30s_ago=2119.0,
+        corr_5min=0.85, corr_15min=0.85,
+        close_s=100.0,  # under threshold
+    )
+    assert BtcEthLeadLagObserver().evaluate(ctx) == []
+
+
+def test_lead_lag_skips_outside_dist_pct():
+    """Strike 2200 vs spot 2120 → 3.77% > 2% dist gate — skip."""
+    legs = [_make_leg("KXETH", 2200, ya=0.15, yb=0.10, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXETH", asset="ETH", spot=2120.0, b_legs=legs,
+        spot_btc=60500.0, spot_btc_30s_ago=60200.0,
+        spot_eth=2120.0, spot_eth_30s_ago=2119.0,
+        corr_5min=0.85, corr_15min=0.85,
+    )
+    assert BtcEthLeadLagObserver().evaluate(ctx) == []
+
+
+def test_lead_lag_skips_when_stale_data():
+    """spot_btc_30s_ago is None → can't compute delta → skip."""
+    legs = [_make_leg("KXETH", 2130, ya=0.15, yb=0.10, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXETH", asset="ETH", spot=2120.0, b_legs=legs,
+        spot_btc=60500.0, spot_btc_30s_ago=None,   # stale
+        spot_eth=2120.0, spot_eth_30s_ago=2119.0,
+        corr_5min=0.85, corr_15min=0.85,
+    )
+    assert BtcEthLeadLagObserver().evaluate(ctx) == []
