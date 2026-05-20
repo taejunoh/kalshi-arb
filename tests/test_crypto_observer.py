@@ -17,6 +17,7 @@ from strategies.crypto_observer import (
     LateCloseTailObserver, DeribitAtmSkewObserver,
     MidOtmTailObserver,
     SettlementEdgeObserver,
+    LognormalFairDevObserver,
     _parse_suffix_threshold, _suffix_kind, _event_key, _build_leg,
     _lognormal_p_above, _flip,
 )
@@ -832,9 +833,9 @@ def test_settlement_edge_filters_near_zero_skew():
 
 def test_settlement_edge_fires_exactly_at_skew_threshold():
     """|skew| just over 0.20 fires; just under 0.20 does not."""
-    # Just over: ask=120, bid=80 → skew = 40/200 = 0.20 (boundary)
-    # We require abs(skew) >= 0.20 to NOT fire — i.e. strict >=
-    # Use 0.21 to be safe: ask=121, bid=79 → skew = 42/200 = 0.21
+    # Code fires when abs(skew) >= ABS_SKEW_MIN (0.20). Avoid the
+    # exact-boundary case to stay robust to float-equality decisions;
+    # use 0.21 to fire: ask=121, bid=79 → skew = 42/200 = 0.21.
     b_legs_fire = [
         _b(70000, ya=0.50, yb=0.48, ya_size=121, yb_size=79),
     ]
@@ -885,3 +886,102 @@ def test_settlement_edge_registered_in_observer_classes():
     """Harness picks up settlement_edge via OBSERVER_CLASSES tuple."""
     from strategies.crypto_observer import OBSERVER_CLASSES
     assert SettlementEdgeObserver in OBSERVER_CLASSES
+
+
+# ── LognormalFairDev ───────────────────────────────────────────────
+
+
+def test_lognormal_fair_dev_fires_when_kalshi_underprices_atm():
+    """ATM bucket where Kalshi impl << lognormal fair → predict 'yes'.
+
+    Need ≥2 b_legs for bucket_grid() to resolve. ATM bucket at 89750
+    with impl=0.02 vs P_LN ~0.4-0.5 at iv=0.80, mts=3600s, $100 grid.
+    """
+    obs = LognormalFairDevObserver()
+    legs = [_b(89650, ya=0.02, yb=0.02),
+            _b(89750, ya=0.02, yb=0.02)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=3600.0, iv=0.80)
+    sigs = obs.evaluate(ctx)
+    # Both legs are equally far from spot so both can fire; we expect
+    # at least one with dev > 0 (cheap YES vs fair).
+    yes_sigs = [s for s in sigs if s.predicted_outcome == "yes"]
+    assert len(yes_sigs) >= 1
+    assert yes_sigs[0].features["deviation"] > 0
+    assert yes_sigs[0].features["kind"] == "bucketed"
+    assert "fair" in yes_sigs[0].features and "impl" in yes_sigs[0].features
+
+
+def test_lognormal_fair_dev_fires_when_kalshi_overprices_tail():
+    """OTM bucket where Kalshi impl >> lognormal fair → predict 'no'.
+
+    Spot=89750, OTM bucket 50% above (134000) with IV=50%, mts=120s.
+    P_LN ≈ 0. Set impl=0.50 (absurdly overpriced) → dev ≈ -0.50, fires 'no'.
+    """
+    obs = LognormalFairDevObserver()
+    legs = [_b(133900, ya=0.50, yb=0.50),
+            _b(134000, ya=0.50, yb=0.50)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=120.0, iv=0.50)
+    sigs = obs.evaluate(ctx)
+    no_sigs = [s for s in sigs if s.predicted_outcome == "no"]
+    assert len(no_sigs) >= 1
+    assert no_sigs[0].features["deviation"] < 0
+
+
+def test_lognormal_fair_dev_skips_when_deviation_below_threshold():
+    """|fair - impl| < 0.10 → no signal even though leg is in window.
+
+    ATM bucket with impl ≈ fair on a single $100 bucket at near-close
+    is fair ~0.4-0.5; using a deep-OTM strike where both fair and impl
+    are tiny is the cleanest way to assert sub-threshold no-fire.
+    """
+    obs = LognormalFairDevObserver()
+    legs = [_b(150000, ya=0.01, yb=0.01),
+            _b(150100, ya=0.01, yb=0.01)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=300.0, iv=0.80)
+    sigs = obs.evaluate(ctx)
+    assert sigs == []
+
+
+def test_lognormal_fair_dev_skips_without_iv():
+    """No Deribit IV (e.g. XRP) → can't compute fair → skip cleanly."""
+    obs = LognormalFairDevObserver()
+    legs = [_b(89650, ya=0.02, yb=0.02),
+            _b(89750, ya=0.02, yb=0.02)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=300.0, iv=None)
+    assert obs.evaluate(ctx) == []
+
+
+def test_lognormal_fair_dev_skips_inside_min_window():
+    """mts_s < 60s → skip. Sub-minute physics breaks lognormal vol."""
+    obs = LognormalFairDevObserver()
+    legs = [_b(89650, ya=0.02, yb=0.02),
+            _b(89750, ya=0.02, yb=0.02)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=30.0, iv=0.80)
+    assert obs.evaluate(ctx) == []
+
+
+def test_lognormal_fair_dev_skips_beyond_max_window():
+    """mts_s > 7200s → skip. Long horizons get drift-dominated."""
+    obs = LognormalFairDevObserver()
+    legs = [_b(89650, ya=0.02, yb=0.02),
+            _b(89750, ya=0.02, yb=0.02)]
+    ctx = _ctx(b_legs=legs, spot=89750.0, close_s=10000.0, iv=0.80)
+    assert obs.evaluate(ctx) == []
+
+
+def test_lognormal_fair_dev_handles_cumulative_t_legs():
+    """T-leg uses P(S_T ≥ strike), not bucket spread. Deep OTM should fire 'no'
+    if Kalshi prices it richly."""
+    obs = LognormalFairDevObserver()
+    # T-cumulative strike 50% above spot — P_LN ≈ 0 with iv=0.5, mts=120s.
+    legs = [_t(134000.0, ya=0.50, yb=0.48)]
+    ctx = _ctx(t_legs=legs, spot=89750.0, close_s=120.0, iv=0.50)
+    sigs = obs.evaluate(ctx)
+    assert len(sigs) == 1
+    assert sigs[0].predicted_outcome == "no"
+    assert sigs[0].features["kind"] == "cumulative"
+
+
+def test_lognormal_fair_dev_registered_in_observer_classes():
+    from strategies.crypto_observer import OBSERVER_CLASSES
+    assert LognormalFairDevObserver in OBSERVER_CLASSES
