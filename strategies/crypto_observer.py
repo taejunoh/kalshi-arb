@@ -38,8 +38,11 @@ from typing import Optional
 
 logger = logging.getLogger("crypto_observer")
 
-TARGET_SERIES = frozenset({"KXBTC", "KXETH"})
-SERIES_ASSET = {"KXBTC": "BTC", "KXETH": "ETH"}
+TARGET_SERIES = frozenset({"KXBTC", "KXETH", "KXBTCD", "KXETHD"})
+SERIES_ASSET = {
+    "KXBTC": "BTC", "KXBTCD": "BTC",
+    "KXETH": "ETH", "KXETHD": "ETH",
+}
 
 # Tunables — all observers use the same trigger thresholds for the
 # initial 1-week sweep. Post-data they're independently re-tuned.
@@ -726,7 +729,11 @@ class LateCloseTailObserver(BaseObserver):
         if ctx.close_time_secs <= 0:
             return []
         out: list[Signal] = []
-        for leg in ctx.b_legs:
+        # B-bucketed (hourly) AND T-cumulative (daily) markets both express
+        # OTM-no-touch in the same way: low ya at a strike far from spot in
+        # the close window → BUY NO. Iterate both leg lists with the same
+        # gates; leg.kind in features lets us slice the cohort post-hoc.
+        for leg in (*ctx.b_legs, *ctx.t_legs):
             if leg.ya < LATE_CLOSE_TAIL_YA_MIN or leg.ya > LATE_CLOSE_TAIL_YA_MAX:
                 continue
             if leg.yb_size < LATE_CLOSE_TAIL_YB_SIZE_MIN:
@@ -745,6 +752,7 @@ class LateCloseTailObserver(BaseObserver):
                     "spot": ctx.spot, "strike": leg.threshold,
                     "dist_pct": round(dist_pct, 5),
                     "mts_s": round(ctx.close_time_secs, 1),
+                    "kind": leg.kind,
                 },
             ))
         return out
@@ -774,7 +782,7 @@ class MidOtmTailObserver(BaseObserver):
         if ctx.close_time_secs > MID_OTM_TAIL_MTS_MAX_S:
             return []
         out: list[Signal] = []
-        for leg in ctx.b_legs:
+        for leg in (*ctx.b_legs, *ctx.t_legs):
             if leg.ya < MID_OTM_TAIL_YA_MIN or leg.ya > MID_OTM_TAIL_YA_MAX:
                 continue
             if leg.yb_size < MID_OTM_TAIL_YB_SIZE_MIN:
@@ -793,6 +801,7 @@ class MidOtmTailObserver(BaseObserver):
                     "spot": ctx.spot, "strike": leg.threshold,
                     "dist_pct": round(dist_pct, 5),
                     "mts_s": round(ctx.close_time_secs, 1),
+                    "kind": leg.kind,
                 },
             ))
         return out
