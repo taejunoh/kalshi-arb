@@ -138,6 +138,22 @@ DERIBIT_ATM_MIN_YB_SIZE = 30
 # lognormal. Skip rather than trade noise.
 DERIBIT_TAIL_RATIO_CAP = 50.0
 
+# lognormal_fair_dev (2026-05-20): bidirectional |fair - implied| logger.
+# Replaces the retired crypto_fair_value Phase 0 signal stream — pure
+# observer (no trade execution). Fires on every B or T leg where
+# |lognormal_fair - kalshi_implied| ≥ 0.10, with predicted_outcome set
+# by sign. Bucket-aware: B legs use P_LN(strike ± grid/2), T cumulatives
+# use P(S_T ≥ strike). Vol source = Deribit IV (BTC/ETH only — XRP has
+# no Deribit feed and silently skips). Window 60s-2h pre-close keeps
+# both the near-close zone (where cfv was deeply -EV) AND the wider
+# mid-range zone (where cfv had n<30 and conclusion was inconclusive).
+# Detects regime shift: if a future BTC vol regime makes lognormal
+# accurate, this stream will start showing positive bucket WR before
+# deribit_tail_fade_v1 (live trader) starts losing.
+LOGNORMAL_FAIR_DEV_MTS_MIN_S = 60      # match deleted cfv MIN_TIME_TO_CLOSE_SECS
+LOGNORMAL_FAIR_DEV_MTS_MAX_S = 7200    # 2h max — beyond this vol assumption breaks
+LOGNORMAL_FAIR_DEV_DEVIATION_MIN = 0.10  # match deleted cfv MIN_DEVIATION
+
 BID_IMBALANCE_RATIO_MIN = 3.0         # (yb+nb) / (ya+na) sizes ≥ 3
 BID_IMBALANCE_MTS_MAX_S = 600         # ≤ 10 min to close
 BID_IMBALANCE_FADE_MAX_YA = 0.60      # flipped sibling only fires below this ya —
@@ -967,6 +983,88 @@ class DeribitAtmSkewObserver(BaseObserver):
         )]
 
 
+# ── lognormal_fair_dev (2026-05-20) ────────────────────────────────
+
+
+class LognormalFairDevObserver(BaseObserver):
+    """Bidirectional |lognormal_fair - kalshi_implied| logger.
+
+    Successor to the retired crypto_fair_value Phase 0 signal stream.
+    No trade execution — pure observation for regime-shift detection
+    and bucket-WR retrospectives.
+
+    For each B or T leg in window:
+      fair  = P_LN per leg.kind (bucketed → strike±grid/2; cumulative → ≥strike)
+      impl  = (ya + yb) / 2
+      dev   = fair - impl
+      if |dev| ≥ LOGNORMAL_FAIR_DEV_DEVIATION_MIN:
+          predicted_outcome = 'yes' if dev > 0 else 'no'
+          emit Signal
+
+    Vol = Deribit IV (BTC/ETH only). XRP silently skipped — no Deribit feed.
+    Window: 60s ≤ mts ≤ 7200s. Below 60s lognormal vol assumption breaks
+    on intraday mean reversion; above 7200s drift dominates over diffusion.
+    No depth filter — observer purpose is data, not tradability.
+    """
+    name = "lognormal_fair_dev"
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        if ctx.deribit_iv is None or ctx.deribit_iv <= 0:
+            return []
+        if ctx.close_time_secs is None:
+            return []
+        if (ctx.close_time_secs < LOGNORMAL_FAIR_DEV_MTS_MIN_S
+                or ctx.close_time_secs > LOGNORMAL_FAIR_DEV_MTS_MAX_S):
+            return []
+        tau_years = ctx.close_time_secs / (365.25 * 86400)
+        grid = ctx.bucket_grid()
+        out: list[Signal] = []
+        for leg in (*ctx.b_legs, *ctx.t_legs):
+            if leg.kind == "bucketed":
+                if grid is None or grid <= 0:
+                    continue
+                p_above_lo = _lognormal_p_above(
+                    spot=ctx.spot, strike=leg.threshold - grid / 2,
+                    vol=ctx.deribit_iv, tau_years=tau_years,
+                )
+                p_above_hi = _lognormal_p_above(
+                    spot=ctx.spot, strike=leg.threshold + grid / 2,
+                    vol=ctx.deribit_iv, tau_years=tau_years,
+                )
+                if p_above_lo is None or p_above_hi is None:
+                    continue
+                fair = max(0.0, p_above_lo - p_above_hi)
+            else:  # cumulative
+                p = _lognormal_p_above(
+                    spot=ctx.spot, strike=leg.threshold,
+                    vol=ctx.deribit_iv, tau_years=tau_years,
+                )
+                if p is None:
+                    continue
+                fair = p
+            impl = (leg.ya + leg.yb) / 2.0
+            dev = fair - impl
+            if abs(dev) < LOGNORMAL_FAIR_DEV_DEVIATION_MIN:
+                continue
+            out.append(Signal(
+                observer=self.name, series=ctx.series,
+                event_key=ctx.event_key, market_id=leg.ticker,
+                predicted_outcome="yes" if dev > 0 else "no",
+                features={
+                    "spot": ctx.spot, "strike": leg.threshold,
+                    "kind": leg.kind,
+                    "ya": leg.ya, "yb": leg.yb,
+                    "na": leg.na, "nb": leg.nb,
+                    "impl": round(impl, 4),
+                    "fair": round(fair, 4),
+                    "deviation": round(dev, 4),
+                    "iv": ctx.deribit_iv,
+                    "mts_s": round(ctx.close_time_secs, 1),
+                },
+            ))
+        return out
+
+
 # ── Flipped-prediction variants (2026-05-14) ───────────────────────
 #
 # Phase 0 cohort analysis on 24h data revealed that two observers' WR
@@ -1282,6 +1380,9 @@ OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
     FundingRateFadeObserver, VolSkewFadeObserver,
     # 2026-05-19 Phase 0: external-data signals (yfinance ETF + CME)
     EtfFlowLagObserver, CmeBasisFadeObserver,
+    # 2026-05-20: lognormal fair-value deviation logger (successor to
+    # retired crypto_fair_value Phase 0 signal stream).
+    LognormalFairDevObserver,
 )
 
 

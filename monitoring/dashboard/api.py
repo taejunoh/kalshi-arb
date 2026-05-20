@@ -1463,7 +1463,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "late_close_tail", "deribit_atm_skew",
             "mid_otm_tail",
             "btc_eth_lead_lag", "cross_asset_corr_break", "kalshi_book_lag",
-            # Direct traders (write Phase 0 signals under their own observer name).
+            # Successor to retired crypto_fair_value Phase 0 logging.
+            "lognormal_fair_dev",
+            # Historical (retired strategies; rows pre-2026-05-20 may still match).
             "crypto_fair_value", "crypto_fair_value_mid_v1",
         )
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
