@@ -38,10 +38,11 @@ from typing import Optional
 
 logger = logging.getLogger("crypto_observer")
 
-TARGET_SERIES = frozenset({"KXBTC", "KXETH", "KXBTCD", "KXETHD"})
+TARGET_SERIES = frozenset({"KXBTC", "KXETH", "KXBTCD", "KXETHD", "KXXRP"})
 SERIES_ASSET = {
     "KXBTC": "BTC", "KXBTCD": "BTC",
     "KXETH": "ETH", "KXETHD": "ETH",
+    "KXXRP": "XRP",
 }
 
 # Tunables — all observers use the same trigger thresholds for the
