@@ -173,29 +173,36 @@ class _CrossAssetBaseObserver:
 
 
 # Gates per design spec
-LEAD_LAG_LEAD_THRESHOLD = 0.003       # 0.3% Δspot_BTC over 30s
-LEAD_LAG_LAG_THRESHOLD = 0.0015       # 0.15% Δspot_ETH over 30s
+LEAD_LAG_LEAD_THRESHOLD = 0.003       # 0.3% Δspot_lead over 30s
+LEAD_LAG_LAG_THRESHOLD = 0.0015       # 0.15% Δspot_lag over 30s
 LEAD_LAG_YA_MIN = 0.05
 LEAD_LAG_YA_MAX = 0.60
 LEAD_LAG_MTS_MIN_S = 300.0
 LEAD_LAG_DIST_PCT_MAX = 0.020         # 2% from spot
 LEAD_LAG_YB_SIZE_MIN = 30
-LEAD_LAG_TARGET_SERIES = "KXETH"      # Primary — KXBTC reverse-direction also logged
+# Both KXETH (forward: BTC leads) and KXBTC (reverse: ETH leads) per spec brainstorm.
+LEAD_LAG_ELIGIBLE_SERIES = ("KXETH", "KXBTC")
 
 
 class BtcEthLeadLagObserver(_CrossAssetBaseObserver):
-    """BTC moves first, ETH spot/Kalshi hasn't caught up.
+    """Cross-asset lead-lag — one asset jumps, the other hasn't caught up.
 
-    Fires on KXETH bucket near the expected catch-up zone. Logs predicted
-    direction (up/down) corresponding to sign(Δspot_BTC). Phase 0 only.
+    Fires bidirectionally:
+      - KXETH events: leader=BTC (Δ ≥0.3%), lagger=ETH (Δ ≤0.15%)
+        → bet on ETH catch-up in BTC's direction
+      - KXBTC events: leader=ETH (Δ ≥0.3%), lagger=BTC (Δ ≤0.15%)
+        → bet on BTC catch-up in ETH's direction (reverse-direction case)
+
+    Logs `lead_asset` feature to disambiguate the two paths in post-hoc
+    analysis. predicted_direction is the lagger's expected catch-up
+    direction (sign of leader's delta). Phase 0 only.
     """
     name = "btc_eth_lead_lag"
 
     def evaluate(self, ctx) -> list:
         from strategies.crypto_observer import Signal  # avoid circular at import time
 
-        # Only fires on KXETH primary
-        if ctx.series != LEAD_LAG_TARGET_SERIES:
+        if ctx.series not in LEAD_LAG_ELIGIBLE_SERIES:
             return []
         if ctx.close_time_secs is None or ctx.close_time_secs < LEAD_LAG_MTS_MIN_S:
             return []
@@ -206,12 +213,21 @@ class BtcEthLeadLagObserver(_CrossAssetBaseObserver):
         delta_eth = self._delta_pct(ctx.spot_eth, ctx.spot_eth_30s_ago)
         if delta_btc is None or delta_eth is None:
             return []
-        if abs(delta_btc) < LEAD_LAG_LEAD_THRESHOLD:
+
+        # Assign leader/lagger based on the series (which asset's market we're trading)
+        if ctx.series == "KXETH":
+            lead_asset, delta_lead = "BTC", delta_btc
+            delta_lag = delta_eth
+        else:  # KXBTC
+            lead_asset, delta_lead = "ETH", delta_eth
+            delta_lag = delta_btc
+
+        if abs(delta_lead) < LEAD_LAG_LEAD_THRESHOLD:
             return []
-        if abs(delta_eth) > LEAD_LAG_LAG_THRESHOLD:
+        if abs(delta_lag) > LEAD_LAG_LAG_THRESHOLD:
             return []
 
-        direction = "up" if delta_btc > 0 else "down"
+        direction = "up" if delta_lead > 0 else "down"
         out: list = []
         for leg in ctx.b_legs:
             if leg.ya < LEAD_LAG_YA_MIN or leg.ya > LEAD_LAG_YA_MAX:
@@ -254,7 +270,8 @@ class BtcEthLeadLagObserver(_CrossAssetBaseObserver):
                     "corr_5min": ctx.corr_5min,
                     "corr_15min": ctx.corr_15min,
                     "predicted_direction": direction,
-                    "source_signal_hash": self._source_signal_hash(now_ts, delta_btc),
+                    "lead_asset": lead_asset,
+                    "source_signal_hash": self._source_signal_hash(now_ts, delta_lead),
                 },
             ))
         return out
