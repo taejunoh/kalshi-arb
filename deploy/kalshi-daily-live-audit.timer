@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily LIVE PnL audit (13:00 UTC = 09:00 EDT)
+Requires=kalshi-daily-live-audit.service
+
+[Timer]
+# 13:00 UTC daily — after overnight settlements (Asia + US night) have
+# posted; before US morning's first NBA/MLB games kick off. Catches the
+# previous 24h activity in a clean window.
+OnCalendar=*-*-* 13:00:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

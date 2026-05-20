@@ -1,0 +1,18 @@
+[Unit]
+Description=Daily LIVE PnL audit — Telegram alert on per-strategy threshold breach
+After=network.target kalshi-bot.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+EnvironmentFile=/home/ubuntu/kalshi-arb/.env
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/daily_live_audit.py --send
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+# Security (mirrors kalshi-orphan-check.service)
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs
