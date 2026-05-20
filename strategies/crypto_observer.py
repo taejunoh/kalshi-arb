@@ -87,7 +87,7 @@ MID_OTM_TAIL_YB_SIZE_MIN = 30
 # fee-adjusted-EV methodology.
 SETTLEMENT_EDGE_MTS_MAX_S = 30
 SETTLEMENT_EDGE_ATM_RADIUS = 2
-SETTLEMENT_EDGE_MIN_SIDE_SIZE = 1         # ask_size + bid_size must exceed this
+SETTLEMENT_EDGE_MIN_SIDE_SIZE = 1         # total (ya_size + yb_size) must be > 1 to score (skip single-contract degenerate books)
 SETTLEMENT_EDGE_ABS_SKEW_MIN = 0.20       # |skew| ≥ this to fire
 
 ATM_FADE_MTS_MAX_S = 300
@@ -513,8 +513,8 @@ class SettlementEdgeObserver(BaseObserver):
         skew = (ask_size - bid_size) / (ask_size + bid_size)
     on each leg in the ATM ± SETTLEMENT_EDGE_ATM_RADIUS cluster when
     mts_s ≤ SETTLEMENT_EDGE_MTS_MAX_S, and predict:
-        skew > 0  (ask thicker → MMs not selling) → predict 'no'
-        skew < 0  (bid thicker → MMs willing buy) → predict 'yes'
+        skew > 0  (ask thicker, MMs showing YES supply → market judges YES overpriced) → predict 'no'
+        skew < 0  (bid thicker, MMs absorbing YES demand → market judges YES underpriced) → predict 'yes'
 
     Sibling to KalshiBookLagObserver (dynamic event-driven on spot move).
     This observer is static — fires every tick within the window.
