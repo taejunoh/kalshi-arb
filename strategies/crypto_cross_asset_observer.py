@@ -258,3 +258,76 @@ class BtcEthLeadLagObserver(_CrossAssetBaseObserver):
                 },
             ))
         return out
+
+
+# ---------------------------------------------------------------------------
+# CrossAssetCorrBreakObserver
+# ---------------------------------------------------------------------------
+
+# Gates per design spec
+CORR_BREAK_CORR_MAX = 0.40           # corr_5min < 0.40 triggers
+CORR_BREAK_BASELINE_MIN = 0.60       # corr_15min ≥ 0.60 required (came from high-corr regime)
+CORR_BREAK_MOVEMENT_MIN = 0.002      # one side moved ≥0.2% (event happened)
+CORR_BREAK_ATM_DIST_PCT_MAX = 0.005  # |strike - spot| / spot ≤ 0.5%
+CORR_BREAK_MTS_MIN_S = 300.0
+CORR_BREAK_YB_SIZE_MIN = 30
+
+
+class CrossAssetCorrBreakObserver(_CrossAssetBaseObserver):
+    """BTC-ETH 5-min correlation drops sharply from baseline.
+
+    Directionally ambiguous — provisional predicted='no' on ATM bucket as
+    conservative default ("ATM doesn't get hit in regime break"). Real
+    value is in features for post-hoc directional analysis.
+    Phase 0 only.
+    """
+    name = "cross_asset_corr_break"
+
+    def evaluate(self, ctx) -> list:
+        from strategies.crypto_observer import Signal
+
+        if ctx.close_time_secs is None or ctx.close_time_secs < CORR_BREAK_MTS_MIN_S:
+            return []
+        if ctx.corr_5min is None or ctx.corr_15min is None:
+            return []
+        if ctx.corr_5min >= CORR_BREAK_CORR_MAX:
+            return []
+        if ctx.corr_15min < CORR_BREAK_BASELINE_MIN:
+            return []
+
+        delta_btc = self._delta_pct(ctx.spot_btc, ctx.spot_btc_30s_ago)
+        delta_eth = self._delta_pct(ctx.spot_eth, ctx.spot_eth_30s_ago)
+        if delta_btc is None or delta_eth is None:
+            return []
+        if abs(delta_btc) < CORR_BREAK_MOVEMENT_MIN and abs(delta_eth) < CORR_BREAK_MOVEMENT_MIN:
+            return []
+
+        out: list = []
+        for leg in ctx.b_legs:
+            if leg.yb_size < CORR_BREAK_YB_SIZE_MIN:
+                continue
+            dist_pct = abs(leg.threshold - ctx.spot) / ctx.spot
+            if dist_pct > CORR_BREAK_ATM_DIST_PCT_MAX:
+                continue
+            now_ts = ctx.now.timestamp()
+            out.append(Signal(
+                observer=self.name, series=ctx.series,
+                event_key=ctx.event_key, market_id=leg.ticker,
+                predicted_outcome="no",
+                features={
+                    "ya": leg.ya, "yb": leg.yb, "na": leg.na,
+                    "yb_size": leg.yb_size,
+                    "spot": ctx.spot, "strike": leg.threshold,
+                    "dist_pct": round(dist_pct, 5),
+                    "mts_s": round(ctx.close_time_secs, 1),
+                    "kind": leg.kind,
+                    "spot_btc": ctx.spot_btc, "spot_eth": ctx.spot_eth,
+                    "delta_btc_30s_pct": round(delta_btc, 6),
+                    "delta_eth_30s_pct": round(delta_eth, 6),
+                    "corr_5min": ctx.corr_5min,
+                    "corr_15min": ctx.corr_15min,
+                    "is_atm_bucket": True,
+                    "source_signal_hash": self._source_signal_hash(now_ts, delta_btc),
+                },
+            ))
+        return out

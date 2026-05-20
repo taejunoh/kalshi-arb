@@ -378,3 +378,69 @@ def test_lead_lag_skips_when_stale_data():
         corr_5min=0.85, corr_15min=0.85,
     )
     assert BtcEthLeadLagObserver().evaluate(ctx) == []
+
+
+# ---------------------------------------------------------------------------
+# CrossAssetCorrBreakObserver tests
+# ---------------------------------------------------------------------------
+
+from strategies.crypto_cross_asset_observer import CrossAssetCorrBreakObserver
+
+
+def test_corr_break_fires_when_corr_drops_with_movement():
+    """5-min corr <0.4, 15-min baseline ≥0.6, some movement → fire on ATM bucket."""
+    # ATM bucket at 2120 with spot 2120 (dist 0%, < 0.5% threshold)
+    legs = [_make_leg("KXETH", 2120, ya=0.45, yb=0.40, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXETH", asset="ETH", spot=2120.0, b_legs=legs,
+        spot_btc=60500.0, spot_btc_30s_ago=60300.0,   # +0.33% > 0.2%
+        spot_eth=2120.0, spot_eth_30s_ago=2119.0,
+        corr_5min=0.25,    # below 0.4
+        corr_15min=0.80,   # above baseline 0.6
+        close_s=900.0,
+    )
+    obs = CrossAssetCorrBreakObserver()
+    sigs = obs.evaluate(ctx)
+    assert len(sigs) == 1
+    assert sigs[0].observer == "cross_asset_corr_break"
+    assert sigs[0].predicted_outcome == "no"
+    assert sigs[0].features["is_atm_bucket"] is True
+
+
+def test_corr_break_skips_when_no_movement():
+    """Both spots flat — no event yet, skip."""
+    legs = [_make_leg("KXETH", 2120, ya=0.45, yb=0.40, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXETH", asset="ETH", spot=2120.0, b_legs=legs,
+        spot_btc=60000.0, spot_btc_30s_ago=60000.0,
+        spot_eth=2120.0, spot_eth_30s_ago=2120.0,
+        corr_5min=0.25, corr_15min=0.80,
+        close_s=900.0,
+    )
+    assert CrossAssetCorrBreakObserver().evaluate(ctx) == []
+
+
+def test_corr_break_skips_when_baseline_low():
+    """corr_15min 0.5 < baseline 0.6 — never was high-corr, skip."""
+    legs = [_make_leg("KXETH", 2120, ya=0.45, yb=0.40, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXETH", asset="ETH", spot=2120.0, b_legs=legs,
+        spot_btc=60500.0, spot_btc_30s_ago=60300.0,
+        spot_eth=2120.0, spot_eth_30s_ago=2119.0,
+        corr_5min=0.25, corr_15min=0.50,
+        close_s=900.0,
+    )
+    assert CrossAssetCorrBreakObserver().evaluate(ctx) == []
+
+
+def test_corr_break_skips_outside_atm():
+    """Bucket 2200 vs spot 2120 = 3.77% > 0.5% atm cutoff — skip."""
+    legs = [_make_leg("KXETH", 2200, ya=0.45, yb=0.40, yb_size=50)]
+    ctx = _make_ctx(
+        series="KXETH", asset="ETH", spot=2120.0, b_legs=legs,
+        spot_btc=60500.0, spot_btc_30s_ago=60300.0,
+        spot_eth=2120.0, spot_eth_30s_ago=2119.0,
+        corr_5min=0.25, corr_15min=0.80,
+        close_s=900.0,
+    )
+    assert CrossAssetCorrBreakObserver().evaluate(ctx) == []
