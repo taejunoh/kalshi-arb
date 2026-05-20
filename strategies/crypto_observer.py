@@ -356,6 +356,8 @@ class EventContext:
     spot_eth_10s_ago: Optional[float] = None
     corr_5min: Optional[float] = None
     corr_15min: Optional[float] = None
+    # 2026-05-20 cross-venue funding (Deribit / OKX / Bybit)
+    funding_8h_by_venue: dict[str, Optional[float]] = field(default_factory=dict)
     book_mid_cache: Optional[object] = None  # _BookMidCache, untyped to avoid circular import
 
     def atm_bucket_index(self) -> Optional[int]:
