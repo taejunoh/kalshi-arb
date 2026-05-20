@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily strategy silence watchdog (13:05 UTC = 09:05 EDT)
+Requires=kalshi-strategy-silence-watchdog.service
+
+[Timer]
+# 13:05 UTC daily — 5 min offset from daily_live_audit (13:00 UTC) so
+# Telegram messages arrive sequentially, not concurrently rate-limited.
+# Both alerts read the same 24h window so timing is correlated.
+OnCalendar=*-*-* 13:05:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
