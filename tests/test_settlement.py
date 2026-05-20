@@ -97,6 +97,73 @@ def test_settle_win_no_side_credits_payout():
     assert order_mgr.bankroll == pytest.approx(1100.0, abs=0.01)
 
 
+def test_settle_uses_realized_fill_price_for_live():
+    """LIVE trades with realized_fill_price (better-than-signal fill) must
+    compute PnL using the realized price, not the signal price. Bug found
+    2026-05-20: atm_hold_v1 LIVE filled 40 contracts at $0.187 avg vs signal
+    $0.50. Pre-fix: settlement recorded -$20 loss (signal × intended count).
+    Post-fix: settlement uses realized → -$7.48 actual loss.
+    """
+    checker, client, db, order_mgr = _make_checker()
+    db.get_unsettled_trades = AsyncMock(return_value=[
+        # status='filled' = LIVE. size and price reflect ACTUAL (post-fix
+        # order_manager stores actual paid stake). realized_fill_price is
+        # the avg fill price Kalshi reported.
+        {"id": 1, "market_id": "MKT-1", "strategy": "atm_hold_v1",
+         "direction": "yes", "price": 0.50, "size": 7.48, "fee": 0.42,
+         "status": "filled", "realized_fill_price": 0.187},
+    ])
+    client.get_market.return_value = {"status": "finalized", "result": "no"}
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(checker.check_and_settle())
+    db.settle_trade.assert_called_once()
+    args, kwargs = db.settle_trade.call_args
+    assert args[0] == 1
+    # LOSS: pnl = -size_usdc = -$7.48 (actual paid), not -$20 (intended).
+    assert args[1] == pytest.approx(-7.48, abs=0.01)
+    # status should be 'settled' (LIVE), not 'paper_settled'
+    assert kwargs.get("status") == "settled"
+
+
+def test_settle_uses_realized_fill_price_for_live_win():
+    """LIVE win: contracts = size/realized = actual filled count.
+    Payout = contracts × $1. Profit = payout - cost - fee.
+    """
+    checker, client, db, order_mgr = _make_checker()
+    db.get_unsettled_trades = AsyncMock(return_value=[
+        # 40 contracts × $0.187 = $7.48 actual paid. If YES wins:
+        # payout = 40 × $1 = $40; pnl = $40 - $7.48 - $0.42 = $32.10
+        {"id": 1, "market_id": "MKT-1", "strategy": "atm_hold_v1",
+         "direction": "yes", "price": 0.50, "size": 7.48, "fee": 0.42,
+         "status": "filled", "realized_fill_price": 0.187},
+    ])
+    client.get_market.return_value = {"status": "finalized", "result": "yes"}
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(checker.check_and_settle())
+    args, _ = db.settle_trade.call_args
+    # WIN: pnl = size × (1 - realized) / realized - fee
+    #    = 7.48 × (0.813 / 0.187) - 0.42
+    #    = 7.48 × 4.3476 - 0.42 ≈ 32.10
+    assert args[1] == pytest.approx(32.10, abs=0.05)
+
+
+def test_settle_falls_back_to_signal_price_when_realized_missing():
+    """Paper trades have realized_fill_price = NULL — must fall back to
+    signal price so paper PnL computation stays identical to pre-fix."""
+    checker, client, db, order_mgr = _make_checker()
+    db.get_unsettled_trades = AsyncMock(return_value=[
+        {"id": 1, "market_id": "MKT-1", "strategy": "sports_underdog_v31",
+         "direction": "yes", "price": 0.30, "size": 30.0, "fee": 2.0,
+         "status": "paper_filled", "realized_fill_price": None},
+    ])
+    client.get_market.return_value = {"status": "finalized", "result": "yes"}
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(checker.check_and_settle())
+    args, _ = db.settle_trade.call_args
+    # Paper win with signal price 0.30: pnl = 30 × 0.7/0.3 - 2 = 68
+    assert args[1] == pytest.approx(68.0, abs=0.01)
+
+
 def test_settle_pnl_record_unchanged():
     """settle_trade should still record the ECONOMIC PnL (not the bankroll delta).
     settle_trade(id, pnl) — pnl is the net gain/loss for performance tracking.
