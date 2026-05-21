@@ -18,6 +18,12 @@ Status emitted (one of):
   RETIRE-{1..5}       — one of the retire conditions met
   PROMOTE-candidate   — all 5 promote conditions met
 
+RETIRE-#4 semantics (refined 2026-05-21): triggers when the NET cascade
+EV (sum across all ≥4-fire events) is ≤ 0. The earlier "any losing
+cascade exists" formulation false-triggered when the strategy had
+simultaneous winning + losing cascades whose net was positive — observed
+2026-05-21 with B77150 4× −$67 vs B77650 3× +$215 (net +$148).
+
 Skips with no-op (exit 0, no Telegram) on the first day after deploy
 (< 2026-05-22) to avoid evaluating day-1 noise.
 
@@ -121,14 +127,23 @@ async def eval_strategy(send: bool):
     top_events = sorted(by_event.items(), key=lambda kv: kv[1], reverse=True)[:3]
     top1_pct = (top_events[0][1] / gross_pos * 100.0) if top_events and gross_pos > 0 else 0.0
 
-    # Cascade detection: market_id with >=4 fires, net-loss.
+    # Cascade detection: ALL market_ids with >=CASCADE_MIN_FIRES fires
+    # (winners + losers). The RETIRE-#4 rule uses the NET cascade EV, not
+    # "any losing cascade exists" — that earlier formulation produced false
+    # retire signals when the strategy had simultaneous winning and losing
+    # cascades whose sum was positive (2026-05-21 evening: B77150 4× −$67
+    # losing cascade + B77650 3× +$215 winning cascade → net +$148).
     by_market: dict[str, list[float]] = {}
     for r in rows:
         by_market.setdefault(r["market_id"], []).append(r["pnl"])
-    cascade_losers = [
+    cascade_events = [
         (mid, pnls) for mid, pnls in by_market.items()
-        if len(pnls) >= CASCADE_MIN_FIRES and sum(pnls) <= 0
+        if len(pnls) >= CASCADE_MIN_FIRES
     ]
+    cascade_losers = [
+        (mid, pnls) for mid, pnls in cascade_events if sum(pnls) <= 0
+    ]
+    cascade_net = sum(sum(pnls) for _, pnls in cascade_events)
 
     # Per-asset split.
     by_asset: dict[str, tuple[int, float]] = {}
@@ -143,11 +158,15 @@ async def eval_strategy(send: bool):
         retire_triggers.append(("2", f"n={n}≥{MIN_N_FOR_DECISION} AND net=${pnl_total:.2f}≤0"))
     if n >= MIN_N_FOR_DECISION and top1_pct > SINGLE_EVENT_MAX_PCT:
         retire_triggers.append(("3", f"top event = {top1_pct:.1f}% of gross >50%"))
-    if cascade_losers:
+    if cascade_events and cascade_net < 0:
         cascades_str = ", ".join(
             f"{mid} ({len(p)}× net ${sum(p):.0f})" for mid, p in cascade_losers[:3]
         )
-        retire_triggers.append(("4", f"cascade loss pattern: {cascades_str}"))
+        retire_triggers.append((
+            "4",
+            f"cascade net EV ${cascade_net:.2f}≤0 across "
+            f"{len(cascade_events)} cascade event(s); losers: {cascades_str}"
+        ))
     # Check 5: KXBTC-only +EV with KXETH dead.
     btc_n, btc_pnl = by_asset.get("KXBTC", (0, 0.0))
     eth_n, eth_pnl = by_asset.get("KXETH", (0, 0.0))
@@ -204,11 +223,17 @@ async def eval_strategy(send: bool):
             pct = (ep / gross_pos * 100) if gross_pos > 0 else 0
             lines.append(f"  {ek}: ${ep:+.2f} ({pct:+.1f}% of gross)")
 
-    if cascade_losers:
+    if cascade_events:
         lines.append("")
-        lines.append("<b>⚠️ Cascade losses (≥4 fires, net≤0):</b>")
-        for mid, pnls in cascade_losers[:5]:
-            lines.append(f"  {mid}: {len(pnls)}× net ${sum(pnls):+.2f}")
+        lines.append(
+            f"<b>Cascades (≥{CASCADE_MIN_FIRES} fires, "
+            f"net ${cascade_net:+.2f} across {len(cascade_events)}):</b>"
+        )
+        for mid, pnls in sorted(
+            cascade_events, key=lambda kv: sum(kv[1])
+        )[:5]:
+            tag = "🚨" if sum(pnls) <= 0 else "✓"
+            lines.append(f"  {tag} {mid}: {len(pnls)}× net ${sum(pnls):+.2f}")
 
     if retire_triggers:
         lines.append("")
@@ -243,7 +268,12 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--send", action="store_true",
                    help="Send Telegram (default: console-only dry print).")
+    p.add_argument("--force", action="store_true",
+                   help="Bypass SKIP_BEFORE gate (for dry-run during eval-rule iteration).")
     args = p.parse_args()
+    if args.force:
+        global SKIP_BEFORE
+        SKIP_BEFORE = datetime(1970, 1, 1, tzinfo=timezone.utc)
     asyncio.run(eval_strategy(send=args.send))
 
 
