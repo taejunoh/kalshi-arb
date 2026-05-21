@@ -73,6 +73,17 @@ STRATEGY_OVERRIDES = {
         "crit_cum_pnl": -100.0,
         "note": "J config (MAX_NO_ASK 0.85 + per-event cap 8)",
     },
+    # 2026-05-21 23:01 UTC LIVE soft-launch — $5 size, cap=2, aggression=0
+    # for paper-parity fills. Stage-1 thresholds are tight: rollback at
+    # any week-level loss. See [[deribit_tail_fade_high_v1_live_promotion_2026-05-21]].
+    "deribit_tail_fade_high_v1": {
+        "deploy_ts": "2026-05-21T23:01:33+00:00",
+        "promote_3d_pnl": 15.0,
+        "warn_3d_pnl": -15.0,
+        "crit_3d_pnl": -30.0,
+        "crit_cum_pnl": -50.0,
+        "note": "LIVE soft-launch ($5 / cap=2 / aggression=0)",
+    },
 }
 
 # Kalshi 429 rate-limit thresholds (added 2026-05-21 after sports
