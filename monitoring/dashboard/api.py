@@ -1614,6 +1614,141 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             return sports_trader.odds_api_usage
         return {"used": 0, "remaining": 0, "last": 0}
 
+    @app.get("/api/strategy-monitor/{strategy}")
+    async def get_strategy_monitor(strategy: str, since: Optional[str] = Query(None)):
+        """LIVE vs paper-twin monitoring for a single strategy. Designed for
+        post-LIVE-promotion oversight (cme_basis_fade_v1 5/21 etc.) — returns
+        rollback-trigger booleans alongside the underlying numbers so a remote
+        agent can decide without re-running SQL.
+
+        `since` = ISO UTC timestamp (default: 24h ago). All counts/stats are
+        bounded to (since, now). For a freshly-promoted strategy pass the
+        promotion timestamp to scope LIVE history correctly."""
+        import aiosqlite
+        if not since:
+            since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+
+        async def _strategy_stats(conn, status: str) -> dict:
+            cur = await conn.execute(
+                "SELECT COUNT(*) AS n, "
+                "  COALESCE(SUM(pnl),0) AS sum_pnl, "
+                "  COALESCE(AVG(pnl),0) AS avg_pnl, "
+                "  SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins, "
+                "  SUM(CASE WHEN pnl = 0 THEN 1 ELSE 0 END) AS zeros, "
+                "  MIN(pnl) AS worst "
+                "FROM trades "
+                "WHERE strategy = ? AND status = ? AND timestamp >= ?",
+                (strategy, status, since),
+            )
+            row = await cur.fetchone()
+            if not row or row[0] == 0:
+                return {"n": 0, "sum_pnl": 0.0, "avg_pnl": 0.0, "wins": 0,
+                        "wr_pct": None, "wipe_zero_pct": None, "worst_pnl": None}
+            n = int(row[0])
+            wins = int(row[3] or 0)
+            zeros = int(row[4] or 0)
+            return {
+                "n": n,
+                "sum_pnl": round(float(row[1]), 2),
+                "avg_pnl": round(float(row[2]), 3),
+                "wins": wins,
+                "wr_pct": round(100.0 * wins / n, 1),
+                "wipe_zero_pct": round(100.0 * zeros / n, 1),
+                "worst_pnl": round(float(row[5]), 2) if row[5] is not None else None,
+            }
+
+        async with aiosqlite.connect(database.db_path, timeout=30.0) as conn:
+            live = await _strategy_stats(conn, "settled")
+            paper = await _strategy_stats(conn, "paper_settled")
+
+            cur = await conn.execute(
+                "SELECT COUNT(*) FROM trades "
+                "WHERE strategy = ? AND status = 'filled' AND timestamp >= ?",
+                (strategy, since),
+            )
+            row = await cur.fetchone()
+            live_unsettled = int(row[0]) if row else 0
+
+            cur = await conn.execute(
+                "SELECT COUNT(*) FROM trades "
+                "WHERE strategy = ? AND status = 'cancelled' AND timestamp >= ?",
+                (strategy, since),
+            )
+            row = await cur.fetchone()
+            live_cancelled = int(row[0]) if row else 0
+
+            cur = await conn.execute(
+                "SELECT timestamp, market_id, ROUND(price,3), ROUND(realized_fill_price,3), "
+                "  ROUND(pnl,2) "
+                "FROM trades "
+                "WHERE strategy = ? AND status = 'settled' AND timestamp >= ? AND pnl < 0 "
+                "ORDER BY pnl ASC LIMIT 3",
+                (strategy, since),
+            )
+            top_losses = [
+                {"ts": r[0], "ticker": r[1], "signal_price": r[2],
+                 "realized_price": r[3], "pnl": r[4]}
+                for r in await cur.fetchall()
+            ]
+
+            cur = await conn.execute(
+                "SELECT "
+                "  CASE "
+                "    WHEN price < 0.70 THEN '<0.70' "
+                "    WHEN price < 0.75 THEN '0.70-0.75' "
+                "    WHEN price < 0.80 THEN '0.75-0.80' "
+                "    WHEN price < 0.85 THEN '0.80-0.85' "
+                "    WHEN price < 0.90 THEN '0.85-0.90 (wipe-risk)' "
+                "    ELSE '>=0.90 (wipe-zone)' "
+                "  END AS bucket, "
+                "  COUNT(*) AS n, "
+                "  SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins, "
+                "  ROUND(SUM(pnl),2) AS net "
+                "FROM trades "
+                "WHERE strategy = ? AND status = 'settled' AND timestamp >= ? "
+                "GROUP BY bucket ORDER BY bucket",
+                (strategy, since),
+            )
+            price_buckets = [
+                {"bucket": r[0], "n": int(r[1]),
+                 "wins": int(r[2] or 0),
+                 "wr_pct": round(100.0 * (r[2] or 0) / r[1], 1) if r[1] else None,
+                 "net": float(r[3] or 0)}
+                for r in await cur.fetchall()
+            ]
+
+        live_net = live["sum_pnl"]
+        live_n = live["n"]
+        live_wr = live["wr_pct"]
+        wipe_pct = live["wipe_zero_pct"]
+        triggers = {
+            "net_le_neg_50": live_net <= -50.0,
+            "wr_lt_70_at_n_ge_30": (live_n >= 30 and live_wr is not None and live_wr < 70.0),
+            "wipe_zero_gt_20pct": (live_n >= 10 and wipe_pct is not None and wipe_pct > 20.0),
+        }
+        triggers["any_rollback_signal"] = any(triggers.values())
+
+        ratio = None
+        if paper["sum_pnl"] and paper["sum_pnl"] != 0:
+            ratio = round(live_net / paper["sum_pnl"], 3)
+
+        return {
+            "strategy": strategy,
+            "since": since,
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            "live": live,
+            "paper_twin": paper,
+            "live_vs_paper_ratio": ratio,
+            "live_unsettled": live_unsettled,
+            "live_cancelled": live_cancelled,
+            "fill_rate_pct": (round(100.0 * (live_n + live_unsettled) /
+                                   max(1, live_n + live_unsettled + live_cancelled), 1)
+                              if (live_n + live_unsettled + live_cancelled) else None),
+            "price_distribution": price_buckets,
+            "top_losses": top_losses,
+            "rollback_triggers": triggers,
+        }
+
     # Serve static frontend files if they exist
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     if os.path.isdir(static_dir):
