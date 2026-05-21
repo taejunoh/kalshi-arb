@@ -688,6 +688,38 @@ def test_mid_otm_tail_fires_on_t_legs_for_daily_series():
     assert sigs[0].features["kind"] == "cumulative"
 
 
+def test_mid_otm_tail_cliff_zone_flag():
+    """cliff_zone = (series==KXETH AND mts_s<3600 AND dist_pct<0.015).
+    Added 2026-05-21 after 24h audit showed 3 KXETH 1h-expiry cascades
+    accounted for $89/$32 of total bleed — flag enables post-hoc segmentation
+    and eventual sister Phase 1 paper trader gated on cliff_zone=False."""
+    obs = MidOtmTailObserver()
+    # KXETH series, dist 0.56%, mts 1800s → cliff
+    eth_legs = [_b(90250, ya=0.15, yb=0.13, yb_size=50)]
+    eth_ctx = EventContext(
+        series="KXETH", asset="ETH", event_key="26MAY1310",
+        now=NOW, spot=89750.0, spot_60s_ago=None, deribit_iv=None,
+        b_legs=eth_legs, t_legs=[],
+        open_time_secs=None, close_time_secs=1800.0,
+    )
+    sigs = obs.evaluate(eth_ctx)
+    assert len(sigs) == 1
+    assert sigs[0].features["cliff_zone"] is True
+
+    # KXBTC same setup → not cliff (series filter)
+    btc_sigs = obs.evaluate(_ctx(b_legs=eth_legs, close_s=1800.0))
+    assert btc_sigs[0].features["cliff_zone"] is False
+
+    # KXETH but mts >= 3600 → not cliff (window filter)
+    eth_ctx_far = EventContext(
+        series="KXETH", asset="ETH", event_key="26MAY1310",
+        now=NOW, spot=89750.0, spot_60s_ago=None, deribit_iv=None,
+        b_legs=eth_legs, t_legs=[],
+        open_time_secs=None, close_time_secs=5400.0,
+    )
+    assert obs.evaluate(eth_ctx_far)[0].features["cliff_zone"] is False
+
+
 # ── 10. DeribitAtmSkew (2026-05-18) ────────────────────────────────
 
 
