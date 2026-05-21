@@ -43,6 +43,8 @@ def _cfg():
         OPEN_NO_TOUCH_MIN_YA=0.30,
         OPEN_NO_TOUCH_MAX_YA=0.45,
         OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT=1,
+        OPEN_NO_TOUCH_KXETH_EXCLUDE_NO_ASK_LOW=0.40,
+        OPEN_NO_TOUCH_KXETH_EXCLUDE_NO_ASK_HIGH=0.60,
         ATM_HOLD_SIZE_USDC=20.0,
         ATM_HOLD_SIGNAL_FRESHNESS_S=15.0,
         LATE_CLOSE_TAIL_SIZE_USDC=20.0,
@@ -629,6 +631,52 @@ async def test_open_no_touch_skips_yes_prediction():
                             market_lookup=markets.get)
     await s.scan_and_execute()
     assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_open_no_touch_skips_kxeth_wipe_band():
+    """KXETH / KXETHD × no_ask ∈ [0.40, 0.60) was a structural wipe in
+    Phase 1 paper 14d (n=69, -$982, WR 7%, 8/8 days negative). Same band
+    on KXBTC is +EV, so the gate is asset-prefix scoped — not a global
+    MAX_YA shift. Bound is exclusive on top to match ya<MAX_YA."""
+    # KXETHD daily (T-strike) at no_ask=0.55 — inside wipe band, ya=0.45.
+    # Test ya gate must allow ya=0.45 → widen the in-test MAX_YA.
+    sig = {"id": 1, "ts": _now_iso(2.0),
+           "market_id": "KXETHD-26MAY2023-T2139.99",
+           "predicted_outcome": "no"}
+    markets = {"KXETHD-26MAY2023-T2139.99": {
+        "yes_ask_dollars": 0.45, "no_ask_dollars": 0.55,
+    }}
+    s, om = _build_strategy(OpenNoTouchV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    s._max_ya = 0.50  # widen so ya=0.45 fits the ya window
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+    # KXBTC at the same no_ask=0.55 should still fire (asset-scoped gate).
+    sig2 = {"id": 2, "ts": _now_iso(2.0),
+            "market_id": "KXBTC-26MAY2023-B77000",
+            "predicted_outcome": "no"}
+    markets2 = {"KXBTC-26MAY2023-B77000": {
+        "yes_ask_dollars": 0.45, "no_ask_dollars": 0.55,
+    }}
+    s2, om2 = _build_strategy(OpenNoTouchV1Strategy, signals=[sig2],
+                              market_lookup=markets2.get)
+    s2._max_ya = 0.50
+    await s2.scan_and_execute()
+    assert om2.market_order.await_count == 1
+
+    # KXETH at no_ask=0.60 (top of band, exclusive) should still fire.
+    sig3 = {"id": 3, "ts": _now_iso(2.0),
+            "market_id": "KXETH-26MAY1311-B2270",
+            "predicted_outcome": "no"}
+    markets3 = {"KXETH-26MAY1311-B2270": {
+        "yes_ask_dollars": 0.40, "no_ask_dollars": 0.60,
+    }}
+    s3, om3 = _build_strategy(OpenNoTouchV1Strategy, signals=[sig3],
+                              market_lookup=markets3.get)
+    await s3.scan_and_execute()
+    assert om3.market_order.await_count == 1
 
 
 @pytest.mark.asyncio

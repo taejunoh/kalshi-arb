@@ -448,6 +448,8 @@ class OpenNoTouchV1Strategy(_Phase1Base):
         self._max_ya = config.OPEN_NO_TOUCH_MAX_YA
         self._target_ya = (self._min_ya + self._max_ya) / 2.0
         self._max_fires_per_event = config.OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT
+        self._kxeth_excl_low = config.OPEN_NO_TOUCH_KXETH_EXCLUDE_NO_ASK_LOW
+        self._kxeth_excl_high = config.OPEN_NO_TOUCH_KXETH_EXCLUDE_NO_ASK_HIGH
         # event_key -> fire count (in-memory, resets on restart).
         self._fires_per_event: dict[str, int] = {}
 
@@ -510,6 +512,13 @@ class OpenNoTouchV1Strategy(_Phase1Base):
                 continue
             ya = 1.0 - no_ask
             if ya < self._min_ya or ya >= self._max_ya:
+                self._processed.add(sig_id)
+                continue
+            # KXETH / KXETHD × no_ask ∈ [low, high) wipe cohort
+            # (Phase 1 paper 14d: n=69 / -$982 / WR 7% / 8/8 days neg).
+            if (self._kxeth_excl_low < self._kxeth_excl_high
+                    and ticker.startswith("KXETH")
+                    and self._kxeth_excl_low <= no_ask < self._kxeth_excl_high):
                 self._processed.add(sig_id)
                 continue
             ek = self._event_key(sig)

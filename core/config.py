@@ -252,6 +252,17 @@ class Config:
         # adding information. Cap=1 + center-of-window strike picker keeps
         # samples independent enough for promotion-gate statistics.
         self.OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT = int(os.getenv("OPEN_NO_TOUCH_MAX_FIRES_PER_EVENT", "1"))
+        # KXETH / KXETHD × no_ask ∈ [0.40, 0.60) wipe-cohort exclusion
+        # (2026-05-21). Phase 1 paper 14d (n=69, -$982, WR 7%, 8/8 days
+        # negative) — fine-grain bins 0.40-0.60 all between -$140 and
+        # -$342 net. Same band on KXBTC is +EV, so the filter is asset-
+        # gated rather than a global MAX_YA shift. Excluding the cohort
+        # turns trader from -$823/14d to +$158/14d (WR 68.6%, 6/8 days
+        # positive). Bound is exclusive on top to match ya<MAX_YA shape.
+        self.OPEN_NO_TOUCH_KXETH_EXCLUDE_NO_ASK_LOW = float(
+            os.getenv("OPEN_NO_TOUCH_KXETH_EXCLUDE_NO_ASK_LOW", "0.40"))
+        self.OPEN_NO_TOUCH_KXETH_EXCLUDE_NO_ASK_HIGH = float(
+            os.getenv("OPEN_NO_TOUCH_KXETH_EXCLUDE_NO_ASK_HIGH", "0.60"))
         # ─ Phase 1 per-ticker cooldown (2026-05-20). DB-persisted gate that
         #   blocks a fire on (strategy, ticker) if the previous fire was
         #   within COOLDOWN_S AND at a price within PRICE_DIFF dollars.
