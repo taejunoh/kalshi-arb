@@ -1003,101 +1003,77 @@ def _build_ladder(*, n_legs: int, ya_each: float, yb_each: float | None = None,
     return legs
 
 
-def test_strike_ladder_literal_full_underpriced_fires():
-    """sum(ya) across 30 legs ≤ 0.95 → emits full_underpriced 'yes' signal."""
-    # 30 legs × 0.025 ya each = 0.75 total ← below 0.95
-    legs = _build_ladder(n_legs=30, ya_each=0.025, yb_each=0.02)
-    ctx = _ctx(b_legs=legs, spot=70_000.0, close_s=300.0)
-    sigs = StrikeLadderLiteralObserver().evaluate(ctx)
-    full = [s for s in sigs if s.features["kind"] == "full_underpriced"]
-    assert len(full) == 1
-    assert full[0].predicted_outcome == "yes"
-    assert full[0].features["full_sum_ya"] == pytest.approx(0.75, abs=0.01)
-    assert full[0].features["n_legs_total"] == 30
-    assert full[0].features["cluster_n"] is None  # full kind has no cluster fields
-
-
 def test_strike_ladder_literal_full_overpriced_fires():
-    """sum(yb) across 30 legs ≥ 1.05 → emits full_overpriced 'no' signal."""
-    # 30 legs × 0.05 yb each = 1.50 ← above 1.05
-    legs = _build_ladder(n_legs=30, ya_each=0.06, yb_each=0.05)
+    """sum(ya) ≥ 1.10 with ≥5 resting legs → emits 'no' signal on highest-ya leg."""
+    # 18 legs ya=0.10 each → sum_ya = 1.80 ≫ 1.10. One leg bumped to 0.30 so it
+    # uniquely wins as the highest-ya target. yb mirrors but is irrelevant now.
+    legs = _build_ladder(n_legs=18, ya_each=0.10, yb_each=0.08)
+    legs[9] = _b(int(legs[9].threshold), ya=0.30, yb=0.08)
     ctx = _ctx(b_legs=legs, spot=70_000.0, close_s=300.0)
     sigs = StrikeLadderLiteralObserver().evaluate(ctx)
-    full = [s for s in sigs if s.features["kind"] == "full_overpriced"]
-    assert len(full) == 1
-    assert full[0].predicted_outcome == "no"
-    assert full[0].features["full_sum_yb"] == pytest.approx(1.50, abs=0.01)
+    assert len(sigs) == 1
+    sig = sigs[0]
+    assert sig.predicted_outcome == "no"
+    assert sig.features["kind"] == "full_overpriced"
+    # 17 × 0.10 + 0.30 = 2.00
+    assert sig.features["full_sum_ya"] == pytest.approx(2.00, abs=0.01)
+    assert sig.features["resting_sum_ya"] == pytest.approx(2.00, abs=0.01)
+    assert sig.features["n_legs_total"] == 18
+    assert sig.features["n_resting_ya_legs"] == 18
+    assert sig.features["target_ya"] == pytest.approx(0.30)
+    assert sig.market_id.endswith(str(int(legs[9].threshold)))
 
 
-def test_strike_ladder_literal_otm_sub_cluster_fires_above_spot():
-    """OTM cluster centered ~+15% above spot, sub-cluster sum_ya low → 'yes'."""
-    # Spot 70k. Build 30 legs $500-step covering 65k-79500. Target center
-    # = 70_000 * 1.15 = 80_500. Nearest leg = 79_500 (idx=29) — but that's
-    # the last leg, cluster radius±5 → only 5 legs available [79_500] only.
-    # Extend range: 30 legs from 70_000 step 500 covers 70_000-84_500.
-    # Best center for +15% (80_500) = idx 21 (=80_500). Cluster [16..26] = 11 legs.
-    # ya 0.005 each × 11 = 0.055 → well below 0.95.
-    legs = _build_ladder(n_legs=30, ya_each=0.005, yb_each=0.004,
-                         base_strike=70_000.0, step=500.0)
+def test_strike_ladder_literal_no_fire_when_ladder_priced_fairly():
+    """sum_ya < 1.10 → no signal (mutually-exclusive prior holds)."""
+    legs = _build_ladder(n_legs=20, ya_each=0.05, yb_each=0.04)  # sum_ya = 1.00
+    ctx = _ctx(b_legs=legs, spot=70_000.0, close_s=300.0)
+    assert StrikeLadderLiteralObserver().evaluate(ctx) == []
+
+
+def test_strike_ladder_literal_no_fire_when_book_is_sparse():
+    """sum_ya ≥ 1.10 but fewer than 5 resting legs → skip (sparsity defense)."""
+    # 18 legs but only 3 carry resting offers (ya>0). The 3 resting legs hold
+    # ya=0.40 each → sum_ya = 1.20 ≥ 1.10, BUT n_resting=3 < 5.
+    legs = _build_ladder(n_legs=18, ya_each=0.0, yb_each=0.0)
+    for i in (4, 9, 14):
+        legs[i] = _b(int(legs[i].threshold), ya=0.40, yb=0.30)
+    ctx = _ctx(b_legs=legs, spot=70_000.0, close_s=300.0)
+    assert StrikeLadderLiteralObserver().evaluate(ctx) == []
+
+
+def test_strike_ladder_literal_resting_sum_excludes_zero_ya_legs():
+    """resting_sum_ya only counts legs with ya>0; full_sum_ya is the raw total."""
+    # 15 legs ya=0.10 (resting) + 3 legs ya=0 (no offer) → full=1.50, resting=1.50.
+    # Both above gate. Verify resting subset is what's used for target selection.
+    legs = _build_ladder(n_legs=18, ya_each=0.10, yb_each=0.08)
+    for i in (0, 17, 8):
+        legs[i] = _b(int(legs[i].threshold), ya=0.0, yb=0.0)
+    # Bump one resting leg so it's uniquely highest
+    legs[5] = _b(int(legs[5].threshold), ya=0.25, yb=0.10)
     ctx = _ctx(b_legs=legs, spot=70_000.0, close_s=300.0)
     sigs = StrikeLadderLiteralObserver().evaluate(ctx)
-    # full_underpriced will also fire (0.005×30=0.15 ≤ 0.95). Filter OTM ones.
-    otm = [s for s in sigs if s.features["kind"] == "otm_underpriced"]
-    assert len(otm) >= 1
-    # Check the +15% direction fired
-    above_spot = [s for s in otm if s.features["cluster_center_dist_pct"] > 0]
-    assert len(above_spot) == 1
-    sig = above_spot[0]
-    assert sig.predicted_outcome == "yes"
-    assert sig.features["cluster_center_dist_pct"] == pytest.approx(0.15, abs=0.02)
-    assert sig.features["cluster_n"] >= 5
-    assert sig.features["cluster_sum_ya"] is not None
+    assert len(sigs) == 1
+    sig = sigs[0]
+    # 14 × 0.10 + 0.25 + 3 × 0 = 1.65
+    assert sig.features["full_sum_ya"] == pytest.approx(1.65, abs=0.01)
+    assert sig.features["resting_sum_ya"] == pytest.approx(1.65, abs=0.01)
+    assert sig.features["n_resting_ya_legs"] == 15
+    assert sig.features["target_ya"] == pytest.approx(0.25)
 
 
 def test_strike_ladder_literal_excludes_settlement_edge_window():
     """mts_s < 60s → skip (settlement_edge owns that window)."""
-    legs = _build_ladder(n_legs=30, ya_each=0.005, yb_each=0.004)
+    legs = _build_ladder(n_legs=18, ya_each=0.10, yb_each=0.08)
     ctx = _ctx(b_legs=legs, spot=70_000.0, close_s=30.0)
     assert StrikeLadderLiteralObserver().evaluate(ctx) == []
 
 
 def test_strike_ladder_literal_skips_below_min_legs():
     """len(b_legs) < 10 → skip."""
-    legs = _build_ladder(n_legs=8, ya_each=0.005, yb_each=0.004)
+    legs = _build_ladder(n_legs=8, ya_each=0.20, yb_each=0.10)
     ctx = _ctx(b_legs=legs, spot=70_000.0, close_s=300.0)
     assert StrikeLadderLiteralObserver().evaluate(ctx) == []
-
-
-def test_strike_ladder_literal_skips_when_otm_center_too_close_to_spot():
-    """If event ladder doesn't cover ±10-30% OTM, the OTM scan skips
-    (full-ladder may still fire). 10 tight legs near ATM → no OTM fire."""
-    # 10 legs from 69_750 to 70_700 = max 1% from spot 70k
-    legs = _build_ladder(n_legs=10, ya_each=0.005, yb_each=0.004,
-                         base_strike=69_750.0, step=100.0)
-    ctx = _ctx(b_legs=legs, spot=70_000.0, close_s=300.0)
-    sigs = StrikeLadderLiteralObserver().evaluate(ctx)
-    # full_underpriced should still fire (0.005 * 10 = 0.05 ≤ 0.95)
-    full = [s for s in sigs if s.features["kind"] == "full_underpriced"]
-    assert len(full) == 1
-    # but no OTM fires — nearest legs to ±15% center are <1% from spot
-    otm = [s for s in sigs if s.features["kind"].startswith("otm_")]
-    assert otm == []
-
-
-def test_strike_ladder_literal_skips_when_no_violations():
-    """Healthy ladder where neither full nor OTM sub-cluster sums violate.
-
-    Need:
-      full_sum_ya > 0.95  → ya > 0.032
-      full_sum_yb < 1.05  → yb < 0.035
-      OTM-cluster sum_ya > 0.95 (per ~6-leg edge cluster) → ya > 0.16
-      OTM-cluster sum_yb < 1.05 → yb < 0.17
-    ya=0.18, yb=0.03 satisfies all four.
-    """
-    legs = _build_ladder(n_legs=30, ya_each=0.18, yb_each=0.03)
-    ctx = _ctx(b_legs=legs, spot=70_000.0, close_s=300.0)
-    sigs = StrikeLadderLiteralObserver().evaluate(ctx)
-    assert sigs == []
 
 
 def test_strike_ladder_literal_registered_in_observer_classes():
