@@ -1,0 +1,114 @@
+{
+  "version": "2026-05-21",
+  "note": "Upcoming eval gates and promotion checkpoints. Maintained manually — update when new gates are scheduled or completed gates are removed.",
+  "gates": [
+    {
+      "date": "2026-05-23",
+      "type": "manual",
+      "label": "soccer_weekend_v1 dow gate opens",
+      "details": "First Sat/Sun fire — verify Pattern A/B (EPL underdog 0.25-0.30 / MLS fade-fav NO 0.40-0.50) fires at least once.",
+      "criteria": "n >= 1 per pattern over Sat+Sun",
+      "memory": "next_session_entry_2026-05-22"
+    },
+    {
+      "date": "2026-05-26",
+      "time_utc": "13:00",
+      "type": "auto",
+      "label": "Phase 0 cross-venue T+7d eval",
+      "details": "vol_skew_fade + cme_basis_fade + etf_flow_lag — auto-Telegram via kalshi-phase0-observer-eval.timer.",
+      "criteria": "Per cohort: WR sustained + fee-net positive vs 5/19 baseline",
+      "memory": "phase0_eval_alarm_timer_2026-05-19"
+    },
+    {
+      "date": "2026-05-27",
+      "time_utc": "13:00",
+      "type": "auto",
+      "label": "Multi-cohort eval snapshot",
+      "details": "One-shot eval_2026_05_27_snapshot.py: cross_asset + cme_basis + mid_otm_tail (incl. new Section 3b cliff_zone) + universe_expansion T-leg.",
+      "criteria": "Per cohort: promote / extend / retire per memory bar",
+      "memory": "phase0_eval_alarm_timer_2026-05-19"
+    },
+    {
+      "date": "2026-05-27",
+      "type": "manual",
+      "label": "cme_basis_fade_v1 narrowed-gate 1w eval",
+      "details": "Validate 5/21 gate narrowing to ya [0.17, 0.25] (was [0.17, 0.42]).",
+      "criteria": "n >= 100 in [0.17, 0.25] + WR >= 80% + fee-net/ct >= +$0.04; else retire",
+      "memory": "cme_basis_fade_v1_bleed_2026-05-21"
+    },
+    {
+      "date": "2026-05-27",
+      "type": "manual",
+      "label": "deribit_tail_fade_high_v1 1w eval",
+      "details": "New sister paper trader from 5/21 PM (ya 0.65-0.95 zone, disjoint from deribit_tail_fade_v1).",
+      "criteria": "Per [[sister_strategy_for_disjoint_signal_classes]] — independent +EV vs paper baseline",
+      "memory": "phase1_lifetime_audit_sweep_2026-05-21"
+    },
+    {
+      "date": "2026-05-28",
+      "time_utc": "13:00",
+      "type": "auto",
+      "label": "settlement_edge_v2 + depth_skew_flip T+7d",
+      "details": "5/21 new sister observer pair — auto-Telegram via extended kalshi-phase0-observer-eval.timer.",
+      "criteria": "Per-observer tradable WR + fee-net EV; v2 must beat v1 in-sample",
+      "memory": "settlement_edge_v2_retune_2026-05-21"
+    },
+    {
+      "date": "2026-06-02",
+      "type": "manual",
+      "label": "ladder_crypto Phase 1 promotion gate",
+      "details": "14d Phase 0 walked-edge data + cross-venue T+14d eval.",
+      "criteria": "Walked-edge >= $0.15 with stable n; promote to Phase 1 paper if held",
+      "memory": "ladder_crypto_phase0_resurrection_2026-05-19"
+    },
+    {
+      "date": "2026-06-03",
+      "type": "manual",
+      "label": "late_close_tail_v1 0.88-0.89 cliff re-eval",
+      "details": "Re-audit fine-grain bin 0.88-0.89 once n >= 15 — confirm cliff vs artifact.",
+      "criteria": "If cliff persists at n >= 15 → narrow gate; else attribute to artifact",
+      "memory": "late_close_tail_v1_subcohort_audit_2026-05-20"
+    },
+    {
+      "date": "2026-06-04",
+      "type": "manual",
+      "label": "Sports cohort block 2w re-eval",
+      "details": "MLB+EPL block + playoff size halve (16->8) + soccer_draw demote — verify ~$1,800/60d bleed stopped.",
+      "criteria": "May LIVE cumulative no worse than -$1,580 baseline; cohort PnL flat or up",
+      "memory": "sports_cohort_block_2026-05-21"
+    },
+    {
+      "date": "2026-06-04",
+      "time_utc": "13:00",
+      "type": "auto",
+      "label": "settlement_edge_v2 + depth_skew_flip T+14d",
+      "details": "Same kalshi-phase0-observer-eval.timer second fire (T+14d).",
+      "criteria": "Tradable WR + fee-net EV held vs T+7d snapshot",
+      "memory": "settlement_edge_v2_retune_2026-05-21"
+    },
+    {
+      "date": "2026-06-04",
+      "type": "manual",
+      "label": "Phase 1 lifetime audit sweep 2w eval",
+      "details": "deribit_tail_fade_high_v1 + atm_hold ya 0.40-0.45 + deribit_atm_fade re-check.",
+      "criteria": "Paper ROI >= +20% AND fill-realism holds -> LIVE promotion candidate",
+      "memory": "phase1_lifetime_audit_sweep_2026-05-21"
+    },
+    {
+      "date": "2026-06-09",
+      "type": "manual",
+      "label": "sports_npb_underdog_v1 promotion gate",
+      "details": "NPB consensus-strong underdog 0.38-0.40 paper trader, launched 5/19.",
+      "criteria": "n >= 15 + ROI >= 30% + drop-top-3 > 0",
+      "memory": "sports_npb_underdog_v1_2026-05-19"
+    },
+    {
+      "date": "2026-06-15",
+      "type": "manual",
+      "label": "New paper strategies promo eval",
+      "details": "soccer_weekend_v1 (EPL underdog + MLS fade-fav) + consensus_aligned_live_v1 — re-run sports_strategy_subslice.py with CANDIDATES updated.",
+      "criteria": "Per-pattern n >= 25 + ROI >= 20-25% + drop-top-3 > 0",
+      "memory": "sports_discovery_arc_2026-05-21"
+    }
+  ]
+}
