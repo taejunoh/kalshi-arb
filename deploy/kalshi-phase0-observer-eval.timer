@@ -1,15 +1,24 @@
 [Unit]
-Description=Schedule for Phase 0 cross-venue observer eval — fires on 5/26 + 6/02
+Description=Phase 0 observer eval — cross-venue (5/26 + 6/02) + settlement_edge_v2 / depth_skew_flip (5/28 + 6/04)
 Requires=kalshi-phase0-observer-eval.service
 
 [Timer]
-# Two scheduled evals tied to [[vol_skew_fade_roi_audit_2026-05-19]] cohort:
-# - 2026-05-26 13:00 UTC = 09:00 EDT = 1-week post-deploy
-# - 2026-06-02 13:00 UTC = 2-week deeper sample (if 5/26 inconclusive)
-# After 6/02 the timer goes dormant (no further OnCalendar entries).
-# Delete or disable manually if a verdict at 5/26 resolves it earlier.
+# Two cohorts share this script (per-observer cohort anchor).
+# Cross-venue (anchor 2026-05-19) — [[vol_skew_fade_roi_audit_2026-05-19]]:
+#   - 2026-05-26 13:00 UTC = T+7d
+#   - 2026-06-02 13:00 UTC = T+14d
+# settlement_edge_v2 + depth_skew_flip (anchor 2026-05-21) —
+# [[settlement-edge-v2-retune-2026-05-21]] / [[depth-skew-flip-observer-2026-05-21]]:
+#   - 2026-05-28 13:00 UTC = T+7d
+#   - 2026-06-04 13:00 UTC = T+14d
+# Each fire reports ALL observers in OBSERVERS, filtered against each
+# observer's own anchor — early fires for one cohort will show "EXTEND
+# (no settled)" rows for the other if its anchor hasn't passed yet.
+# After 6/04 the timer goes dormant (no further OnCalendar entries).
 OnCalendar=2026-05-26 13:00:00 UTC
+OnCalendar=2026-05-28 13:00:00 UTC
 OnCalendar=2026-06-02 13:00:00 UTC
+OnCalendar=2026-06-04 13:00:00 UTC
 Persistent=true
 RandomizedDelaySec=60
 

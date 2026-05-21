@@ -1,9 +1,18 @@
-"""1-week post-deploy eval of the 3 cross-venue Phase 0 observers.
+"""Phase 0 observer eval — auto-triggered Telegram report.
 
-Targets [[vol_skew_fade_roi_audit_2026-05-19]] — auto-triggered ~5/26 via
-systemd timer. Computes WR + simulated ROI on the POST-FLIP cohort
-(ts >= 2026-05-19T12:35:00 UTC) and sends a single Telegram message with
-the verdict (promote / retire / extend) per observer.
+Two cohorts share this script and timer:
+
+  1. Cross-venue suite (vol_skew_fade / cme_basis_fade / etf_flow_lag)
+     [[vol_skew_fade_roi_audit_2026-05-19]] — anchor 2026-05-19T12:35Z
+     Eval fires 5/26 (T+7d) + 6/02 (T+14d)
+
+  2. settlement_edge_v2 + depth_skew_flip
+     [[settlement-edge-v2-retune-2026-05-21]] /
+     [[depth-skew-flip-observer-2026-05-21]] — anchor 2026-05-21T13:00Z
+     Eval fires 5/28 (T+7d) + 6/04 (T+14d)
+
+Each observer is filtered against its own cohort-start ISO so reports
+remain comparable across the 4 fire dates.
 
 CLI: python3 scripts/phase0_observer_eval_alarm.py [--db PATH] [--dry-run]
 """
@@ -27,11 +36,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("phase0_observer_eval")
 
-# Anchor: deploy timestamp of commit 45d4953 (spread gate + vol_skew flip).
-# Signals older than this are mixed-direction / pre-spread-gate and would
-# bias the eval.
-COHORT_START_ISO = "2026-05-19T12:35:00+00:00"
-
 # Kalshi fee approximation (per-contract proportional). Real fee ~0.07 × P×(1-P)
 # is more accurate but the proportional approx is conservative and matches
 # the audit script that found the original ROI numbers.
@@ -42,7 +46,17 @@ PROMOTE_MIN_N_SETTLED = 30
 PROMOTE_MIN_WR = 0.55  # arbitrary — true threshold depends on entry price (BE_WR)
 PROMOTE_MIN_ROI_PCT = 5.0  # sim ROI > +5%
 
-OBSERVERS = ("vol_skew_fade", "cme_basis_fade", "etf_flow_lag")
+# (observer_name, cohort_start_iso) — each observer filtered against its own anchor.
+# Cross-venue cohort anchor = deploy timestamp of commit 45d4953 (spread gate + vol_skew flip).
+# settlement_edge_v2 + depth_skew_flip anchor = 2026-05-21 deploy day (00:00 UTC safe lower bound;
+# both observer names did not exist before this date so any earlier filter is a no-op).
+OBSERVERS = (
+    ("vol_skew_fade",     "2026-05-19T12:35:00+00:00"),
+    ("cme_basis_fade",    "2026-05-19T12:35:00+00:00"),
+    ("etf_flow_lag",      "2026-05-19T12:35:00+00:00"),
+    ("settlement_edge_v2", "2026-05-21T00:00:00+00:00"),
+    ("depth_skew_flip",   "2026-05-21T00:00:00+00:00"),
+)
 
 
 def _wilson_ci(wins: int, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -55,19 +69,20 @@ def _wilson_ci(wins: int, n: int, z: float = 1.96) -> tuple[float, float]:
     return (max(0.0, center - margin), min(1.0, center + margin))
 
 
-def _eval_observer(conn: sqlite3.Connection, observer: str) -> dict:
+def _eval_observer(conn: sqlite3.Connection, observer: str, cohort_start_iso: str) -> dict:
     rows = conn.execute(
         """SELECT predicted_outcome, actual_outcome, features_json
            FROM crypto_observer_signals
            WHERE observer = ? AND ts >= ?""",
-        (observer, COHORT_START_ISO),
+        (observer, cohort_start_iso),
     ).fetchall()
     n_total = len(rows)
     settled = [r for r in rows if r[1] is not None]
     n_settled = len(settled)
     if n_settled == 0:
         return {
-            "observer": observer, "n_total": n_total, "n_settled": 0,
+            "observer": observer, "cohort_start_iso": cohort_start_iso,
+            "n_total": n_total, "n_settled": 0,
             "wr": None, "wr_ci": (None, None), "roi_pct": None,
             "verdict": "EXTEND (no settled)",
         }
@@ -111,6 +126,7 @@ def _eval_observer(conn: sqlite3.Connection, observer: str) -> dict:
 
     return {
         "observer": observer,
+        "cohort_start_iso": cohort_start_iso,
         "n_total": n_total,
         "n_settled": n_settled,
         "wr": wr, "wr_ci": (ci_lo, ci_hi),
@@ -122,21 +138,23 @@ def _eval_observer(conn: sqlite3.Connection, observer: str) -> dict:
 
 def _format_report(results: list[dict]) -> str:
     lines = []
-    lines.append("📊 Phase 0 cross-venue observer 1-week eval")
-    lines.append(f"Cohort: ts ≥ {COHORT_START_ISO} (post-flip + spread-gate)")
-    lines.append("Memory: [[vol_skew_fade_roi_audit_2026-05-19]]")
+    lines.append("📊 Phase 0 observer eval")
+    lines.append("Memory: [[vol_skew_fade_roi_audit_2026-05-19]] / "
+                 "[[settlement-edge-v2-retune-2026-05-21]] / "
+                 "[[depth-skew-flip-observer-2026-05-21]]")
     lines.append("")
     for r in results:
         obs = r["observer"]
+        anchor = r["cohort_start_iso"][:10]  # YYYY-MM-DD
         if r["wr"] is None:
-            lines.append(f"• {obs}: n_total={r['n_total']} n_settled=0 → {r['verdict']}")
+            lines.append(f"• {obs} (since {anchor}): n_total={r['n_total']} n_settled=0 → {r['verdict']}")
             continue
         wr_pct = 100.0 * r["wr"]
         ci_lo_pct = 100.0 * r["wr_ci"][0]
         ci_hi_pct = 100.0 * r["wr_ci"][1]
         roi_str = f"{r['roi_pct']:+.1f}%" if r["roi_pct"] is not None else "n/a"
         lines.append(
-            f"• {obs}: n={r['n_total']} settled={r['n_settled']} "
+            f"• {obs} (since {anchor}): n={r['n_total']} settled={r['n_settled']} "
             f"WR={wr_pct:.1f}% CI=[{ci_lo_pct:.0f}, {ci_hi_pct:.0f}]% "
             f"sim_ROI={roi_str} → {r['verdict']}"
         )
@@ -171,7 +189,7 @@ def main() -> None:
 
     conn = sqlite3.connect(args.db)
     try:
-        results = [_eval_observer(conn, obs) for obs in OBSERVERS]
+        results = [_eval_observer(conn, obs, anchor) for obs, anchor in OBSERVERS]
     finally:
         conn.close()
 
