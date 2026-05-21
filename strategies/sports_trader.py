@@ -633,6 +633,12 @@ class SportsTraderStrategy:
     # Limiting to 24h captures the price-discovery sweet spot where sharp
     # money has converged on a fair line but Kalshi may still lag.
     MAX_MTS_AT_ENTRY: Optional[float] = None
+    # Min minutes-to-start at entry — mirror of MAX_MTS_AT_ENTRY. Blocks entries
+    # placed too close to game start (or live). None = no lower cap. Used by
+    # 2026-05-21 long-pre strategies (sports_soccer_weekend_v1) where data shows
+    # alpha lives in mts >= 720 (12h+ pre-game) — closer entries have the line
+    # already priced in.
+    MIN_MTS_AT_ENTRY: Optional[float] = None
     # Per-game aggregate stake cap (USDC). 2026-04-17 paper analysis found
     # v31 fires median 6 trades per game with 75% intra-game outcome
     # correlation — capping aggregate per-game stake at $9 kept +23.1% ROI
@@ -1852,6 +1858,14 @@ class SportsTraderStrategy:
                         logger.debug(
                             f"[{self.STRATEGY_NAME}] {ticker}: mts={mts_check:.0f} > "
                             f"MAX_MTS_AT_ENTRY={self.MAX_MTS_AT_ENTRY:.0f}, skip"
+                        )
+                        continue
+                if self.MIN_MTS_AT_ENTRY is not None:
+                    mts_check = _commence_time_to_minutes(matched_game.get("commence_time"))
+                    if mts_check is None or mts_check < self.MIN_MTS_AT_ENTRY:
+                        logger.debug(
+                            f"[{self.STRATEGY_NAME}] {ticker}: mts={mts_check} < "
+                            f"MIN_MTS_AT_ENTRY={self.MIN_MTS_AT_ENTRY:.0f}, skip"
                         )
                         continue
 
