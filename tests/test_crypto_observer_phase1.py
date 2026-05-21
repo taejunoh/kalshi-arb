@@ -62,6 +62,8 @@ def _cfg():
         CME_BASIS_FADE_MIN_YA=0.17,
         CME_BASIS_FADE_MAX_YA=0.42,
         CME_BASIS_FADE_MIN_FIRE_CONTRACTS=3.0,
+        CME_BASIS_FADE_MAX_NO_ASK=1.0,
+        CME_BASIS_FADE_MAX_FIRES_PER_EVENT=999,
         PHASE1_TICKER_COOLDOWN_S=30.0,
         PHASE1_TICKER_PRICE_DIFF=0.03,
     )
@@ -71,12 +73,16 @@ def _now_iso(seconds_ago: float = 0.0) -> str:
     return (datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)).isoformat()
 
 
-def _build_strategy(cls, *, signals=None, market_lookup=None, last_trade=None):
+def _build_strategy(cls, *, signals=None, market_lookup=None, last_trade=None,
+                    event_fire_count=0):
     """Construct a Phase 1 strategy with mocked OM/DB/scanner.
 
     `last_trade`: dict with keys {timestamp, price} or None. Returned by
     db.get_last_trade_for_ticker — controls the per-ticker cooldown gate
     (2026-05-20). Default None = no prior fire, cooldown inactive.
+
+    `event_fire_count`: int returned by db.count_strategy_fires_for_event.
+    Controls per-event fire cap (2026-05-21 cme_basis_fade hardening).
     """
     om = MagicMock()
     om.is_circuit_breaker_active = MagicMock(return_value=False)
@@ -84,6 +90,7 @@ def _build_strategy(cls, *, signals=None, market_lookup=None, last_trade=None):
     db = MagicMock()
     db.fetch_recent_crypto_observer_signals = AsyncMock(return_value=signals or [])
     db.get_last_trade_for_ticker = AsyncMock(return_value=last_trade)
+    db.count_strategy_fires_for_event = AsyncMock(return_value=event_fire_count)
     om._db = db
     scanner = MagicMock()
     scanner.get_market = MagicMock(side_effect=market_lookup or (lambda t: None))
@@ -1156,6 +1163,60 @@ async def test_cme_basis_fade_clamps_size_when_book_thin():
     assert om.market_order.await_count == 1
     args = om.market_order.await_args.kwargs
     assert args["size_usdc"] == pytest.approx(20.0 * 0.74)
+
+
+@pytest.mark.asyncio
+async def test_cme_basis_fade_skips_when_no_ask_above_max():
+    """no_ask 0.87 > MAX_NO_ASK 0.85 → fee-net-negative zone, skip.
+    See [[cme_basis_fade_v1_live_promotion_2026-05-21]] Fix 1."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2112-B77150",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY2112-B77150": {
+        "yes_ask_dollars": 0.18, "no_ask_dollars": 0.87,
+        "yes_bid_size_fp": 100.0,
+    }}
+    cfg = _cfg()
+    cfg.CME_BASIS_FADE_MAX_NO_ASK = 0.85
+    s, om = _build_strategy(CmeBasisFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    s._max_no_ask = 0.85
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_cme_basis_fade_skips_when_event_fire_cap_reached():
+    """8 prior fires on the same event_key → 9th is blocked.
+    Defends against cascade losses where one underlying drift wipes many
+    adjacent strikes (5/20 KXETH-26MAY2014 cascade -$300 / 5/21 KXBTC-
+    26MAY2112-B77150 -$59 cluster). See [[cme_basis_fade_v1_live_promotion_2026-05-21]] Fix 2."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2112-B77250",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY2112-B77250": {
+        "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
+        "yes_bid_size_fp": 100.0,
+    }}
+    s, om = _build_strategy(CmeBasisFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get, event_fire_count=8)
+    s._max_fires_per_event_cfg = 8
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_cme_basis_fade_fires_under_event_cap():
+    """7 prior fires < cap=8 → fire proceeds."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2112-B77250",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY2112-B77250": {
+        "yes_ask_dollars": 0.20, "no_ask_dollars": 0.80,
+        "yes_bid_size_fp": 100.0,
+    }}
+    s, om = _build_strategy(CmeBasisFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get, event_fire_count=7)
+    s._max_fires_per_event_cfg = 8
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
 
 
 # ── Per-ticker cooldown (2026-05-20) ────────────────────────────────

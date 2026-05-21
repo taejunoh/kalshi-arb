@@ -94,6 +94,29 @@ class _Phase1Base:
             return False
         return abs(price - last_price) < self._ticker_price_diff
 
+    def _max_fires_per_event(self) -> Optional[int]:
+        """Optional per-event fire cap. Return None to disable. Subclasses
+        override to opt in (cme_basis_fade_v1: cap from sim, see config)."""
+        return None
+
+    async def _event_fire_count(self, ticker: str) -> int:
+        """Count fires for this strategy on tickers in the same event as
+        `ticker`. event_key = ticker.rsplit('-', 1)[0] (e.g. KXBTC-26MAY2112
+        from KXBTC-26MAY2112-B77250). Includes paper + LIVE, settled +
+        filled. See [[cme_basis_fade_v1_live_promotion_2026-05-21]] cascade.
+        """
+        db = getattr(self._order_manager, "_db", None)
+        if db is None:
+            return 0
+        if "-" not in ticker:
+            return 0
+        event_key = ticker.rsplit("-", 1)[0]
+        try:
+            return await db.count_strategy_fires_for_event(self.STRATEGY_NAME, event_key)
+        except Exception as e:
+            logger.error(f"{self.STRATEGY_NAME}: event fire count failed: {e}")
+            return 0
+
     def _select_side_and_price(self, sig: dict, market: dict
                                ) -> Optional[tuple[str, float]]:
         """Translate (signal, current market) → (side, entry_price)."""
@@ -200,6 +223,16 @@ class _Phase1Base:
                 )
                 self._processed.add(sig_id)
                 continue
+            event_cap = self._max_fires_per_event()
+            if event_cap is not None:
+                event_fires = await self._event_fire_count(ticker)
+                if event_fires >= event_cap:
+                    logger.info(
+                        f"[{self.STRATEGY_NAME}] SKIP sig={sig_id} ticker={ticker} "
+                        f"reason=event_fire_cap event_fires={event_fires} cap={event_cap}"
+                    )
+                    self._processed.add(sig_id)
+                    continue
             try:
                 await self._order_manager.market_order(
                     ticker=ticker, side=side, size_usdc=size_usdc,
@@ -692,7 +725,15 @@ class CmeBasisFadeV1Strategy(_Phase1Base):
         self.SIZE_USDC = config.CME_BASIS_FADE_SIZE_USDC
         self._min_ya = config.CME_BASIS_FADE_MIN_YA
         self._max_ya = config.CME_BASIS_FADE_MAX_YA
+        self._max_no_ask = config.CME_BASIS_FADE_MAX_NO_ASK
+        self._max_fires_per_event_cfg = config.CME_BASIS_FADE_MAX_FIRES_PER_EVENT
         self._min_fire_contracts = config.CME_BASIS_FADE_MIN_FIRE_CONTRACTS
+
+    def _max_fires_per_event(self) -> Optional[int]:
+        cap = self._max_fires_per_event_cfg
+        if cap is None or cap <= 0 or cap >= 999:
+            return None
+        return cap
 
     def _select_side_and_price(self, sig, market):
         if sig["predicted_outcome"] != "no":
@@ -704,6 +745,8 @@ class CmeBasisFadeV1Strategy(_Phase1Base):
         if no_ask <= 0 or no_ask >= 1:
             return None
         if ya < self._min_ya or ya > self._max_ya:
+            return None
+        if no_ask > self._max_no_ask:
             return None
         return ("no", no_ask)
 

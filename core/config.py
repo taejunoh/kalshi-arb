@@ -284,6 +284,20 @@ class Config:
         self.CME_BASIS_FADE_MIN_YA = float(os.getenv("CME_BASIS_FADE_MIN_YA", "0.17"))
         self.CME_BASIS_FADE_MAX_YA = float(os.getenv("CME_BASIS_FADE_MAX_YA", "0.25"))
         self.CME_BASIS_FADE_MIN_FIRE_CONTRACTS = float(os.getenv("CME_BASIS_FADE_MIN_FIRE_CONTRACTS", "1"))
+        # 2026-05-21 LIVE-hardening (Config J from DB-replay sim n=233 paper+LIVE):
+        # MAX_NO_ASK 0.85 — entry above 0.85 needs WR ≥92% to break Kalshi
+        # taker fee ($0.07/ct flat); paper WR 96% margin is ~4pp at 0.85,
+        # near zero at 0.87. Above-band fires were 23/233 of sample but
+        # only cut $28 of bleed (Fix 1 minor).
+        # MAX_FIRES_PER_EVENT 8 — single-event cascade cap. 5/20 KXETH crash
+        # cohort fired 15× on one strike all wiping ($300 single-event loss);
+        # KXBTC trend cohort fired 77× across 5 strikes (-$312). per-event
+        # cap matters more than per-ticker because adjacent strikes wipe
+        # together on underlying drift. Sim n=233: cap-8 cut 5/20 -$609 →
+        # -$119 (80% truncation) while only losing 14% of 5/21 calm alpha.
+        # Combined J: total -$57 vs A_AS_IS -$537.
+        self.CME_BASIS_FADE_MAX_NO_ASK = float(os.getenv("CME_BASIS_FADE_MAX_NO_ASK", "1.0"))
+        self.CME_BASIS_FADE_MAX_FIRES_PER_EVENT = int(os.getenv("CME_BASIS_FADE_MAX_FIRES_PER_EVENT", "999"))
         # Same depth-aware-sizing floor as deribit_tail_fade_v1; skip fires
         # whose effective contract count would be below this threshold to
         # avoid dust trades.
