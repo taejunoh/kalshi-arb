@@ -337,6 +337,12 @@ class _DepthSkewCache:
         self._hard_cap = hard_cap
 
     def update(self, series: str, strike: float, ts: float, skew: float) -> bool:
+        """Insert (ts, skew) for the (series, strike) bucket.
+
+        Returns True if a hard-cap flush occurred during this call (caller
+        is responsible for downstream alerting). On flush, the triggering
+        entry is NOT added; the caller should re-insert on next cycle.
+        """
         flushed = False
         if (series, strike) not in self._cache and len(self._cache) >= self._hard_cap:
             logger.error(
@@ -357,6 +363,7 @@ class _DepthSkewCache:
 
     def n_seconds_ago(self, series: str, strike: float, lookback_s: float,
                       now_ts: float) -> Optional[float]:
+        # Caller must test `is None`, not truthiness — 0.0 is a valid skew value.
         dq = self._cache.get((series, strike))
         if not dq:
             return None

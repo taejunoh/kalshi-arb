@@ -1357,6 +1357,9 @@ def test_depth_skew_cache_prune_stale_keys():
 def test_depth_skew_cache_hard_cap_flush():
     from strategies.crypto_observer import _DepthSkewCache
     cache = _DepthSkewCache(hard_cap=5)
-    for i in range(6):
+    results = [
         cache.update("KXBTC", float(90000 + i * 100), 1000.0 + i, 0.4)
-    assert cache.size() == 0  # flushed
+        for i in range(6)
+    ]
+    assert results[-1] is True   # flush triggered on 6th key
+    assert cache.size() == 0     # cache cleared
