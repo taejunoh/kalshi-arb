@@ -31,6 +31,7 @@ import argparse
 import asyncio
 import logging
 import os
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -49,6 +50,49 @@ CRIT_30D_ROI_PCT = -15.0       # OR persistent loser
 CRIT_30D_ROI_MIN_N = 10        # only apply ROI criterion at this n+
 WARN_LIVE_PAPER_ROI_GAP_PP = 5.0  # percentage points
 MIN_N_FOR_COMPARISON = 20
+
+# Kalshi 429 rate-limit thresholds (added 2026-05-21 after sports
+# scan_loop race condition produced silent bursts undetected for ~5h).
+# Surfaced in daily audit so any new burst class catches within 24h.
+WARN_KALSHI_429_DAILY = 20      # recurring noise — investigate
+CRIT_KALSHI_429_DAILY = 100     # real burst event — fix urgent
+
+
+def _count_kalshi_429s(hours: int) -> tuple[int, dict[str, int]]:
+    """Return (total_count, per_series_count) of Kalshi 429s in last N hours.
+    Reads systemd journal for kalshi-bot.service. Returns (0, {}) if
+    journalctl is unavailable (e.g. running off-host) or permission
+    denied (user not in adm/systemd-journal group).
+    """
+    try:
+        result = subprocess.run(
+            ["journalctl", "-u", "kalshi-bot",
+             f"--since={hours} hours ago", "--no-pager", "-q"],
+            capture_output=True, text=True, timeout=45,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        logger.warning(f"journalctl unavailable for 429 count: {e}")
+        return 0, {}
+    if result.returncode != 0:
+        logger.warning(
+            f"journalctl returncode={result.returncode} "
+            f"stderr={result.stderr[:200]!r}"
+        )
+        return 0, {}
+    total = 0
+    per_series: dict[str, int] = {}
+    for line in result.stdout.splitlines():
+        if "429 Too Many Requests" not in line:
+            continue
+        total += 1
+        i = line.find("series_ticker=")
+        if i < 0:
+            continue
+        tail = line[i + len("series_ticker="):]
+        # Strip at first non-ticker char (& or quote).
+        series = tail.split("&")[0].split("'")[0].split('"')[0]
+        per_series[series] = per_series.get(series, 0) + 1
+    return total, per_series
 
 
 def _window_query(strategy: str, status: str, since_iso: str) -> str:
@@ -165,11 +209,30 @@ async def audit(send: bool):
     elif ok:
         lines.append(f"✅ <i>OK ({len(ok)}):</i> {', '.join(ok)}")
 
+    # ── Kalshi 429 rate-limit audit (added 2026-05-21) ────────────
+    rl_total, rl_per_series = _count_kalshi_429s(24)
+    lines.append("")
+    if rl_total >= CRIT_KALSHI_429_DAILY:
+        rl_icon = "🚨"
+        rl_label = "CRITICAL"
+    elif rl_total >= WARN_KALSHI_429_DAILY:
+        rl_icon = "⚠️"
+        rl_label = "WARN"
+    else:
+        rl_icon = "✅"
+        rl_label = "OK"
+    lines.append(f"{rl_icon} <b>Kalshi rate-limit:</b> {rl_total} × 429 in last 24h [{rl_label}]")
+    if rl_total > 0 and rl_per_series:
+        top = sorted(rl_per_series.items(), key=lambda x: -x[1])[:5]
+        breakdown = ", ".join(f"{s}={n}" for s, n in top)
+        lines.append(f"  top series: {breakdown}")
+
     lines.append("")
     lines.append(
         f"<i>Thresholds: 1d&lt;${CRIT_YESTERDAY:+.0f}, 7d&lt;${CRIT_7D:+.0f}, "
         f"30d&lt;${CRIT_30D_ABS:+.0f} or 30d ROI&lt;{CRIT_30D_ROI_PCT}% (n≥{CRIT_30D_ROI_MIN_N}), "
-        f"LIVE-paper gap >{WARN_LIVE_PAPER_ROI_GAP_PP}pp.</i>"
+        f"LIVE-paper gap >{WARN_LIVE_PAPER_ROI_GAP_PP}pp, "
+        f"Kalshi 429 ≥{WARN_KALSHI_429_DAILY}/day (warn) / ≥{CRIT_KALSHI_429_DAILY}/day (crit).</i>"
     )
 
     msg = "\n".join(lines)

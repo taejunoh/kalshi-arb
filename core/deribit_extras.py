@@ -13,6 +13,7 @@ avoid Deribit rate limits. Default TTL 60s — funding rate updates every
 """
 from __future__ import annotations
 import logging
+import threading
 import time
 from typing import Optional
 
@@ -29,16 +30,27 @@ _CHAIN_URL = (
 # Cache: (asset, kind) -> (epoch_fetched, value)
 _CACHE: dict[tuple[str, str], tuple[float, Optional[float]]] = {}
 _TTL_S = 60.0
+# Sync TTL cache called from concurrent executor threads (crypto_observer
+# harness uses asyncio.to_thread). Defensive lock prevents duplicate
+# fetches under concurrent miss. Pattern hardened 2026-05-21 after
+# kalshi_client race-condition discovery.
+_CACHE_LOCK = threading.Lock()
 
 
 def _cached(asset: str, kind: str, fetcher) -> Optional[float]:
     key = (asset, kind)
-    now = time.time()
-    hit = _CACHE.get(key)
-    if hit is not None and (now - hit[0]) < _TTL_S:
-        return hit[1]
+    with _CACHE_LOCK:
+        now = time.time()
+        hit = _CACHE.get(key)
+        if hit is not None and (now - hit[0]) < _TTL_S:
+            return hit[1]
+    # Fetch outside the lock — fetcher makes a network call, holding the
+    # lock would serialize all callers and defeat caching. Concurrent miss
+    # races converge: both fetch, only the later write wins, next caller
+    # hits cache.
     val = fetcher(asset)
-    _CACHE[key] = (now, val)
+    with _CACHE_LOCK:
+        _CACHE[key] = (now, val)
     return val
 
 
