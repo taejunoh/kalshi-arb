@@ -62,6 +62,16 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     # by sports_underdog_v36_nhl_playoff (pure price-band gate, paper-twin
     # baseline +33%). v32 has its own PLAYOFF_BLOCKLIST.
     PLAYOFF_BLOCKLIST = frozenset({"NBA", "NHL"})
+    # 2026-05-21 MLB-reg block. 60d post-W17 regime-tightening cohort audit:
+    #   v31 MLB-reg paper n=251 ROI -6.3%, LIVE n=206 ROI -8.7% (-$284)
+    #   v32 MLB-reg paper n=185 ROI -9.4%, LIVE n=111 ROI -11.9% (-$417)
+    #   midshot_v31 MLB-reg paper n=155 +4.2%, LIVE n=131 -11.7% (-$163)
+    # W15-W16 MLB +EV (early-season pricing inefficiency); from W17 onward
+    # market tightened — paper and LIVE both -EV. 60% of LIVE sports capital
+    # was allocated here. Cascades to v32 (no SPORT_BLOCKLIST override).
+    # playoff_underdog_v1/v1_us + soccer_underdog_v1 + v37 override this to
+    # empty/their-own — unaffected. Re-eval ~2026-06-04.
+    SPORT_BLOCKLIST = frozenset({"MLB"})
 
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 25→30 on 2026-05-02 (second pass, 1.2x more, total 1.5x vs

@@ -49,6 +49,12 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     # playoff's 50/50 matchup distribution puts almost no underdogs in the
     # 5-30c sweet spot. Cascades to v34, v35.
     PLAYOFF_BLOCKLIST = frozenset({"NBA", "NHL"})
+    # 2026-05-21 MLB-reg block (parallel to v31 trio audit). Paper n=155 +4.2%
+    # was marginal; LIVE n=131 -11.7% (-$163) shows post-W17 regime collapse.
+    # 60d capital allocation MLB = $1,391 / 60% of midshot stake → blocking
+    # frees capital for NBA/WNBA where cohort is profitable (+$233/+$95 LIVE).
+    # See [[sports_cohort_block_2026-05-21]].
+    SPORT_BLOCKLIST = frozenset({"MLB"})
     # 2026-05-12 v31 family $2k-10k dead-zone (commit ca971d5 extended).
     # underdog_v31 n=13 −62%, underdog_v32 n=13 −62%, midshot n=6 −59%.
     # Combined family n=32 ROI −61% systematic. Cascade not automatic

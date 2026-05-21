@@ -44,7 +44,13 @@ class SportsSoccerUnderdogV1Strategy(SportsUnderdogV31Strategy):
 
     # Soccer leagues only — block all non-soccer sports.
     # Deny-list approach so future-added leagues (e.g., Liga MX) auto-include.
-    SPORT_BLOCKLIST = frozenset({"NBA", "WNBA", "MLB", "NHL", "NPB", "KBO"})
+    # 2026-05-21 EPL added — paper n=5 / LIVE n=5 / both 100% loss-rate / -$67
+    # cohort-decomposition audit (sports_cohort_block_2026-05-21). EPL season
+    # also ending ~5/25 so signal volume tails off naturally; block prevents
+    # any further fire on season-end games. BUN/LAL/MLS retained (LIVE
+    # +$192/+$80/+$80, paper consistent). Re-eval at start of 2026-27 EPL
+    # season (~Aug 2026).
+    SPORT_BLOCKLIST = frozenset({"NBA", "WNBA", "MLB", "NHL", "NPB", "KBO", "EPL"})
 
     # Override parent's OBSERVATION_ONLY_SPORTS (which contains soccer leagues)
     # so soccer tickers actually reach evaluate(). v37 is the explicit live
