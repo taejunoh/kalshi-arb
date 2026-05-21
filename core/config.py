@@ -215,6 +215,14 @@ class Config:
         self.DERIBIT_TAIL_FADE_HIGH_MAX_YA = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_MAX_YA", "0.95"))
         self.DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S", "15"))
         self.DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS", "5"))
+        # 2026-05-21 LIVE soft-launch: per-event cap=2. Phase 0 14d backtest
+        # (n=355 settled → 113 fires under cap=2): net +$2,233 / ROI +395% /
+        # 9/9 days positive / top1 event 5.1% — cap blocks the rare 3+ fire
+        # cascade clusters that distort either direction. Set to 0 to
+        # disable (uncapped — paper behavior). See
+        # [[deribit_tail_fade_high_v1_live_promotion_2026-05-21]].
+        self.DERIBIT_TAIL_FADE_HIGH_MAX_FIRES_PER_EVENT = int(
+            os.getenv("DERIBIT_TAIL_FADE_HIGH_MAX_FIRES_PER_EVENT", "2"))
         # ─ bid_imbalance_v1: original direction (BUY pred side at ask).
         #   5/14 promotion used n=26 cohort @ 69% WR — fluke. Full Phase 0
         #   cohort 2026-05-15 (n=266) showed 36% WR overall; paper trader

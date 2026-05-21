@@ -123,6 +123,14 @@ LIMIT_AGGRESSION_CENTS_BY_STRATEGY = {
     "sports_tennis_bid_imbalance_v1": 25,
     "sports_ufc_chalk_fade_v1": 25,         # 2026-05-15 UFC slow-book defensive
     "sports_tennis_surface_skew_v1": 25,
+    # 2026-05-21 deribit_tail_fade_high_v1 LIVE soft-launch: aggression=0
+    # to match the Phase 0 14d sim (no-slip assumption) that drove the GO
+    # decision. High-ya near-expiry strikes (NO ask 0.10-0.35) have win
+    # net 4-7x the loss net, so even 5c of slip materially erodes EV
+    # (28% reduction at the band edges). Accept higher FOK reject rate
+    # in exchange for paper-parity fills. See
+    # [[deribit_tail_fade_high_v1_live_promotion_2026-05-21]].
+    "deribit_tail_fade_high_v1": 0,
 }
 
 
