@@ -1,6 +1,7 @@
 import base64
 import copy
 import logging
+import threading
 import time
 from typing import Optional
 
@@ -32,7 +33,13 @@ class KalshiClient:
         self._http: Optional[httpx.Client] = None
         self._private_key = None
         self._last_request_time = 0.0
-        self._min_request_interval = 0.1
+        # 0.15s ≈ 6.6 req/s ceiling. Conservative vs Kalshi's documented
+        # burst tolerance to avoid 429s when ~25 sports scan_loops (each
+        # running in its own executor thread) hit the client at once.
+        # Combined with _rate_limit_lock this gates concurrent threads
+        # serially through the throttle (race condition fix 2026-05-21).
+        self._min_request_interval = 0.15
+        self._rate_limit_lock = threading.Lock()
         self._balance_cache_value: Optional[float] = None
         self._balance_cache_ts: float = 0.0
 
@@ -88,11 +95,17 @@ class KalshiClient:
         }
 
     def _rate_limit(self):
-        now = time.time()
-        elapsed = now - self._last_request_time
-        if elapsed < self._min_request_interval:
-            time.sleep(self._min_request_interval - elapsed)
-        self._last_request_time = time.time()
+        # Serialize concurrent threads through the throttle. Without the
+        # lock, multiple executor threads from sports scan_loops can read
+        # _last_request_time before any writes it back, then all sleep
+        # the same delta and fire in the same millisecond — bursts past
+        # Kalshi's 429 burst threshold (root cause 2026-05-21).
+        with self._rate_limit_lock:
+            now = time.time()
+            elapsed = now - self._last_request_time
+            if elapsed < self._min_request_interval:
+                time.sleep(self._min_request_interval - elapsed)
+            self._last_request_time = time.time()
 
     def _get(self, path: str):
         self._init_http()

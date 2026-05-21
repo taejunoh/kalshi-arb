@@ -125,3 +125,56 @@ def test_get_balance():
     )
     balance = client.get_balance()
     assert balance == pytest.approx(500.0)
+
+
+def test_rate_limit_serializes_concurrent_threads():
+    """Concurrent threads through _rate_limit must NOT bypass the throttle.
+
+    Pre-fix (no lock), N threads could read _last_request_time before any
+    write, all sleep the same delta, and fire in the same millisecond
+    — bursting past Kalshi's 429 limit. Post-fix the lock serializes
+    them so N threads take ≥ (N-1) × _min_request_interval total.
+    """
+    import threading
+    import time
+
+    client = _make_client()
+    # Shrink interval to keep test fast but still measurable
+    client._min_request_interval = 0.05
+    # Force first call to skip sleep
+    client._last_request_time = 0.0
+
+    fire_times: list[float] = []
+    lock = threading.Lock()
+
+    def worker():
+        client._rate_limit()
+        with lock:
+            fire_times.append(time.time())
+
+    threads = [threading.Thread(target=worker) for _ in range(10)]
+    start = time.time()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    elapsed = time.time() - start
+
+    # 10 threads × 0.05s interval, minus the first that doesn't sleep
+    # → expect ≥ 9 × 0.05 = 0.45s. Allow generous wall-clock slack
+    # (CI / Python sleep accuracy) but require materially more than
+    # 0.05s (which is what the pre-fix race-condition outcome would
+    # produce).
+    assert elapsed >= 0.35, (
+        f"_rate_limit not serializing threads — 10 calls took {elapsed:.3f}s, "
+        f"expected ≥ 0.35s (race condition would yield <0.1s)"
+    )
+
+    # Adjacent fire times should respect the interval (within timer skew).
+    fire_times.sort()
+    deltas = [fire_times[i+1] - fire_times[i] for i in range(len(fire_times) - 1)]
+    # At least 80% of adjacent deltas must be ≥ 0.04s (interval minus skew)
+    ok = sum(1 for d in deltas if d >= 0.04)
+    assert ok >= int(0.8 * len(deltas)), (
+        f"adjacent deltas violated interval too often: deltas={deltas}"
+    )
