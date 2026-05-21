@@ -57,7 +57,8 @@ from strategies.sports_scan_observer import SportsScanObserver
 from strategies.econ_trader import EconTraderStrategy
 from strategies.crypto_observer import CryptoObserverStrategy
 from strategies.crypto_observer_phase1 import (
-    DeribitTailFadeV1Strategy, BidImbalanceV1Strategy,
+    DeribitTailFadeV1Strategy, DeribitTailFadeHighV1Strategy,
+    BidImbalanceV1Strategy,
     OpenNoTouchV1Strategy, AtmHoldV1Strategy,
     BidImbalanceFadeV1Strategy,
     LateCloseTailV1Strategy, DeribitAtmFadeV1Strategy,
@@ -328,6 +329,13 @@ class Bot:
         self.deribit_tail_fade_v1 = DeribitTailFadeV1Strategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client,
         )
+        # deribit_tail_fade_high_v1 (2026-05-21): sister paper trader for the
+        # high-ya (0.65-0.95) zone the parent gate ignores. Lifetime observer
+        # n=1,880 shows two distinct signal classes; this trader covers the
+        # near-expiry near-strike subset. See [[phase1-lifetime-audit-sweep-2026-05-21]].
+        self.deribit_tail_fade_high_v1 = DeribitTailFadeHighV1Strategy(
+            self.config, self.order_manager, self.scanner, self.kalshi_client,
+        )
         self.bid_imbalance_v1 = BidImbalanceV1Strategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client,
         )
@@ -480,6 +488,9 @@ class Bot:
             # as too-old. 1 s scan_loop each — matches observer cadence.
             asyncio.create_task(
                 self.deribit_tail_fade_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.deribit_tail_fade_high_v1.scan_loop(scan_interval_secs=1.0)
             ),
             asyncio.create_task(
                 self.bid_imbalance_v1.scan_loop(scan_interval_secs=1.0)

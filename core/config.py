@@ -185,6 +185,28 @@ class Config:
         # the same band that is net-EV-negative even in paper. Cap targets
         # both fill-rate and EV simultaneously.
         self.DERIBIT_TAIL_FADE_MAX_NO_ASK = float(os.getenv("DERIBIT_TAIL_FADE_MAX_NO_ASK", "0.95"))
+        # ─ deribit_tail_fade_high_v1 (2026-05-21): sister paper trader for the
+        #   high-ya zone (0.65-0.95) that the parent gate ignores. Lifetime
+        #   observer (n=1,880) shows two distinct signal classes:
+        #     - low-ya 0.08-0.20 (current gate): long-dated tail (mts p50 ~22h),
+        #       WR 99.7%, +$0.13/ct gross-fee — already covered.
+        #     - high-ya 0.65-0.95 (new gate): near-expiry near-strike (mts p50
+        #       ~1h), WR 86-94%, +$0.53-0.74/ct gross-fee — uncovered.
+        #   Same observer (deribit_tail_skew), same predicted_outcome=no, but
+        #   different feature shape: high-ya signals fire when spot is near or
+        #   above strike and Deribit IV implies the move-back probability is
+        #   under-discounted by Kalshi. See [[phase1-lifetime-audit-sweep-2026-05-21]].
+        #
+        #   PAPER-ONLY. Fill realism is the open question — at ya 0.88, NO=0.12
+        #   means $20 stake = 167 contracts, and high-ya NO-side books are thin
+        #   near expiry. Depth-aware sizing + MIN_FIRE_CONTRACTS will skip
+        #   under-depth signals; LIVE promotion gated on paper fire-rate +
+        #   actual fill realism over a 1-2 week window.
+        self.DERIBIT_TAIL_FADE_HIGH_SIZE_USDC = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_SIZE_USDC", "20"))
+        self.DERIBIT_TAIL_FADE_HIGH_MIN_YA = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_MIN_YA", "0.65"))
+        self.DERIBIT_TAIL_FADE_HIGH_MAX_YA = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_MAX_YA", "0.95"))
+        self.DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S", "15"))
+        self.DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS", "5"))
         # ─ bid_imbalance_v1: original direction (BUY pred side at ask).
         #   5/14 promotion used n=26 cohort @ 69% WR — fluke. Full Phase 0
         #   cohort 2026-05-15 (n=266) showed 36% WR overall; paper trader

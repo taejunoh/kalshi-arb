@@ -10,7 +10,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from strategies.crypto_observer_phase1 import (
-    DeribitTailFadeV1Strategy, BidImbalanceV1Strategy,
+    DeribitTailFadeV1Strategy, DeribitTailFadeHighV1Strategy,
+    BidImbalanceV1Strategy,
     OpenNoTouchV1Strategy, AtmHoldV1Strategy,
     BidImbalanceFadeV1Strategy,
     LateCloseTailV1Strategy, DeribitAtmFadeV1Strategy,
@@ -26,6 +27,11 @@ def _cfg():
         DERIBIT_TAIL_FADE_MAX_NO_ASK=0.95,
         DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS=3.0,
         DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S=15.0,
+        DERIBIT_TAIL_FADE_HIGH_SIZE_USDC=20.0,
+        DERIBIT_TAIL_FADE_HIGH_MIN_YA=0.65,
+        DERIBIT_TAIL_FADE_HIGH_MAX_YA=0.95,
+        DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S=15.0,
+        DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS=5.0,
         BID_IMBALANCE_SIZE_USDC=20.0,
         BID_IMBALANCE_SIGNAL_FRESHNESS_S=15.0,
         BID_IMBALANCE_MIN_PRICE=0.50,
@@ -249,6 +255,117 @@ async def test_deribit_tail_fade_skips_when_predicted_outcome_yes():
         "yes_bid_size_fp": 50.0,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+# ── DeribitTailFadeHighV1 ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_deribit_tail_fade_high_fires_paper_no_at_high_ya():
+    """Lifetime observer n=1,880: high-ya 0.65-0.95 buckets show 80-94% WR
+    on the same observer (deribit_tail_skew) the parent trader uses. Sister
+    strategy covers this near-expiry near-strike subset."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1418-B80950",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1418-B80950": {
+        "yes_ask_dollars": 0.88, "no_ask_dollars": 0.12,
+        "yes_bid_size_fp": 200.0,  # >= target 20/0.12 ≈ 167
+    }}
+    s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["ticker"] == "KXBTC-26MAY1418-B80950"
+    assert args["side"] == "no"
+    assert args["price"] == 0.12
+    assert args["size_usdc"] == 20.0
+    assert args["strategy"] == "deribit_tail_fade_high_v1"
+
+
+@pytest.mark.asyncio
+async def test_deribit_tail_fade_high_skips_when_ya_below_min():
+    """ya 0.50-0.55 lifetime: WR 68% / +$0.18/ct — covered by parent in
+    range it allows; this trader specifically targets the 0.65+ tail."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1418-B80950",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1418-B80950": {
+        "yes_ask_dollars": 0.50, "no_ask_dollars": 0.50,
+        "yes_bid_size_fp": 50.0,
+    }}
+    s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_deribit_tail_fade_high_skips_when_ya_above_max():
+    """ya >= 0.95 zone: NO costs <= $0.05/ct, but n=7 lifetime at 0.95-1.00
+    showed WR 43% (random). Cap upper bound to keep payoff math sensible."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1418-B80950",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1418-B80950": {
+        "yes_ask_dollars": 0.97, "no_ask_dollars": 0.03,
+        "yes_bid_size_fp": 500.0,
+    }}
+    s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_deribit_tail_fade_high_clamps_size_when_book_thin():
+    """High-ya NO-side books are typically thin near expiry. Depth-aware
+    sizing clamps to top-of-book — paper ledger stays honest about
+    fill-realism for the eventual LIVE promotion decision."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1418-B80950",
+           "predicted_outcome": "no"}
+    # target_count = 20/0.12 ≈ 167, depth 50 → clamp to 50*0.12 = $6
+    markets = {"KXBTC-26MAY1418-B80950": {
+        "yes_ask_dollars": 0.88, "no_ask_dollars": 0.12,
+        "yes_bid_size_fp": 50.0,
+    }}
+    s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+    args = om.market_order.await_args.kwargs
+    assert args["size_usdc"] == pytest.approx(50.0 * 0.12)
+
+
+@pytest.mark.asyncio
+async def test_deribit_tail_fade_high_skips_when_depth_below_min():
+    """MIN_FIRE_CONTRACTS=5 (vs parent's 1). High-ya signals fire on thin
+    books and the dust-trade threshold needs to be high enough to filter
+    sub-economic fires that would inflate the paper ledger size."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1418-B80950",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1418-B80950": {
+        "yes_ask_dollars": 0.88, "no_ask_dollars": 0.12,
+        "yes_bid_size_fp": 3.0,  # below MIN_FIRE_CONTRACTS=5
+    }}
+    s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_deribit_tail_fade_high_skips_when_predicted_yes():
+    """Observer always emits pred='no' for tail-skew signals; defensive
+    against future feature changes that would add yes predictions."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1418-B80950",
+           "predicted_outcome": "yes"}
+    markets = {"KXBTC-26MAY1418-B80950": {
+        "yes_ask_dollars": 0.88, "no_ask_dollars": 0.12,
+        "yes_bid_size_fp": 500.0,
+    }}
+    s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
                             market_lookup=markets.get)
     await s.scan_and_execute()
     assert om.market_order.await_count == 0
