@@ -413,7 +413,12 @@ class OpenNoTouchV1Strategy(_Phase1Base):
                 self._processed.add(sig_id)
                 continue
             ek = self._event_key(sig)
-            if ek and self._fires_per_event.get(ek, 0) >= self._max_fires_per_event:
+            # 2026-05-21: cap <= 0 means "uncapped" — multi-fire cascade IS
+            # the alpha (98% WR on 58-fire events lifetime, single-fire events
+            # 60% WR / +$0.04 only). Pollution defended by 30s+3c ticker
+            # cooldown (per [[phase1_ticker_cooldown_2026-05-20]]).
+            if (ek and self._max_fires_per_event > 0
+                    and self._fires_per_event.get(ek, 0) >= self._max_fires_per_event):
                 self._processed.add(sig_id)
                 continue
             score = abs(ya - self._target_ya)
