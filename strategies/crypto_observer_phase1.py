@@ -597,20 +597,16 @@ class DeribitAtmFadeV1Strategy(_Phase1Base):
 class CmeBasisFadeV1Strategy(_Phase1Base):
     """Paper trader for the cme_basis_fade observer.
 
-    Buys NO at no_ask on the gated sub-cohort where the strategy is
-    fee-positive after a per-bucket EV audit (2026-05-20). The cme_basis_fade
-    Phase 0 observer fires across the full ya range with 74% WR but
-    -$0.066/contract avg (fee-locked at low ya, WR-collapsing at high ya).
+    Buys NO at no_ask on the fee-positive sub-cohort.
 
-    The fee-positive band ya ∈ [0.17, 0.42] (n=292 settled,
-    +$15.29 backtest PnL, +$0.05/c avg) is the only sub-cohort with
-    positive EV. Outside this band:
-      - ya 0.05-0.16: BUY NO at no_ask 0.84-0.95 → fee = (1-no_ask) eats
-        100% of gross profit even at 99% WR
-      - ya 0.43-0.55: WR drops to 30-60% (predicted='no' signal weakens
-        as ya rises toward ATM)
+    Gate (2026-05-21 retune): ya ∈ [0.17, 0.25]. Lifetime observer
+    n=5,581 settled shows real +EV concentrates in this narrow band
+    (n=626 / +$0.062/ct avg). The original promo gate [0.17, 0.42] from
+    n=292 was a sample-size artifact — at n=5,581 every sub-bucket above
+    ya 0.25 is uniformly −EV, with ya 0.40-0.42 the worst (WR 25% /
+    −$0.37/ct). 24h-pre-5/21 and 5/21-only sub-windows confirm.
 
-    See [[fee_adjusted_promotion_criteria_2026-05-20]] for methodology.
+    See [[cme_basis_fade_v1_bleed_2026-05-21]].
     """
     STRATEGY_NAME = "cme_basis_fade_v1"
     OBSERVER_NAME = "cme_basis_fade"

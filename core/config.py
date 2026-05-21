@@ -250,17 +250,17 @@ class Config:
         self.LATE_CLOSE_TAIL_SIGNAL_FRESHNESS_S = float(os.getenv("LATE_CLOSE_TAIL_SIGNAL_FRESHNESS_S", "15"))
         self.LATE_CLOSE_TAIL_MIN_YA = float(os.getenv("LATE_CLOSE_TAIL_MIN_YA", "0.05"))
         self.LATE_CLOSE_TAIL_MAX_YA = float(os.getenv("LATE_CLOSE_TAIL_MAX_YA", "0.30"))
-        # ─ cme_basis_fade_v1 (2026-05-20): paper-only. Phase 0 cohort audit
-        #   2026-05-20 (n=1627) showed 74% WR but −$107 net after Kalshi fees.
-        #   Per-ya bucket breakdown: ya ∈ [0.17, 0.42] is the fee-positive
-        #   sub-cohort (n=292, +$15.29 backtest PnL, avg +$0.05/contract).
-        #   Outside this band (ya 0.05-0.15 or ya 0.43+) the fee math is
-        #   negative even at the observed high WR. BUY NO at no_ask.
-        #   See: [[fee_adjusted_promotion_criteria_2026-05-20]].
+        # ─ cme_basis_fade_v1 (2026-05-20 promo, 2026-05-21 retune): paper-only.
+        #   Original gate [0.17, 0.42] from n=292 sub-cohort was a sample-size
+        #   artifact — lifetime observer n=5,581 shows real +EV is concentrated
+        #   in ya 0.17-0.25 (n=626 / +$0.062/ct), and 0.25-0.42 is uniformly
+        #   −EV after fees (most catastrophic at 0.40-0.42 = WR 25% / −$0.37/ct).
+        #   24h-pre-5/21 + 5/21-only sub-windows both confirm the same shape.
+        #   BUY NO at no_ask. See [[cme_basis_fade_v1_bleed_2026-05-21]].
         self.CME_BASIS_FADE_SIZE_USDC = float(os.getenv("CME_BASIS_FADE_SIZE_USDC", "20"))
         self.CME_BASIS_FADE_SIGNAL_FRESHNESS_S = float(os.getenv("CME_BASIS_FADE_SIGNAL_FRESHNESS_S", "15"))
         self.CME_BASIS_FADE_MIN_YA = float(os.getenv("CME_BASIS_FADE_MIN_YA", "0.17"))
-        self.CME_BASIS_FADE_MAX_YA = float(os.getenv("CME_BASIS_FADE_MAX_YA", "0.42"))
+        self.CME_BASIS_FADE_MAX_YA = float(os.getenv("CME_BASIS_FADE_MAX_YA", "0.25"))
         self.CME_BASIS_FADE_MIN_FIRE_CONTRACTS = float(os.getenv("CME_BASIS_FADE_MIN_FIRE_CONTRACTS", "1"))
         # Same depth-aware-sizing floor as deribit_tail_fade_v1; skip fires
         # whose effective contract count would be below this threshold to
