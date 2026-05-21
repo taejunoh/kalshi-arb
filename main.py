@@ -36,6 +36,8 @@ from strategies.sports_underdog_v35 import SportsUnderdogV35Strategy
 from strategies.sports_playoff_underdog_v1 import SportsPlayoffUnderdogV1Strategy
 from strategies.sports_playoff_underdog_v1_us import SportsPlayoffUnderdogV1USStrategy
 from strategies.sports_soccer_underdog_v1 import SportsSoccerUnderdogV1Strategy
+from strategies.sports_soccer_weekend_v1 import SportsSoccerWeekendV1Strategy
+from strategies.sports_consensus_aligned_live_v1 import SportsConsensusAlignedLiveV1Strategy
 from strategies.sports_soccer_draw_v1 import SportsSoccerDrawV1Strategy
 from strategies.sports_mls_fade_favorite_v1 import SportsMLSFadeFavoriteV1Strategy
 from strategies.sports_npb_underdog_v1 import SportsNpbUnderdogV1Strategy
@@ -194,6 +196,25 @@ class Bot:
         # Paper-twin only at launch. n=13 games / +120% ROI / drop-top-3 +55%.
         # Promotion gate: n>=25 + ROI>=+30% + drop-3 > 0.
         self.sports_soccer_underdog_v1 = SportsSoccerUnderdogV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # Soccer Weekend V1 — long-pre (>=12h) weekend-only with two patterns:
+        # underdog YES 0.25-0.30 (EPL band) + fade-favorite NO 0.40-0.50 (MLS).
+        # Built 2026-05-21 from sports_strategy_discovery.py + subslice on
+        # 6.4M obs / 4,004 settled. EPL Sat/Sun mts>=720 +87% ROI / d3 -1.2%
+        # depth 50-500 sweet spot +89.8% d3 +34.7%. MLS pre NO long-pre gap
+        # 3-6pp n=7 +70.5% d3 +46.1%. Paper-only at launch. Eval gate ~6/15.
+        self.sports_soccer_weekend_v1 = SportsSoccerWeekendV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # Consensus-Aligned Live V1 — cross-sport live-phase 0.20-0.30 with
+        # |Kalshi - EU| < 3pp gate. Built 2026-05-21 from same arc.
+        # Mechanism (new): consensus-aligned mid-band live sides outperform.
+        # WNBA live 0.25-0.30 gap<3pp YES n=8 +206% d3 +169% / NO n=6 +195% d3 +123%.
+        # MLS live NO 0.40-0.50 gap<3pp n=26 +20% d3 +5.6%. Anti-signal at
+        # gap>6pp = ~93% loss rate validates direction. Paper-only at launch.
+        # Eval gate ~6/15 at n>=25 per sport×side.
+        self.sports_consensus_aligned_live_v1 = SportsConsensusAlignedLiveV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         # V3.8 Soccer Draw — DRAW side of soccer 3-way markets.
@@ -565,6 +586,13 @@ class Bot:
             ),
             asyncio.create_task(
                 self.sports_favorite_v40.scan_loop(scan_interval_secs=1.0)
+            ),
+            # 2026-05-21 grid-search discovery paper strategies
+            asyncio.create_task(
+                self.sports_soccer_weekend_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_consensus_aligned_live_v1.scan_loop(scan_interval_secs=1.0)
             ),
         ]
 
