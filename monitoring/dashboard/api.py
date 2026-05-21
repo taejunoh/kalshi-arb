@@ -1453,22 +1453,26 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         """
         import aiosqlite
         import math
-        # Observer name → Phase 1 strategy name mapping. Add new
-        # promotions here as they happen.
+        # Observer name → list of Phase 1 strategy names sharing that observer.
+        # 2026-05-21: extended from 1:1 dict to 1:N list to support sister
+        # traders gated on disjoint ya zones of the same observer (e.g.,
+        # deribit_tail_skew → [low gate parent, high gate sister]). Rows are
+        # expanded one-per-strategy below; Phase 0 columns are identical
+        # across siblings (one observer → one signal pool).
         PHASE1_BY_OBSERVER = {
-            "deribit_tail_skew":  "deribit_tail_fade_v1",
-            "bid_imbalance":      "bid_imbalance_v1",
-            "bid_imbalance_fade": "bid_imbalance_fade_v1",
-            "open_no_touch":      "open_no_touch_v1",
-            "atm_hold":           "atm_hold_v1",
-            "late_close_tail":    "late_close_tail_v1",
-            "deribit_atm_skew":   "deribit_atm_fade_v1",
-            "cme_basis_fade":     "cme_basis_fade_v1",
+            "deribit_tail_skew":  ["deribit_tail_fade_v1", "deribit_tail_fade_high_v1"],
+            "bid_imbalance":      ["bid_imbalance_v1"],
+            "bid_imbalance_fade": ["bid_imbalance_fade_v1"],
+            "open_no_touch":      ["open_no_touch_v1"],
+            "atm_hold":           ["atm_hold_v1"],
+            "late_close_tail":    ["late_close_tail_v1"],
+            "deribit_atm_skew":   ["deribit_atm_fade_v1"],
+            "cme_basis_fade":     ["cme_basis_fade_v1"],
             # Direct traders that write Phase 0 signals under their own name
             # (observer == phase 1 strategy). See
             # [[crypto_fair_value_mid_v1_2026-05-19]].
-            "crypto_fair_value":        "crypto_fair_value",
-            "crypto_fair_value_mid_v1": "crypto_fair_value_mid_v1",
+            "crypto_fair_value":        ["crypto_fair_value"],
+            "crypto_fair_value_mid_v1": ["crypto_fair_value_mid_v1"],
         }
         # All known observers — seed so observers that haven't fired in the
         # window still render with n=0 instead of being silently dropped.
@@ -1520,8 +1524,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             # Per-Phase-1-strategy paper trade stats from trades table.
             phase1_stats: dict = {}
             if PHASE1_BY_OBSERVER:
-                placeholders = ",".join("?" * len(PHASE1_BY_OBSERVER))
-                strat_names = list(PHASE1_BY_OBSERVER.values())
+                strat_names = [s for v in PHASE1_BY_OBSERVER.values() for s in v]
+                placeholders = ",".join("?" * len(strat_names))
                 cur2 = await conn.execute(
                     f"""SELECT strategy,
                               COUNT(*) AS n_trades,
@@ -1537,6 +1541,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 for r in await cur2.fetchall():
                     phase1_stats[r["strategy"]] = dict(r)
 
+        # Phase 0 columns (signals/WR/CI) are observer-level so compute once
+        # per observer, then expand into one output row per Phase 1 strategy
+        # (or one row with no Phase 1 attribution if the observer isn't
+        # promoted yet).
+        expanded: list[dict] = []
         for r in rows:
             settled = r["n_settled"] or 0
             wins = r["wins"] or 0
@@ -1557,29 +1566,35 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 r["wr_ci_lo"] = None
                 r["wr_ci_hi"] = None
 
-            strat_name = PHASE1_BY_OBSERVER.get(r["observer"])
-            r["phase1_strategy"] = strat_name
-            if strat_name:
+            strat_names = PHASE1_BY_OBSERVER.get(r["observer"], [])
+            if not strat_names:
+                r["phase1_strategy"] = None
+                expanded.append(r)
+                continue
+            for strat_name in strat_names:
+                rr = dict(r)
+                rr["phase1_strategy"] = strat_name
                 st = phase1_stats.get(strat_name)
                 if st:
-                    r["phase1_paper_trades"] = st["n_trades"]
-                    r["phase1_paper_settled"] = st["n_settled"]
-                    r["phase1_paper_wins"] = st["wins"]
-                    r["phase1_paper_pnl"] = st["pnl_sum"]
+                    rr["phase1_paper_trades"] = st["n_trades"]
+                    rr["phase1_paper_settled"] = st["n_settled"]
+                    rr["phase1_paper_wins"] = st["wins"]
+                    rr["phase1_paper_pnl"] = st["pnl_sum"]
                     stake = st["settled_stake"] or 0.0
-                    r["phase1_paper_stake"] = stake
-                    r["phase1_paper_roi"] = (
+                    rr["phase1_paper_stake"] = stake
+                    rr["phase1_paper_roi"] = (
                         round(100.0 * st["pnl_sum"] / stake, 2) if stake > 0 else None
                     )
                 else:
-                    r["phase1_paper_trades"] = 0
-                    r["phase1_paper_settled"] = 0
-                    r["phase1_paper_wins"] = 0
-                    r["phase1_paper_pnl"] = 0.0
-                    r["phase1_paper_stake"] = 0.0
-                    r["phase1_paper_roi"] = None
+                    rr["phase1_paper_trades"] = 0
+                    rr["phase1_paper_settled"] = 0
+                    rr["phase1_paper_wins"] = 0
+                    rr["phase1_paper_pnl"] = 0.0
+                    rr["phase1_paper_stake"] = 0.0
+                    rr["phase1_paper_roi"] = None
+                expanded.append(rr)
         return {
-            "observers": rows,
+            "observers": expanded,
             "as_of": datetime.now(timezone.utc).isoformat(),
             "window_hours": hours,
         }
