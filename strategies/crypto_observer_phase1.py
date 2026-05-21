@@ -282,6 +282,65 @@ class DeribitTailFadeV1Strategy(_Phase1Base):
         return depth * price
 
 
+class DeribitTailFadeHighV1Strategy(_Phase1Base):
+    """Sister of deribit_tail_fade_v1 for the high-ya zone (0.65-0.95).
+
+    Same observer (deribit_tail_skew), same predicted_outcome=no (buy NO at
+    no_ask), but different signal class: high-ya signals fire near expiry
+    when spot is near or above the strike and Deribit IV implies the
+    revert-below-strike probability is under-discounted by Kalshi.
+
+    Lifetime observer per-ya breakdown (n=1,880 settled, 2026-05-21):
+        ya 0.65-0.70: n=59   WR 79.7%  +$0.451/ct
+        ya 0.70-0.75: n=65   WR 92.3%  +$0.608/ct
+        ya 0.75-0.80: n=41   WR 82.9%  +$0.570/ct
+        ya 0.80-0.85: n=60   WR 81.7%  +$0.632/ct
+        ya 0.85-0.90: n=35   WR 94.3%  +$0.801/ct
+        ya 0.90-0.95: n=58   WR 86.2%  +$0.754/ct
+
+    Time-to-settle p50 ~1h vs parent strategy's ~22h.
+
+    PAPER-ONLY. Fill realism is unverified — high-ya NO-side books are
+    typically thin near expiry. Depth-aware sizing + MIN_FIRE_CONTRACTS=5
+    skip under-depth signals to keep the paper ledger honest about what
+    LIVE could actually execute. See [[phase1-lifetime-audit-sweep-2026-05-21]].
+    """
+    STRATEGY_NAME = "deribit_tail_fade_high_v1"
+    OBSERVER_NAME = "deribit_tail_skew"
+
+    def __init__(self, config, order_manager, market_scanner, kalshi_client):
+        super().__init__(config, order_manager, market_scanner, kalshi_client)
+        self.SIGNAL_FRESHNESS_S = config.DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S
+        self.SIZE_USDC = config.DERIBIT_TAIL_FADE_HIGH_SIZE_USDC
+        self._min_ya = config.DERIBIT_TAIL_FADE_HIGH_MIN_YA
+        self._max_ya = config.DERIBIT_TAIL_FADE_HIGH_MAX_YA
+        self._min_fire_contracts = config.DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS
+
+    def _select_side_and_price(self, sig, market):
+        if sig["predicted_outcome"] != "no":
+            return None
+        ya = _safe_float(market.get("yes_ask_dollars"))
+        no_ask = _safe_float(market.get("no_ask_dollars"))
+        if ya is None or no_ask is None:
+            return None
+        if no_ask <= 0 or no_ask >= 1:
+            return None
+        if ya < self._min_ya or ya > self._max_ya:
+            return None
+        return ("no", no_ask)
+
+    def _size_usdc_for(self, side, price, market):
+        depth = _safe_float(market.get("yes_bid_size_fp"))
+        if depth is None or depth <= 0 or price <= 0:
+            return None
+        target_count = self.SIZE_USDC / price
+        if depth >= target_count:
+            return self.SIZE_USDC
+        if depth < self._min_fire_contracts:
+            return None
+        return depth * price
+
+
 class BidImbalanceV1Strategy(_Phase1Base):
     """Follows top-of-book bid/ask size imbalance. Buys the predicted side
     at current ask.
