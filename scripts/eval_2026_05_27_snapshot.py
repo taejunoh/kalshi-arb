@@ -13,7 +13,8 @@ Pulls a data snapshot for each of the four evaluations due that day:
 
   3. mid_otm_tail observer bucket-WR analysis
      [[mid_otm_tail_observer_2026-05-20]]
-     Cross-tab WR by (mts_s, na) buckets
+     Cross-tab WR by (mts_s, na) buckets, plus 3b cliff_zone segmentation
+     (KXETH near-expiry near-strike cascade filter; flag added 2026-05-21)
 
   4. universe_expansion T-leg fires
      [[universe_expansion_2026-05-20]]
@@ -32,6 +33,7 @@ import argparse
 import asyncio
 import json
 import logging
+import math
 import os
 import sqlite3
 import sys
@@ -190,6 +192,74 @@ def _section_mid_otm_tail(conn: sqlite3.Connection) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Section 3b — mid_otm_tail cliff_zone segmentation (added 2026-05-21)
+# ---------------------------------------------------------------------------
+#   cliff_zone = (series==KXETH AND mts_s<3600 AND dist_pct<0.015)
+#   24h audit showed KXETH near-expiry near-strike cascades caused $89 of
+#   the $32 total bleed.  Promotion to sister Phase 1 paper trader requires
+#   SAFE_ZONE (cliff_zone=False) to hold net EV ≥ $0.01/ct over ≥1 week.
+
+def _section_mid_otm_tail_cliff_zone(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        """SELECT predicted_outcome, actual_outcome, features_json
+           FROM crypto_observer_signals
+           WHERE observer = 'mid_otm_tail' AND ts >= ?
+             AND actual_outcome IS NOT NULL""",
+        (COHORT_START_ISO,),
+    ).fetchall()
+    zones = {True: {"n": 0, "w": 0, "na_sum": 0.0, "gross": 0.0, "net": 0.0},
+             False: {"n": 0, "w": 0, "na_sum": 0.0, "gross": 0.0, "net": 0.0}}
+    unflagged = 0
+    for pred, actual, fj in rows:
+        try:
+            f = json.loads(fj or "{}")
+        except Exception:
+            continue
+        cz = f.get("cliff_zone")
+        if cz is None:
+            unflagged += 1
+            continue
+        na = f.get("na")
+        if na is None:
+            continue
+        z = zones[bool(cz)]
+        z["n"] += 1
+        z["na_sum"] += na
+        won = (pred == actual)
+        fee = math.ceil(7.0 * na * (1.0 - na)) / 100.0
+        if won:
+            z["w"] += 1
+            z["gross"] += (1.0 - na)
+            z["net"] += (1.0 - na) - fee
+        else:
+            z["gross"] += -na
+            z["net"] += -na - fee
+    lines = [
+        "",
+        "<b>3️⃣b mid_otm_tail cliff_zone segmentation</b>",
+        "<i>Phase 1 sister-trader bar: SAFE n≥1500 + WR≥98% + net EV ≥ $0.01/ct.</i>",
+        "<pre>",
+        f"{'zone':>10s}  {'n':>5s}  {'WR':>5s}  {'avg_na':>6s}  {'gross/ct':>8s}  {'net/ct':>7s}  {'net_$':>7s}",
+    ]
+    for cz_val, label in ((False, "SAFE"), (True, "CLIFF")):
+        z = zones[cz_val]
+        if z["n"] == 0:
+            lines.append(f"{label:>10s}  {'-':>5s}  {'-':>5s}  {'-':>6s}  {'-':>8s}  {'-':>7s}  {'-':>7s}")
+            continue
+        wr = 100.0 * z["w"] / z["n"]
+        avg_na = z["na_sum"] / z["n"]
+        gpc = z["gross"] / z["n"]
+        npc = z["net"] / z["n"]
+        lines.append(
+            f"{label:>10s}  {z['n']:>5d}  {wr:>4.1f}%  {avg_na:>6.3f}  {gpc:>+8.4f}  {npc:>+7.4f}  {z['net']:>+7.2f}"
+        )
+    if unflagged:
+        lines.append(f"unflagged (pre-2026-05-21): {unflagged}")
+    lines.append("</pre>")
+    return lines
+
+
+# ---------------------------------------------------------------------------
 # Section 4 — universe expansion (T-leg fires)
 # ---------------------------------------------------------------------------
 
@@ -247,6 +317,7 @@ def _build_report(conn: sqlite3.Connection) -> str:
     out += _section_cross_asset(conn)
     out += _section_cme_basis(conn)
     out += _section_mid_otm_tail(conn)
+    out += _section_mid_otm_tail_cliff_zone(conn)
     out += _section_universe_t_leg(conn)
     out += [
         "",

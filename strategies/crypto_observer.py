@@ -924,6 +924,11 @@ class MidOtmTailObserver(BaseObserver):
             dist_pct = abs(leg.threshold - ctx.spot) / ctx.spot
             if dist_pct < MID_OTM_TAIL_DIST_MIN_PCT:
                 continue
+            cliff_zone = (
+                ctx.series == "KXETH"
+                and ctx.close_time_secs < 3600
+                and dist_pct < 0.015
+            )
             out.append(Signal(
                 observer=self.name, series=ctx.series,
                 event_key=ctx.event_key, market_id=leg.ticker,
@@ -936,6 +941,7 @@ class MidOtmTailObserver(BaseObserver):
                     "dist_pct": round(dist_pct, 5),
                     "mts_s": round(ctx.close_time_secs, 1),
                     "kind": leg.kind,
+                    "cliff_zone": cliff_zone,
                 },
             ))
         return out
