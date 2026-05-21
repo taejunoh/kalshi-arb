@@ -171,7 +171,7 @@ def cohort_c_cme_basis_fade_post_j(con: sqlite3.Connection) -> None:
           ROUND(100.0 * SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END)
                 / COUNT(*), 1) AS wr,
           ROUND(SUM(pnl), 2) AS net,
-          SUM(CASE WHEN price >= 0.85 THEN 1 ELSE 0 END) AS over_cap_n
+          SUM(CASE WHEN price > 0.85 THEN 1 ELSE 0 END) AS over_cap_n
         FROM trades
         WHERE strategy = 'cme_basis_fade_v1'
           AND status = 'paper_settled'
@@ -182,7 +182,10 @@ def cohort_c_cme_basis_fade_post_j(con: sqlite3.Connection) -> None:
     ).fetchall()
     _print_rows(daily)
     print()
-    print("J-cap health: `over_cap_n` should be 0 (MAX_NO_ASK=0.85).")
+    print(
+        "J-cap health: `over_cap_n` should be 0 — gate is strict `>`, so "
+        "fires at no_ask=0.85 exactly are allowed by design."
+    )
     print("Per-event cap (8) — top 5 events:")
     events = con.execute(
         """
