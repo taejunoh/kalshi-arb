@@ -1770,7 +1770,7 @@ OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
     LateCloseTailObserver, DeribitAtmSkewObserver,
     # 2026-05-20: fee-positive zone explorer (paired with late_close_tail)
     MidOtmTailObserver,
-    # 2026-05-20: static micro-timing depth-skew (mts_s ≤ 30, ATM±2)
+    # 2026-05-21 v2: static depth-skew, mts ∈ [60, 600], entry ∈ [0.40, 0.85]
     SettlementEdgeObserver,
     # 2026-05-21: dynamic depth-skew sign-flip sister of settlement_edge_v2
     DepthSkewFlipObserver,
