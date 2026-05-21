@@ -1294,3 +1294,69 @@ def test_cross_venue_funding_consensus_registered_in_observer_classes():
     """Harness picks up cross_venue_funding_consensus via OBSERVER_CLASSES."""
     from strategies.crypto_observer import OBSERVER_CLASSES
     assert CrossVenueFundingConsensusObserver in OBSERVER_CLASSES
+
+
+# ── _DepthSkewCache ───────────────────────────────────────────────
+
+
+def test_depth_skew_cache_update_and_get_now():
+    from strategies.crypto_observer import _DepthSkewCache
+    cache = _DepthSkewCache()
+    cache.update("KXBTC", 90250.0, 1000.0, -0.45)
+    assert cache.n_seconds_ago("KXBTC", 90250.0, 0.0, 1000.0) == -0.45
+
+
+def test_depth_skew_cache_n_seconds_ago():
+    from strategies.crypto_observer import _DepthSkewCache
+    cache = _DepthSkewCache()
+    cache.update("KXBTC", 90250.0, 1000.0, -0.40)
+    cache.update("KXBTC", 90250.0, 1015.0,  0.10)
+    cache.update("KXBTC", 90250.0, 1030.0, +0.47)
+    # 30s ago from t=1030 → most recent entry with ts <= 1000
+    assert cache.n_seconds_ago("KXBTC", 90250.0, 30.0, 1030.0) == -0.40
+
+
+def test_depth_skew_cache_returns_none_on_data_gap():
+    from strategies.crypto_observer import _DepthSkewCache
+    cache = _DepthSkewCache()
+    cache.update("KXBTC", 90250.0, 1000.0, -0.40)
+    # 30s ago from t=1100 → target=1070, nearest sample 70s away > 2*30 guard
+    assert cache.n_seconds_ago("KXBTC", 90250.0, 30.0, 1100.0) is None
+
+
+def test_depth_skew_cache_returns_none_on_missing_key():
+    from strategies.crypto_observer import _DepthSkewCache
+    cache = _DepthSkewCache()
+    assert cache.n_seconds_ago("KXETH", 2120.0, 30.0, 1000.0) is None
+
+
+def test_depth_skew_cache_rolling_maxlen():
+    from strategies.crypto_observer import _DepthSkewCache
+    cache = _DepthSkewCache()
+    for i in range(70):
+        # values bounce around 0 to verify signed storage
+        cache.update("KXBTC", 90250.0, float(i), (float(i) - 35) * 0.01)
+    # Oldest survivor should be ts=10, value=(10-35)*0.01=-0.25
+    assert cache.n_seconds_ago("KXBTC", 90250.0, 59.0, 69.0) == pytest.approx(-0.25)
+    # ts=0 should be gone
+    assert cache.n_seconds_ago("KXBTC", 90250.0, 70.0, 69.0) is None
+
+
+def test_depth_skew_cache_prune_stale_keys():
+    from strategies.crypto_observer import _DepthSkewCache
+    cache = _DepthSkewCache()
+    cache.update("KXBTC", 90250.0, 1000.0, -0.40)
+    cache.update("KXBTC", 90350.0, 1100.0,  0.50)
+    removed = cache.prune_stale(now_ts=1200.0, max_age_s=120.0)
+    assert removed == 1
+    assert cache.size() == 1
+    assert cache.n_seconds_ago("KXBTC", 90250.0, 0.0, 1200.0) is None
+    assert cache.n_seconds_ago("KXBTC", 90350.0, 0.0, 1200.0) is not None
+
+
+def test_depth_skew_cache_hard_cap_flush():
+    from strategies.crypto_observer import _DepthSkewCache
+    cache = _DepthSkewCache(hard_cap=5)
+    for i in range(6):
+        cache.update("KXBTC", float(90000 + i * 100), 1000.0 + i, 0.4)
+    assert cache.size() == 0  # flushed
