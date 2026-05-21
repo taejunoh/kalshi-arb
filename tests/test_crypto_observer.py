@@ -1363,3 +1363,134 @@ def test_depth_skew_cache_hard_cap_flush():
     ]
     assert results[-1] is True   # flush triggered on 6th key
     assert cache.size() == 0     # cache cleared
+
+
+# ── DepthSkewFlipObserver ─────────────────────────────────────────
+
+
+def _ctx_with_skew_cache(*, b_legs, spot, close_s, cache):
+    """EventContext with a pre-loaded _DepthSkewCache. ctx.now uses module-level NOW;
+    cache entries must be stamped at NOW.timestamp() - 30.0 to align with the
+    observer's `ctx.now.timestamp()` lookup at LOOKBACK_S=30."""
+    from strategies.crypto_observer import EventContext
+    return EventContext(
+        series="KXBTC", asset="BTC", event_key="26MAY1310",
+        now=NOW, spot=spot, spot_60s_ago=None, deribit_iv=None,
+        b_legs=b_legs, t_legs=[],
+        open_time_secs=None, close_time_secs=close_s,
+        depth_skew_cache=cache,
+    )
+
+
+def test_depth_skew_flip_no_fire_on_cache_miss():
+    """Empty cache → no fire even with strong current skew."""
+    from strategies.crypto_observer import (
+        DepthSkewFlipObserver, _DepthSkewCache,
+    )
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=20, yb_size=100)]  # skew=-0.667
+    ctx = _ctx_with_skew_cache(
+        b_legs=b_legs, spot=70000.0, close_s=120.0, cache=_DepthSkewCache(),
+    )
+    assert DepthSkewFlipObserver().evaluate(ctx) == []
+
+
+def test_depth_skew_flip_no_fire_when_same_sign():
+    """skew_old=-0.50, skew_now=-0.70 → same sign, no flip."""
+    from strategies.crypto_observer import (
+        DepthSkewFlipObserver, _DepthSkewCache,
+    )
+    cache = _DepthSkewCache()
+    cache.update("KXBTC", 70000.0, NOW.timestamp() - 30.0, -0.50)
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=15, yb_size=85)]  # skew=-0.70
+    ctx = _ctx_with_skew_cache(
+        b_legs=b_legs, spot=70000.0, close_s=120.0, cache=cache,
+    )
+    assert DepthSkewFlipObserver().evaluate(ctx) == []
+
+
+def test_depth_skew_flip_fires_on_clean_sign_flip():
+    """skew_old=-0.40, skew_now=+0.50 → flip with both ≥ 0.20 magnitude.
+    Predicted side follows current skew sign (positive → 'no')."""
+    from strategies.crypto_observer import (
+        DepthSkewFlipObserver, _DepthSkewCache,
+    )
+    cache = _DepthSkewCache()
+    cache.update("KXBTC", 70000.0, NOW.timestamp() - 30.0, -0.40)
+    # Current: ya_size=150, yb_size=50 → skew=+0.50
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=150, yb_size=50)]
+    ctx = _ctx_with_skew_cache(
+        b_legs=b_legs, spot=70000.0, close_s=120.0, cache=cache,
+    )
+    sigs = DepthSkewFlipObserver().evaluate(ctx)
+    assert len(sigs) == 1
+    assert sigs[0].observer == "depth_skew_flip"
+    assert sigs[0].predicted_outcome == "no"  # current skew > 0 → predicts 'no'
+    assert sigs[0].features["skew_now"] == pytest.approx(0.50, abs=0.01)
+    assert sigs[0].features["skew_old"] == pytest.approx(-0.40, abs=0.01)
+    assert sigs[0].features["lookback_s"] == 30.0
+
+
+def test_depth_skew_flip_skips_when_old_magnitude_below_floor():
+    """skew_old=-0.15 (below MIN_BEFORE=0.20), skew_now=+0.50 → no fire."""
+    from strategies.crypto_observer import (
+        DepthSkewFlipObserver, _DepthSkewCache,
+    )
+    cache = _DepthSkewCache()
+    cache.update("KXBTC", 70000.0, NOW.timestamp() - 30.0, -0.15)
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=150, yb_size=50)]  # +0.50
+    ctx = _ctx_with_skew_cache(
+        b_legs=b_legs, spot=70000.0, close_s=120.0, cache=cache,
+    )
+    assert DepthSkewFlipObserver().evaluate(ctx) == []
+
+
+def test_depth_skew_flip_skips_when_current_magnitude_below_floor():
+    """skew_old=-0.50, skew_now=+0.15 (below MIN_AFTER=0.20) → no fire."""
+    from strategies.crypto_observer import (
+        DepthSkewFlipObserver, _DepthSkewCache,
+    )
+    cache = _DepthSkewCache()
+    cache.update("KXBTC", 70000.0, NOW.timestamp() - 30.0, -0.50)
+    # ya_size=115, yb_size=85 → skew=+0.15
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=115, yb_size=85)]
+    ctx = _ctx_with_skew_cache(
+        b_legs=b_legs, spot=70000.0, close_s=120.0, cache=cache,
+    )
+    assert DepthSkewFlipObserver().evaluate(ctx) == []
+
+
+def test_depth_skew_flip_respects_mts_min():
+    """Even valid flip → no fire if mts_s < 60 (below MIN)."""
+    from strategies.crypto_observer import (
+        DepthSkewFlipObserver, _DepthSkewCache,
+    )
+    cache = _DepthSkewCache()
+    cache.update("KXBTC", 70000.0, NOW.timestamp() - 30.0, -0.40)
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=150, yb_size=50)]
+    ctx = _ctx_with_skew_cache(
+        b_legs=b_legs, spot=70000.0, close_s=45.0, cache=cache,  # mts=45 < 60
+    )
+    assert DepthSkewFlipObserver().evaluate(ctx) == []
+
+
+def test_depth_skew_flip_respects_entry_price_gate():
+    """Valid flip but entry price 0.30 (below MIN=0.40) → no fire."""
+    from strategies.crypto_observer import (
+        DepthSkewFlipObserver, _DepthSkewCache,
+    )
+    cache = _DepthSkewCache()
+    cache.update("KXBTC", 70000.0, NOW.timestamp() - 30.0, +0.40)
+    # Negative current skew → predicts 'yes', entry = ya = 0.30 < MIN
+    b_legs = [_b(70000, ya=0.30, yb=0.28, ya_size=50, yb_size=150)]  # -0.50
+    ctx = _ctx_with_skew_cache(
+        b_legs=b_legs, spot=70000.0, close_s=120.0, cache=cache,
+    )
+    assert DepthSkewFlipObserver().evaluate(ctx) == []
+
+
+def test_depth_skew_flip_registered_in_observer_classes():
+    """Harness picks up depth_skew_flip via OBSERVER_CLASSES tuple."""
+    from strategies.crypto_observer import (
+        DepthSkewFlipObserver, OBSERVER_CLASSES,
+    )
+    assert DepthSkewFlipObserver in OBSERVER_CLASSES
