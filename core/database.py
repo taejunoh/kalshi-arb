@@ -529,6 +529,27 @@ class Database:
             row = await cur.fetchone()
             return dict(row) if row is not None else None
 
+    async def count_strategy_fires_for_event(
+        self, strategy: str, event_key: str,
+    ) -> int:
+        """Count non-cancelled trades for (strategy, event_key prefix).
+
+        event_key is the market_id prefix shared across all strikes of a
+        single event (e.g. 'KXBTC-26MAY2112' covers B76950..B78050). Used
+        by Phase 1 traders for per-event fire cap — defends against
+        single-event cascades where one underlying drift triggers fires
+        across many adjacent strikes (see [[cme_basis_fade_v1_bleed_2026-05-21]]).
+        """
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(
+                """SELECT COUNT(*) FROM trades
+                   WHERE strategy = ? AND market_id LIKE ?
+                     AND status NOT IN ('cancelled', 'failed')""",
+                (strategy, f"{event_key}-%"),
+            )
+            row = await cur.fetchone()
+            return int(row[0]) if row else 0
+
     async def has_existing_trade(self, strategy: str, market_id: str) -> bool:
         """Return True if a non-cancelled trade already exists for
         (strategy, market_id). Used by order_manager as a DB-side dedup
