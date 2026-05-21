@@ -1127,15 +1127,25 @@ class StrikeLadderLiteralObserver(BaseObserver):
         if ctx.spot is None or ctx.spot <= 0:
             return []
 
-        resting = [leg for leg in ctx.b_legs if leg.ya > 0]
+        # Resting filter: real offer requires non-zero size AND ya strictly
+        # between $0 and $1. Kalshi returns yes_ask = $1.00 as a ceiling
+        # default when the YES-ask book is empty (no resting seller),
+        # paired with yes_ask_size_fp = 0. Treating those literally
+        # inflates sum_ya — KXXRP 75-leg ladder defaults to sum_ya = $75
+        # when fully untraded. ya_size > 0 anchors to a real offer.
+        resting = [
+            leg for leg in ctx.b_legs
+            if 0.0 < leg.ya < 1.0 and leg.ya_size > 0
+        ]
         if len(resting) < LITERAL_MIN_RESTING_LEGS:
             return []
 
-        full_sum_ya = sum(leg.ya for leg in ctx.b_legs)
-        if full_sum_ya < LITERAL_FULL_SUM_OVERPRICED_MIN:
+        # Gate on resting subset only — full_sum_ya counts $1.00 phantoms.
+        resting_sum_ya = sum(leg.ya for leg in resting)
+        if resting_sum_ya < LITERAL_FULL_SUM_OVERPRICED_MIN:
             return []
 
-        resting_sum_ya = sum(leg.ya for leg in resting)
+        full_sum_ya = sum(leg.ya for leg in ctx.b_legs)  # retained for diagnostic
         target = max(resting, key=lambda l: l.ya)
         return [Signal(
             observer=self.name, series=ctx.series,
