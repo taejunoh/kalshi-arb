@@ -79,16 +79,17 @@ MID_OTM_TAIL_YA_MIN = 0.05
 MID_OTM_TAIL_YA_MAX = 0.30
 MID_OTM_TAIL_YB_SIZE_MIN = 30
 
-# settlement_edge (2026-05-20): static micro-timing depth-skew observer.
-# Watches mts_s ≤ 30s window for bid/ask size asymmetry on ATM±N
-# bucket cluster. Tests the thesis that market makers withdraw quotes
-# asymmetrically near settlement, leaving a depth-skew tell about the
-# resolution direction. Phase 0 logging only — promotion gate per
-# fee-adjusted-EV methodology.
-SETTLEMENT_EDGE_MTS_MAX_S = 30
+# settlement_edge_v2 (2026-05-21): retune of v1 after 24h audit showed 93%
+# of fires sat at predicted-side $1.00 (untradable). v2 widens the window,
+# adds an entry-price gate, and tightens the skew floor. Spec:
+# docs/superpowers/specs/2026-05-21-settlement-edge-v2-and-depth-skew-flip-design.md
+SETTLEMENT_EDGE_MTS_MIN_S = 60        # exclude collapse zone (<60s = price locked)
+SETTLEMENT_EDGE_MTS_MAX_S = 600       # 10-minute pre-close window
 SETTLEMENT_EDGE_ATM_RADIUS = 2
-SETTLEMENT_EDGE_MIN_SIDE_SIZE = 1         # total (ya_size + yb_size) must be > 1 to score (skip single-contract degenerate books)
-SETTLEMENT_EDGE_ABS_SKEW_MIN = 0.20       # |skew| ≥ this to fire
+SETTLEMENT_EDGE_MIN_SIDE_SIZE = 5     # raised from 1 — phantom guard
+SETTLEMENT_EDGE_ABS_SKEW_MIN = 0.40   # raised from 0.20 — v1 cohort 197/201 fires at ≥0.80, floor was non-binding
+SETTLEMENT_EDGE_ENTRY_PRICE_MIN = 0.40
+SETTLEMENT_EDGE_ENTRY_PRICE_MAX = 0.85
 
 ATM_FADE_MTS_MAX_S = 300
 ATM_FADE_BUCKET_RADIUS = 0.25         # |bucket - spot| ≤ 0.25 × grid
@@ -545,26 +546,23 @@ class ClusterSumObserver(BaseObserver):
 
 
 class SettlementEdgeObserver(BaseObserver):
-    """Phase 0: bid/ask depth-skew tell in the final 30s before settlement.
+    """Phase 0 v2: per-leg depth-skew on ATM±2 cluster in the [60, 600]s
+    pre-close window, gated to entry prices in [0.40, 0.85].
 
-    Thesis: as MMs withdraw quotes near settlement, the bucket's
-    ask/bid depth becomes asymmetric in a direction that correlates
-    with the resolution. We measure
-        skew = (ask_size - bid_size) / (ask_size + bid_size)
-    on each leg in the ATM ± SETTLEMENT_EDGE_ATM_RADIUS cluster when
-    mts_s ≤ SETTLEMENT_EDGE_MTS_MAX_S, and predict:
-        skew > 0  (ask thicker, MMs showing YES supply → market judges YES overpriced) → predict 'no'
-        skew < 0  (bid thicker, MMs absorbing YES demand → market judges YES underpriced) → predict 'yes'
-
-    Sibling to KalshiBookLagObserver (dynamic event-driven on spot move).
-    This observer is static — fires every tick within the window.
+    v1 (mts ≤ 30, skew ≥ 0.20, no price gate) was audited 2026-05-21:
+    n=201 settled, 93% of fires at predicted-side $1.00 (untradable),
+    tradable cohort (n=14) ROI -0.31% / WR 78.6% vs BE_WR 78.8%. v2 moves
+    observation to the zone where the signal exists AND price is still
+    tradable. Spec: docs/superpowers/specs/2026-05-21-settlement-edge-v2-and-depth-skew-flip-design.md
     """
-    name = "settlement_edge"
+    name = "settlement_edge_v2"
 
     def evaluate(self, ctx: EventContext) -> list[Signal]:
         if ctx.close_time_secs is None:
             return []
-        if ctx.close_time_secs <= 0 or ctx.close_time_secs > SETTLEMENT_EDGE_MTS_MAX_S:
+        if ctx.close_time_secs < SETTLEMENT_EDGE_MTS_MIN_S:
+            return []
+        if ctx.close_time_secs > SETTLEMENT_EDGE_MTS_MAX_S:
             return []
         if not ctx.b_legs:
             return []
@@ -585,6 +583,11 @@ class SettlementEdgeObserver(BaseObserver):
             if abs(skew) < SETTLEMENT_EDGE_ABS_SKEW_MIN:
                 continue
             predicted = "no" if skew > 0 else "yes"
+            entry_price = leg.ya if predicted == "yes" else leg.na
+            if entry_price < SETTLEMENT_EDGE_ENTRY_PRICE_MIN:
+                continue
+            if entry_price > SETTLEMENT_EDGE_ENTRY_PRICE_MAX:
+                continue
             out.append(Signal(
                 observer=self.name, series=ctx.series,
                 event_key=ctx.event_key, market_id=leg.ticker,
@@ -600,6 +603,7 @@ class SettlementEdgeObserver(BaseObserver):
                     "bucket_dist_from_atm": i - atm_idx,
                     "spot": ctx.spot,
                     "strike": leg.threshold,
+                    "entry_price": round(entry_price, 4),
                 },
             ))
         return out
