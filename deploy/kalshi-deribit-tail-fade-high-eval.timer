@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily eval gate for deribit_tail_fade_high_v1 (14:00 UTC = 10:00 EDT)
+Requires=kalshi-deribit-tail-fade-high-eval.service
+
+[Timer]
+# 14:00 UTC daily — 1h after daily_live_audit (13:00 UTC) so audit + eval
+# arrive together in the morning review window. Script self-skips before
+# 2026-05-22 to avoid day-1 noise.
+OnCalendar=*-*-* 14:00:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
