@@ -1951,6 +1951,8 @@ class CryptoObserverStrategy:
                     "[BOOK_MID_CACHE_FLUSH] hard cap hit — alert ops"
                 )
             # 2026-05-21: per-leg skew update for depth_skew_flip observer.
+            # NOTE: runs under the ya/yb dollar-price `continue` guard above —
+            # zero-dollar stubs are intentionally excluded from the skew cache.
             ya_size = _safe_float(m.get("yes_ask_size_fp")) or 0.0
             yb_size = _safe_float(m.get("yes_bid_size_fp")) or 0.0
             total_size = ya_size + yb_size
