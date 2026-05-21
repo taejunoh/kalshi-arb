@@ -270,8 +270,16 @@ class DeribitTailFadeV1Strategy(_Phase1Base):
         self._min_ya = config.DERIBIT_TAIL_FADE_MIN_YA
         self._max_no_ask = config.DERIBIT_TAIL_FADE_MAX_NO_ASK
         self._min_fire_contracts = config.DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS
+        excl = (config.DERIBIT_TAIL_FADE_EXCLUDE_ASSETS or "").strip()
+        self._exclude_assets = {a.strip() for a in excl.split(",") if a.strip()}
 
     def _select_side_and_price(self, sig, market):
+        # Asset exclude — KXBTC default-excluded due to tail wipe rate (4/5
+        # historical −$20 wipes at NO<0.95). See config comment.
+        if self._exclude_assets:
+            asset = (sig.get("market_id") or "").split("-")[0]
+            if asset in self._exclude_assets:
+                return None
         ya = _safe_float(market.get("yes_ask_dollars"))
         no_ask = _safe_float(market.get("no_ask_dollars"))
         if ya is None or no_ask is None:

@@ -185,6 +185,14 @@ class Config:
         # the same band that is net-EV-negative even in paper. Cap targets
         # both fill-rate and EV simultaneously.
         self.DERIBIT_TAIL_FADE_MAX_NO_ASK = float(os.getenv("DERIBIT_TAIL_FADE_MAX_NO_ASK", "0.95"))
+        # 2026-05-21 asset exclude. Pre-cap (5/14-5/19) post-mega audit
+        # (n=231 ex-KXBTC-26MAY1617): KXBTC −$74.44 / n=75 / ROI −4.96%
+        # vs KXETH +$12.44 / n=158 / ROI +0.39%. All 5 tail wipes (−$20)
+        # were KXBTC; 4/5 were at NO<0.95 so the cap above does not defend
+        # against them. KXETH had 0 wipes in n=158. Comma-separated asset
+        # prefixes (e.g. "KXBTC" or "KXBTC,KXXRP") matched against
+        # market_id.split('-')[0]. Empty string = no exclusion.
+        self.DERIBIT_TAIL_FADE_EXCLUDE_ASSETS = os.getenv("DERIBIT_TAIL_FADE_EXCLUDE_ASSETS", "KXBTC")
         # ─ deribit_tail_fade_high_v1 (2026-05-21): sister paper trader for the
         #   high-ya zone (0.65-0.95) that the parent gate ignores. Lifetime
         #   observer (n=1,880) shows two distinct signal classes:
