@@ -1,0 +1,20 @@
+[Unit]
+Description=One-shot Telegram watcher for late_close_tail_v1's first LIVE fire
+After=kalshi-bot.service
+Wants=kalshi-bot.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python3 scripts/late_close_tail_first_fire_watch.py
+Restart=no
+Environment=PYTHONUNBUFFERED=1
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs
+
+[Install]
+WantedBy=multi-user.target
