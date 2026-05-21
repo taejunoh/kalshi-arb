@@ -18,6 +18,7 @@ and the corresponding observer stays silent.
 """
 from __future__ import annotations
 import logging
+import threading
 import time
 from typing import Optional
 
@@ -25,15 +26,26 @@ logger = logging.getLogger("market_extras")
 
 _CACHE: dict[tuple[str, str], tuple[float, Optional[float]]] = {}
 _TTL_S = 600.0   # 10 min — daily data refreshes once per US trading day
+# Sync TTL cache used from concurrent executor threads (crypto_observer
+# harness calls via asyncio.to_thread). Defensive lock prevents duplicate
+# fetches when N threads miss the same key simultaneously. Pattern hardened
+# 2026-05-21 after kalshi_client race-condition discovery.
+_CACHE_LOCK = threading.Lock()
 
 
 def _cached(key: tuple[str, str], fetcher) -> Optional[float]:
-    now = time.time()
-    hit = _CACHE.get(key)
-    if hit is not None and (now - hit[0]) < _TTL_S:
-        return hit[1]
+    with _CACHE_LOCK:
+        now = time.time()
+        hit = _CACHE.get(key)
+        if hit is not None and (now - hit[0]) < _TTL_S:
+            return hit[1]
+    # Fetch outside the lock — fetcher may make a slow network call,
+    # holding the lock would serialize all callers and defeat caching.
+    # Worst case: 2 threads race past the hit-check both fetch once;
+    # only the later write wins. Either way the next caller hits cache.
     val = fetcher()
-    _CACHE[key] = (now, val)
+    with _CACHE_LOCK:
+        _CACHE[key] = (now, val)
     return val
 
 
