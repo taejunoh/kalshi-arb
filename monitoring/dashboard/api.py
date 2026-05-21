@@ -713,6 +713,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "econ_trader":
                 "Demoted historical: CPI/GDP/FED 계열 전략 비활성화 (loop 에서 제거). "
                 "기존 settled trades 만 DB 에 남음, 신규 entry 없음.",
+            "late_close_tail_v1":
+                "Demoted 2026-05-21 (LIVE 26분 만에 revert): cap 적용 후 cohort 가 "
+                "wipe-zone (NO 0.90+) 내부 — slip+fee 가 paper alpha 흡수. Promo "
+                "Config C sim (+$23.63/day) vs paper actual (−$71/25h) 44× 차이로 "
+                "sim over-fit 판명. Paper 만 유지하여 데이터 수집 계속.",
         }
         # Per-strategy gate config (entry-price + game phase + region +
         # sport blocklist). Read class-level attributes so frontend renders
@@ -993,6 +998,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "sports_underdog_v35",
                 "mentions_trader",
                 "econ_trader",
+                "late_close_tail_v1",
             }
             is_demoted = s in DEMOTED_FROM_LIVE
             # Paper-twin flag: LIVE strategies that ALSO record paper-twin
