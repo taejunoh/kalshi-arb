@@ -55,7 +55,12 @@ SKIP_BEFORE = datetime(2026, 5, 22, tzinfo=timezone.utc)
 # Retire / promote thresholds (see memory entry).
 MIN_N_FOR_DECISION = 30
 SINGLE_EVENT_MAX_PCT = 50.0
-CASCADE_MIN_FIRES = 4
+# 2026-05-21: lowered from 4 to 3. Per-event cap (4 by config) means
+# winning clusters cap at 3-4 fires while losing clusters can also hit
+# the cap; if we count only ≥4-fire clusters we systematically miss the
+# 3-fire winners, biasing cascade_net negative. 3-fire threshold is the
+# natural floor under cap=4.
+CASCADE_MIN_FIRES = 3
 
 # Event key: strip the binary leg suffix (-B<strike> / -T<strike>).
 def _event_key(market_id: str) -> str:
