@@ -356,6 +356,13 @@ class DeribitTailFadeHighV1Strategy(_Phase1Base):
         self._min_ya = config.DERIBIT_TAIL_FADE_HIGH_MIN_YA
         self._max_ya = config.DERIBIT_TAIL_FADE_HIGH_MAX_YA
         self._min_fire_contracts = config.DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS
+        self._max_fires_per_event_cfg = config.DERIBIT_TAIL_FADE_HIGH_MAX_FIRES_PER_EVENT
+
+    def _max_fires_per_event(self) -> Optional[int]:
+        cap = self._max_fires_per_event_cfg
+        if cap is None or cap <= 0:
+            return None
+        return cap
 
     def _select_side_and_price(self, sig, market):
         if sig["predicted_outcome"] != "no":

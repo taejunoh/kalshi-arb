@@ -33,6 +33,7 @@ def _cfg():
         DERIBIT_TAIL_FADE_HIGH_MAX_YA=0.95,
         DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S=15.0,
         DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS=5.0,
+        DERIBIT_TAIL_FADE_HIGH_MAX_FIRES_PER_EVENT=2,
         BID_IMBALANCE_SIZE_USDC=20.0,
         BID_IMBALANCE_SIGNAL_FRESHNESS_S=15.0,
         BID_IMBALANCE_MIN_PRICE=0.50,
@@ -400,6 +401,32 @@ async def test_deribit_tail_fade_high_skips_when_predicted_yes():
                             market_lookup=markets.get)
     await s.scan_and_execute()
     assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_deribit_tail_fade_high_caps_at_max_fires_per_event():
+    """Per-event cap=2 (LIVE soft-launch config 2026-05-21). The base
+    class's _max_fires_per_event is now wired through the config field.
+    With event_fire_count=2 already on the event, the 3rd signal in the
+    same event must skip."""
+    sig = {"id": 1, "ts": _now_iso(2.0),
+           "market_id": "KXBTC-26MAY1418-B80950",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1418-B80950": {
+        "yes_ask_dollars": 0.88, "no_ask_dollars": 0.12,
+        "yes_bid_size_fp": 500.0,
+    }}
+    # event_fire_count returns 2 → cap=2 reached → no order placed.
+    s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
+                            market_lookup=markets.get, event_fire_count=2)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+    # With event_fire_count=1, cap=2 not reached → fires.
+    s2, om2 = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
+                              market_lookup=markets.get, event_fire_count=1)
+    await s2.scan_and_execute()
+    assert om2.market_order.await_count == 1
 
 
 # ── BidImbalanceV1 ─────────────────────────────────────────────────
