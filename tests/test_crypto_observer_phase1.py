@@ -25,6 +25,7 @@ def _cfg():
         DERIBIT_TAIL_FADE_MAX_YA=0.20,
         DERIBIT_TAIL_FADE_MIN_YA=0.08,
         DERIBIT_TAIL_FADE_MAX_NO_ASK=0.95,
+        DERIBIT_TAIL_FADE_EXCLUDE_ASSETS="KXBTC",
         DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS=3.0,
         DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S=15.0,
         DERIBIT_TAIL_FADE_HIGH_SIZE_USDC=20.0,
@@ -159,6 +160,24 @@ async def test_deribit_tail_fade_skips_when_ya_below_min():
            "predicted_outcome": "no"}
     markets = {"KXETH-26MAY1311-B2220": {
         "yes_ask_dollars": 0.03, "no_ask_dollars": 0.97,
+    }}
+    s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_deribit_tail_fade_skips_excluded_asset():
+    """2026-05-21: KXBTC excluded by default. Pre-cap ex-mega audit
+    (n=75) showed KXBTC −$74.44 / ROI −4.96%, 4/5 −$20 wipes at NO<0.95
+    (cap doesn't defend). Same gate would have fired on KXETH OK."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2108-B77150",
+           "predicted_outcome": "no"}
+    # In-band ya + no_ask, depth available — only the asset exclude blocks
+    markets = {"KXBTC-26MAY2108-B77150": {
+        "yes_ask_dollars": 0.15, "no_ask_dollars": 0.85,
+        "yes_bid_size_fp": 50.0,
     }}
     s, om = _build_strategy(DeribitTailFadeV1Strategy, signals=[sig],
                             market_lookup=markets.get)
