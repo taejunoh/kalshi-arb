@@ -49,6 +49,9 @@ def _cfg():
         LATE_CLOSE_TAIL_MIN_YA=0.05,
         LATE_CLOSE_TAIL_MAX_YA=0.30,
         LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS=3.0,
+        LATE_CLOSE_TAIL_MAX_NO_ASK=1.0,
+        LATE_CLOSE_TAIL_EXCLUDE_NO_ASK_LOW=0.0,
+        LATE_CLOSE_TAIL_EXCLUDE_NO_ASK_HIGH=0.0,
         DERIBIT_ATM_FADE_SIZE_USDC=20.0,
         DERIBIT_ATM_FADE_SIGNAL_FRESHNESS_S=15.0,
         DERIBIT_ATM_FADE_MIN_YA=0.30,
@@ -848,6 +851,110 @@ async def test_late_close_tail_skips_when_predicted_yes():
                             market_lookup=markets.get)
     await s.scan_and_execute()
     assert om.market_order.await_count == 0
+
+
+# 2026-05-21 LIVE-promo pre-coding: MAX_NO_ASK + EXCLUDE_NO_ASK gates.
+# Defaults are no-op; these tests assert the active-threshold behavior so
+# the gates are safe to flip via env var at the 6/03 audit checkpoint.
+
+
+@pytest.mark.asyncio
+async def test_late_close_tail_skips_when_no_ask_exceeds_max_no_ask():
+    """LIVE-promo gate: cap no_ask at 0.94 to avoid rounding-residual zone."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B91000": {
+        "yes_ask_dollars": 0.05, "no_ask_dollars": 0.96,
+        "yes_bid_size_fp": 50.0,
+    }}
+    s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    s._max_no_ask = 0.94
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_late_close_tail_fires_at_max_no_ask_boundary():
+    """no_ask == MAX_NO_ASK is inclusive (passes)."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B91000": {
+        "yes_ask_dollars": 0.06, "no_ask_dollars": 0.94,
+        "yes_bid_size_fp": 50.0,
+    }}
+    s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    s._max_no_ask = 0.94
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_late_close_tail_default_max_no_ask_is_no_op():
+    """Default MAX_NO_ASK=1.0 must not block any in-band fire (paper parity)."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B91000": {
+        "yes_ask_dollars": 0.02, "no_ask_dollars": 0.98,
+        "yes_bid_size_fp": 50.0,
+    }}
+    # Note: ya=0.02 < MIN_YA=0.05 would skip; pick ya inside band.
+    markets["KXBTC-26MAY1815-B91000"]["yes_ask_dollars"] = 0.05
+    s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_late_close_tail_skips_when_no_ask_in_exclude_band():
+    """LIVE-promo gate: skip the 0.88-0.89 cliff bucket."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B91000": {
+        "yes_ask_dollars": 0.12, "no_ask_dollars": 0.88,
+        "yes_bid_size_fp": 50.0,
+    }}
+    s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    s._exclude_no_ask_low = 0.88
+    s._exclude_no_ask_high = 0.89
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_late_close_tail_fires_outside_exclude_band():
+    """Bands neighboring the cliff (0.87 / 0.90) must still fire."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B91000": {
+        "yes_ask_dollars": 0.13, "no_ask_dollars": 0.87,
+        "yes_bid_size_fp": 50.0,
+    }}
+    s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    s._exclude_no_ask_low = 0.88
+    s._exclude_no_ask_high = 0.89
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_late_close_tail_exclude_band_disabled_when_low_ge_high():
+    """LOW >= HIGH disables the band (default 0.0/0.0 = inactive)."""
+    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1815-B91000",
+           "predicted_outcome": "no"}
+    markets = {"KXBTC-26MAY1815-B91000": {
+        "yes_ask_dollars": 0.12, "no_ask_dollars": 0.88,
+        "yes_bid_size_fp": 50.0,
+    }}
+    s, om = _build_strategy(LateCloseTailV1Strategy, signals=[sig],
+                            market_lookup=markets.get)
+    # Defaults already 0.0/0.0 — no_ask=0.88 should fire.
+    await s.scan_and_execute()
+    assert om.market_order.await_count == 1
 
 
 # ── DeribitAtmFadeV1 (2026-05-18) ──────────────────────────────────
