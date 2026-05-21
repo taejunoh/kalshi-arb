@@ -51,6 +51,30 @@ CRIT_30D_ROI_MIN_N = 10        # only apply ROI criterion at this n+
 WARN_LIVE_PAPER_ROI_GAP_PP = 5.0  # percentage points
 MIN_N_FOR_COMPARISON = 20
 
+# Per-strategy override thresholds + post-promo deploy anchors. Used to
+# track accelerated-ladder strategies that need tighter watch than the
+# generic CRIT_YESTERDAY/CRIT_7D/CRIT_30D bands. When present, the
+# strategy-specific 3d + cumulative-since-deploy checks run IN ADDITION
+# to generic checks; tightest violation wins.
+#
+# Schema per entry:
+#   deploy_ts          — ISO UTC. Cumulative window starts here.
+#   promote_3d_pnl     — 3d pnl at or above → "promote candidate" tag
+#   warn_3d_pnl        — 3d pnl below this → warn
+#   crit_3d_pnl        — 3d pnl at or below → critical (demote candidate)
+#   crit_cum_pnl       — cumulative-since-deploy at or below → critical
+#   note               — short label shown in audit output
+STRATEGY_OVERRIDES = {
+    "cme_basis_fade_v1": {
+        "deploy_ts": "2026-05-21T16:11:31+00:00",
+        "promote_3d_pnl": 30.0,
+        "warn_3d_pnl": -30.0,
+        "crit_3d_pnl": -60.0,
+        "crit_cum_pnl": -100.0,
+        "note": "J config (MAX_NO_ASK 0.85 + per-event cap 8)",
+    },
+}
+
 # Kalshi 429 rate-limit thresholds (added 2026-05-21 after sports
 # scan_loop race condition produced silent bursts undetected for ~5h).
 # Surfaced in daily audit so any new burst class catches within 24h.
@@ -120,6 +144,7 @@ async def audit(send: bool):
     now = datetime.now(timezone.utc)
     cutoffs = {
         "1d": (now - timedelta(days=1)).isoformat(),
+        "3d": (now - timedelta(days=3)).isoformat(),
         "7d": (now - timedelta(days=7)).isoformat(),
         "30d": (now - timedelta(days=30)).isoformat(),
     }
@@ -136,14 +161,61 @@ async def audit(send: bool):
                     rec[f"{status_label}_{win_name}_wins"] = wins or 0
                     rec[f"{status_label}_{win_name}_pnl"] = pnl or 0.0
                     rec[f"{status_label}_{win_name}_stake"] = stake or 0.0
+            override = STRATEGY_OVERRIDES.get(strat)
+            if override:
+                cur = await conn.execute(
+                    _window_query(strat, "settled", override["deploy_ts"])
+                )
+                n, wins, pnl, stake = await cur.fetchone()
+                rec["live_cum_n"] = n or 0
+                rec["live_cum_wins"] = wins or 0
+                rec["live_cum_pnl"] = pnl or 0.0
+                rec["live_cum_stake"] = stake or 0.0
             rows[strat] = rec
 
     critical: list[tuple[str, str]] = []   # (strategy, reason)
     warning: list[tuple[str, str]] = []
+    promote: list[tuple[str, str]] = []    # (strategy, reason) — size-up candidates
     ok: list[str] = []
 
     for strat, r in rows.items():
         flags: list[str] = []
+        override = STRATEGY_OVERRIDES.get(strat)
+        if override:
+            # Tighter strategy-specific bands replace generic 1d/7d/30d.
+            if r["live_3d_pnl"] <= override["crit_3d_pnl"]:
+                flags.append(
+                    f"3d=${r['live_3d_pnl']:+.0f} ≤ ${override['crit_3d_pnl']:+.0f} (demote)"
+                )
+            elif r["live_cum_pnl"] <= override["crit_cum_pnl"]:
+                flags.append(
+                    f"cum=${r['live_cum_pnl']:+.0f} ≤ ${override['crit_cum_pnl']:+.0f} "
+                    f"since {override['deploy_ts'][:10]}"
+                )
+            if flags:
+                critical.append((strat, " ".join(flags) + f" [{override['note']}]"))
+                continue
+            if (override["warn_3d_pnl"] < r["live_3d_pnl"]
+                    < override["promote_3d_pnl"]):
+                pass  # hold band — no flag
+            elif r["live_3d_pnl"] <= override["warn_3d_pnl"]:
+                warning.append((
+                    strat,
+                    f"3d=${r['live_3d_pnl']:+.0f} ≤ ${override['warn_3d_pnl']:+.0f} (warn) "
+                    f"[{override['note']}]"
+                ))
+                continue
+            elif (r["live_3d_pnl"] >= override["promote_3d_pnl"]
+                  and r["live_cum_n"] >= 20):
+                promote.append((
+                    strat,
+                    f"3d=${r['live_3d_pnl']:+.0f} ≥ ${override['promote_3d_pnl']:+.0f}, "
+                    f"cum n={r['live_cum_n']} ${r['live_cum_pnl']:+.0f} "
+                    f"[{override['note']}]"
+                ))
+                continue
+            ok.append(strat)
+            continue
         if r["live_1d_pnl"] < CRIT_YESTERDAY:
             flags.append(f"1d=${r['live_1d_pnl']:+.0f}")
         if r["live_7d_pnl"] < CRIT_7D:
@@ -204,7 +276,21 @@ async def audit(send: bool):
             )
         lines.append("")
 
-    if not critical and not warning:
+    if promote:
+        lines.append(f"📈 <b>PROMOTE CANDIDATE ({len(promote)})</b>")
+        for strat, reason in promote:
+            r = rows[strat]
+            cum_wr = (
+                100 * r["live_cum_wins"] / r["live_cum_n"]
+                if r["live_cum_n"] else 0
+            )
+            lines.append(
+                f"  <b>{strat}</b>: {reason}"
+                f"\n    cum WR={cum_wr:.0f}% n={r['live_cum_n']} stake=${r['live_cum_stake']:.0f}"
+            )
+        lines.append("")
+
+    if not critical and not warning and not promote:
         lines.append(f"✅ All {len(ok)} LIVE strategies within thresholds.")
     elif ok:
         lines.append(f"✅ <i>OK ({len(ok)}):</i> {', '.join(ok)}")
@@ -248,7 +334,10 @@ async def audit(send: bool):
     from monitoring.notifier import TelegramNotifier
     notifier = TelegramNotifier(config.TELEGRAM_BOT_TOKEN, config.TELEGRAM_CHAT_ID)
     await notifier.send(msg, msg_type="live_audit")
-    logger.info(f"Telegram sent: {len(critical)} critical / {len(warning)} warning / {len(ok)} OK")
+    logger.info(
+        f"Telegram sent: {len(critical)} critical / {len(warning)} warning / "
+        f"{len(promote)} promote / {len(ok)} OK"
+    )
 
 
 def main():
