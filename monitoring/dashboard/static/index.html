@@ -834,6 +834,31 @@
     </section>
 
     <!-- ── Crypto Phase 1 strategy gates ── -->
+    <!-- ── Upcoming eval/promo gates (data/schedule.json) ── -->
+    <section id="eval-schedule-section">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div class="section-title" style="margin-bottom:0">Upcoming eval &amp; promo gates</div>
+        <span id="eval-schedule-meta" style="color:var(--text-dim);font-size:11px;">Loading…</span>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll" style="max-height:340px;">
+          <table id="eval-schedule-table">
+            <thead>
+              <tr>
+                <th style="width:110px;">Date (UTC)</th>
+                <th style="width:60px;">Type</th>
+                <th>Gate</th>
+                <th>Criteria</th>
+              </tr>
+            </thead>
+            <tbody id="eval-schedule-body">
+              <tr class="empty-row"><td colspan="4">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <section id="strategy-gates-section">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
         <div class="section-title" style="margin-bottom:0">Crypto Phase 1 strategy gates</div>
@@ -1820,6 +1845,57 @@ async function refreshRegime() {
 }
 
 // ─────────────────────────────────────────────
+//  Upcoming eval/promo gates (data/schedule.json)
+// ─────────────────────────────────────────────
+async function refreshEvalSchedule() {
+  try {
+    const data = await apiFetch('/api/schedule');
+    const tbody = document.getElementById('eval-schedule-body');
+    const meta = document.getElementById('eval-schedule-meta');
+    const gates = (data && data.gates) || [];
+    meta.textContent = `${gates.length} upcoming gates · source: data/schedule.json (v${data.version || '?'})`;
+    if (gates.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No upcoming gates.</td></tr>';
+      return;
+    }
+    const today = data.today_utc;
+    const escape = s => String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    tbody.innerHTML = gates.map(g => {
+      const isSoon = g.date <= todayPlusDays(today, 2);
+      const dateCell = `<span class="td-mono" style="${isSoon ? 'color:var(--orange,#f5a623);font-weight:600;' : ''}">${escape(g.date)}</span>` +
+        (g.time_utc ? `<div style="font-size:10px;color:var(--text-dim);font-family:inherit;">${escape(g.time_utc)}</div>` : '');
+      const typeBadge = g.type === 'auto'
+        ? '<span class="badge badge-green" title="Auto-fires via systemd timer">🤖 auto</span>'
+        : '<span class="badge" style="background:var(--bg-2);color:var(--text-dim);" title="Manual check required">manual</span>';
+      const memLink = g.memory
+        ? `<div style="font-size:10px;color:var(--text-dim);font-family:inherit;margin-top:2px;">[[${escape(g.memory)}]]</div>`
+        : '';
+      return `
+        <tr>
+          <td style="vertical-align:top;">${dateCell}</td>
+          <td style="vertical-align:top;">${typeBadge}</td>
+          <td style="vertical-align:top;">
+            <div style="font-weight:600;">${escape(g.label)}</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${escape(g.details)}</div>
+            ${memLink}
+          </td>
+          <td style="vertical-align:top;font-size:11px;">${escape(g.criteria)}</td>
+        </tr>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('eval-schedule-body').innerHTML =
+      `<tr class="empty-row" style="color:var(--red);"><td colspan="4">Failed: ${e.message}</td></tr>`;
+  }
+}
+
+function todayPlusDays(isoDate, days) {
+  const d = new Date(isoDate + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// ─────────────────────────────────────────────
 //  Crypto Phase 1 strategy gates
 // ─────────────────────────────────────────────
 async function refreshStrategyGates() {
@@ -2187,6 +2263,7 @@ async function fullRefresh() {
     refreshRegime(),
     refreshObserverSignals(),
     refreshCryptoObserver(),
+    refreshEvalSchedule(),
     refreshStrategyGates(),
   ]);
 }

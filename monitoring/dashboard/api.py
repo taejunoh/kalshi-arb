@@ -1749,6 +1749,29 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "rollback_triggers": triggers,
         }
 
+    @app.get("/api/schedule")
+    async def get_schedule():
+        """Upcoming eval/promotion gates loaded from data/schedule.json.
+        Past gates (date < today UTC) are dropped — the file is treated
+        as forward-looking only.  Returns gates sorted by date ascending."""
+        import json
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        schedule_path = os.path.join(repo_root, "data", "schedule.json")
+        try:
+            with open(schedule_path) as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            return {"version": None, "gates": [], "error": str(e)}
+        today_utc = datetime.now(timezone.utc).date().isoformat()
+        future = [g for g in data.get("gates", []) if g.get("date", "") >= today_utc]
+        future.sort(key=lambda g: (g.get("date", ""), g.get("time_utc", "")))
+        return {
+            "version": data.get("version"),
+            "note": data.get("note"),
+            "today_utc": today_utc,
+            "gates": future,
+        }
+
     # Serve static frontend files if they exist
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     if os.path.isdir(static_dir):
