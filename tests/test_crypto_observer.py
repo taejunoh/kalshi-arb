@@ -1074,6 +1074,43 @@ def test_strike_ladder_literal_no_fire_when_book_is_sparse():
     assert StrikeLadderLiteralObserver().evaluate(ctx) == []
 
 
+def test_strike_ladder_literal_filters_kalshi_phantom_ceiling_offers():
+    """Kalshi returns yes_ask = $1.00 + yes_ask_size_fp = 0 when YES-book is
+    empty. Without filtering, a wide ladder of untouched legs sums to ~$75
+    (one $1.00 phantom per leg). Phantom-only ladder must NOT fire."""
+    # 75-leg wide ladder, ALL phantoms: ya=1.00, ya_size=0 (Kalshi default
+    # for any market with no resting YES seller). raw sum_ya = $75.
+    legs = [
+        _b(70_000 + i * 100, ya=1.00, yb=0.00, ya_size=0, yb_size=0)
+        for i in range(75)
+    ]
+    ctx = _ctx(b_legs=legs, spot=70_000.0, close_s=300.0)
+    assert StrikeLadderLiteralObserver().evaluate(ctx) == []
+
+
+def test_strike_ladder_literal_mixed_real_offers_among_phantoms():
+    """Ladder with 70 phantoms + 5 real offers. resting_sum_ya counts only
+    the 5 real ones; phantoms ignored even though they pump full_sum_ya."""
+    # 70 phantom legs (ya=1.00 / size=0)
+    legs = [
+        _b(70_000 + i * 100, ya=1.00, yb=0.00, ya_size=0, yb_size=0)
+        for i in range(70)
+    ]
+    # + 5 real resting offers at ya=0.30 each (sum = 1.50)
+    for i in range(5):
+        legs.append(_b(80_000 + i * 100, ya=0.30, yb=0.25, ya_size=100))
+    ctx = _ctx(b_legs=legs, spot=70_000.0, close_s=300.0)
+    sigs = StrikeLadderLiteralObserver().evaluate(ctx)
+    assert len(sigs) == 1
+    sig = sigs[0]
+    assert sig.features["n_legs_total"] == 75
+    assert sig.features["n_resting_ya_legs"] == 5  # phantoms excluded
+    assert sig.features["resting_sum_ya"] == pytest.approx(1.50, abs=0.01)
+    # full_sum_ya kept as diagnostic — still includes phantoms
+    assert sig.features["full_sum_ya"] == pytest.approx(71.50, abs=0.01)
+    assert sig.features["target_ya"] == pytest.approx(0.30)
+
+
 def test_strike_ladder_literal_resting_sum_excludes_zero_ya_legs():
     """resting_sum_ya only counts legs with ya>0; full_sum_ya is the raw total."""
     # 15 legs ya=0.10 (resting) + 3 legs ya=0 (no offer) → full=1.50, resting=1.50.
