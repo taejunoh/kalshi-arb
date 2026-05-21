@@ -455,6 +455,7 @@ class EventContext:
     # 2026-05-20 cross-venue funding (Deribit / OKX / Bybit)
     funding_8h_by_venue: dict[str, Optional[float]] = field(default_factory=dict)
     book_mid_cache: Optional[object] = None  # _BookMidCache, untyped to avoid circular import
+    depth_skew_cache: Optional[object] = None  # _DepthSkewCache, untyped to mirror book_mid_cache
 
     def atm_bucket_index(self) -> Optional[int]:
         """Index in b_legs of the bucket whose center is closest to spot."""
@@ -1758,6 +1759,9 @@ class CryptoObserverStrategy:
         from strategies.crypto_cross_asset_observer import _BookMidCache
         self._book_mid_cache = _BookMidCache()
         self._last_book_prune_ts = 0.0
+        # 2026-05-21: per-leg skew cache for depth_skew_flip observer (sister of settlement_edge_v2).
+        self._depth_skew_cache = _DepthSkewCache()
+        self._last_depth_skew_prune_ts = 0.0
 
     def _update_spot_history(self, now: float):
         for asset in ("BTC", "ETH"):
@@ -1901,6 +1905,7 @@ class CryptoObserverStrategy:
                 spot_btc_10s_ago=spot_btc_10s, spot_eth_10s_ago=spot_eth_10s,
                 corr_5min=corr_5min, corr_15min=corr_15min,
                 book_mid_cache=self._book_mid_cache,
+                depth_skew_cache=self._depth_skew_cache,
             ))
         return contexts
 
@@ -1945,6 +1950,19 @@ class CryptoObserverStrategy:
                 logger.error(
                     "[BOOK_MID_CACHE_FLUSH] hard cap hit — alert ops"
                 )
+            # 2026-05-21: per-leg skew update for depth_skew_flip observer.
+            ya_size = _safe_float(m.get("yes_ask_size_fp")) or 0.0
+            yb_size = _safe_float(m.get("yes_bid_size_fp")) or 0.0
+            total_size = ya_size + yb_size
+            if total_size > 0:
+                skew = (ya_size - yb_size) / total_size
+                flushed_skew = self._depth_skew_cache.update(
+                    series, strike, now_epoch, skew,
+                )
+                if flushed_skew:
+                    logger.error(
+                        "[DEPTH_SKEW_CACHE_FLUSH] hard cap hit — alert ops"
+                    )
         # Prune stale book entries every 60s
         if (now_epoch - self._last_book_prune_ts) >= 60.0:
             removed = self._book_mid_cache.prune_stale(now_epoch, max_age_s=120.0)
@@ -1959,6 +1977,21 @@ class CryptoObserverStrategy:
             if debug:
                 logger.warning(
                     f"[BOOK_MID_CACHE_SIZE_WARN] size={self._book_mid_cache.size()} "
+                    f"approaching hard cap"
+                )
+        # 2026-05-21: parallel prune + watchdog for depth_skew_cache
+        if (now_epoch - self._last_depth_skew_prune_ts) >= 60.0:
+            removed_skew = self._depth_skew_cache.prune_stale(now_epoch, max_age_s=120.0)
+            self._last_depth_skew_prune_ts = now_epoch
+            if debug:
+                logger.warning(
+                    f"[DEPTH_SKEW_CACHE_PRUNE] size={self._depth_skew_cache.size()} "
+                    f"removed={removed_skew}"
+                )
+        if self._depth_skew_cache.size() > 10_000:
+            if debug:
+                logger.warning(
+                    f"[DEPTH_SKEW_CACHE_SIZE_WARN] size={self._depth_skew_cache.size()} "
                     f"approaching hard cap"
                 )
 
