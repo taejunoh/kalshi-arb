@@ -1,8 +1,13 @@
 # Strike-Ladder Literal Observer — Design
 
-**Date**: 2026-05-20
+**Date**: 2026-05-20 (redesigned 2026-05-21)
 **Owner**: taejun
-**Status**: Spec — pending implementation plan
+**Status**: **REDESIGNED 2026-05-21** — original 4-kind logic shipped 5/20 and
+was retired ~24h later after first-week data showed it was measuring book
+sparsity and OTM-zone tautology, not mispricing. See "2026-05-21 redesign"
+section at the bottom of this doc and [[strike_ladder_literal_2026-05-20]]
+memory entry. The motivation and gap-analysis below remain valid; the
+underpriced/OTM gates do not.
 **Predecessors**: [[cluster_sum_inverted_finding_2026-05-20]], [[ladder_crypto_phase0_resurrection_2026-05-19]]
 **Related**: `ClusterSumObserver` (ATM±5 narrow sibling), `LadderCryptoStrategy` (depth-walk arb sibling)
 
@@ -254,3 +259,85 @@ The `±15%` OTM center is a rule of thumb based on KXBTC daily move
 distribution. KXBTCD (daily) and KXXRP have different vol scales.
 Initial deploy uses the same `±15%` constant for all `TARGET_SERIES`.
 Re-tune at 5/27 if KXXRP / KXBTCD fire rate is degenerate.
+
+---
+
+## 2026-05-21 redesign
+
+### Why the original gates failed
+
+After ~24h of fires (n=11,798, settled n=4,704), observed WR = **0%**.
+Investigation revealed three structural issues, not a single bug:
+
+1. **`full_underpriced` gate (`sum_ya ≤ 0.95`) measured book sparsity, not
+   arb.** B-legs are *mutually exclusive* bucket markets, so fair
+   `sum(ya) ≈ 1.0`. Observed median was 0.18 — fair pricing forbids this.
+   It happens because most OTM-bucket YES-asks on Kalshi are absent
+   (no resting offer → `ya = 0`). Gate fired on thin books, not on real
+   "ladder costs less than $1" arb.
+
+2. **`otm_underpriced` gate (`cluster_sum_ya ≤ 0.95` on 11-leg OTM
+   cluster) was a tautology.** Sum of `P(expiry ∈ each OTM bucket)` over
+   an OTM cluster is always small by definition (observed median 0.11).
+   Gate fires whenever the cluster *is* OTM, regardless of pricing. EV
+   under fair pricing is exactly 0: cluster cost = cluster prior.
+
+3. **Single-leg `predicted_outcome` target was inverted.** Gates picked
+   the *lowest-ya* leg in the cluster (deepest-OTM, ya ~ 0.01) and
+   predicted YES. The basket arb thesis was correct ("some leg in the
+   underpriced cluster must touch") but the chosen leg was the **least
+   likely** of those to touch — implied probability ~1%, so 0% WR is
+   prior, not signal failure.
+
+### Real signal direction in the same data
+
+Same fires recorded `full_sum_ya` median **1.89** (max 11.31). For a
+mutually-exclusive 18+ leg ladder, fair `sum_ya ≈ 1.0`. Observed values
+≥ 1.10 indicate **YES is broadly overpriced** — selling YES on every
+resting leg captures `(sum_ya - 1) - fees` regardless of which leg
+resolves YES.
+
+### Redesigned observer
+
+Single gate, single emitted `kind`:
+
+```
+gate:
+  len(b_legs) ≥ 10
+  mts_s ≥ 60
+  n_legs_with_ya>0 ≥ 5         # sparsity defense
+  sum(ya across all b_legs) ≥ 1.10
+emit:
+  kind            = "full_overpriced"
+  market_id       = ticker of highest-ya resting leg (≈ ATM bucket)
+  predicted_outcome = "no"
+  features:
+    full_sum_ya, resting_sum_ya, n_resting_ya_legs,
+    n_legs_total, target_ya, target_dist_pct, spot, mts_s
+```
+
+WR proxy semantics: highest-ya leg is the "most likely YES" of the
+ladder. Predicting NO means we expect the ladder's own consensus
+(`target_ya`) to be wrong upward. `WR > (1 - target_ya)` = edge in the
+mispricing direction. Pipeline-compatible single-row signal.
+
+Basket-level EV (the real arb measurement) is computed by a separate
+retrospective script: pull `full_sum_ya` + resolution outcome per event,
+compute `(resting_sum_ya - 1) - fees - per_leg_slippage * n_resting`.
+
+### What was dropped
+
+- All four cluster_sum/full_sum gates from the original design.
+- OTM ±15% sub-cluster scan entirely.
+- `cluster_*` feature fields (replaced by `n_resting_ya_legs` + `resting_sum_ya`).
+- Sister-strategy cross-reference with `ladder_crypto` (the new gate is
+  in the *opposite direction* — overpriced ladder vs. depth-walk arb on
+  underpriced ladder. They no longer measure overlapping conditions).
+
+### Evaluation
+
+- **5/27** (1 week): per-bucket fee-net EV by `full_sum_ya` band
+  (1.10-1.20 / 1.20-1.50 / 1.50+). Cross-check WR proxy vs basket EV.
+- **6/02** (2 weeks): retrospective basket evaluation. Decide
+  promote-to-paper if basket-EV positive after fees + slippage on
+  events with `n_resting_ya_legs ≥ 10`.
