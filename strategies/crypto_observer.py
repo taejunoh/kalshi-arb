@@ -167,6 +167,21 @@ LITERAL_FULL_SUM_OVERPRICED_MIN = 1.10   # ladder overpriced gate (sum of bucket
 LITERAL_MIN_RESTING_LEGS = 5             # need ≥5 legs with ya>0 (sparsity defense)
 LITERAL_MTS_MIN_S = 60                   # exclude settlement_edge window overlap
 
+# depth_skew_flip (2026-05-21): sister of settlement_edge_v2 (static).
+# Fires on per-leg depth-skew sign-flip events over a LOOKBACK_S rolling
+# window. Tests the dynamic counterpart: the *moment* MMs reverse a
+# lopsided book may carry alpha distinct from the steady-state skew.
+# Spec: docs/superpowers/specs/2026-05-21-settlement-edge-v2-and-depth-skew-flip-design.md
+DEPTH_SKEW_FLIP_LOOKBACK_S = 30
+DEPTH_SKEW_FLIP_MIN_BEFORE = 0.20
+DEPTH_SKEW_FLIP_MIN_AFTER  = 0.20
+DEPTH_SKEW_FLIP_MTS_MIN_S = 60
+DEPTH_SKEW_FLIP_MTS_MAX_S = 600
+DEPTH_SKEW_FLIP_ATM_RADIUS = 2
+DEPTH_SKEW_FLIP_MIN_SIDE_SIZE = 5
+DEPTH_SKEW_FLIP_ENTRY_PRICE_MIN = 0.40
+DEPTH_SKEW_FLIP_ENTRY_PRICE_MAX = 0.85
+
 BID_IMBALANCE_RATIO_MIN = 3.0         # (yb+nb) / (ya+na) sizes ≥ 3
 BID_IMBALANCE_MTS_MAX_S = 600         # ≤ 10 min to close
 BID_IMBALANCE_FADE_MAX_YA = 0.60      # flipped sibling only fires below this ya —
@@ -681,6 +696,88 @@ class SettlementEdgeObserver(BaseObserver):
                 predicted_outcome=predicted,
                 features={
                     "skew": round(skew, 4),
+                    "ask_size": leg.ya_size,
+                    "bid_size": leg.yb_size,
+                    "ya": round(leg.ya, 4),
+                    "yb": round(leg.yb, 4),
+                    "na": round(leg.na, 4),
+                    "mts_s": round(ctx.close_time_secs, 2),
+                    "bucket_dist_from_atm": i - atm_idx,
+                    "spot": ctx.spot,
+                    "strike": leg.threshold,
+                    "entry_price": round(entry_price, 4),
+                },
+            ))
+        return out
+
+
+# ── 3c. depth_skew_flip ────────────────────────────────────────────
+
+
+class DepthSkewFlipObserver(BaseObserver):
+    """Phase 0: per-leg depth-skew sign-flip detector. Sister of
+    SettlementEdgeObserver (static state) but fires on the dynamic event
+    of a sign change in the per-leg (ya_size, yb_size) asymmetry over
+    LOOKBACK_S seconds. Predicted direction follows the CURRENT skew sign
+    (latest information dominates).
+
+    Requires `ctx.depth_skew_cache` populated by CryptoObserverStrategy.
+    """
+    name = "depth_skew_flip"
+
+    def evaluate(self, ctx: EventContext) -> list[Signal]:
+        if ctx.close_time_secs is None:
+            return []
+        if ctx.close_time_secs < DEPTH_SKEW_FLIP_MTS_MIN_S:
+            return []
+        if ctx.close_time_secs > DEPTH_SKEW_FLIP_MTS_MAX_S:
+            return []
+        if ctx.depth_skew_cache is None:
+            return []
+        if not ctx.b_legs:
+            return []
+        atm_idx = ctx.atm_bucket_index()
+        if atm_idx is None:
+            return []
+
+        lo = max(0, atm_idx - DEPTH_SKEW_FLIP_ATM_RADIUS)
+        hi = min(len(ctx.b_legs), atm_idx + DEPTH_SKEW_FLIP_ATM_RADIUS + 1)
+        now_ts = ctx.now.timestamp()
+
+        out: list[Signal] = []
+        for i in range(lo, hi):
+            leg = ctx.b_legs[i]
+            total_size = leg.ya_size + leg.yb_size
+            if total_size <= DEPTH_SKEW_FLIP_MIN_SIDE_SIZE:
+                continue
+            skew_now = (leg.ya_size - leg.yb_size) / total_size
+            if abs(skew_now) < DEPTH_SKEW_FLIP_MIN_AFTER:
+                continue
+            skew_old = ctx.depth_skew_cache.n_seconds_ago(
+                ctx.series, leg.threshold,
+                DEPTH_SKEW_FLIP_LOOKBACK_S, now_ts,
+            )
+            if skew_old is None:
+                continue
+            if abs(skew_old) < DEPTH_SKEW_FLIP_MIN_BEFORE:
+                continue
+            # Sign-flip check (strict — same sign or either-zero blocks)
+            if (skew_old > 0) == (skew_now > 0):
+                continue
+            predicted = "no" if skew_now > 0 else "yes"
+            entry_price = leg.ya if predicted == "yes" else leg.na
+            if entry_price < DEPTH_SKEW_FLIP_ENTRY_PRICE_MIN:
+                continue
+            if entry_price > DEPTH_SKEW_FLIP_ENTRY_PRICE_MAX:
+                continue
+            out.append(Signal(
+                observer=self.name, series=ctx.series,
+                event_key=ctx.event_key, market_id=leg.ticker,
+                predicted_outcome=predicted,
+                features={
+                    "skew_now": round(skew_now, 4),
+                    "skew_old": round(skew_old, 4),
+                    "lookback_s": float(DEPTH_SKEW_FLIP_LOOKBACK_S),
                     "ask_size": leg.ya_size,
                     "bid_size": leg.yb_size,
                     "ya": round(leg.ya, 4),
@@ -1674,6 +1771,8 @@ OBSERVER_CLASSES: tuple[type[BaseObserver], ...] = (
     MidOtmTailObserver,
     # 2026-05-20: static micro-timing depth-skew (mts_s ≤ 30, ATM±2)
     SettlementEdgeObserver,
+    # 2026-05-21: dynamic depth-skew sign-flip sister of settlement_edge_v2
+    DepthSkewFlipObserver,
     # 2026-05-19 Phase 0 additions: cross-venue Deribit signals
     FundingRateFadeObserver, VolSkewFadeObserver,
     # 2026-05-19 Phase 0: external-data signals (yfinance ETF + CME)
