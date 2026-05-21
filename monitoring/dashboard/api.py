@@ -131,6 +131,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             # 2026-05-18 additions
             "late_close_tail_v1", "deribit_atm_fade_v1",
             "cme_basis_fade_v1",
+            # 2026-05-21: sister of deribit_tail_fade_v1 for high-ya zone
+            "deribit_tail_fade_high_v1",
             # Archived — historical data surfaced in dashboard's Archived section.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
@@ -164,7 +166,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         # through both paths and rendered as 0 on the dashboard despite
         # populating trades.status='settled' rows correctly.
         CRYPTO_DB_ATTRIBUTED = {
-            "deribit_tail_fade_v1", "atm_hold_v1",
+            "deribit_tail_fade_v1", "deribit_tail_fade_high_v1",
+            "atm_hold_v1",
             "bid_imbalance_v1", "bid_imbalance_fade_v1",
             "open_no_touch_v1", "late_close_tail_v1",
             "deribit_atm_fade_v1", "cme_basis_fade_v1",
@@ -535,6 +538,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             # 2026-05-18 additions
             "late_close_tail_v1", "deribit_atm_fade_v1",
             "cme_basis_fade_v1",
+            # 2026-05-21: sister of deribit_tail_fade_v1 for high-ya zone
+            "deribit_tail_fade_high_v1",
             # Archived — surfaced in dashboard Archived section with reason.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
@@ -1308,6 +1313,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         SPECS = [
             ("deribit_tail_fade_v1",  "DERIBIT_TAIL_FADE",
              "BUY NO on Kalshi tail strike when ya overprices vs Deribit lognormal",
+             True),
+            ("deribit_tail_fade_high_v1", "DERIBIT_TAIL_FADE_HIGH",
+             "Sister of tail_fade_v1 for high-ya near-expiry near-strike zone (paper)",
              True),
             ("late_close_tail_v1",    "LATE_CLOSE_TAIL",
              "Tail fade variant for near-close cohort",
