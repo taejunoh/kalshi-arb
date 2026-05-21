@@ -555,13 +555,21 @@ class BidImbalanceFadeV1Strategy(_Phase1Base):
 
 
 class LateCloseTailV1Strategy(_Phase1Base):
-    """Paper trader for the late_close_tail observer.
+    """LIVE trader for the late_close_tail observer (promoted 2026-05-21).
 
     Buys NO at no_ask on mid-OTM strikes (ya 0.05-0.30) within 10 min of
     close. Same execution shape as DeribitTailFadeV1Strategy (depth-aware
     sizing, MIN_FIRE_CONTRACTS floor) to avoid FOK rejects on thin books.
-    Paper-only at launch — Phase 2 live promotion gated on n ≥ 100 settled
-    + ROI ≥ +5%.
+
+    LIVE promotion gates (Config C, set via env on EC2):
+      MAX_NO_ASK = 0.94                — drop rounding-residual ≥0.95 zone
+      EXCLUDE_NO_ASK = [0.88, 0.89]    — drop -EV cliff bucket
+                                          (n=7 / WR ~57% / −$0.282/ct)
+
+    Promotion evidence (n=133 settled, 5/19-5/21 62h DB-replay sim):
+      gated cohort = 32 fires / 100% WR settled / $0 worst-trade /
+      LIVE $/day +$23.63 (vs A. AS-IS +$23.11 with −$19.58 worst-trade).
+    See [[late_close_tail_v1_subcohort_audit_2026-05-20]].
     """
     STRATEGY_NAME = "late_close_tail_v1"
     OBSERVER_NAME = "late_close_tail"
