@@ -1473,6 +1473,20 @@ def test_depth_skew_flip_respects_mts_min():
     assert DepthSkewFlipObserver().evaluate(ctx) == []
 
 
+def test_depth_skew_flip_respects_mts_max():
+    """Even valid flip → no fire if mts_s > 600 (above MAX)."""
+    from strategies.crypto_observer import (
+        DepthSkewFlipObserver, _DepthSkewCache,
+    )
+    cache = _DepthSkewCache()
+    cache.update("KXBTC", 70000.0, NOW.timestamp() - 30.0, -0.40)
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=150, yb_size=50)]
+    ctx = _ctx_with_skew_cache(
+        b_legs=b_legs, spot=70000.0, close_s=700.0, cache=cache,  # mts=700 > 600
+    )
+    assert DepthSkewFlipObserver().evaluate(ctx) == []
+
+
 def test_depth_skew_flip_respects_entry_price_gate():
     """Valid flip but entry price 0.30 (below MIN=0.40) → no fire."""
     from strategies.crypto_observer import (
