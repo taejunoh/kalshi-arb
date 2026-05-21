@@ -42,6 +42,13 @@ LIMIT_TTL_STRATEGIES = {
     # 5-min-to-close window so prevention is cheap.
     "deribit_tail_fade_v1",
     "atm_hold_v1",
+    # 2026-05-21 14:33 UTC promotion. Narrow-gate ya [0.17, 0.25] (dffc257)
+    # paper 5h: 53 settled / WR 96% / +$91.26 / avg +$1.72. NO entry band
+    # 0.74-0.87 has $0.13-0.26/ct gross margin — survives +3¢ slip + Kalshi
+    # taker fee ($0.07/ct flat) unlike deribit_tail_fade's 0.93-0.97 band
+    # where margin = fee (22/36 LIVE wipe-to-zero pattern). LIMIT_TTL
+    # routing same as sister tail-NO strategies.
+    "cme_basis_fade_v1",
 }
 LIMIT_TTL_SECONDS = 60
 LIMIT_TTL_POLL_INTERVAL = 5
@@ -171,6 +178,7 @@ PAPER_TWIN_STRATEGIES = {
     "sports_tennis_surface_skew_v1",   # 2026-05-15 C paper-twin launch
     "deribit_tail_fade_v1",            # 2026-05-18 crypto Phase 1 live promotion
     "atm_hold_v1",                     # 2026-05-18 crypto Phase 1 live promotion
+    "cme_basis_fade_v1",               # 2026-05-21 14:33 UTC crypto Phase 1 live promotion
 }
 
 
