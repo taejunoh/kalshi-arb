@@ -317,6 +317,85 @@ def _lognormal_p_above(spot: float, strike: float, vol: float,
         return None
 
 
+# ── Caches ─────────────────────────────────────────────────────────
+
+
+class _DepthSkewCache:
+    """Rolling (series, strike) → deque[(ts, skew)] for per-leg depth sign-flip detection.
+
+    Mirrors _BookMidCache (strategies/crypto_cross_asset_observer.py) but stores
+    signed skew in [-1.0, +1.0] instead of mid in [0, 1]. Same lookback / prune /
+    hard-cap semantics.
+    """
+
+    DEQUE_MAXLEN = 60
+    DEFAULT_HARD_CAP = 20_000
+    STALE_GUARD_MULTIPLIER = 2.0
+
+    def __init__(self, hard_cap: int = DEFAULT_HARD_CAP):
+        self._cache: dict[tuple[str, float], deque] = {}
+        self._hard_cap = hard_cap
+
+    def update(self, series: str, strike: float, ts: float, skew: float) -> bool:
+        flushed = False
+        if (series, strike) not in self._cache and len(self._cache) >= self._hard_cap:
+            logger.error(
+                f"_DepthSkewCache hard cap {self._hard_cap} reached — flushing all "
+                f"entries. This indicates pruning is broken."
+            )
+            self._cache.clear()
+            flushed = True
+        if flushed:
+            return flushed
+        key = (series, strike)
+        dq = self._cache.get(key)
+        if dq is None:
+            dq = deque(maxlen=self.DEQUE_MAXLEN)
+            self._cache[key] = dq
+        dq.append((ts, skew))
+        return flushed
+
+    def n_seconds_ago(self, series: str, strike: float, lookback_s: float,
+                      now_ts: float) -> Optional[float]:
+        dq = self._cache.get((series, strike))
+        if not dq:
+            return None
+        target = now_ts - lookback_s
+        if lookback_s > 0:
+            max_gap = self.STALE_GUARD_MULTIPLIER * lookback_s
+        else:
+            max_gap = 120.0
+        best_ts = None
+        best_skew = None
+        for ts, skew in dq:
+            if ts <= target:
+                best_ts = ts
+                best_skew = skew
+            else:
+                break
+        if best_ts is None:
+            return None
+        if (target - best_ts) > max_gap:
+            return None
+        return best_skew
+
+    def prune_stale(self, now_ts: float, max_age_s: float = 120.0) -> int:
+        to_drop: list[tuple[str, float]] = []
+        for key, dq in self._cache.items():
+            if not dq:
+                to_drop.append(key)
+                continue
+            last_ts, _ = dq[-1]
+            if (now_ts - last_ts) > max_age_s:
+                to_drop.append(key)
+        for key in to_drop:
+            del self._cache[key]
+        return len(to_drop)
+
+    def size(self) -> int:
+        return len(self._cache)
+
+
 # ── Data ───────────────────────────────────────────────────────────
 
 
