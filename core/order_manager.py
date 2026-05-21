@@ -49,6 +49,12 @@ LIMIT_TTL_STRATEGIES = {
     # where margin = fee (22/36 LIVE wipe-to-zero pattern). LIMIT_TTL
     # routing same as sister tail-NO strategies.
     "cme_basis_fade_v1",
+    # 2026-05-21 LIVE promotion. Mid-OTM (ya 0.05-0.30) NO fader in 10-min
+    # pre-close window. DB-replay sim (n=133 settled, 5/19-5/21 62h window)
+    # showed Config C (MAX_NO_ASK 0.94 + EXCLUDE 0.88-0.89) yields ~$23/day
+    # with worst-trade $0 — all 32 settled fires in the gated cohort won.
+    # Thin-tail FOK same exposure as deribit_tail_fade → LIMIT_TTL required.
+    "late_close_tail_v1",
 }
 LIMIT_TTL_SECONDS = 60
 LIMIT_TTL_POLL_INTERVAL = 5
@@ -179,6 +185,7 @@ PAPER_TWIN_STRATEGIES = {
     "deribit_tail_fade_v1",            # 2026-05-18 crypto Phase 1 live promotion
     "atm_hold_v1",                     # 2026-05-18 crypto Phase 1 live promotion
     "cme_basis_fade_v1",               # 2026-05-21 14:33 UTC crypto Phase 1 live promotion
+    "late_close_tail_v1",              # 2026-05-21 PM crypto Phase 1 live promotion (Config C)
 }
 
 
