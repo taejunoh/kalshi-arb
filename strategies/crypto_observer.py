@@ -761,7 +761,8 @@ class DepthSkewFlipObserver(BaseObserver):
                 continue
             if abs(skew_old) < DEPTH_SKEW_FLIP_MIN_BEFORE:
                 continue
-            # Sign-flip check (strict — same sign or either-zero blocks)
+            # Sign-flip check: both strictly positive or both strictly negative → no flip.
+            # (skew_old = 0 is already excluded by the MIN_BEFORE floor above.)
             if (skew_old > 0) == (skew_now > 0):
                 continue
             predicted = "no" if skew_now > 0 else "yes"
