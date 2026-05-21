@@ -897,6 +897,24 @@ def test_settlement_edge_v2_skips_entry_price_below_min():
     assert SettlementEdgeObserver().evaluate(ctx) == []
 
 
+def test_settlement_edge_v2_skips_no_side_entry_price_above_max():
+    """Strong positive skew → predicts 'no', entry = na = 0.94 (above MAX 0.85) → no fire."""
+    # ya=0.08, yb=0.06 → na = 1 - yb = 0.94 (above MAX 0.85)
+    # ya_size=100, yb_size=10 → skew=+0.818 → predicts 'no'
+    b_legs = [_b(70000, ya=0.08, yb=0.06, ya_size=100, yb_size=10)]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=120.0)
+    assert SettlementEdgeObserver().evaluate(ctx) == []
+
+
+def test_settlement_edge_v2_skips_no_side_entry_price_below_min():
+    """Strong positive skew → predicts 'no', entry = na = 0.30 (below MIN 0.40) → no fire."""
+    # ya=0.72, yb=0.70 → na = 1 - yb = 0.30 (below MIN 0.40)
+    # ya_size=100, yb_size=10 → skew=+0.818 → predicts 'no'
+    b_legs = [_b(70000, ya=0.72, yb=0.70, ya_size=100, yb_size=10)]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=120.0)
+    assert SettlementEdgeObserver().evaluate(ctx) == []
+
+
 def test_settlement_edge_v2_fires_on_no_side_when_skew_positive():
     """Strong positive skew → predicts 'no', entry = na = 1 - yb."""
     # ask=100, bid=10, skew=+0.818 → predicts 'no', entry = na = 1 - 0.50 = 0.50
@@ -906,6 +924,25 @@ def test_settlement_edge_v2_fires_on_no_side_when_skew_positive():
     assert len(sigs) == 1
     assert sigs[0].predicted_outcome == "no"
     assert sigs[0].features["entry_price"] == pytest.approx(0.50, abs=0.001)
+
+
+def test_settlement_edge_v2_fires_at_mts_min_boundary():
+    """mts_s = 60.0 (exactly at MIN, inclusive) → fires."""
+    # ATM with strong negative skew + entry price 0.50 in band
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=10, yb_size=100)]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=60.0)
+    sigs = SettlementEdgeObserver().evaluate(ctx)
+    assert len(sigs) == 1
+    assert sigs[0].features["mts_s"] == pytest.approx(60.0, abs=0.01)
+
+
+def test_settlement_edge_v2_fires_at_mts_max_boundary():
+    """mts_s = 600.0 (exactly at MAX, inclusive) → fires."""
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=10, yb_size=100)]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=600.0)
+    sigs = SettlementEdgeObserver().evaluate(ctx)
+    assert len(sigs) == 1
+    assert sigs[0].features["mts_s"] == pytest.approx(600.0, abs=0.01)
 
 
 def test_settlement_edge_v2_registered_in_observer_classes():
