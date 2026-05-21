@@ -796,128 +796,120 @@ def test_deribit_atm_skew_skips_outside_close_window():
     assert obs.evaluate(ctx) == []
 
 
-# ── settlement_edge observer ──────────────────────────────────────
+# ── settlement_edge_v2 observer ──────────────────────────────────────
 
 
-def test_settlement_edge_fires_on_asymmetric_depth_in_atm():
-    """ATM bucket within mts_s ≤ 30 with ask much thinner than bid →
-    predict_outcome='yes' (bid heavier → market expects touch)."""
-    # Build a ladder with $250 spacing, spot 70000, ATM bucket = B70000.
-    # ATM bucket has ask_size=20, bid_size=100 → skew = (20-100)/120 = -0.667
-    # Predicted='yes' since skew < 0.
+def test_settlement_edge_v2_fires_on_asymmetric_depth_in_atm():
+    """ATM bucket in mts_s ∈ [60, 600], strong bid → predicted='yes',
+    entry price ya=0.50 in [0.40, 0.85] band → fires."""
     b_legs = [
         _b(69500, ya=0.30, yb=0.28, ya_size=15, yb_size=60),
         _b(69750, ya=0.40, yb=0.38, ya_size=10, yb_size=80),
-        _b(70000, ya=0.50, yb=0.48, ya_size=20, yb_size=100),   # ATM (closest to spot 70000)
+        _b(70000, ya=0.50, yb=0.48, ya_size=20, yb_size=100),   # ATM
         _b(70250, ya=0.40, yb=0.38, ya_size=10, yb_size=80),
         _b(70500, ya=0.30, yb=0.28, ya_size=15, yb_size=60),
     ]
-    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=15.0)
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=120.0)
     sigs = SettlementEdgeObserver().evaluate(ctx)
-    # ATM±2 covers all 5 legs (radius 2 → indices 0..4 in this 5-leg ladder).
-    # Every leg has skew magnitude ≥ 0.20 (all are 60-80% bid-heavy).
-    # Expect a signal on the ATM leg.
     atm_sigs = [s for s in sigs if s.market_id.endswith("B70000")]
-    assert len(atm_sigs) == 1, f"expected 1 ATM signal, got {len(atm_sigs)}: {sigs}"
+    assert len(atm_sigs) == 1
     atm = atm_sigs[0]
+    assert atm.observer == "settlement_edge_v2"
     assert atm.predicted_outcome == "yes"
     assert atm.features["skew"] == pytest.approx(-0.667, abs=0.01)
-    assert atm.features["ask_size"] == 20
-    assert atm.features["bid_size"] == 100
-    assert atm.features["mts_s"] == pytest.approx(15.0, abs=0.01)
+    assert atm.features["mts_s"] == pytest.approx(120.0, abs=0.01)
     assert atm.features["bucket_dist_from_atm"] == 0
+    assert atm.features["entry_price"] == pytest.approx(0.50, abs=0.001)
 
 
-def test_settlement_edge_does_not_fire_outside_30s_window():
-    """mts_s = 60 (outside ≤30 window) → no signal even with strong skew."""
-    b_legs = [
-        _b(70000, ya=0.50, yb=0.48, ya_size=10, yb_size=100),  # skew = -0.818
-    ]
-    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=60.0)
-    sigs = SettlementEdgeObserver().evaluate(ctx)
-    assert sigs == [], f"expected no signals at mts_s=60, got: {sigs}"
+def test_settlement_edge_v2_skips_below_mts_min():
+    """mts_s = 45 (below MIN=60) → no fire even with strong skew + valid price."""
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=10, yb_size=100)]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=45.0)
+    assert SettlementEdgeObserver().evaluate(ctx) == []
 
 
-def test_settlement_edge_does_not_fire_at_or_below_zero_mts():
-    """mts_s ≤ 0 (post-close or missing) → no signal."""
-    b_legs = [
-        _b(70000, ya=0.50, yb=0.48, ya_size=10, yb_size=100),
-    ]
-    # Zero
-    ctx_zero = _ctx(b_legs=b_legs, spot=70000.0, close_s=0.0)
-    assert SettlementEdgeObserver().evaluate(ctx_zero) == []
-    # Negative (already past close)
-    ctx_neg = _ctx(b_legs=b_legs, spot=70000.0, close_s=-5.0)
-    assert SettlementEdgeObserver().evaluate(ctx_neg) == []
-    # None
-    ctx_none = _ctx(b_legs=b_legs, spot=70000.0, close_s=None)
-    assert SettlementEdgeObserver().evaluate(ctx_none) == []
+def test_settlement_edge_v2_skips_above_mts_max():
+    """mts_s = 700 (above MAX=600) → no fire."""
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=10, yb_size=100)]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=700.0)
+    assert SettlementEdgeObserver().evaluate(ctx) == []
 
 
-def test_settlement_edge_filters_near_zero_skew():
-    """|skew| = 0.05 (below ABS_SKEW_MIN=0.20) → no signal even within window."""
-    # ask_size=50, bid_size=55 → skew = (50-55)/105 = -0.0476
-    b_legs = [
-        _b(70000, ya=0.50, yb=0.48, ya_size=50, yb_size=55),
-    ]
-    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=20.0)
-    sigs = SettlementEdgeObserver().evaluate(ctx)
-    assert sigs == [], f"expected no signal at |skew|≈0.05, got: {sigs}"
+def test_settlement_edge_v2_skips_at_or_below_zero_mts():
+    """mts_s ≤ 0 / None → no signal."""
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=10, yb_size=100)]
+    for cs in (0.0, -5.0, None):
+        ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=cs)
+        assert SettlementEdgeObserver().evaluate(ctx) == []
 
 
-def test_settlement_edge_fires_exactly_at_skew_threshold():
-    """|skew| just over 0.20 fires; just under 0.20 does not."""
-    # Code fires when abs(skew) >= ABS_SKEW_MIN (0.20). Avoid the
-    # exact-boundary case to stay robust to float-equality decisions;
-    # use 0.21 to fire: ask=121, bid=79 → skew = 42/200 = 0.21.
-    b_legs_fire = [
-        _b(70000, ya=0.50, yb=0.48, ya_size=121, yb_size=79),
-    ]
-    ctx_fire = _ctx(b_legs=b_legs_fire, spot=70000.0, close_s=20.0)
-    sigs_fire = SettlementEdgeObserver().evaluate(ctx_fire)
-    assert len(sigs_fire) == 1
-    assert sigs_fire[0].predicted_outcome == "no"  # skew > 0 → no
+def test_settlement_edge_v2_filters_below_skew_floor():
+    """|skew| = 0.30 (below new ABS_SKEW_MIN=0.40) → no fire."""
+    # ask=130, bid=70, total=200 → skew=+0.30
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=130, yb_size=70)]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=120.0)
+    assert SettlementEdgeObserver().evaluate(ctx) == []
 
-    # Just under: ask=119, bid=81 → skew = 38/200 = 0.19 → no fire
-    b_legs_skip = [
-        _b(70000, ya=0.50, yb=0.48, ya_size=119, yb_size=81),
-    ]
-    ctx_skip = _ctx(b_legs=b_legs_skip, spot=70000.0, close_s=20.0)
+
+def test_settlement_edge_v2_fires_at_skew_threshold():
+    """|skew| just over 0.40 fires; just under does not."""
+    # Just over: ask=141, bid=59, skew=82/200=0.41 → fires (predict 'no')
+    b_legs_fire = [_b(70000, ya=0.50, yb=0.48, ya_size=141, yb_size=59)]
+    ctx_fire = _ctx(b_legs=b_legs_fire, spot=70000.0, close_s=120.0)
+    sigs = SettlementEdgeObserver().evaluate(ctx_fire)
+    assert len(sigs) == 1
+    assert sigs[0].predicted_outcome == "no"  # skew > 0 → predicts 'no'
+    # Just under: ask=139, bid=61, skew=78/200=0.39 → no fire
+    b_legs_skip = [_b(70000, ya=0.50, yb=0.48, ya_size=139, yb_size=61)]
+    ctx_skip = _ctx(b_legs=b_legs_skip, spot=70000.0, close_s=120.0)
     assert SettlementEdgeObserver().evaluate(ctx_skip) == []
 
 
-def test_settlement_edge_skips_thin_book():
-    """ask_size + bid_size ≤ MIN_SIDE_SIZE → no signal (no MM presence)."""
-    # All sizes zero
-    b_legs_zero = [
-        _b(70000, ya=0.50, yb=0.48, ya_size=0, yb_size=0),
-    ]
-    ctx_zero = _ctx(b_legs=b_legs_zero, spot=70000.0, close_s=15.0)
-    assert SettlementEdgeObserver().evaluate(ctx_zero) == []
-
-    # Total exactly at MIN_SIDE_SIZE (1) — still skipped (<=)
-    b_legs_min = [
-        _b(70000, ya=0.50, yb=0.48, ya_size=1, yb_size=0),
-    ]
-    ctx_min = _ctx(b_legs=b_legs_min, spot=70000.0, close_s=15.0)
-    assert SettlementEdgeObserver().evaluate(ctx_min) == []
-
-
-def test_settlement_edge_fires_on_negative_skew_predicts_yes():
-    """Pure direction-mapping check: skew < 0 → predicted='yes'."""
-    # ask=10, bid=100 → skew = -90/110 = -0.818
-    b_legs = [
-        _b(70000, ya=0.50, yb=0.48, ya_size=10, yb_size=100),
-    ]
-    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=10.0)
-    sigs = SettlementEdgeObserver().evaluate(ctx)
+def test_settlement_edge_v2_skips_thin_book():
+    """ya_size + yb_size ≤ MIN_SIDE_SIZE=5 → no fire."""
+    # Total = 5 (at boundary, gate is `<=` so skipped)
+    b_legs = [_b(70000, ya=0.50, yb=0.48, ya_size=2, yb_size=3)]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=120.0)
+    assert SettlementEdgeObserver().evaluate(ctx) == []
+    # Total = 6 (just over) with strong skew should fire
+    b_legs2 = [_b(70000, ya=0.50, yb=0.48, ya_size=1, yb_size=5)]
+    ctx2 = _ctx(b_legs=b_legs2, spot=70000.0, close_s=120.0)
+    sigs = SettlementEdgeObserver().evaluate(ctx2)
+    # skew = (1-5)/6 = -0.667, ya=0.50 in band, predicts 'yes'
     assert len(sigs) == 1
     assert sigs[0].predicted_outcome == "yes"
-    assert sigs[0].features["skew"] < 0
 
 
-def test_settlement_edge_registered_in_observer_classes():
-    """Harness picks up settlement_edge via OBSERVER_CLASSES tuple."""
+def test_settlement_edge_v2_skips_entry_price_above_max():
+    """Predicted-side price > 0.85 → no fire (would be near-locked)."""
+    # Strong negative skew → predicts 'yes', entry = ya = 0.90 (above MAX)
+    b_legs = [_b(70000, ya=0.90, yb=0.88, ya_size=10, yb_size=100)]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=120.0)
+    assert SettlementEdgeObserver().evaluate(ctx) == []
+
+
+def test_settlement_edge_v2_skips_entry_price_below_min():
+    """Predicted-side price < 0.40 → no fire (too far OTM to be alpha)."""
+    # Strong negative skew → predicts 'yes', entry = ya = 0.30 (below MIN)
+    b_legs = [_b(70000, ya=0.30, yb=0.28, ya_size=10, yb_size=100)]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=120.0)
+    assert SettlementEdgeObserver().evaluate(ctx) == []
+
+
+def test_settlement_edge_v2_fires_on_no_side_when_skew_positive():
+    """Strong positive skew → predicts 'no', entry = na = 1 - yb."""
+    # ask=100, bid=10, skew=+0.818 → predicts 'no', entry = na = 1 - 0.50 = 0.50
+    b_legs = [_b(70000, ya=0.52, yb=0.50, ya_size=100, yb_size=10)]
+    ctx = _ctx(b_legs=b_legs, spot=70000.0, close_s=120.0)
+    sigs = SettlementEdgeObserver().evaluate(ctx)
+    assert len(sigs) == 1
+    assert sigs[0].predicted_outcome == "no"
+    assert sigs[0].features["entry_price"] == pytest.approx(0.50, abs=0.001)
+
+
+def test_settlement_edge_v2_registered_in_observer_classes():
+    """Harness picks up settlement_edge_v2 via OBSERVER_CLASSES tuple."""
     from strategies.crypto_observer import OBSERVER_CLASSES
     assert SettlementEdgeObserver in OBSERVER_CLASSES
 
