@@ -1,9 +1,10 @@
 {
-  "version": "2026-05-21",
-  "note": "Upcoming eval gates and promotion checkpoints. Maintained manually — update when new gates are scheduled or completed gates are removed.",
+  "version": "2026-05-21-b+c",
+  "note": "Upcoming eval gates + intermediate progress checks. kind='decision' = promote/retire/size-up bar; kind='progress' = trajectory snapshot (참고, NOT decision-grade).",
   "gates": [
     {
       "date": "2026-05-23",
+      "kind": "decision",
       "type": "manual",
       "label": "soccer_weekend_v1 dow gate opens",
       "details": "First Sat/Sun fire — verify Pattern A/B (EPL underdog 0.25-0.30 / MLS fade-fav NO 0.40-0.50) fires at least once.",
@@ -11,8 +12,59 @@
       "memory": "next_session_entry_2026-05-22"
     },
     {
+      "date": "2026-05-24",
+      "kind": "progress",
+      "type": "manual",
+      "label": "cme_basis_fade_v1 T+3d trajectory (참고)",
+      "details": "Mid-window snapshot of narrowed gate [0.17, 0.25]. Parent decision: 5/27.",
+      "criteria": "Track n trajectory toward >= 100 + WR drift vs 5/21 baseline. Retire-flag only if WR < 50% on n >= 20.",
+      "memory": "cme_basis_fade_v1_bleed_2026-05-21",
+      "parent": "2026-05-27 cme_basis_fade_v1 narrowed-gate 1w eval"
+    },
+    {
+      "date": "2026-05-24",
+      "kind": "progress",
+      "type": "manual",
+      "label": "deribit_tail_fade_high_v1 T+3d trajectory (참고)",
+      "details": "ya 0.65-0.95 zone paper trader — 3d cumulative + per-cluster sanity.",
+      "criteria": "Trajectory toward baseline; flag if cumulative < -$10 on n >= 15.",
+      "memory": "phase1_lifetime_audit_sweep_2026-05-21",
+      "parent": "2026-05-27 deribit_tail_fade_high_v1 1w eval"
+    },
+    {
+      "date": "2026-05-24",
+      "kind": "progress",
+      "type": "manual",
+      "label": "settlement_edge_v2 + depth_skew_flip T+3d trajectory (참고)",
+      "details": "5/21 new sister observer pair — early WR + tradable-subset check.",
+      "criteria": "Tradable WR > breakeven-by-2pp on n >= 30 each; flag if v2 worse than v1 in-sample.",
+      "memory": "settlement_edge_v2_retune_2026-05-21",
+      "parent": "2026-05-28 settlement_edge_v2 + depth_skew_flip T+7d"
+    },
+    {
+      "date": "2026-05-24",
+      "kind": "progress",
+      "type": "manual",
+      "label": "mid_otm_tail SAFE_ZONE T+3d trajectory (참고)",
+      "details": "cliff_zone flag deployed 5/21 — track whether SAFE +EV holds post-deploy OOS.",
+      "criteria": "SAFE-only PnL since 5/21 13:00 UTC; flag if 5/22-5/24 trend cumulatively negative (confirms 5/20 was lucky-day).",
+      "memory": "mid_otm_tail_observer_2026-05-20",
+      "parent": "2026-05-27 Multi-cohort eval snapshot"
+    },
+    {
+      "date": "2026-05-24",
+      "kind": "progress",
+      "type": "manual",
+      "label": "atm_hold_v1 sizing T+4d trajectory (참고)",
+      "details": "$40 size since 5/20 23:54 UTC. Rolling 3d PnL preview before 5/27 sizing decision.",
+      "criteria": "Rolling 3d > +$30 trending toward $40→$60 step; rolling 3d < -$40 trending toward rollback to $20.",
+      "memory": "atm_hold_v1_size_up_2026-05-20",
+      "parent": "2026-05-27 atm_hold_v1 sizing decision"
+    },
+    {
       "date": "2026-05-26",
       "time_utc": "13:00",
+      "kind": "decision",
       "type": "auto",
       "label": "Phase 0 cross-venue T+7d eval",
       "details": "vol_skew_fade + cme_basis_fade + etf_flow_lag — auto-Telegram via kalshi-phase0-observer-eval.timer.",
@@ -22,6 +74,7 @@
     {
       "date": "2026-05-27",
       "time_utc": "13:00",
+      "kind": "decision",
       "type": "auto",
       "label": "Multi-cohort eval snapshot",
       "details": "One-shot eval_2026_05_27_snapshot.py: cross_asset + cme_basis + mid_otm_tail (incl. new Section 3b cliff_zone) + universe_expansion T-leg.",
@@ -30,6 +83,7 @@
     },
     {
       "date": "2026-05-27",
+      "kind": "decision",
       "type": "manual",
       "label": "cme_basis_fade_v1 narrowed-gate 1w eval",
       "details": "Validate 5/21 gate narrowing to ya [0.17, 0.25] (was [0.17, 0.42]).",
@@ -38,6 +92,7 @@
     },
     {
       "date": "2026-05-27",
+      "kind": "decision",
       "type": "manual",
       "label": "deribit_tail_fade_high_v1 1w eval",
       "details": "New sister paper trader from 5/21 PM (ya 0.65-0.95 zone, disjoint from deribit_tail_fade_v1).",
@@ -45,8 +100,18 @@
       "memory": "phase1_lifetime_audit_sweep_2026-05-21"
     },
     {
+      "date": "2026-05-27",
+      "kind": "decision",
+      "type": "manual",
+      "label": "atm_hold_v1 sizing decision $40→$60",
+      "details": "1-week cumulative PnL @ $40 size. Promotion to $60 step.",
+      "criteria": "7d net >= +$70 + max-intraday DD > -$120 + cooldown gate triggers stay 0 → step up to $60; if 7d net < +$30 → hold or rollback to $20.",
+      "memory": "atm_hold_v1_size_up_2026-05-20"
+    },
+    {
       "date": "2026-05-28",
       "time_utc": "13:00",
+      "kind": "decision",
       "type": "auto",
       "label": "settlement_edge_v2 + depth_skew_flip T+7d",
       "details": "5/21 new sister observer pair — auto-Telegram via extended kalshi-phase0-observer-eval.timer.",
@@ -54,7 +119,18 @@
       "memory": "settlement_edge_v2_retune_2026-05-21"
     },
     {
+      "date": "2026-05-29",
+      "kind": "progress",
+      "type": "manual",
+      "label": "ladder_crypto T+10d trajectory (참고)",
+      "details": "2/3 way to 6/02 Phase 1 promotion decision. Walked-edge stability + per-day cumulative.",
+      "criteria": "Walked-edge >= $0.15 holds + cumulative trend non-degrading. Flag if walked-edge < $0.10 for 3 consecutive days.",
+      "memory": "ladder_crypto_phase0_resurrection_2026-05-19",
+      "parent": "2026-06-02 ladder_crypto Phase 1 promotion gate"
+    },
+    {
       "date": "2026-06-02",
+      "kind": "decision",
       "type": "manual",
       "label": "ladder_crypto Phase 1 promotion gate",
       "details": "14d Phase 0 walked-edge data + cross-venue T+14d eval.",
@@ -63,6 +139,7 @@
     },
     {
       "date": "2026-06-03",
+      "kind": "decision",
       "type": "manual",
       "label": "late_close_tail_v1 0.88-0.89 cliff re-eval",
       "details": "Re-audit fine-grain bin 0.88-0.89 once n >= 15 — confirm cliff vs artifact.",
@@ -70,7 +147,17 @@
       "memory": "late_close_tail_v1_subcohort_audit_2026-05-20"
     },
     {
+      "date": "2026-06-03",
+      "kind": "decision",
+      "type": "manual",
+      "label": "atm_hold_v1 sizing decision $60→$100",
+      "details": "2-week cumulative PnL — promotion to $100 step. Gated on 5/27 step up to $60 having happened.",
+      "criteria": "14d net >= +$200 + max-intraday DD > -$200 + slip vs paper twin < 10% → step to $100; else hold at $60.",
+      "memory": "atm_hold_v1_size_up_2026-05-20"
+    },
+    {
       "date": "2026-06-04",
+      "kind": "decision",
       "type": "manual",
       "label": "Sports cohort block 2w re-eval",
       "details": "MLB+EPL block + playoff size halve (16->8) + soccer_draw demote — verify ~$1,800/60d bleed stopped.",
@@ -80,6 +167,7 @@
     {
       "date": "2026-06-04",
       "time_utc": "13:00",
+      "kind": "decision",
       "type": "auto",
       "label": "settlement_edge_v2 + depth_skew_flip T+14d",
       "details": "Same kalshi-phase0-observer-eval.timer second fire (T+14d).",
@@ -88,6 +176,7 @@
     },
     {
       "date": "2026-06-04",
+      "kind": "decision",
       "type": "manual",
       "label": "Phase 1 lifetime audit sweep 2w eval",
       "details": "deribit_tail_fade_high_v1 + atm_hold ya 0.40-0.45 + deribit_atm_fade re-check.",
@@ -96,6 +185,7 @@
     },
     {
       "date": "2026-06-09",
+      "kind": "decision",
       "type": "manual",
       "label": "sports_npb_underdog_v1 promotion gate",
       "details": "NPB consensus-strong underdog 0.38-0.40 paper trader, launched 5/19.",
@@ -104,6 +194,7 @@
     },
     {
       "date": "2026-06-15",
+      "kind": "decision",
       "type": "manual",
       "label": "New paper strategies promo eval",
       "details": "soccer_weekend_v1 (EPL underdog + MLS fade-fav) + consensus_aligned_live_v1 — re-run sports_strategy_subslice.py with CANDIDATES updated.",

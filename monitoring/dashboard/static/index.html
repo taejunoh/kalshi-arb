@@ -1853,7 +1853,9 @@ async function refreshEvalSchedule() {
     const tbody = document.getElementById('eval-schedule-body');
     const meta = document.getElementById('eval-schedule-meta');
     const gates = (data && data.gates) || [];
-    meta.textContent = `${gates.length} upcoming gates · source: data/schedule.json (v${data.version || '?'})`;
+    const nDecision = gates.filter(g => g.kind !== 'progress').length;
+    const nProgress = gates.filter(g => g.kind === 'progress').length;
+    meta.textContent = `${nDecision} decision · ${nProgress} progress (참고) · source: data/schedule.json (v${data.version || '?'})`;
     if (gates.length === 0) {
       tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No upcoming gates.</td></tr>';
       return;
@@ -1862,22 +1864,36 @@ async function refreshEvalSchedule() {
     const escape = s => String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     tbody.innerHTML = gates.map(g => {
+      const isProgress = g.kind === 'progress';
       const isSoon = g.date <= todayPlusDays(today, 2);
+      const rowStyle = isProgress
+        ? 'background:rgba(255,255,255,0.02);'
+        : '';
       const dateCell = `<span class="td-mono" style="${isSoon ? 'color:var(--orange,#f5a623);font-weight:600;' : ''}">${escape(g.date)}</span>` +
         (g.time_utc ? `<div style="font-size:10px;color:var(--text-dim);font-family:inherit;">${escape(g.time_utc)}</div>` : '');
       const typeBadge = g.type === 'auto'
         ? '<span class="badge badge-green" title="Auto-fires via systemd timer">🤖 auto</span>'
         : '<span class="badge" style="background:var(--bg-2);color:var(--text-dim);" title="Manual check required">manual</span>';
+      const kindBadge = isProgress
+        ? '<div style="margin-top:4px;"><span class="badge" style="background:transparent;border:1px dashed var(--border);color:var(--text-dim);font-size:10px;" title="Trajectory snapshot only — NOT decision-grade">📊 참고</span></div>'
+        : '';
       const memLink = g.memory
         ? `<div style="font-size:10px;color:var(--text-dim);font-family:inherit;margin-top:2px;">[[${escape(g.memory)}]]</div>`
         : '';
+      const parentLink = g.parent
+        ? `<div style="font-size:10px;color:var(--text-dim);font-family:inherit;margin-top:2px;font-style:italic;">→ ${escape(g.parent)}</div>`
+        : '';
+      const labelStyle = isProgress
+        ? 'font-weight:500;color:var(--text-dim);font-style:italic;'
+        : 'font-weight:600;';
       return `
-        <tr>
+        <tr style="${rowStyle}">
           <td style="vertical-align:top;">${dateCell}</td>
-          <td style="vertical-align:top;">${typeBadge}</td>
+          <td style="vertical-align:top;">${typeBadge}${kindBadge}</td>
           <td style="vertical-align:top;">
-            <div style="font-weight:600;">${escape(g.label)}</div>
+            <div style="${labelStyle}">${escape(g.label)}</div>
             <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${escape(g.details)}</div>
+            ${parentLink}
             ${memLink}
           </td>
           <td style="vertical-align:top;font-size:11px;">${escape(g.criteria)}</td>
