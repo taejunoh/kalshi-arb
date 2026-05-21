@@ -573,6 +573,9 @@ class LateCloseTailV1Strategy(_Phase1Base):
         self._min_ya = config.LATE_CLOSE_TAIL_MIN_YA
         self._max_ya = config.LATE_CLOSE_TAIL_MAX_YA
         self._min_fire_contracts = config.LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS
+        self._max_no_ask = config.LATE_CLOSE_TAIL_MAX_NO_ASK
+        self._exclude_no_ask_low = config.LATE_CLOSE_TAIL_EXCLUDE_NO_ASK_LOW
+        self._exclude_no_ask_high = config.LATE_CLOSE_TAIL_EXCLUDE_NO_ASK_HIGH
 
     def _select_side_and_price(self, sig, market):
         if sig["predicted_outcome"] != "no":
@@ -585,6 +588,11 @@ class LateCloseTailV1Strategy(_Phase1Base):
             return None
         if ya < self._min_ya or ya > self._max_ya:
             return None
+        if no_ask > self._max_no_ask:
+            return None
+        if self._exclude_no_ask_low < self._exclude_no_ask_high:
+            if self._exclude_no_ask_low <= no_ask <= self._exclude_no_ask_high:
+                return None
         return ("no", no_ask)
 
     def _size_usdc_for(self, side, price, market):

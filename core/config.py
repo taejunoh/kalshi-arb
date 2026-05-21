@@ -288,13 +288,18 @@ class Config:
         # whose effective contract count would be below this threshold to
         # avoid dust trades.
         self.LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS = float(os.getenv("LATE_CLOSE_TAIL_MIN_FIRE_CONTRACTS", "1"))
-        # NOTE 2026-05-20: MAX_NO_ASK cap intentionally NOT applied here.
-        # late_close_tail covers mid-OTM (ya 0.05-0.30) in the 10-min pre-close
-        # window — by design it operates in the high-no_ask zone (ya=0.05 →
-        # no_ask~0.95). Capping at 0.95 would block ALL n=11 paper fires
-        # (100% WR +$0.11 total, BE-positive). Revisit if/when n grows and
-        # band-level EV shows the same ≥0.97 net-loss pattern as
-        # deribit_tail_fade_v1.
+        # 2026-05-21 LIVE-promo pre-coding (defaults = no-op; flip at 6/03 audit).
+        # MAX_NO_ASK: paper bucket data (n=110 observer) shows ≥0.95 zone is
+        # LIVE-net-zero — paper edge ($0.02-0.06/ct) is fully consumed by
+        # integer-contract rounding + Kalshi fee. Default 1.0 keeps current
+        # paper behavior; LIVE-promo target = 0.94.
+        # EXCLUDE_NO_ASK band: 0.88-0.89 single-bucket cliff (n=5, WR 60%,
+        # −$0.282/ct) observed 5/21 — un-defended at paper. Default disabled
+        # (LOW >= HIGH); flip to (0.88, 0.89) if 6/03 audit confirms cliff
+        # at n≥15 with WR<75%. See [[late_close_tail_v1_subcohort_audit_2026-05-20]].
+        self.LATE_CLOSE_TAIL_MAX_NO_ASK = float(os.getenv("LATE_CLOSE_TAIL_MAX_NO_ASK", "1.0"))
+        self.LATE_CLOSE_TAIL_EXCLUDE_NO_ASK_LOW = float(os.getenv("LATE_CLOSE_TAIL_EXCLUDE_NO_ASK_LOW", "0.0"))
+        self.LATE_CLOSE_TAIL_EXCLUDE_NO_ASK_HIGH = float(os.getenv("LATE_CLOSE_TAIL_EXCLUDE_NO_ASK_HIGH", "0.0"))
         # ─ deribit_atm_fade_v1: ATM-bucket parallel of deribit_tail_fade.
         #   New hypothesis — Kalshi ATM may be overpriced vs Deribit-IV
         #   lognormal (most existing alpha is in tails). BUY NO at no_ask
