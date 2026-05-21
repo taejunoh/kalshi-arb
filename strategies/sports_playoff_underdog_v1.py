@@ -69,4 +69,11 @@ class SportsPlayoffUnderdogV1Strategy(SportsUnderdogV31Strategy):
     MIN_DEPTH_USDC = 20.0
 
     def _get_trade_size(self, signal: dict) -> float:
-        return min(16.0, self._order_manager.bankroll * 0.02)
+        # 2026-05-21 size halved 16→8. 60d cumulative -$208 / -39.8% ROI despite
+        # W19 (Conf Semis) recovery to +$90 / +78% ROI / n=8. W20 partial dip
+        # -$33 on n=2. Halving keeps the strategy alive through Conf Finals
+        # (now starting ~5/22) at reduced risk; if W21-W22 ROI sustains >+30%,
+        # restore to 16 on 2026-06-04. If <0%, demote fully. See
+        # [[sports_cohort_block_2026-05-21]]. Cushion 1.92× → 3.85× — depth
+        # gate MIN_DEPTH_USDC=20 still appropriate.
+        return min(8.0, self._order_manager.bankroll * 0.02)
