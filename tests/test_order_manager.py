@@ -112,6 +112,40 @@ async def test_consecutive_loss_tracking(paper_manager):
 
 
 @pytest.mark.asyncio
+async def test_cap_trip_alert_fires_once_per_bucket(paper_manager):
+    """Cap-trip alert must fire exactly once when the bucket first crosses cap
+    (one-shot per UTC day). Logs WARNING via the [CAP-TRIP] tag; absence of a
+    notifier degrades to log-only. Regression for 2026-05-22 15h silence:
+    record_loss had no signal at the moment the cap tripped — only the
+    next-morning daily_live_audit surfaced the silence."""
+    cap = paper_manager.config.MAX_DAILY_LOSS
+    # Below cap → flag stays False
+    paper_manager.record_loss(amount=cap - 10.0)
+    assert paper_manager._cap_alert_paper_fired is False
+    # Cross cap on this loss → flag flips True
+    paper_manager.record_loss(amount=20.0)
+    assert paper_manager._daily_loss_paper >= cap
+    assert paper_manager._cap_alert_paper_fired is True
+    # Subsequent loss past cap must NOT re-fire (dedup within day)
+    paper_manager.record_loss(amount=50.0)
+    assert paper_manager._cap_alert_paper_fired is True  # still True, no re-arm
+    # reset_daily re-arms for the next UTC day
+    paper_manager.reset_daily()
+    assert paper_manager._cap_alert_paper_fired is False
+    assert paper_manager._daily_loss_paper == 0.0
+
+
+@pytest.mark.asyncio
+async def test_cap_trip_alert_skipped_when_old_entry(paper_manager):
+    """entry_today=False settle losses don't accumulate _daily_loss_* and
+    therefore must not trip the cap alert."""
+    cap = paper_manager.config.MAX_DAILY_LOSS
+    paper_manager.record_loss(amount=cap + 100.0, entry_today=False)
+    assert paper_manager._daily_loss_paper == 0.0
+    assert paper_manager._cap_alert_paper_fired is False
+
+
+@pytest.mark.asyncio
 async def test_record_loss_old_entry_skips_daily_cap(paper_manager):
     """Settlement of an old (entry_today=False) trade must still tick the
     consecutive-loss counter (15-min cluster brake) but must NOT charge

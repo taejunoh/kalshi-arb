@@ -41,6 +41,16 @@ MIN_BASELINE_DAILY_FIRES = 0.5
 BASELINE_DAYS = 14
 RECENT_HOURS = 24
 
+# 2026-05-22 stale-detection: catches the failure mode where a strategy had
+# fills *earlier* in the 24h window then went silent. The 24h-zero gate above
+# misses these — e.g. on 5/22 the bot tripped its daily-loss cap at 02:22 UTC
+# and silenced for 15h, but cme_basis_fade_v1's 01:04-02:00 fills kept it
+# inside the active band at the 13:06 audit. Stale-flag fires when the
+# strategy fires often enough that 6h of silence is genuinely abnormal
+# (baseline ≥ 1.0/day) AND last fire was > STALE_HOURS ago.
+STALE_HOURS = 6.0
+STALE_MIN_BASELINE_DAILY = 1.0
+
 # Statuses that count as "the strategy fired" (signal generation + execution).
 # Must include both pre-settlement (`filled`/`paper_filled`) AND settled
 # (`settled`/`paper_settled`) — otherwise fast-settling intraday strategies
@@ -89,6 +99,15 @@ def _audit_strategy(conn: sqlite3.Connection, strategy: str) -> dict:
 
     baseline_daily = baseline_n / BASELINE_DAYS
     silent = recent_n == 0 and baseline_daily >= MIN_BASELINE_DAILY_FIRES
+    hours_since = _hours_since(last_ts)
+    # Stale: had fills in window but stopped — catches mid-window silence
+    # (e.g. cap-trip stop) that the 24h-zero gate misses.
+    stale = (
+        not silent
+        and baseline_daily >= STALE_MIN_BASELINE_DAILY
+        and hours_since is not None
+        and hours_since > STALE_HOURS
+    )
 
     return {
         "strategy": strategy,
@@ -96,7 +115,9 @@ def _audit_strategy(conn: sqlite3.Connection, strategy: str) -> dict:
         "baseline_14d": baseline_n,
         "baseline_daily": baseline_daily,
         "last_ts": last_ts,
+        "hours_since_last": hours_since,
         "silent_anomaly": silent,
+        "stale_anomaly": stale,
     }
 
 
@@ -113,30 +134,48 @@ def _hours_since(iso_ts: str | None) -> float | None:
 
 
 def _format_report(results: list[dict], live_strategies: list[str]) -> str:
-    anomalies = [r for r in results if r["silent_anomaly"]]
-    healthy = [r for r in results if not r["silent_anomaly"]]
+    silent = [r for r in results if r["silent_anomaly"]]
+    stale = [r for r in results if r["stale_anomaly"]]
+    anomaly_count = len(silent) + len(stale)
+    healthy = [r for r in results if not r["silent_anomaly"] and not r["stale_anomaly"]]
     quiet_by_design = [r for r in healthy if r["baseline_daily"] < MIN_BASELINE_DAILY_FIRES]
     active = [r for r in healthy if r["baseline_daily"] >= MIN_BASELINE_DAILY_FIRES]
 
     lines = []
-    if anomalies:
-        lines.append(f"🚨 <b>Silence watchdog — {len(anomalies)} anomaly</b>")
+    if anomaly_count:
+        lines.append(f"🚨 <b>Silence watchdog — {anomaly_count} anomaly</b>")
     else:
         lines.append(f"✅ <b>Silence watchdog — all healthy</b>")
     lines.append(f"")
     lines.append(f"Window: last {RECENT_HOURS}h vs prior {BASELINE_DAYS}d baseline")
-    lines.append(f"Threshold: ≥{MIN_BASELINE_DAILY_FIRES:.1f} fires/day baseline → 0 in 24h = flag")
+    lines.append(f"Silent: ≥{MIN_BASELINE_DAILY_FIRES:.1f}/day baseline AND 0 fires in 24h")
+    lines.append(
+        f"Stale: ≥{STALE_MIN_BASELINE_DAILY:.1f}/day baseline AND last fire "
+        f">{STALE_HOURS:.0f}h ago"
+    )
     lines.append(f"")
 
-    if anomalies:
-        lines.append("<b>🚨 ANOMALIES</b>")
-        for r in anomalies:
-            hrs = _hours_since(r["last_ts"])
+    if silent:
+        lines.append("<b>🚨 SILENT (24h zero)</b>")
+        for r in silent:
+            hrs = r["hours_since_last"]
             hrs_s = f"{hrs:.0f}h ago" if hrs is not None else "never"
             lines.append(
                 f"  <code>{r['strategy']}</code> "
                 f"24h={r['recent_24h']} | baseline {r['baseline_daily']:.1f}/day "
                 f"({r['baseline_14d']} in 14d) | last={hrs_s}"
+            )
+        lines.append("")
+
+    if stale:
+        lines.append("<b>⏳ STALE (mid-window stop)</b>")
+        for r in stale:
+            hrs = r["hours_since_last"]
+            hrs_s = f"{hrs:.0f}h ago" if hrs is not None else "never"
+            lines.append(
+                f"  <code>{r['strategy']}</code> "
+                f"24h={r['recent_24h']} | baseline {r['baseline_daily']:.1f}/day "
+                f"| last={hrs_s}"
             )
         lines.append("")
 
