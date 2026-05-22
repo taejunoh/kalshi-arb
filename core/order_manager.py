@@ -302,13 +302,22 @@ class OrderManager:
             return True
         return False
 
-    def record_loss(self, amount: float = 0.0, strategy: Optional[str] = None):
+    def record_loss(self, amount: float = 0.0, strategy: Optional[str] = None,
+                    entry_today: bool = True):
+        # 2026-05-22: Daily-loss cap counts TODAY's entries only. Settlement of
+        # an OLD entry (filled yesterday or earlier) still ticks the
+        # consecutive-loss counter (cheap 15-min pause if a cluster lands) but
+        # does NOT charge today's $200 daily budget — those are sunk decisions
+        # from a prior day, not today's risk-taking. Without this split, a
+        # routine WNBA/MLB settle cluster could trip the cap by 02:30 UTC and
+        # silence the bot for the rest of the day even on a net-positive day.
         self._consecutive_losses += 1
-        if strategy is not None and self._is_live(strategy):
-            self._daily_loss_live += amount
-        else:
-            # Legacy callers (no strategy) land here with paper bucket
-            self._daily_loss_paper += amount
+        if entry_today:
+            if strategy is not None and self._is_live(strategy):
+                self._daily_loss_live += amount
+            else:
+                # Legacy callers (no strategy) land here with paper bucket
+                self._daily_loss_paper += amount
         if self._consecutive_losses >= self.config.MAX_CONSECUTIVE_LOSSES:
             self._pause_until = time.time() + 900
             logger.warning(f"Circuit breaker: {self._consecutive_losses} consecutive losses. Pausing.")

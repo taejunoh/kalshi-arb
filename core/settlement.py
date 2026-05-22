@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger("settlement")
@@ -194,11 +195,18 @@ class SettlementChecker:
                     await self._order_manager._persist_bankroll()
                 # Circuit-breaker counters fire on both paper & live so a
                 # losing streak anywhere pauses all entries (see order_manager
-                # docstring). Daily loss cap is split per-mode via _is_live.
+                # docstring). Daily loss cap is split per-mode via _is_live,
+                # and only TODAY's entries charge that budget — see
+                # OrderManager.record_loss for the entry_today rationale.
+                entry_ts = trade.get("timestamp") or ""
+                today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                entry_today = isinstance(entry_ts, str) and entry_ts[:10] == today_utc
                 if pnl > 0:
                     self._order_manager.record_win(pnl, strategy=trade["strategy"])
                 elif pnl < 0:
-                    self._order_manager.record_loss(abs(pnl), strategy=trade["strategy"])
+                    self._order_manager.record_loss(
+                        abs(pnl), strategy=trade["strategy"], entry_today=entry_today,
+                    )
                 total_pnl += pnl
                 settled_count += 1
                 logger.info(
