@@ -109,3 +109,22 @@ async def test_consecutive_loss_tracking(paper_manager):
     assert paper_manager._consecutive_losses == 2
     paper_manager.record_win()
     assert paper_manager._consecutive_losses == 0
+
+
+@pytest.mark.asyncio
+async def test_record_loss_old_entry_skips_daily_cap(paper_manager):
+    """Settlement of an old (entry_today=False) trade must still tick the
+    consecutive-loss counter (15-min cluster brake) but must NOT charge
+    today's daily-loss cap. Today's entries (default entry_today=True) still
+    accumulate normally. Regression for 2026-05-22 15h silence — old WNBA/MLB
+    settle cluster tripped paper+live $200 caps by 02:30 UTC even though
+    today's net PnL was +$60."""
+    paper_manager.record_loss(amount=150.0, entry_today=False)
+    assert paper_manager._daily_loss_paper == 0.0
+    assert paper_manager._consecutive_losses == 1
+    paper_manager.record_loss(amount=50.0, entry_today=True)
+    assert paper_manager._daily_loss_paper == 50.0
+    assert paper_manager._consecutive_losses == 2
+    # Default behavior unchanged when entry_today omitted (today's entry)
+    paper_manager.record_loss(amount=25.0)
+    assert paper_manager._daily_loss_paper == 75.0
