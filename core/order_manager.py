@@ -208,6 +208,13 @@ class OrderManager:
         self._daily_loss_live = 0.0
         self._consecutive_losses = 0
         self._pause_until = 0.0
+        # 2026-05-22: one-shot Telegram alert per UTC day per bucket when the
+        # daily-loss cap first trips. Without this, a cap trip silently blocks
+        # all entries until 00:00 UTC reset — bot can sit quiet for 15+ hours
+        # before the next-morning daily_live_audit surfaces it. Flags reset in
+        # reset_daily().
+        self._cap_alert_paper_fired = False
+        self._cap_alert_live_fired = False
         self._positions: dict[tuple[str, str], dict] = {}  # (strategy, ticker) -> position
         self._quota_exhausted = False  # Set when Odds API remaining < QUOTA_HALT_THRESHOLD (5%)
         # None until first fetch seeds it to the current bucket (avoids firing a
@@ -314,13 +321,54 @@ class OrderManager:
         self._consecutive_losses += 1
         if entry_today:
             if strategy is not None and self._is_live(strategy):
+                before = self._daily_loss_live
                 self._daily_loss_live += amount
+                self._maybe_alert_cap_trip(
+                    "LIVE", before, self._daily_loss_live,
+                    self.config.MAX_DAILY_LOSS_LIVE,
+                )
             else:
                 # Legacy callers (no strategy) land here with paper bucket
+                before = self._daily_loss_paper
                 self._daily_loss_paper += amount
+                self._maybe_alert_cap_trip(
+                    "PAPER", before, self._daily_loss_paper,
+                    self.config.MAX_DAILY_LOSS,
+                )
         if self._consecutive_losses >= self.config.MAX_CONSECUTIVE_LOSSES:
             self._pause_until = time.time() + 900
             logger.warning(f"Circuit breaker: {self._consecutive_losses} consecutive losses. Pausing.")
+
+    def _maybe_alert_cap_trip(self, bucket: str, before: float, after: float, cap: float):
+        # One-shot Telegram alert the instant a bucket's _daily_loss_* crosses
+        # the cap. Critical because the cap blocks ALL entries in that bucket
+        # until the next 00:00 UTC reset_daily() — without an immediate signal
+        # the bot can sit silent for hours, only surfacing in the next-morning
+        # daily_live_audit. Sync method, schedules async send via the running
+        # event loop; no-op if no notifier or no running loop (tests).
+        fired_attr = "_cap_alert_live_fired" if bucket == "LIVE" else "_cap_alert_paper_fired"
+        if getattr(self, fired_attr):
+            return
+        if not (before < cap <= after):
+            return
+        setattr(self, fired_attr, True)
+        logger.warning(
+            f"[CAP-TRIP] {bucket} daily loss ${after:.2f} ≥ cap ${cap:.2f} — "
+            f"all {bucket} entries blocked until 00:00 UTC reset"
+        )
+        if self._notifier is None or not getattr(self._notifier, "is_enabled", False):
+            return
+        msg = (
+            f"🚨 <b>Daily-loss cap tripped — {bucket}</b>\n"
+            f"_daily_loss_{bucket.lower()} = ${after:.2f} ≥ cap ${cap:.2f}\n"
+            f"All {bucket} entries blocked until 00:00 UTC reset.\n"
+            f"If today's net is positive, consider <code>systemctl restart kalshi-bot</code>."
+        )
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return  # No loop (unit tests etc.) — log-only is sufficient
+        loop.create_task(self._notifier.send(msg, msg_type="cap_trip"))
 
     def record_win(self, amount: float = 0.0, strategy: Optional[str] = None):
         """Reset consecutive loss counter on a win.
@@ -335,6 +383,9 @@ class OrderManager:
     def reset_daily(self):
         self._daily_loss_paper = 0.0
         self._daily_loss_live = 0.0
+        # Re-arm cap-trip alerts so tomorrow's trip (if any) sends Telegram again
+        self._cap_alert_paper_fired = False
+        self._cap_alert_live_fired = False
 
     async def hydrate_bankroll(self) -> None:
         """Restore bankroll from DB if present (survives restarts). No-op in live
