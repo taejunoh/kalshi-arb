@@ -156,8 +156,21 @@ def _aggression_cents_for(strategy: str) -> int:
 #   Fill rate dominates per-trade alpha: 60s catches ~17 contracts
 #   ($0.17 alpha) vs 15s ~12 contracts ($0.12 alpha). No override =
 #   inherit default 60s.
+#
+#   deribit_tail_fade_high_v1 = 180s. LIVE soft-launch 5/21 23:01 UTC →
+#   5/22 02:02 UTC posted 23 LIMIT orders, 0 filled (100% TTL-cancel).
+#   aggression=0 (paper-parity, see LIMIT_AGGRESSION_CENTS_BY_STRATEGY)
+#   posts passively at signal price; high-ya cohort (NO 0.20-0.35 and
+#   deep-NO 0.85-0.94) maker flow at signal exact price is sparse, so
+#   60s TTL almost never gets hit. Same stale-immunity as the parent
+#   trader (1% move in 180s still ~0/day BTC, ~0.16/day ETH), so we
+#   spend more time on the bid without bleeding alpha to drift. Partial
+#   fills are captured (place_limit_order polls fill_count_fp every
+#   interval). Target: lift fill rate from 0% to 20-40% over next 24h
+#   while holding the Phase 0 sim's no-slip parity. Re-eval 5/23.
 LIMIT_TTL_SECONDS_BY_STRATEGY = {
     "atm_hold_v1": 20,
+    "deribit_tail_fade_high_v1": 180,
 }
 
 
