@@ -210,19 +210,37 @@ class Config:
         #   near expiry. Depth-aware sizing + MIN_FIRE_CONTRACTS will skip
         #   under-depth signals; LIVE promotion gated on paper fire-rate +
         #   actual fill realism over a 1-2 week window.
+        # 2026-05-22 redesign: SIZE_CT replaces SIZE_USDC. ya 0.65-0.95
+        # means no_ask 0.05-0.35, so $20 stake = 57-400 contracts —
+        # structurally unfillable on tail books. LIVE 5/22 saw 22/22 FOK
+        # rejects at 7 ct. Switching to fixed-contract sizing bounds the
+        # FOK risk regardless of ya. See [[deribit_tail_fade_high_v1_paper_fictitious_2026-05-22]].
+        self.DERIBIT_TAIL_FADE_HIGH_SIZE_CT = int(os.getenv("DERIBIT_TAIL_FADE_HIGH_SIZE_CT", "5"))
+        # Legacy USDC field kept for migration / tests; SIZE_CT * price
+        # takes precedence in the strategy.
         self.DERIBIT_TAIL_FADE_HIGH_SIZE_USDC = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_SIZE_USDC", "20"))
         self.DERIBIT_TAIL_FADE_HIGH_MIN_YA = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_MIN_YA", "0.65"))
-        self.DERIBIT_TAIL_FADE_HIGH_MAX_YA = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_MAX_YA", "0.95"))
+        # 2026-05-22 redesign: MAX_YA 0.95 → 0.85. The 0.85-0.95 band has
+        # the thinnest books (no_ask 0.05-0.15 = highest contract counts
+        # for any USDC notional). Drop it to cut the worst FOK candidates.
+        self.DERIBIT_TAIL_FADE_HIGH_MAX_YA = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_MAX_YA", "0.85"))
         self.DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S", "15"))
+        # 2026-05-22 redesign: depth safety multiplier. Require book depth
+        # >= SIZE_CT * DEPTH_SAFETY_MULT before firing (default 5*3=15 ct
+        # available for a 5 ct order). Defensive against scanner-stale
+        # depth fields. LIVE 5/22 showed scanner's yes_bid_size_fp >= 7
+        # but Kalshi FOK rejected — true fillable resting was likely
+        # 2-5 ct vs the 7+ ct scanner reported.
+        self.DERIBIT_TAIL_FADE_HIGH_DEPTH_SAFETY_MULT = float(
+            os.getenv("DERIBIT_TAIL_FADE_HIGH_DEPTH_SAFETY_MULT", "3.0"))
         self.DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS", "5"))
-        # 2026-05-21 LIVE soft-launch: per-event cap=2. Phase 0 14d backtest
-        # (n=355 settled → 113 fires under cap=2): net +$2,233 / ROI +395% /
-        # 9/9 days positive / top1 event 5.1% — cap blocks the rare 3+ fire
-        # cascade clusters that distort either direction. Set to 0 to
-        # disable (uncapped — paper behavior). See
-        # [[deribit_tail_fade_high_v1_live_promotion_2026-05-21]].
+        # 2026-05-22 redesign: per-event cap 2 → 1. Cascade winners were
+        # the +EV illusion in paper (B77650 3× +$215 at 80-125 ct, all
+        # fictitious). Capping at 1 fire per event reflects what's
+        # realistically fillable in LIVE on tail books — compounding
+        # bets on the same event is structurally unfillable here.
         self.DERIBIT_TAIL_FADE_HIGH_MAX_FIRES_PER_EVENT = int(
-            os.getenv("DERIBIT_TAIL_FADE_HIGH_MAX_FIRES_PER_EVENT", "2"))
+            os.getenv("DERIBIT_TAIL_FADE_HIGH_MAX_FIRES_PER_EVENT", "1"))
         # ─ bid_imbalance_v1: original direction (BUY pred side at ask).
         #   5/14 promotion used n=26 cohort @ 69% WR — fluke. Full Phase 0
         #   cohort 2026-05-15 (n=266) showed 36% WR overall; paper trader
