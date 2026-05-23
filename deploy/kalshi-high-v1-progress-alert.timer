@@ -1,0 +1,16 @@
+[Unit]
+Description=Fires every 30 min for 3 hours (12:59-15:29 UTC 2026-05-23) to alert on high_v1 LIMIT rollout
+Requires=kalshi-high-v1-progress-alert.service
+
+[Timer]
+# 6 explicit fire times — script self-disables timer on 6th run.
+OnCalendar=2026-05-23 12:59:00 UTC
+OnCalendar=2026-05-23 13:29:00 UTC
+OnCalendar=2026-05-23 13:59:00 UTC
+OnCalendar=2026-05-23 14:29:00 UTC
+OnCalendar=2026-05-23 14:59:00 UTC
+OnCalendar=2026-05-23 15:29:00 UTC
+Persistent=false
+
+[Install]
+WantedBy=timers.target
