@@ -532,19 +532,28 @@ class Database:
     async def count_strategy_fires_for_event(
         self, strategy: str, event_key: str,
     ) -> int:
-        """Count non-cancelled trades for (strategy, event_key prefix).
+        """Count attempted trades for (strategy, event_key prefix).
 
         event_key is the market_id prefix shared across all strikes of a
         single event (e.g. 'KXBTC-26MAY2112' covers B76950..B78050). Used
         by Phase 1 traders for per-event fire cap — defends against
         single-event cascades where one underlying drift triggers fires
         across many adjacent strikes (see [[cme_basis_fade_v1_bleed_2026-05-21]]).
+
+        2026-05-22: include 'cancelled' in the count. Originally excluded
+        because the intent was "fills" not "attempts", but LIVE FOK rejects
+        land in status='cancelled' (Kalshi declined to fill). When the cap
+        ignored those, a thin near-expiry book produced 22+ fires/min on
+        the same ticker (KXETH-26MAY2317-B2080 on 2026-05-22), each
+        consuming a Kalshi API call and risking 429 bursts. Attempts-based
+        cap is the right semantics for the underlying problem: bounded
+        API/risk exposure per event, regardless of fill outcome.
         """
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             cur = await conn.execute(
                 """SELECT COUNT(*) FROM trades
                    WHERE strategy = ? AND market_id LIKE ?
-                     AND status NOT IN ('cancelled', 'failed')""",
+                     AND status != 'failed'""",
                 (strategy, f"{event_key}-%"),
             )
             row = await cur.fetchone()
