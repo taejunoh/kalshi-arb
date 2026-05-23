@@ -45,6 +45,12 @@ class _Phase1Base:
     OBSERVER_NAME: str = ""
     SIGNAL_FRESHNESS_S: float = 15.0
     SIZE_USDC: float = 20.0
+    # 2026-05-23: subclass opt-in for LIMIT (resting + TTL + partial fill).
+    # Default False keeps market FOK semantics for non-overriding subclasses.
+    # Thin-book high-ya strategies need LIMIT because FOK rejects 100% of
+    # orders larger than top-of-book size at the quoted price level. See
+    # [[deribit_tail_fade_high_v1_paper_fictitious_2026-05-22]].
+    USE_LIMIT_ORDER: bool = False
 
     def __init__(self, config, order_manager, market_scanner, kalshi_client):
         self.config = config
@@ -234,17 +240,24 @@ class _Phase1Base:
                     self._processed.add(sig_id)
                     continue
             try:
-                await self._order_manager.market_order(
-                    ticker=ticker, side=side, size_usdc=size_usdc,
-                    price=price, strategy=self.STRATEGY_NAME, market_id=ticker,
-                )
+                if self.USE_LIMIT_ORDER:
+                    await self._order_manager.limit_order(
+                        ticker=ticker, side=side, size_usdc=size_usdc,
+                        price=price, strategy=self.STRATEGY_NAME, market_id=ticker,
+                    )
+                else:
+                    await self._order_manager.market_order(
+                        ticker=ticker, side=side, size_usdc=size_usdc,
+                        price=price, strategy=self.STRATEGY_NAME, market_id=ticker,
+                    )
+                order_type = "limit" if self.USE_LIMIT_ORDER else "market"
                 logger.info(
-                    f"[{self.STRATEGY_NAME}] FIRE {ticker} {side} "
+                    f"[{self.STRATEGY_NAME}] FIRE {ticker} {side} type={order_type} "
                     f"size=${size_usdc:.2f} price={price:.3f} "
                     f"signal_id={sig_id} pred={sig['predicted_outcome']}"
                 )
             except Exception as e:
-                logger.error(f"{self.STRATEGY_NAME}: market_order failed: {e}")
+                logger.error(f"{self.STRATEGY_NAME}: order placement failed: {e}")
             self._processed.add(sig_id)
 
         # Bound memory: drop processed ids older than ~10× freshness window.
@@ -348,12 +361,17 @@ class DeribitTailFadeHighV1Strategy(_Phase1Base):
     """
     STRATEGY_NAME = "deribit_tail_fade_high_v1"
     OBSERVER_NAME = "deribit_tail_skew"
+    # 2026-05-23: LIMIT mode. ya 0.65-0.95 = no_ask 0.05-0.35 = thin near-
+    # expiry books that 100% FOK-reject (43/43 LIVE 5/22). LIMIT orders rest
+    # on book with TTL=180s (per order_manager.LIMIT_TTL_SECONDS_BY_STRATEGY),
+    # allow partial fills, recover the cohort that FOK lost.
+    USE_LIMIT_ORDER = True
 
     def __init__(self, config, order_manager, market_scanner, kalshi_client):
         super().__init__(config, order_manager, market_scanner, kalshi_client)
         self.SIGNAL_FRESHNESS_S = config.DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S
         # 2026-05-22 redesign: fixed contract count, not USDC notional. ya
-        # 0.65-0.85 → no_ask 0.15-0.35 → 5 ct = $0.75-$1.75 stake.
+        # 0.65-0.95 → no_ask 0.05-0.35 → 5 ct = $0.25-$1.75 stake.
         self._size_ct = config.DERIBIT_TAIL_FADE_HIGH_SIZE_CT
         self.SIZE_USDC = config.DERIBIT_TAIL_FADE_HIGH_SIZE_USDC  # legacy fallback for base class
         self._min_ya = config.DERIBIT_TAIL_FADE_HIGH_MIN_YA

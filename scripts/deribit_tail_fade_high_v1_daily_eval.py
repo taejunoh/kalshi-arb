@@ -50,12 +50,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 STRATEGY = "deribit_tail_fade_high_v1"
 SIZE_USDC = 20.0  # legacy — pre-redesign trades used this notional
-# 2026-05-22 redesign cutoff. Pre-cutoff fills had fictitious 40-133 ct
-# contract counts on tail books that LIVE FOK-rejects at 7 ct. Eval after
-# this timestamp counts only trades fired under the redesign (SIZE_CT=5,
-# MAX_YA=0.85, DEPTH_SAFETY_MULT=3, per-event cap=1).
-# See [[deribit_tail_fade_high_v1_paper_fictitious_2026-05-22]].
-REDESIGN_CUTOFF = datetime(2026, 5, 23, 0, 30, tzinfo=timezone.utc)
+# 2026-05-23 redesign #2 cutoff. Switched to LIMIT order execution
+# (USE_LIMIT_ORDER=True) with partial fill + TTL 180s. MAX_YA back to
+# 0.95 (thin books are now fillable via LIMIT), DEPTH_SAFETY 1×. Earlier
+# data (FOK + tight gates) ignored. See
+# [[deribit_tail_fade_high_v1_paper_fictitious_2026-05-22]].
+REDESIGN_CUTOFF = datetime(2026, 5, 23, 3, 30, tzinfo=timezone.utc)
 SKIP_BEFORE = REDESIGN_CUTOFF
 
 # Retire / promote thresholds (see memory entry).
