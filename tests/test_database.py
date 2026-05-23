@@ -135,6 +135,32 @@ async def test_initialize_adds_minutes_to_start_to_legacy_db(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_count_strategy_fires_for_event_includes_cancelled(db):
+    """2026-05-22: per-event cap must count attempts, not just fills.
+    LIVE FOK rejects land as status='cancelled' — if those don't count,
+    a thin book produces unbounded API hammering (KXETH-26MAY2317-B2080
+    case, 22 fires in 20 min on same ticker, cap=2 bypassed)."""
+    common = dict(
+        strategy="deribit_tail_fade_high_v1", direction="no",
+        price=0.30, size=5.0, fee=0.0,
+    )
+    # 2 cancelled (FOK rejects) + 1 paper_settled + 1 settled = 4 attempts
+    await db.record_trade(market_id="KXETH-26MAY2317-B2080", status="cancelled", **common)
+    await db.record_trade(market_id="KXETH-26MAY2317-B2080", status="cancelled", **common)
+    await db.record_trade(market_id="KXETH-26MAY2317-B2090", status="paper_settled", **common)
+    await db.record_trade(market_id="KXETH-26MAY2317-B2100", status="settled", **common)
+    # 1 failed (pre-API local error) — excluded
+    await db.record_trade(market_id="KXETH-26MAY2317-B2110", status="failed", **common)
+    # Different event — excluded
+    await db.record_trade(market_id="KXETH-26MAY2316-B2080", status="cancelled", **common)
+
+    count = await db.count_strategy_fires_for_event(
+        "deribit_tail_fade_high_v1", "KXETH-26MAY2317"
+    )
+    assert count == 4, f"expected 4 (cancelled + paper_settled + settled), got {count}"
+
+
+@pytest.mark.asyncio
 async def test_clv_snapshots_has_new_instrumentation_columns(tmp_path):
     db = Database(str(tmp_path / "t.db"))
     await db.initialize()
