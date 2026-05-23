@@ -28,12 +28,14 @@ def _cfg():
         DERIBIT_TAIL_FADE_EXCLUDE_ASSETS="KXBTC",
         DERIBIT_TAIL_FADE_MIN_FIRE_CONTRACTS=3.0,
         DERIBIT_TAIL_FADE_SIGNAL_FRESHNESS_S=15.0,
+        DERIBIT_TAIL_FADE_HIGH_SIZE_CT=5,
         DERIBIT_TAIL_FADE_HIGH_SIZE_USDC=20.0,
         DERIBIT_TAIL_FADE_HIGH_MIN_YA=0.65,
-        DERIBIT_TAIL_FADE_HIGH_MAX_YA=0.95,
+        DERIBIT_TAIL_FADE_HIGH_MAX_YA=0.85,
+        DERIBIT_TAIL_FADE_HIGH_DEPTH_SAFETY_MULT=3.0,
         DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S=15.0,
         DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS=5.0,
-        DERIBIT_TAIL_FADE_HIGH_MAX_FIRES_PER_EVENT=2,
+        DERIBIT_TAIL_FADE_HIGH_MAX_FIRES_PER_EVENT=1,
         BID_IMBALANCE_SIZE_USDC=20.0,
         BID_IMBALANCE_SIGNAL_FRESHNESS_S=15.0,
         BID_IMBALANCE_MIN_PRICE=0.50,
@@ -296,15 +298,16 @@ async def test_deribit_tail_fade_skips_when_predicted_outcome_yes():
 
 
 @pytest.mark.asyncio
-async def test_deribit_tail_fade_high_fires_paper_no_at_high_ya():
-    """Lifetime observer n=1,880: high-ya 0.65-0.95 buckets show 80-94% WR
-    on the same observer (deribit_tail_skew) the parent trader uses. Sister
-    strategy covers this near-expiry near-strike subset."""
+async def test_deribit_tail_fade_high_fires_with_fixed_ct_size():
+    """2026-05-22 redesign: SIZE_CT=5 fixed contracts (not USDC). Order
+    size = 5 ct * no_ask = 5 * 0.25 = $1.25, regardless of ya band. Depth
+    safety check requires book >= 5*3 = 15 ct available."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1418-B80950",
            "predicted_outcome": "no"}
+    # ya 0.75 (in [0.65, 0.85]), no_ask 0.25, depth 20 (>= safety 15)
     markets = {"KXBTC-26MAY1418-B80950": {
-        "yes_ask_dollars": 0.88, "no_ask_dollars": 0.12,
-        "yes_bid_size_fp": 200.0,  # >= target 20/0.12 ≈ 167
+        "yes_ask_dollars": 0.75, "no_ask_dollars": 0.25,
+        "yes_bid_size_fp": 20.0,
     }}
     s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -313,8 +316,9 @@ async def test_deribit_tail_fade_high_fires_paper_no_at_high_ya():
     args = om.market_order.await_args.kwargs
     assert args["ticker"] == "KXBTC-26MAY1418-B80950"
     assert args["side"] == "no"
-    assert args["price"] == 0.12
-    assert args["size_usdc"] == 20.0
+    assert args["price"] == 0.25
+    # 5 ct * 0.25 = $1.25, not legacy SIZE_USDC=20
+    assert args["size_usdc"] == pytest.approx(5 * 0.25)
     assert args["strategy"] == "deribit_tail_fade_high_v1"
 
 
@@ -336,12 +340,14 @@ async def test_deribit_tail_fade_high_skips_when_ya_below_min():
 
 @pytest.mark.asyncio
 async def test_deribit_tail_fade_high_skips_when_ya_above_max():
-    """ya >= 0.95 zone: NO costs <= $0.05/ct, but n=7 lifetime at 0.95-1.00
-    showed WR 43% (random). Cap upper bound to keep payoff math sensible."""
+    """2026-05-22 redesign: MAX_YA 0.95 → 0.85. The 0.85-0.95 band has
+    thinnest books (no_ask 0.05-0.15 = highest contract counts). Drop it
+    to cut the worst FOK candidates."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1418-B80950",
            "predicted_outcome": "no"}
+    # ya 0.88 was previously in-band; now above MAX_YA=0.85 → reject
     markets = {"KXBTC-26MAY1418-B80950": {
-        "yes_ask_dollars": 0.97, "no_ask_dollars": 0.03,
+        "yes_ask_dollars": 0.88, "no_ask_dollars": 0.12,
         "yes_bid_size_fp": 500.0,
     }}
     s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
@@ -351,35 +357,17 @@ async def test_deribit_tail_fade_high_skips_when_ya_above_max():
 
 
 @pytest.mark.asyncio
-async def test_deribit_tail_fade_high_clamps_size_when_book_thin():
-    """High-ya NO-side books are typically thin near expiry. Depth-aware
-    sizing clamps to top-of-book — paper ledger stays honest about
-    fill-realism for the eventual LIVE promotion decision."""
+async def test_deribit_tail_fade_high_skips_when_depth_below_safety():
+    """2026-05-22 redesign: DEPTH_SAFETY_MULT=3. Require book depth >=
+    SIZE_CT * 3 = 15 ct before firing. Defensive against scanner-stale
+    yes_bid_size_fp that produced 22/22 LIVE FOK rejects on 5/22 when
+    scanner reported depth ≥ 7 but Kalshi true fillable was lower."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1418-B80950",
            "predicted_outcome": "no"}
-    # target_count = 20/0.12 ≈ 167, depth 50 → clamp to 50*0.12 = $6
+    # depth 10 < required 5*3=15 → skip even though SIZE_CT=5 alone would fit
     markets = {"KXBTC-26MAY1418-B80950": {
-        "yes_ask_dollars": 0.88, "no_ask_dollars": 0.12,
-        "yes_bid_size_fp": 50.0,
-    }}
-    s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
-                            market_lookup=markets.get)
-    await s.scan_and_execute()
-    assert om.market_order.await_count == 1
-    args = om.market_order.await_args.kwargs
-    assert args["size_usdc"] == pytest.approx(50.0 * 0.12)
-
-
-@pytest.mark.asyncio
-async def test_deribit_tail_fade_high_skips_when_depth_below_min():
-    """MIN_FIRE_CONTRACTS=5 (vs parent's 1). High-ya signals fire on thin
-    books and the dust-trade threshold needs to be high enough to filter
-    sub-economic fires that would inflate the paper ledger size."""
-    sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1418-B80950",
-           "predicted_outcome": "no"}
-    markets = {"KXBTC-26MAY1418-B80950": {
-        "yes_ask_dollars": 0.88, "no_ask_dollars": 0.12,
-        "yes_bid_size_fp": 3.0,  # below MIN_FIRE_CONTRACTS=5
+        "yes_ask_dollars": 0.75, "no_ask_dollars": 0.25,
+        "yes_bid_size_fp": 10.0,
     }}
     s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
                             market_lookup=markets.get)
@@ -405,26 +393,26 @@ async def test_deribit_tail_fade_high_skips_when_predicted_yes():
 
 @pytest.mark.asyncio
 async def test_deribit_tail_fade_high_caps_at_max_fires_per_event():
-    """Per-event cap=2 (LIVE soft-launch config 2026-05-21). The base
-    class's _max_fires_per_event is now wired through the config field.
-    With event_fire_count=2 already on the event, the 3rd signal in the
-    same event must skip."""
+    """2026-05-22 redesign: per-event cap 2 → 1. Cascade winners were the
+    +EV illusion in paper (B77650 3× +$215 at 80-125 ct, all fictitious).
+    Capping at 1 fire per event reflects what's realistically fillable
+    in LIVE on tail books."""
     sig = {"id": 1, "ts": _now_iso(2.0),
            "market_id": "KXBTC-26MAY1418-B80950",
            "predicted_outcome": "no"}
     markets = {"KXBTC-26MAY1418-B80950": {
-        "yes_ask_dollars": 0.88, "no_ask_dollars": 0.12,
-        "yes_bid_size_fp": 500.0,
+        "yes_ask_dollars": 0.75, "no_ask_dollars": 0.25,
+        "yes_bid_size_fp": 50.0,
     }}
-    # event_fire_count returns 2 → cap=2 reached → no order placed.
+    # event_fire_count=1 → cap=1 reached → no order placed.
     s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
-                            market_lookup=markets.get, event_fire_count=2)
+                            market_lookup=markets.get, event_fire_count=1)
     await s.scan_and_execute()
     assert om.market_order.await_count == 0
 
-    # With event_fire_count=1, cap=2 not reached → fires.
+    # event_fire_count=0 → cap not reached → fires.
     s2, om2 = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
-                              market_lookup=markets.get, event_fire_count=1)
+                              market_lookup=markets.get, event_fire_count=0)
     await s2.scan_and_execute()
     assert om2.market_order.await_count == 1
 

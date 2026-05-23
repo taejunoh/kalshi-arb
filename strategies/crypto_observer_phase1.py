@@ -352,9 +352,13 @@ class DeribitTailFadeHighV1Strategy(_Phase1Base):
     def __init__(self, config, order_manager, market_scanner, kalshi_client):
         super().__init__(config, order_manager, market_scanner, kalshi_client)
         self.SIGNAL_FRESHNESS_S = config.DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S
-        self.SIZE_USDC = config.DERIBIT_TAIL_FADE_HIGH_SIZE_USDC
+        # 2026-05-22 redesign: fixed contract count, not USDC notional. ya
+        # 0.65-0.85 → no_ask 0.15-0.35 → 5 ct = $0.75-$1.75 stake.
+        self._size_ct = config.DERIBIT_TAIL_FADE_HIGH_SIZE_CT
+        self.SIZE_USDC = config.DERIBIT_TAIL_FADE_HIGH_SIZE_USDC  # legacy fallback for base class
         self._min_ya = config.DERIBIT_TAIL_FADE_HIGH_MIN_YA
         self._max_ya = config.DERIBIT_TAIL_FADE_HIGH_MAX_YA
+        self._depth_safety_mult = config.DERIBIT_TAIL_FADE_HIGH_DEPTH_SAFETY_MULT
         self._min_fire_contracts = config.DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS
         self._max_fires_per_event_cfg = config.DERIBIT_TAIL_FADE_HIGH_MAX_FIRES_PER_EVENT
 
@@ -378,15 +382,18 @@ class DeribitTailFadeHighV1Strategy(_Phase1Base):
         return ("no", no_ask)
 
     def _size_usdc_for(self, side, price, market):
+        # 2026-05-22 redesign: fixed CT size with depth-safety multiplier.
+        # Require book depth >= SIZE_CT * DEPTH_SAFETY_MULT (default 15 ct
+        # available for 5 ct order) before firing. Defensive against
+        # scanner-stale yes_bid_size_fp that produced 22/22 LIVE FOK
+        # rejects on 5/22. See [[deribit_tail_fade_high_v1_paper_fictitious_2026-05-22]].
         depth = _safe_float(market.get("yes_bid_size_fp"))
         if depth is None or depth <= 0 or price <= 0:
             return None
-        target_count = self.SIZE_USDC / price
-        if depth >= target_count:
-            return self.SIZE_USDC
-        if depth < self._min_fire_contracts:
+        required_depth = self._size_ct * self._depth_safety_mult
+        if depth < required_depth:
             return None
-        return depth * price
+        return self._size_ct * price
 
 
 class BidImbalanceV1Strategy(_Phase1Base):

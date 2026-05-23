@@ -49,8 +49,14 @@ logger = logging.getLogger("deribit_tail_fade_high_v1_eval")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 STRATEGY = "deribit_tail_fade_high_v1"
-SIZE_USDC = 20.0
-SKIP_BEFORE = datetime(2026, 5, 22, tzinfo=timezone.utc)
+SIZE_USDC = 20.0  # legacy — pre-redesign trades used this notional
+# 2026-05-22 redesign cutoff. Pre-cutoff fills had fictitious 40-133 ct
+# contract counts on tail books that LIVE FOK-rejects at 7 ct. Eval after
+# this timestamp counts only trades fired under the redesign (SIZE_CT=5,
+# MAX_YA=0.85, DEPTH_SAFETY_MULT=3, per-event cap=1).
+# See [[deribit_tail_fade_high_v1_paper_fictitious_2026-05-22]].
+REDESIGN_CUTOFF = datetime(2026, 5, 23, 0, 30, tzinfo=timezone.utc)
+SKIP_BEFORE = REDESIGN_CUTOFF
 
 # Retire / promote thresholds (see memory entry).
 MIN_N_FOR_DECISION = 30
@@ -84,20 +90,24 @@ async def eval_strategy(send: bool):
     await db.initialize()
 
     import aiosqlite
+    cutoff_iso = REDESIGN_CUTOFF.isoformat()
     async with aiosqlite.connect(db.db_path) as conn:
         conn.row_factory = aiosqlite.Row
         rows_cur = await conn.execute(
-            "SELECT timestamp, market_id, price, pnl "
+            "SELECT timestamp, market_id, price, size, pnl "
             "FROM trades WHERE strategy = ? AND status = 'paper_settled' "
+            "  AND timestamp >= ? "
             "ORDER BY timestamp",
-            (STRATEGY,),
+            (STRATEGY, cutoff_iso),
         )
         rows = [dict(r) for r in await rows_cur.fetchall()]
 
     if not rows:
         msg = (
-            f"📊 <b>{STRATEGY}</b> daily eval\n\n"
-            f"No paper_settled trades yet. Check strategy is firing."
+            f"📊 <b>{STRATEGY}</b> daily eval (post-redesign)\n\n"
+            f"No paper_settled trades since redesign cutoff {REDESIGN_CUTOFF.date()}. "
+            f"Strategy may not be firing yet under tighter gates "
+            f"(SIZE_CT=5, MAX_YA=0.85, depth ≥15 ct, per-event cap=1)."
         )
         await _emit(config, msg, send)
         return
