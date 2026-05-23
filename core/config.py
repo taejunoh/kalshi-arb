@@ -220,19 +220,21 @@ class Config:
         # takes precedence in the strategy.
         self.DERIBIT_TAIL_FADE_HIGH_SIZE_USDC = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_SIZE_USDC", "20"))
         self.DERIBIT_TAIL_FADE_HIGH_MIN_YA = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_MIN_YA", "0.65"))
-        # 2026-05-22 redesign: MAX_YA 0.95 → 0.85. The 0.85-0.95 band has
-        # the thinnest books (no_ask 0.05-0.15 = highest contract counts
-        # for any USDC notional). Drop it to cut the worst FOK candidates.
-        self.DERIBIT_TAIL_FADE_HIGH_MAX_YA = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_MAX_YA", "0.85"))
+        # 2026-05-23 redesign #2: MAX_YA back to 0.95. With LIMIT execution
+        # (USE_LIMIT_ORDER=True on strategy), thin books at 0.85-0.95 are
+        # exactly where the highest per-ct EV lives (observer ya 0.85-0.90
+        # = +$0.80/ct gross, 0.90-0.95 = +$0.75/ct). LIMIT order rests on
+        # the book and accepts partial fills, so thin-book FOK problem is
+        # solved by execution change, not by cohort avoidance.
+        self.DERIBIT_TAIL_FADE_HIGH_MAX_YA = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_MAX_YA", "0.95"))
         self.DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S", "15"))
-        # 2026-05-22 redesign: depth safety multiplier. Require book depth
-        # >= SIZE_CT * DEPTH_SAFETY_MULT before firing (default 5*3=15 ct
-        # available for a 5 ct order). Defensive against scanner-stale
-        # depth fields. LIVE 5/22 showed scanner's yes_bid_size_fp >= 7
-        # but Kalshi FOK rejected — true fillable resting was likely
-        # 2-5 ct vs the 7+ ct scanner reported.
+        # 2026-05-23 redesign #2: DEPTH_SAFETY_MULT 3.0 → 1.0. LIMIT order
+        # rests on the book + partial fills, so the FOK depth-overstatement
+        # buffer is no longer needed. Keep at 1× as sanity gate (depth >=
+        # SIZE_CT) — combined with MIN_FIRE_CONTRACTS the effective floor
+        # is max(SIZE_CT, MIN_FIRE_CONTRACTS).
         self.DERIBIT_TAIL_FADE_HIGH_DEPTH_SAFETY_MULT = float(
-            os.getenv("DERIBIT_TAIL_FADE_HIGH_DEPTH_SAFETY_MULT", "3.0"))
+            os.getenv("DERIBIT_TAIL_FADE_HIGH_DEPTH_SAFETY_MULT", "1.0"))
         self.DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS = float(os.getenv("DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS", "5"))
         # 2026-05-22 redesign: per-event cap 2 → 1. Cascade winners were
         # the +EV illusion in paper (B77650 3× +$215 at 80-125 ct, all

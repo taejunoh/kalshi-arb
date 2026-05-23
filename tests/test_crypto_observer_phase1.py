@@ -31,8 +31,8 @@ def _cfg():
         DERIBIT_TAIL_FADE_HIGH_SIZE_CT=5,
         DERIBIT_TAIL_FADE_HIGH_SIZE_USDC=20.0,
         DERIBIT_TAIL_FADE_HIGH_MIN_YA=0.65,
-        DERIBIT_TAIL_FADE_HIGH_MAX_YA=0.85,
-        DERIBIT_TAIL_FADE_HIGH_DEPTH_SAFETY_MULT=3.0,
+        DERIBIT_TAIL_FADE_HIGH_MAX_YA=0.95,
+        DERIBIT_TAIL_FADE_HIGH_DEPTH_SAFETY_MULT=1.0,
         DERIBIT_TAIL_FADE_HIGH_SIGNAL_FRESHNESS_S=15.0,
         DERIBIT_TAIL_FADE_HIGH_MIN_FIRE_CONTRACTS=5.0,
         DERIBIT_TAIL_FADE_HIGH_MAX_FIRES_PER_EVENT=1,
@@ -93,6 +93,7 @@ def _build_strategy(cls, *, signals=None, market_lookup=None, last_trade=None,
     om = MagicMock()
     om.is_circuit_breaker_active = MagicMock(return_value=False)
     om.market_order = AsyncMock()
+    om.limit_order = AsyncMock()
     db = MagicMock()
     db.fetch_recent_crypto_observer_signals = AsyncMock(return_value=signals or [])
     db.get_last_trade_for_ticker = AsyncMock(return_value=last_trade)
@@ -298,27 +299,29 @@ async def test_deribit_tail_fade_skips_when_predicted_outcome_yes():
 
 
 @pytest.mark.asyncio
-async def test_deribit_tail_fade_high_fires_with_fixed_ct_size():
-    """2026-05-22 redesign: SIZE_CT=5 fixed contracts (not USDC). Order
-    size = 5 ct * no_ask = 5 * 0.25 = $1.25, regardless of ya band. Depth
-    safety check requires book >= 5*3 = 15 ct available."""
+async def test_deribit_tail_fade_high_fires_as_limit_with_fixed_ct_size():
+    """2026-05-23 redesign #2: USE_LIMIT_ORDER=True. Strategy calls
+    limit_order (not market_order) for partial-fill support on thin tail
+    books. Size still SIZE_CT=5 contracts fixed."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1418-B80950",
            "predicted_outcome": "no"}
-    # ya 0.75 (in [0.65, 0.85]), no_ask 0.25, depth 20 (>= safety 15)
+    # ya 0.88 (in [0.65, 0.95]), no_ask 0.12, depth 50 (>= safety 5*1=5)
     markets = {"KXBTC-26MAY1418-B80950": {
-        "yes_ask_dollars": 0.75, "no_ask_dollars": 0.25,
-        "yes_bid_size_fp": 20.0,
+        "yes_ask_dollars": 0.88, "no_ask_dollars": 0.12,
+        "yes_bid_size_fp": 50.0,
     }}
     s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
                             market_lookup=markets.get)
     await s.scan_and_execute()
-    assert om.market_order.await_count == 1
-    args = om.market_order.await_args.kwargs
+    # LIMIT, not market
+    assert om.limit_order.await_count == 1
+    assert om.market_order.await_count == 0
+    args = om.limit_order.await_args.kwargs
     assert args["ticker"] == "KXBTC-26MAY1418-B80950"
     assert args["side"] == "no"
-    assert args["price"] == 0.25
-    # 5 ct * 0.25 = $1.25, not legacy SIZE_USDC=20
-    assert args["size_usdc"] == pytest.approx(5 * 0.25)
+    assert args["price"] == 0.12
+    # 5 ct * 0.12 = $0.60
+    assert args["size_usdc"] == pytest.approx(5 * 0.12)
     assert args["strategy"] == "deribit_tail_fade_high_v1"
 
 
@@ -335,43 +338,45 @@ async def test_deribit_tail_fade_high_skips_when_ya_below_min():
     s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
                             market_lookup=markets.get)
     await s.scan_and_execute()
+    assert om.limit_order.await_count == 0
     assert om.market_order.await_count == 0
 
 
 @pytest.mark.asyncio
 async def test_deribit_tail_fade_high_skips_when_ya_above_max():
-    """2026-05-22 redesign: MAX_YA 0.95 → 0.85. The 0.85-0.95 band has
-    thinnest books (no_ask 0.05-0.15 = highest contract counts). Drop it
-    to cut the worst FOK candidates."""
+    """2026-05-23 redesign #2: MAX_YA back to 0.95 (LIMIT order solves the
+    thin-book problem). ya >= 0.95 still excluded — observer n=7 at
+    0.95-1.00 was random (WR 43%), payout math degenerate."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1418-B80950",
            "predicted_outcome": "no"}
-    # ya 0.88 was previously in-band; now above MAX_YA=0.85 → reject
     markets = {"KXBTC-26MAY1418-B80950": {
-        "yes_ask_dollars": 0.88, "no_ask_dollars": 0.12,
+        "yes_ask_dollars": 0.97, "no_ask_dollars": 0.03,
         "yes_bid_size_fp": 500.0,
     }}
     s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
                             market_lookup=markets.get)
     await s.scan_and_execute()
+    assert om.limit_order.await_count == 0
     assert om.market_order.await_count == 0
 
 
 @pytest.mark.asyncio
 async def test_deribit_tail_fade_high_skips_when_depth_below_safety():
-    """2026-05-22 redesign: DEPTH_SAFETY_MULT=3. Require book depth >=
-    SIZE_CT * 3 = 15 ct before firing. Defensive against scanner-stale
-    yes_bid_size_fp that produced 22/22 LIVE FOK rejects on 5/22 when
-    scanner reported depth ≥ 7 but Kalshi true fillable was lower."""
+    """2026-05-23 redesign #2: DEPTH_SAFETY_MULT 3.0 → 1.0. LIMIT order
+    handles partial fill, so 3x buffer for scanner staleness no longer
+    needed. Sanity gate: depth >= SIZE_CT (5 ct) plus MIN_FIRE_CONTRACTS=5
+    floor."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY1418-B80950",
            "predicted_outcome": "no"}
-    # depth 10 < required 5*3=15 → skip even though SIZE_CT=5 alone would fit
+    # depth 3 < SIZE_CT=5 → skip
     markets = {"KXBTC-26MAY1418-B80950": {
         "yes_ask_dollars": 0.75, "no_ask_dollars": 0.25,
-        "yes_bid_size_fp": 10.0,
+        "yes_bid_size_fp": 3.0,
     }}
     s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
                             market_lookup=markets.get)
     await s.scan_and_execute()
+    assert om.limit_order.await_count == 0
     assert om.market_order.await_count == 0
 
 
@@ -388,6 +393,7 @@ async def test_deribit_tail_fade_high_skips_when_predicted_yes():
     s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
                             market_lookup=markets.get)
     await s.scan_and_execute()
+    assert om.limit_order.await_count == 0
     assert om.market_order.await_count == 0
 
 
@@ -408,13 +414,13 @@ async def test_deribit_tail_fade_high_caps_at_max_fires_per_event():
     s, om = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
                             market_lookup=markets.get, event_fire_count=1)
     await s.scan_and_execute()
-    assert om.market_order.await_count == 0
+    assert om.limit_order.await_count == 0
 
     # event_fire_count=0 → cap not reached → fires.
     s2, om2 = _build_strategy(DeribitTailFadeHighV1Strategy, signals=[sig],
                               market_lookup=markets.get, event_fire_count=0)
     await s2.scan_and_execute()
-    assert om2.market_order.await_count == 1
+    assert om2.limit_order.await_count == 1
 
 
 # ── BidImbalanceV1 ─────────────────────────────────────────────────
