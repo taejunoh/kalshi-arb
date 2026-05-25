@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from typing import Optional
 from zoneinfo import ZoneInfo
 import os
+import sqlite3
 
 
 def _today_cutoff_utc() -> str:
@@ -1753,6 +1754,231 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "price_distribution": price_buckets,
             "top_losses": top_losses,
             "rollback_triggers": triggers,
+        }
+
+    @app.get("/api/clv-trend")
+    async def get_clv_trend():
+        """CLV trend per strategy — last N entry-vs-closing snapshot deltas.
+
+        For each strategy with CLV data in last 30 days, returns an ordered
+        series of CLV values (newest last) for sparkline rendering. Plus
+        aggregate stats: 30d avg, 7d avg, n.
+
+        Powers the at-a-glance "is this strategy's alpha still working"
+        sparkline column in the dashboard.
+        """
+        db_path = config.DATABASE_PATH if hasattr(config, "DATABASE_PATH") else "data/bot.db"
+        live_strats = set(getattr(config, "LIVE_STRATEGIES", set()) or set())
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        # Pull last 30 days of CLV-eligible trades per strategy
+        cur.execute("""
+            SELECT t.strategy, t.timestamp, t.direction,
+                   e.yes_ask, e.no_ask, c.yes_ask, c.no_ask
+            FROM trades t
+            JOIN clv_snapshots e ON e.trade_id = t.id AND e.snapshot_at = 'entry'
+            JOIN clv_snapshots c ON c.trade_id = t.id AND c.snapshot_at = 'closing'
+            WHERE t.status IN ('settled','filled')
+              AND t.timestamp >= datetime('now','-30 days')
+              AND e.yes_ask IS NOT NULL AND c.yes_ask IS NOT NULL
+              AND t.strategy LIKE 'sports_%'
+            ORDER BY t.timestamp ASC
+        """)
+        by_strat: dict[str, list] = {}
+        for strategy, ts, direction, e_yes, e_no, c_yes, c_no in cur.fetchall():
+            clv = (c_yes - e_yes) if direction == "yes" else (c_no - e_no)
+            by_strat.setdefault(strategy, []).append({"ts": ts, "clv": round(clv, 4)})
+        conn.close()
+
+        rows = []
+        for strat, series in by_strat.items():
+            n = len(series)
+            avg30 = sum(s["clv"] for s in series) / n if n else 0
+            recent = [s for s in series if s["ts"] >= datetime.now(timezone.utc).strftime("%Y-%m-%d") and False]
+            # Last 7-day window
+            cutoff7 = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+            d7 = [s for s in series if s["ts"] >= cutoff7]
+            avg7 = sum(s["clv"] for s in d7) / len(d7) if d7 else None
+            rows.append({
+                "strategy": strat,
+                "is_live": strat in live_strats,
+                "n_30d": n,
+                "avg_clv_30d": round(avg30, 4),
+                "n_7d": len(d7),
+                "avg_clv_7d": round(avg7, 4) if avg7 is not None else None,
+                # Sparkline: last 20 points
+                "series": [s["clv"] for s in series[-20:]],
+            })
+        rows.sort(key=lambda r: (not r["is_live"], -r["avg_clv_30d"]))
+        return {"rows": rows}
+
+    @app.get("/api/polymarket/gaps")
+    async def get_polymarket_gaps():
+        """Live PM vs Kalshi gap monitor for mapped sports markets.
+
+        Returns per-mapping current gap (PM_yes - Kalshi_yes). Highlights
+        when |gap| >= XVENUE_MIN_DEVIATION (xvenue strategy would fire).
+
+        Reads cached PM quotes from DB (polymarket_quote_cron refreshes
+        every ~1min). Fetches live Kalshi yes_ask per ticker. Sports
+        mappings only (skips FOMC/macro).
+        """
+        import json as _json
+        db_path = config.DATABASE_PATH if hasattr(config, "DATABASE_PATH") else "data/bot.db"
+        min_dev = getattr(config, "XVENUE_MIN_DEVIATION", 0.10)
+
+        # Load mapping
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        mapping_path = os.path.join(repo_root, "data", "polymarket_kalshi_mapping.json")
+        try:
+            with open(mapping_path) as f:
+                mapping = _json.load(f)
+        except Exception as e:
+            return {"error": f"mapping load failed: {e}", "rows": []}
+
+        sports_prefixes = ("KXNBA-", "KXNHL-", "KXMENWORLDCUP-",
+                           "KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT")
+        sports_maps = [m for m in mapping
+                       if any(m["kalshi_ticker_prefix"].startswith(p) for p in sports_prefixes)]
+
+        # Cached PM quotes
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        pm_data = {}
+        for m in sports_maps:
+            slug = m["polymarket_slug"]
+            cur.execute(
+                "SELECT yes_price, best_bid, best_ask, fetched_at FROM polymarket_quotes WHERE slug = ?",
+                (slug,),
+            )
+            row = cur.fetchone()
+            if row:
+                pm_data[slug] = {"yes_price": row[0], "best_bid": row[1],
+                                 "best_ask": row[2], "fetched_at": row[3]}
+        conn.close()
+
+        # Fetch live Kalshi prices via shared client (passed to create_app)
+        if not kalshi_client:
+            return {"error": "kalshi client unavailable", "rows": []}
+        import asyncio as _asyncio
+        loop = _asyncio.get_event_loop()
+        rows = []
+        for m in sports_maps:
+            slug = m["polymarket_slug"]
+            kx = m["kalshi_ticker_prefix"]
+            pm = pm_data.get(slug)
+            if not pm:
+                continue
+            try:
+                r = await loop.run_in_executor(
+                    None, kalshi_client._get, f"/trade-api/v2/markets/{kx}"
+                )
+                mk = (r or {}).get("market") or {}
+                ya = float(mk.get("yes_ask_dollars") or 0)
+                if ya <= 0:
+                    continue
+            except Exception:
+                continue
+            pm_yes = pm["yes_price"]
+            gap = pm_yes - ya
+            rows.append({
+                "ticker": kx,
+                "slug": slug,
+                "outcome_match": m.get("outcome_match", "direct"),
+                "pm_yes": pm_yes,
+                "kalshi_yes": ya,
+                "gap": gap,
+                "fires_arb": abs(gap) >= min_dev,
+                "pm_fetched_at": pm.get("fetched_at"),
+            })
+
+        rows.sort(key=lambda r: abs(r["gap"]), reverse=True)
+        return {
+            "min_deviation": min_dev,
+            "n_mappings": len(rows),
+            "fires_count": sum(1 for r in rows if r["fires_arb"]),
+            "rows": rows,
+        }
+
+    @app.get("/api/snapshot")
+    async def get_snapshot():
+        """Today's at-a-glance snapshot — daily/7d/30d net PnL + activity.
+
+        Returns LIVE-mode stats. Hides paper-twin noise. Designed for the
+        top-of-dashboard summary card so user can see "how am I doing"
+        in one row.
+        """
+        db_path = config.DATABASE_PATH if hasattr(config, "DATABASE_PATH") else "data/bot.db"
+        live_strats = set(getattr(config, "LIVE_STRATEGIES", set()) or set())
+        if not live_strats:
+            return {"error": "LIVE_STRATEGIES empty"}
+        placeholders = ",".join("?" * len(live_strats))
+        params = list(live_strats)
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+
+        def _window(days: int):
+            cur.execute(
+                f"""SELECT COUNT(*), ROUND(COALESCE(SUM(pnl),0),2),
+                        SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END)
+                    FROM trades
+                    WHERE status IN ('settled','filled')
+                      AND strategy IN ({placeholders})
+                      AND timestamp >= datetime('now', '-{days} days')""",
+                params,
+            )
+            n, net, wins = cur.fetchone()
+            return {"n": n or 0, "net": float(net or 0),
+                    "wins": wins or 0,
+                    "wr_pct": round((wins or 0) * 100.0 / n, 1) if n else None}
+
+        today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        cur.execute(
+            f"""SELECT COUNT(*), ROUND(COALESCE(SUM(pnl),0),2),
+                    SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END)
+                FROM trades
+                WHERE status IN ('settled','filled')
+                  AND strategy IN ({placeholders})
+                  AND timestamp >= ?""",
+            params + [today_utc + "T00:00:00"],
+        )
+        n_t, net_t, wins_t = cur.fetchone()
+        today = {"n": n_t or 0, "net": float(net_t or 0),
+                 "wins": wins_t or 0,
+                 "wr_pct": round((wins_t or 0) * 100.0 / n_t, 1) if n_t else None}
+
+        # Best/worst trade today
+        cur.execute(
+            f"""SELECT strategy, pnl FROM trades
+                WHERE status IN ('settled','filled')
+                  AND strategy IN ({placeholders})
+                  AND timestamp >= ?
+                ORDER BY pnl DESC LIMIT 1""",
+            params + [today_utc + "T00:00:00"],
+        )
+        best = cur.fetchone()
+        cur.execute(
+            f"""SELECT strategy, pnl FROM trades
+                WHERE status IN ('settled','filled')
+                  AND strategy IN ({placeholders})
+                  AND timestamp >= ?
+                ORDER BY pnl ASC LIMIT 1""",
+            params + [today_utc + "T00:00:00"],
+        )
+        worst = cur.fetchone()
+
+        d7_data = _window(7)
+        d30_data = _window(30)
+        conn.close()
+
+        return {
+            "today_utc": today_utc,
+            "live_count": len(live_strats),
+            "today": today,
+            "d7": d7_data,
+            "d30": d30_data,
+            "best_today": {"strategy": best[0], "pnl": float(best[1])} if best else None,
+            "worst_today": {"strategy": worst[0], "pnl": float(worst[1])} if worst else None,
         }
 
     def _classify_schedule_gate(gate: dict) -> str:
