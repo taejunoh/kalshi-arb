@@ -326,16 +326,25 @@ class Bot:
         # bid_imbalance 18/26 = 69.2% WR — both above break-even at the
         # observed price bands. Both paper-only at launch — no
         # LIVE_STRATEGIES env entry. See [[crypto_observer_phase1_promotion_2026-05-14]].
-        self.deribit_tail_fade_v1 = DeribitTailFadeV1Strategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client,
-        )
+        # 2026-05-25 MOTHBALL: LIVE 5/13-5/25 net -$80 across 169 fills.
+        # Post-KXBTC-exclude × KXETH (10 fills) -$38 baseline; cap 0.90 sim
+        # yields +$1.27 over 2w = ~$33/year. Operational overhead >> edge.
+        # Observer + paper code kept commented; revive if regime shifts.
+        # self.deribit_tail_fade_v1 = DeribitTailFadeV1Strategy(
+        #     self.config, self.order_manager, self.scanner, self.kalshi_client,
+        # )
         # deribit_tail_fade_high_v1 (2026-05-21): sister paper trader for the
         # high-ya (0.65-0.95) zone the parent gate ignores. Lifetime observer
         # n=1,880 shows two distinct signal classes; this trader covers the
         # near-expiry near-strike subset. See [[phase1-lifetime-audit-sweep-2026-05-21]].
-        self.deribit_tail_fade_high_v1 = DeribitTailFadeHighV1Strategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client,
-        )
+        # 2026-05-25 MOTHBALL: LIVE 5/22 (0/22+ FOK) → LIMIT TTL 180s redesign
+        # 5/23 → 30/30 paper LIMIT cancelled over 44h. Kalshi yes_bid_size_fp
+        # depth field unreliable for high-ya cohort (out of our control).
+        # Observer + sister code kept; trader instantiation + scan_loop disabled.
+        # Revive when Kalshi book shows maker flow at NO ≤ 0.90 signal price.
+        # self.deribit_tail_fade_high_v1 = DeribitTailFadeHighV1Strategy(
+        #     self.config, self.order_manager, self.scanner, self.kalshi_client,
+        # )
         self.bid_imbalance_v1 = BidImbalanceV1Strategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client,
         )
@@ -486,12 +495,14 @@ class Bot:
             # SIGNAL_FRESHNESS_S=15 s, signals age out before the main loop
             # comes back around (10-30 min/iter), so every signal gets skipped
             # as too-old. 1 s scan_loop each — matches observer cadence.
-            asyncio.create_task(
-                self.deribit_tail_fade_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.deribit_tail_fade_high_v1.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-05-25 MOTHBALL: see __init__ for context
+            # asyncio.create_task(
+            #     self.deribit_tail_fade_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-05-25 MOTHBALL: see __init__ for context
+            # asyncio.create_task(
+            #     self.deribit_tail_fade_high_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
             asyncio.create_task(
                 self.bid_imbalance_v1.scan_loop(scan_interval_secs=1.0)
             ),
