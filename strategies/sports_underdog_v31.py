@@ -77,6 +77,10 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     # playoff_underdog_v1/v1_us + soccer_underdog_v1 + v37 override this to
     # empty/their-own — unaffected. Re-eval ~2026-06-04.
     SPORT_BLOCKLIST = frozenset({"MLB"})
+    # 2026-05-25 N4: Pinnacle-agreement gate. 60d data showed extreme-band
+    # (|pin-entry|>0.05) bled n=20/-$60. Center band (n=40/+$408) is alpha.
+    # Cuts ~33% of fires, projected save ~$30/month.
+    MAX_PIN_GAP = 0.05
 
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 25→30 on 2026-05-02 (second pass, 1.2x more, total 1.5x vs

@@ -55,6 +55,9 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     # frees capital for NBA/WNBA where cohort is profitable (+$233/+$95 LIVE).
     # See [[sports_cohort_block_2026-05-21]].
     SPORT_BLOCKLIST = frozenset({"MLB"})
+    # 2026-05-25 N4: Pinnacle-agreement gate. 60d data: extreme band
+    # n=16/-$51, center band n=20/+$296. Cuts ~44% fires, projected save ~$25/mo.
+    MAX_PIN_GAP = 0.05
     # 2026-05-12 v31 family $2k-10k dead-zone (commit ca971d5 extended).
     # underdog_v31 n=13 −62%, underdog_v32 n=13 −62%, midshot n=6 −59%.
     # Combined family n=32 ROI −61% systematic. Cascade not automatic

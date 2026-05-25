@@ -40,6 +40,10 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
     # the only NHL signals v31 fires on are (NHL, pre eu); blocking the sport
     # fully stops both live trades and the paper twin on NHL.
     SPORT_BLOCKLIST = frozenset({"NHL"})
+    # 2026-05-25 N4: Pinnacle-agreement gate. 60d data: extreme band
+    # n=17/-$52, center band n=3/+$27 (longshot fires rarely overall).
+    # Conservative MAX_PIN_GAP=0.05 cuts the bleed without killing fire rate.
+    MAX_PIN_GAP = 0.05
     # NBA playoff suspend (2026-04-30). NBA pre eu longshot -90% n=25 in
     # playoff (game-level dedup). Same regime mismatch pattern as midshot
     # and underdog families. Cascades to v32, v33, v34 (retired), v35
