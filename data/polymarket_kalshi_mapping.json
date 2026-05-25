@@ -50,62 +50,62 @@
 
   {
     "polymarket_slug": "will-the-oklahoma-city-thunder-win-the-2026-nba-finals",
-    "kalshi_ticker_prefix": "KXNBACHAMP-26-OKC",
+    "kalshi_ticker_prefix": "KXNBA-26-OKC",
     "outcome_match": "direct",
-    "notes": "VERIFY-PREFIX 2026-05-25: NBA Finals OKC. PM vol $13.6M. End 2026-07-01."
+    "notes": "VERIFIED 2026-05-25: NBA Finals OKC. PM vol $13.6M. End 2026-07-01."
   },
   {
     "polymarket_slug": "will-the-new-york-knicks-win-the-2026-nba-finals",
-    "kalshi_ticker_prefix": "KXNBACHAMP-26-NYK",
+    "kalshi_ticker_prefix": "KXNBA-26-NYK",
     "outcome_match": "direct",
-    "notes": "VERIFY-PREFIX 2026-05-25: NBA Finals NYK. PM vol $16M."
+    "notes": "VERIFIED 2026-05-25: NBA Finals NYK. PM vol $16M."
   },
   {
     "polymarket_slug": "will-the-san-antonio-spurs-win-the-2026-nba-finals",
-    "kalshi_ticker_prefix": "KXNBACHAMP-26-SAS",
+    "kalshi_ticker_prefix": "KXNBA-26-SAS",
     "outcome_match": "direct",
-    "notes": "VERIFY-PREFIX 2026-05-25: NBA Finals SAS. PM vol $30M."
+    "notes": "VERIFIED 2026-05-25: NBA Finals SAS. PM vol $30M."
   },
   {
     "polymarket_slug": "will-the-cleveland-cavaliers-win-the-2026-nba-finals",
-    "kalshi_ticker_prefix": "KXNBACHAMP-26-CLE",
+    "kalshi_ticker_prefix": "KXNBA-26-CLE",
     "outcome_match": "direct",
-    "notes": "VERIFY-PREFIX 2026-05-25: NBA Finals CLE. PM vol $18M."
+    "notes": "VERIFIED 2026-05-25: NBA Finals CLE. PM vol $18M."
   },
   {
     "polymarket_slug": "will-the-vegas-golden-knights-win-the-2026-nhl-stanley-cup",
-    "kalshi_ticker_prefix": "KXNHLCHAMP-26-VGK",
+    "kalshi_ticker_prefix": "KXNHL-26-VGK",
     "outcome_match": "direct",
-    "notes": "VERIFY-PREFIX 2026-05-25: Stanley Cup VGK. PM vol $2.4M."
+    "notes": "VERIFIED 2026-05-25: Stanley Cup VGK. PM vol $2.4M."
   },
   {
     "polymarket_slug": "will-the-carolina-hurricanes-win-the-2026-nhl-stanley-cup",
-    "kalshi_ticker_prefix": "KXNHLCHAMP-26-CAR",
+    "kalshi_ticker_prefix": "KXNHL-26-CAR",
     "outcome_match": "direct",
-    "notes": "VERIFY-PREFIX 2026-05-25: Stanley Cup CAR. PM vol $1.1M."
+    "notes": "VERIFIED 2026-05-25: Stanley Cup CAR. PM vol $1.1M."
   },
   {
     "polymarket_slug": "will-spain-win-the-2026-fifa-world-cup-963",
-    "kalshi_ticker_prefix": "KXWORLDCUP-26-ESP",
+    "kalshi_ticker_prefix": "KXMENWORLDCUP-26-ES",
     "outcome_match": "direct",
-    "notes": "VERIFY-PREFIX 2026-05-25: FIFA WC Spain. PM vol $24M."
+    "notes": "VERIFIED 2026-05-25: FIFA WC Spain (ES, not ESP). PM vol $24M."
   },
   {
     "polymarket_slug": "will-france-win-the-2026-fifa-world-cup-924",
-    "kalshi_ticker_prefix": "KXWORLDCUP-26-FRA",
+    "kalshi_ticker_prefix": "KXMENWORLDCUP-26-FR",
     "outcome_match": "direct",
-    "notes": "VERIFY-PREFIX 2026-05-25: FIFA WC France. PM vol $30M."
+    "notes": "VERIFIED 2026-05-25: FIFA WC France (FR, not FRA). PM vol $30M."
   },
   {
     "polymarket_slug": "will-brazil-win-the-2026-fifa-world-cup-183",
-    "kalshi_ticker_prefix": "KXWORLDCUP-26-BRA",
+    "kalshi_ticker_prefix": "KXMENWORLDCUP-26-BR",
     "outcome_match": "direct",
-    "notes": "VERIFY-PREFIX 2026-05-25: FIFA WC Brazil. PM vol $21M."
+    "notes": "VERIFIED 2026-05-25: FIFA WC Brazil (BR, not BRA). PM vol $21M."
   },
   {
     "polymarket_slug": "will-england-win-the-2026-fifa-world-cup-937",
-    "kalshi_ticker_prefix": "KXWORLDCUP-26-ENG",
+    "kalshi_ticker_prefix": "KXMENWORLDCUP-26-GB",
     "outcome_match": "direct",
-    "notes": "VERIFY-PREFIX 2026-05-25: FIFA WC England. PM vol $19M."
+    "notes": "VERIFIED 2026-05-25: FIFA WC England (GB, not ENG). PM vol $19M."
   }
 ]
