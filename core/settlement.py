@@ -213,9 +213,14 @@ class SettlementChecker:
                     f"[SETTLE{'-LIVE' if is_live else ''}] {ticker}: {trade['strategy']} "
                     f"{trade['direction']} @{trade['price']:.2f} → {result} | PnL: ${pnl:+.2f}"
                 )
-                # Telegram notification
-                if self._notifier:
-                    await self._notifier.notify_settlement(
+                # Telegram notification.
+                # 2026-05-25: LIVE only. Paper settlements were 543/day noise
+                # (87% of all Telegram volume) with zero actionability — paper
+                # results are visible on dashboard. LIVE settles now go
+                # through hourly digest buffer (notifier.buffer_settlement)
+                # instead of per-settle send.
+                if self._notifier and is_live:
+                    await self._notifier.buffer_settlement(
                         ticker=ticker, strategy=trade["strategy"],
                         direction=trade["direction"], price=trade["price"],
                         pnl=pnl, bankroll=self._order_manager.bankroll,

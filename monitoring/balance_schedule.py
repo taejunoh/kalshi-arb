@@ -68,6 +68,6 @@ def format_check_message(
         f"Free cash: ${balance:,.2f}\n"
         f"Open positions: {open_positions} (${total_kalshi - balance:,.2f})\n"
         f"Total Kalshi: ${total_kalshi:,.2f}\n"
-        f"Threshold: < ${threshold}\n"
+        f"Threshold: under ${threshold}\n"
         f"Verdict: {verdict}"
     )

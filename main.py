@@ -495,6 +495,9 @@ class Bot:
             asyncio.create_task(self._freshness_sample_loop()),
             asyncio.create_task(self._scan_observer_task()),
             asyncio.create_task(self._balance_schedule_task()),
+            # 2026-05-25: Hourly digest for LIVE settlements — replaces
+            # per-settle Telegram (was 543/day noise, mostly paper).
+            asyncio.create_task(self.notifier.settle_digest_loop()),
             # 2026-05-19: crypto_observer moved out of _strategy_loop. Sports
             # portfolio's degraded-odds-API path takes 30+ min per iter,
             # which choked observer scan rate to ~0 (12:13 UTC silent fail).
