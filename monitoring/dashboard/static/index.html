@@ -540,6 +540,55 @@
       display: none;
     }
 
+    /* ── Today's snapshot card ── */
+    .snapshot-card {
+      background: linear-gradient(135deg, rgba(96,165,250,0.06), rgba(244,114,182,0.04));
+      border: 1px solid var(--border, #2a2e36);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 4px;
+    }
+    .snapshot-row {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .snapshot-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 90px;
+    }
+    .snapshot-cell-wide { flex: 1; min-width: 200px; align-items: flex-start; }
+    .snapshot-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .snapshot-value {
+      font-size: 22px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .snapshot-value.pos { color: #4ade80; }
+    .snapshot-value.neg { color: #f87171; }
+    .snapshot-value.neutral { color: var(--text); }
+    .snapshot-sub {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-variant-numeric: tabular-nums;
+    }
+    .snapshot-bigwin {
+      font-size: 11px;
+      font-family: var(--font-mono, monospace);
+      color: var(--text-dim);
+      font-variant-numeric: tabular-nums;
+    }
+    .snapshot-bigwin.pos { color: #4ade80; }
+    .snapshot-bigwin.neg { color: #f87171; }
+
     /* ── Schedule view ── */
     .schedule-grid {
       display: grid;
@@ -761,10 +810,30 @@
 
     /* ── Responsive ── */
     @media (max-width: 640px) {
-      header { padding: 12px 16px; gap: 16px; }
+      header { padding: 12px 16px; gap: 16px; flex-wrap: wrap; }
       main   { padding: 16px; gap: 20px; }
-      .status-items { gap: 18px; }
+      .status-items { gap: 18px; flex-wrap: wrap; }
       .stat-value { font-size: 14px; }
+    }
+    /* ── Mobile / narrow-screen responsive ── */
+    @media (max-width: 768px) {
+      header { flex-direction: column; align-items: flex-start; }
+      .view-toggle { width: 100%; overflow-x: auto; }
+      .view-toggle button { flex: 1; min-width: 0; }
+      .schedule-grid { grid-template-columns: 1fr !important; }
+      .perf-grid { grid-template-columns: 1fr !important; }
+      .regime-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important; }
+      .table-scroll { overflow-x: auto; }
+      table { font-size: 11px; }
+      table th, table td { padding: 6px 8px; }
+      .snapshot-card { padding: 12px; }
+      .snapshot-card .snapshot-row { flex-direction: column; gap: 8px; }
+    }
+    @media (max-width: 480px) {
+      .view-toggle button { font-size: 11px; padding: 6px 8px; }
+      .stat-label { font-size: 9px; }
+      .stat-value { font-size: 13px; }
+      .section-title { font-size: 14px; }
     }
   </style>
 </head>
@@ -821,6 +890,86 @@
   </header>
 
   <main>
+
+    <!-- ── Today's snapshot card (always visible, hidden in schedule mode) ── -->
+    <section id="snapshot-section" class="snapshot-card">
+      <div class="snapshot-row">
+        <div class="snapshot-cell">
+          <span class="snapshot-label">Today</span>
+          <span class="snapshot-value" id="snap-today">—</span>
+          <span class="snapshot-sub" id="snap-today-sub">—</span>
+        </div>
+        <div class="snapshot-cell">
+          <span class="snapshot-label">7d</span>
+          <span class="snapshot-value" id="snap-7d">—</span>
+          <span class="snapshot-sub" id="snap-7d-sub">—</span>
+        </div>
+        <div class="snapshot-cell">
+          <span class="snapshot-label">30d</span>
+          <span class="snapshot-value" id="snap-30d">—</span>
+          <span class="snapshot-sub" id="snap-30d-sub">—</span>
+        </div>
+        <div class="snapshot-cell snapshot-cell-wide">
+          <span class="snapshot-label">Today's biggest</span>
+          <span class="snapshot-bigwin" id="snap-best">—</span>
+          <span class="snapshot-bigwin" id="snap-worst">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── CLV trend per strategy (leading indicator) ── -->
+    <section id="clv-trend-section">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div class="section-title" style="margin-bottom:0">CLV Trend — leading indicator (last 20 settled per strategy)</div>
+        <span id="clv-trend-meta" style="color:var(--text-dim);font-size:11px;">—</span>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll" style="max-height:340px;">
+          <table id="clv-trend-table">
+            <thead>
+              <tr>
+                <th style="width:200px;">Strategy</th>
+                <th style="width:60px;text-align:center;">LIVE?</th>
+                <th style="width:80px;text-align:right;">n (30d)</th>
+                <th style="width:90px;text-align:right;">avg CLV 30d</th>
+                <th style="width:90px;text-align:right;">avg CLV 7d</th>
+                <th>Sparkline (last 20)</th>
+              </tr>
+            </thead>
+            <tbody id="clv-trend-body">
+              <tr class="empty-row"><td colspan="6">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── PM-Kalshi Live Gap Monitor ── -->
+    <section id="pm-gap-section">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div class="section-title" style="margin-bottom:0">Polymarket vs Kalshi — Live Gap Monitor</div>
+        <span id="pm-gap-meta" style="color:var(--text-dim);font-size:11px;">—</span>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll" style="max-height:280px;">
+          <table id="pm-gap-table">
+            <thead>
+              <tr>
+                <th style="width:160px;">Kalshi Ticker</th>
+                <th style="width:80px;text-align:right;">PM yes</th>
+                <th style="width:80px;text-align:right;">Kalshi yes</th>
+                <th style="width:80px;text-align:right;">Gap</th>
+                <th style="width:60px;text-align:center;">Arb?</th>
+                <th>Polymarket slug</th>
+              </tr>
+            </thead>
+            <tbody id="pm-gap-body">
+              <tr class="empty-row"><td colspan="6">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
 
     <!-- ── Schedule (visible only when view-toggle == schedule) ── -->
     <section id="schedule-section" style="display:none;">
@@ -973,29 +1122,9 @@
 
     <!-- ── Crypto Phase 1 strategy gates ── -->
     <!-- ── Upcoming eval/promo gates (data/schedule.json) ── -->
-    <section id="eval-schedule-section">
-      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
-        <div class="section-title" style="margin-bottom:0">Upcoming eval &amp; promo gates</div>
-        <span id="eval-schedule-meta" style="color:var(--text-dim);font-size:11px;">Loading…</span>
-      </div>
-      <div class="table-wrap">
-        <div class="table-scroll" style="max-height:340px;">
-          <table id="eval-schedule-table">
-            <thead>
-              <tr>
-                <th style="width:110px;">Date (UTC)</th>
-                <th style="width:60px;">Type</th>
-                <th>Gate</th>
-                <th>Criteria</th>
-              </tr>
-            </thead>
-            <tbody id="eval-schedule-body">
-              <tr class="empty-row"><td colspan="4">Loading…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+    <!-- 2026-05-25: eval-schedule-section removed (was duplicate of new
+         Schedule tab). To see upcoming gates, click "Schedule" in the
+         view-toggle in the header. -->
 
     <section id="strategy-gates-section">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
@@ -1983,9 +2112,11 @@ async function refreshRegime() {
 }
 
 // ─────────────────────────────────────────────
-//  Upcoming eval/promo gates (data/schedule.json)
+//  Upcoming eval/promo gates — DEPRECATED 2026-05-25
+//  Replaced by the Schedule tab (renderSchedule()).
+//  Function kept as no-op to avoid breaking any external callers.
 // ─────────────────────────────────────────────
-async function refreshEvalSchedule() {
+async function refreshEvalSchedule_DEPRECATED() {
   try {
     const data = await apiFetch('/api/schedule');
     const tbody = document.getElementById('eval-schedule-body');
@@ -2314,11 +2445,14 @@ function applyViewMode(mode) {
 
   // Schedule mode hides everything else; show the schedule section.
   document.getElementById('schedule-section').style.display = isSchedule ? '' : 'none';
+  const snapshotSection = document.getElementById('snapshot-section');
+  if (snapshotSection) snapshotSection.style.display = isSchedule ? 'none' : '';
   const regimeSection = document.getElementById('regime-section');
   if (regimeSection) regimeSection.style.display = isSchedule ? 'none' : '';
   // Hide other large sections in schedule mode (defensive — most are toggled above).
   ['trades-section', 'orders-section', 'observer-signals-section', 'crypto-observer-section',
-   'strategy-monitor-section', 'gates-section', 'equity-section'].forEach(id => {
+   'strategy-monitor-section', 'gates-section', 'equity-section',
+   'pm-gap-section', 'strategy-gates-section', 'clv-trend-section'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isSchedule ? 'none' : '';
   });
@@ -2334,6 +2468,155 @@ function applyViewMode(mode) {
   else if (mode === 'paper') modeFilter.value = 'paper';
   else                       modeFilter.value = '';
   renderTrades();
+}
+
+// ─────────────────────────────────────────────
+//  CLV trend sparklines — leading indicator per strategy
+// ─────────────────────────────────────────────
+function sparklineSvg(values, width=120, height=24) {
+  if (!values || values.length < 2) {
+    return '<span style="color:var(--text-dim);font-size:10px;">—</span>';
+  }
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 0);
+  const range = (max - min) || 1;
+  const stepX = width / Math.max(1, values.length - 1);
+  const pts = values.map((v, i) => {
+    const x = i * stepX;
+    const y = height - ((v - min) / range) * (height - 2) - 1;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  // Color by direction of last value relative to first
+  const trend = values[values.length-1] - values[0];
+  const last = values[values.length-1];
+  const color = last > 0 ? '#4ade80' : last < 0 ? '#f87171' : '#a1a1aa';
+  // Zero line
+  const zeroY = height - ((0 - min) / range) * (height - 2) - 1;
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="vertical-align:middle;">
+    <line x1="0" y1="${zeroY.toFixed(1)}" x2="${width}" y2="${zeroY.toFixed(1)}" stroke="rgba(255,255,255,0.08)" stroke-width="1" stroke-dasharray="2,2"/>
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+}
+
+async function renderClvTrend() {
+  const body = document.getElementById('clv-trend-body');
+  const meta = document.getElementById('clv-trend-meta');
+  try {
+    const r = await fetch('/api/clv-trend');
+    const d = await r.json();
+    const rows = d.rows || [];
+    const liveCount = rows.filter(r => r.is_live).length;
+    const promoteCount = rows.filter(r => !r.is_live && r.n_30d >= 30 && r.avg_clv_30d >= 0.10).length;
+    const collapseCount = rows.filter(r => r.is_live && r.n_7d >= 8 && (r.avg_clv_7d != null) && r.avg_clv_7d <= -0.05).length;
+    meta.innerHTML = `${rows.length} strats · ${liveCount} LIVE` +
+      (promoteCount > 0 ? ` · <b style="color:#4ade80;">${promoteCount} promote-candidate 🟢</b>` : '') +
+      (collapseCount > 0 ? ` · <b style="color:#f87171;">${collapseCount} collapse-risk 🔴</b>` : '');
+    if (rows.length === 0) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="6">No CLV data yet.</td></tr>';
+      return;
+    }
+    const fmt = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(3);
+    const cls = v => v == null ? '' : v > 0.05 ? 'pos' : v < -0.05 ? 'neg' : '';
+    body.innerHTML = rows.map(r => {
+      const liveBadge = r.is_live
+        ? '<span class="badge badge-green" style="background:#4ade80;color:#0a0a0a;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;">LIVE</span>'
+        : '<span class="badge" style="background:rgba(255,255,255,0.06);color:var(--text-dim);padding:1px 6px;border-radius:3px;font-size:9px;">paper</span>';
+      const clv30Cls = cls(r.avg_clv_30d);
+      const clv7Cls = cls(r.avg_clv_7d);
+      const clv30Color = clv30Cls === 'pos' ? '#4ade80' : clv30Cls === 'neg' ? '#f87171' : 'var(--text)';
+      const clv7Color = clv7Cls === 'pos' ? '#4ade80' : clv7Cls === 'neg' ? '#f87171' : 'var(--text)';
+      return `
+        <tr>
+          <td style="font-size:12px;">${r.strategy}</td>
+          <td style="text-align:center;">${liveBadge}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;">${r.n_30d}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;color:${clv30Color};font-weight:600;">${fmt(r.avg_clv_30d)}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;color:${clv7Color};font-weight:600;">${fmt(r.avg_clv_7d)} ${r.n_7d ? `<span style="color:var(--text-dim);font-size:9px;">(n=${r.n_7d})</span>` : ''}</td>
+          <td>${sparklineSvg(r.series)}</td>
+        </tr>`;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = `<tr class="empty-row" style="color:var(--red);"><td colspan="6">${e.message}</td></tr>`;
+  }
+}
+
+// ─────────────────────────────────────────────
+//  PM-Kalshi Live Gap Monitor
+// ─────────────────────────────────────────────
+async function renderPmGap() {
+  const body = document.getElementById('pm-gap-body');
+  const meta = document.getElementById('pm-gap-meta');
+  try {
+    const r = await fetch('/api/polymarket/gaps');
+    const d = await r.json();
+    if (d.error) {
+      body.innerHTML = `<tr class="empty-row" style="color:var(--red);"><td colspan="6">${d.error}</td></tr>`;
+      return;
+    }
+    const rows = d.rows || [];
+    const fires = d.fires_count || 0;
+    meta.innerHTML = `${rows.length} mappings · ${fires > 0 ? `<b style="color:#4ade80;">${fires} arb 🔥</b>` : 'no arb opps'} · min ${(d.min_deviation*100).toFixed(1)}¢`;
+    if (rows.length === 0) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="6">No mappings.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(r => {
+      const gapPct = (r.gap * 100).toFixed(1);
+      const gapColor = Math.abs(r.gap) >= d.min_deviation ? '#4ade80'
+                     : Math.abs(r.gap) >= d.min_deviation/2 ? '#facc15' : 'var(--text-dim)';
+      const arbCell = r.fires_arb
+        ? '<span style="color:#4ade80;font-weight:600;">🔥 FIRE</span>'
+        : '<span style="color:var(--text-dim);">—</span>';
+      return `
+        <tr>
+          <td style="font-family:var(--font-mono,monospace);font-size:11px;">${r.ticker}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;">${r.pm_yes.toFixed(3)}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;">${r.kalshi_yes.toFixed(3)}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;color:${gapColor};font-weight:600;">${gapPct >= 0 ? '+' : ''}${gapPct}¢</td>
+          <td style="text-align:center;">${arbCell}</td>
+          <td style="color:var(--text-dim);font-size:10px;">${r.slug.substring(0, 50)}${r.slug.length > 50 ? '…' : ''}</td>
+        </tr>`;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = `<tr class="empty-row" style="color:var(--red);"><td colspan="6">${e.message}</td></tr>`;
+  }
+}
+
+// ─────────────────────────────────────────────
+//  Today's snapshot card
+// ─────────────────────────────────────────────
+async function renderSnapshot() {
+  try {
+    const r = await fetch('/api/snapshot');
+    const d = await r.json();
+    if (d.error) return;
+    const cls = v => v > 0 ? 'pos' : v < 0 ? 'neg' : 'neutral';
+    const fmt = v => (v >= 0 ? '+' : '') + '$' + v.toFixed(2);
+    const setCell = (id, win) => {
+      const el = document.getElementById(id);
+      el.textContent = fmt(win.net);
+      el.className = 'snapshot-value ' + cls(win.net);
+    };
+    setCell('snap-today', d.today);
+    setCell('snap-7d',    d.d7);
+    setCell('snap-30d',   d.d30);
+    const subFmt = (w) => w.n
+      ? `${w.n} trades${w.wr_pct != null ? ' · ' + w.wr_pct + '% WR' : ''}`
+      : 'no trades';
+    document.getElementById('snap-today-sub').textContent = subFmt(d.today);
+    document.getElementById('snap-7d-sub').textContent    = subFmt(d.d7);
+    document.getElementById('snap-30d-sub').textContent   = subFmt(d.d30);
+    const bestEl  = document.getElementById('snap-best');
+    const worstEl = document.getElementById('snap-worst');
+    if (d.best_today) {
+      bestEl.textContent  = '▲ ' + fmt(d.best_today.pnl)  + '  ' + d.best_today.strategy;
+      bestEl.className = 'snapshot-bigwin pos';
+    } else { bestEl.textContent = '▲ —'; bestEl.className = 'snapshot-bigwin'; }
+    if (d.worst_today) {
+      worstEl.textContent = '▼ ' + fmt(d.worst_today.pnl) + '  ' + d.worst_today.strategy;
+      worstEl.className = 'snapshot-bigwin neg';
+    } else { worstEl.textContent = '▼ —'; worstEl.className = 'snapshot-bigwin'; }
+  } catch (e) { /* silent */ }
 }
 
 // ─────────────────────────────────────────────
@@ -2504,7 +2787,10 @@ async function fullRefresh() {
     refreshRegime(),
     refreshObserverSignals(),
     refreshCryptoObserver(),
-    refreshEvalSchedule(),
+    // refreshEvalSchedule(): removed 2026-05-25 — replaced by Schedule tab (renderSchedule())
+    renderSnapshot(),
+    renderPmGap(),
+    renderClvTrend(),
     refreshStrategyGates(),
   ]);
 }
