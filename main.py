@@ -144,9 +144,13 @@ class Bot:
         self.sports_midshot_v32 = SportsMidshotV32Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
-        self.sports_underdog_v32 = SportsUnderdogV32Strategy(
-            self.config, self.order_manager, self.kalshi_client
-        )
+        # 2026-05-25 MOTHBALL: paper bleed -$638 / n=143 / 30d -14.4% ROI.
+        # LIVE-demoted 5/20 but paper kept firing 8× over 7d (-$184). Generates
+        # noise + signal pollution. v3.1 baseline retained as midshot_v31/longshot_v31
+        # (both +EV); v32 was edge-scaled-sizing A/B that failed.
+        # self.sports_underdog_v32 = SportsUnderdogV32Strategy(
+        #     self.config, self.order_manager, self.kalshi_client
+        # )
         # V3.3 variants — V3.1 + per-game stake cap (paper-only A/B).
         self.sports_longshot_v33 = SportsLongshotV33Strategy(
             self.config, self.order_manager, self.kalshi_client
@@ -560,9 +564,10 @@ class Bot:
             asyncio.create_task(
                 self.sports_underdog_v31.scan_loop(scan_interval_secs=1.0)
             ),
-            asyncio.create_task(
-                self.sports_underdog_v32.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-05-25 MOTHBALL: see __init__ for context
+            # asyncio.create_task(
+            #     self.sports_underdog_v32.scan_loop(scan_interval_secs=1.0)
+            # ),
             asyncio.create_task(
                 self.sports_playoff_underdog_v1.scan_loop(scan_interval_secs=1.0)
             ),
