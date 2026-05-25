@@ -665,6 +665,21 @@ class SportsTraderStrategy:
     # × sport combo shows no edge in either region. Sport codes match the
     # 3-letter ticker prefix: NBA, MLB, NHL.
     SPORT_BLOCKLIST: set[str] = frozenset()
+    # 2026-05-25 N4: Pinnacle-agreement gate (defensive filter). Skip fire if
+    # |pinnacle_implied - kalshi_entry_price| > MAX_PIN_GAP. Set to None to
+    # disable (default). Built after 60-day CLV-vs-gap audit showed center
+    # band (|gap| ≤ 0.02) is the +EV zone; gap >0.05 in either direction
+    # consistently bleeds (-EV pinnacle disagreement signals stale data,
+    # news catalysts, or live-game state Kalshi already priced in).
+    # Per-strategy 60d save projection at MAX_PIN_GAP=0.05:
+    #   underdog_v31: +$60 (extreme: n=20 -$60)
+    #   midshot_v31:  +$51 (extreme: n=16 -$51)
+    #   longshot_v31: +$52 (extreme: n=17 -$52)
+    # Skip on v4_edge: it INTENTIONALLY targets gap>=0.03 (MIN_EDGE).
+    # See [[expansion_arc_2026-05-25]] data analysis.
+    MAX_PIN_GAP: Optional[float] = None
+    MAX_PIN_AGE_S: int = 600
+
     # Defense-in-depth for individual-sport series (KXATPMATCH / KXWTAMATCH /
     # KXUFCFIGHT). Ticker shape is fundamentally different: yes_sub_title
     # carries a player/fighter name, not a team city. Team-sport strategies
@@ -1799,6 +1814,25 @@ class SportsTraderStrategy:
                                        ticker=ticker)
                 if not signal:
                     continue
+
+                # 2026-05-25 N4 Pinnacle-agreement gate.
+                # If MAX_PIN_GAP set + fresh Pinnacle data exists, skip when
+                # entry diverges too far from Pinnacle fair. Center-band
+                # (|gap|<=0.02) is empirically the +EV zone; >0.05 bleeds.
+                if self.MAX_PIN_GAP is not None:
+                    pin = self._last_pinnacle_yes_prob
+                    pin_age = self._last_pinnacle_age_s
+                    if pin is not None and pin_age is not None and pin_age <= self.MAX_PIN_AGE_S:
+                        side = signal.get("side", "")
+                        entry = signal.get("price", 0.0)
+                        pin_fair = pin if side == "yes" else 1.0 - pin
+                        gap = abs(pin_fair - entry)
+                        if gap > self.MAX_PIN_GAP:
+                            logger.debug(
+                                f"[{self.STRATEGY_NAME}] {ticker}: pin_gap "
+                                f"{gap:.3f} > MAX_PIN_GAP {self.MAX_PIN_GAP:.3f}, skip"
+                            )
+                            continue
 
                 # Cell-matrix gate (ALLOWED_CELLS). When set, subsumes
                 # PRE_GAME_ONLY and SPORT_BLOCKLIST — only (sport, phase)
