@@ -13,6 +13,7 @@ import httpx
 logger = logging.getLogger("polymarket_scraper")
 
 GAMMA_API_BASE = "https://gamma-api.polymarket.com/markets"
+CLOB_API_BASE = "https://clob.polymarket.com"
 
 
 def _decode_field(value):
@@ -66,6 +67,14 @@ def parse_market_response(raw: dict) -> Optional[dict]:
         except (TypeError, ValueError):
             return None
 
+    # Extract clobTokenIds for optional CLOB-book depth fetch.
+    # Field is a JSON-encoded string list of 2 tokens: [yes_token, no_token].
+    clob_tokens = _decode_field(raw.get("clobTokenIds")) or []
+    yes_token = no_token = None
+    if isinstance(clob_tokens, list) and len(clob_tokens) >= 2:
+        yes_token = str(clob_tokens[0]) if clob_tokens[0] is not None else None
+        no_token = str(clob_tokens[1]) if clob_tokens[1] is not None else None
+
     return {
         "slug": slug,
         "yes_price": yes_price,
@@ -75,7 +84,51 @@ def parse_market_response(raw: dict) -> Optional[dict]:
         "best_ask": _safe_float(raw.get("bestAsk")),
         "spread": _safe_float(raw.get("spread")),
         "liquidity_num": _safe_float(raw.get("liquidityNum")),
+        "yes_token": yes_token,
+        "no_token": no_token,
     }
+
+
+def fetch_clob_book_top(token_id: str, timeout: float = 5.0) -> Optional[dict]:
+    """Fetch top-of-book bid+ask price+size for a CLOB token.
+
+    Returns {best_bid, best_bid_size, best_ask, best_ask_size} or None.
+    Heavier than gamma-api but only one needed per token (2 per market).
+    """
+    if not token_id:
+        return None
+    try:
+        r = httpx.get(
+            f"{CLOB_API_BASE}/book",
+            params={"token_id": token_id},
+            timeout=timeout,
+            headers={"User-Agent": "kalshi-arb/1.0"},
+        )
+    except Exception as e:
+        logger.warning(f"CLOB book fetch failed for {token_id[:20]}…: {e}")
+        return None
+    if r.status_code != 200:
+        return None
+    try:
+        d = r.json()
+        bids = d.get("bids") or []
+        asks = d.get("asks") or []
+        # CLOB orders bids descending by price (best=highest); asks ascending (best=lowest)
+        # Note: actually the API returns bids worst-first (lowest price first); ASKS best-first.
+        # We pick the FIRST best after sorting.
+        bb_price = max((float(b["price"]) for b in bids if b.get("price")), default=None)
+        bb_size  = next((float(b["size"]) for b in bids if b.get("price") and float(b["price"]) == bb_price), None) if bb_price is not None else None
+        ba_price = min((float(a["price"]) for a in asks if a.get("price")), default=None)
+        ba_size  = next((float(a["size"]) for a in asks if a.get("price") and float(a["price"]) == ba_price), None) if ba_price is not None else None
+        return {
+            "best_bid_clob": bb_price,
+            "best_bid_size_clob": bb_size,
+            "best_ask_clob": ba_price,
+            "best_ask_size_clob": ba_size,
+        }
+    except (KeyError, ValueError, TypeError) as e:
+        logger.warning(f"CLOB book parse failed for {token_id[:20]}…: {e}")
+        return None
 
 
 class PolymarketScraper:

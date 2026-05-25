@@ -226,6 +226,11 @@ class Database:
                 "ALTER TABLE polymarket_quotes ADD COLUMN best_ask REAL",
                 "ALTER TABLE polymarket_quotes ADD COLUMN spread REAL",
                 "ALTER TABLE polymarket_quotes ADD COLUMN liquidity_num REAL",
+                # 2026-05-25 CLOB depth (yes side / no side).
+                "ALTER TABLE polymarket_quotes ADD COLUMN yes_bid_size REAL",
+                "ALTER TABLE polymarket_quotes ADD COLUMN yes_ask_size REAL",
+                "ALTER TABLE polymarket_quotes ADD COLUMN no_bid_size REAL",
+                "ALTER TABLE polymarket_quotes ADD COLUMN no_ask_size REAL",
             ):
                 try:
                     await conn.execute(col_sql)
@@ -774,14 +779,19 @@ class Database:
         best_ask: float | None = None,
         spread: float | None = None,
         liquidity_num: float | None = None,
+        yes_bid_size: float | None = None,
+        yes_ask_size: float | None = None,
+        no_bid_size: float | None = None,
+        no_ask_size: float | None = None,
     ) -> int:
         ts = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             cur = await conn.execute(
                 "INSERT INTO polymarket_quotes "
                 "(slug, yes_price, no_price, volume_24h, fetched_at, "
-                " best_bid, best_ask, spread, liquidity_num) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                " best_bid, best_ask, spread, liquidity_num, "
+                " yes_bid_size, yes_ask_size, no_bid_size, no_ask_size) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(slug) DO UPDATE SET "
                 "yes_price = excluded.yes_price, "
                 "no_price = excluded.no_price, "
@@ -790,9 +800,14 @@ class Database:
                 "best_bid = excluded.best_bid, "
                 "best_ask = excluded.best_ask, "
                 "spread = excluded.spread, "
-                "liquidity_num = excluded.liquidity_num",
+                "liquidity_num = excluded.liquidity_num, "
+                "yes_bid_size = excluded.yes_bid_size, "
+                "yes_ask_size = excluded.yes_ask_size, "
+                "no_bid_size  = excluded.no_bid_size, "
+                "no_ask_size  = excluded.no_ask_size",
                 (slug, yes_price, no_price, volume_24h, ts,
-                 best_bid, best_ask, spread, liquidity_num),
+                 best_bid, best_ask, spread, liquidity_num,
+                 yes_bid_size, yes_ask_size, no_bid_size, no_ask_size),
             )
             await conn.commit()
             return cur.lastrowid

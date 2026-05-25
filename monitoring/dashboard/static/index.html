@@ -540,6 +540,37 @@
       display: none;
     }
 
+    /* ── Health dot indicators ── */
+    .health-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+    .health-dot-green { background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,0.6); }
+    .health-dot-amber { background: #facc15; box-shadow: 0 0 6px rgba(250,204,21,0.5); }
+    .health-dot-red   { background: #f87171; box-shadow: 0 0 6px rgba(248,113,113,0.6); }
+    .health-dot-gray  { background: #525252; }
+
+    /* ── Refresh indicator ── */
+    .refresh-indicator {
+      font-size: 10px;
+      font-family: var(--font-mono, monospace);
+      color: var(--text-dim);
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.03);
+      letter-spacing: 0.3px;
+    }
+    @keyframes refresh-pulse {
+      0%   { background: rgba(74, 222, 128, 0.20); color: #4ade80; }
+      100% { background: rgba(255,255,255,0.03); color: var(--text-dim); }
+    }
+    .refresh-pulse { animation: refresh-pulse 1.2s ease-out; }
+
     /* ── Today's snapshot card ── */
     .snapshot-card {
       background: linear-gradient(135deg, rgba(96,165,250,0.06), rgba(244,114,182,0.04));
@@ -561,6 +592,7 @@
       min-width: 90px;
     }
     .snapshot-cell-wide { flex: 1; min-width: 200px; align-items: flex-start; }
+    .snapshot-cell-equity { flex: 1.4; min-width: 200px; align-items: flex-start; }
     .snapshot-label {
       font-size: 10px;
       color: var(--text-dim);
@@ -849,6 +881,7 @@
       <button type="button" data-view="paper">Paper</button>
       <button type="button" data-view="schedule">Schedule</button>
     </div>
+    <span id="refresh-indicator" class="refresh-indicator" title="Auto-refresh status">auto —</span>
     <div class="status-items">
       <div class="stat live-only">
         <span class="stat-label">Live Balance</span>
@@ -909,10 +942,17 @@
           <span class="snapshot-value" id="snap-30d">—</span>
           <span class="snapshot-sub" id="snap-30d-sub">—</span>
         </div>
-        <div class="snapshot-cell snapshot-cell-wide">
+        <div class="snapshot-cell">
           <span class="snapshot-label">Today's biggest</span>
           <span class="snapshot-bigwin" id="snap-best">—</span>
           <span class="snapshot-bigwin" id="snap-worst">—</span>
+        </div>
+        <div class="snapshot-cell snapshot-cell-equity">
+          <span class="snapshot-label">14d equity curve (LIVE)</span>
+          <div id="snap-equity-sparkline" style="margin-top:4px;height:38px;">
+            <svg width="180" height="38" viewBox="0 0 180 38"><rect width="180" height="38" fill="transparent"/></svg>
+          </div>
+          <span class="snapshot-sub" id="snap-equity-meta">—</span>
         </div>
       </div>
     </section>
@@ -956,15 +996,16 @@
             <thead>
               <tr>
                 <th style="width:160px;">Kalshi Ticker</th>
-                <th style="width:80px;text-align:right;">PM yes</th>
-                <th style="width:80px;text-align:right;">Kalshi yes</th>
-                <th style="width:80px;text-align:right;">Gap</th>
-                <th style="width:60px;text-align:center;">Arb?</th>
-                <th>Polymarket slug</th>
+                <th style="width:70px;text-align:right;">PM yes</th>
+                <th style="width:70px;text-align:right;">K yes</th>
+                <th style="width:70px;text-align:right;">Gap</th>
+                <th style="width:55px;text-align:center;">Arb?</th>
+                <th style="width:120px;text-align:right;" title="Polymarket top-of-book yes_bid_size / yes_ask_size">PM depth (Y bid/ask)</th>
+                <th>Slug</th>
               </tr>
             </thead>
             <tbody id="pm-gap-body">
-              <tr class="empty-row"><td colspan="6">Loading…</td></tr>
+              <tr class="empty-row"><td colspan="7">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -1480,6 +1521,33 @@ let perfCache = {};
 let stratStatusCache = {};
 const perfMode = 'paper';
 
+// Strategy health classification — produces a ● dot indicator
+// next to the strategy name. Rules:
+//   green:  active LIVE/paper + recent trades + +EV ROI
+//   amber:  active + flat (-3% < ROI < +3%) OR small sample
+//   red:    LIVE + clearly -EV (ROI <= -5% with n >= 20)
+//   gray:   disabled / demoted / no data
+function healthDot(strat, modeKey, d, status) {
+  if (!status || status.active === false || status.demoted) {
+    return '<span class="health-dot health-dot-gray" title="disabled or demoted"></span>';
+  }
+  const n = (d.wins || 0) + (d.losses || 0);
+  const size = d.total_size || 0;
+  const pnl = parseFloat(d.total_pnl);
+  if (!n || size === 0) {
+    return '<span class="health-dot health-dot-gray" title="no trades yet"></span>';
+  }
+  const roi = (pnl / size) * 100;
+  let cls = 'health-dot-amber';
+  let tip = `ROI ${roi.toFixed(1)}% / n=${n}`;
+  if (n >= 20 && roi <= -5) { cls = 'health-dot-red';   tip = `🔴 ${tip} — structural -EV`; }
+  else if (roi >= 3)         { cls = 'health-dot-green'; tip = `🟢 ${tip}`; }
+  else if (n < 20)           { cls = 'health-dot-amber'; tip = `🟡 ${tip} — small sample`; }
+  else if (roi >= -3)        { cls = 'health-dot-amber'; tip = `🟡 ${tip} — flat/marginal`; }
+  else                       { cls = 'health-dot-amber'; tip = `🟡 ${tip} — watch`; }
+  return `<span class="health-dot ${cls}" title="${tip}"></span>`;
+}
+
 function renderPerfCardsByMode(mode, gridId, opts = {}) {
   // opts: { archivedOnly: bool, demotedOnly: bool }
   const archivedOnly = !!opts.archivedOnly;
@@ -1687,7 +1755,7 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
             ${sportsBadge}${versionBadge}${playoffOnlyBadge}
             ${statusLabel ? `<span class="status-badge ${statusCls}">${statusLabel}</span>` : ''}${isDemoted ? `<span class="status-badge demoted" title="${(status.demotion_detail || 'Demoted — no new live entries').replace(/"/g, '&quot;')}">DEMOTED</span>` : ''}${idleBadge}${infoIcon}
           </div>
-          <div class="strategy-name">${displayName}</div>
+          <div class="strategy-name">${healthDot(strat, modeKey, d, status)}${displayName}</div>
         </div>
         <div class="perf-row">
           <span class="perf-key">Trades</span>
@@ -2567,6 +2635,10 @@ async function renderPmGap() {
       const arbCell = r.fires_arb
         ? '<span style="color:#4ade80;font-weight:600;">🔥 FIRE</span>'
         : '<span style="color:var(--text-dim);">—</span>';
+      const fmtSize = v => v == null ? '—' : v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0);
+      const depthCell = (r.pm_yes_bid_size != null || r.pm_yes_ask_size != null)
+        ? `${fmtSize(r.pm_yes_bid_size)} / ${fmtSize(r.pm_yes_ask_size)}`
+        : '<span style="color:var(--text-dim);">—</span>';
       return `
         <tr>
           <td style="font-family:var(--font-mono,monospace);font-size:11px;">${r.ticker}</td>
@@ -2574,7 +2646,8 @@ async function renderPmGap() {
           <td style="text-align:right;font-variant-numeric:tabular-nums;">${r.kalshi_yes.toFixed(3)}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;color:${gapColor};font-weight:600;">${gapPct >= 0 ? '+' : ''}${gapPct}¢</td>
           <td style="text-align:center;">${arbCell}</td>
-          <td style="color:var(--text-dim);font-size:10px;">${r.slug.substring(0, 50)}${r.slug.length > 50 ? '…' : ''}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;color:var(--text-dim);">${depthCell}</td>
+          <td style="color:var(--text-dim);font-size:10px;">${r.slug.substring(0, 45)}${r.slug.length > 45 ? '…' : ''}</td>
         </tr>`;
     }).join('');
   } catch (e) {
@@ -2616,6 +2689,22 @@ async function renderSnapshot() {
       worstEl.textContent = '▼ ' + fmt(d.worst_today.pnl) + '  ' + d.worst_today.strategy;
       worstEl.className = 'snapshot-bigwin neg';
     } else { worstEl.textContent = '▼ —'; worstEl.className = 'snapshot-bigwin'; }
+    // Equity sparkline (14-day cumulative)
+    const equityEl = document.getElementById('snap-equity-sparkline');
+    const metaEl   = document.getElementById('snap-equity-meta');
+    const eq14 = d.equity_14d || [];
+    if (eq14.length >= 2) {
+      const cumSeries = eq14.map(r => r.cum_pnl);
+      equityEl.innerHTML = sparklineSvg(cumSeries, 180, 38);
+      const last = cumSeries[cumSeries.length - 1];
+      const peak = Math.max(...cumSeries);
+      const trough = Math.min(...cumSeries);
+      metaEl.textContent =
+        `${eq14[0].day} → ${eq14[eq14.length-1].day} · peak ${fmt(peak)} · trough ${fmt(trough)} · now ${fmt(last)}`;
+    } else {
+      equityEl.innerHTML = '<span style="color:var(--text-dim);font-size:11px;">no data yet</span>';
+      metaEl.textContent = 'awaiting trades';
+    }
   } catch (e) { /* silent */ }
 }
 
@@ -2789,18 +2878,42 @@ async function fullRefresh() {
     refreshCryptoObserver(),
     // refreshEvalSchedule(): removed 2026-05-25 — replaced by Schedule tab (renderSchedule())
     renderSnapshot(),
-    renderPmGap(),
-    renderClvTrend(),
     refreshStrategyGates(),
   ]);
+  markRefresh('full');
+}
+
+// Heavy endpoints (Kalshi API per row) — refresh slower to avoid rate limits.
+async function slowRefresh() {
+  await Promise.allSettled([
+    renderPmGap(),      // 10 Kalshi /markets calls per fire
+    renderClvTrend(),   // DB-heavy CLV join
+  ]);
+  markRefresh('slow');
+}
+
+function markRefresh(kind) {
+  const el = document.getElementById('refresh-indicator');
+  if (!el) return;
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,'0');
+  const mm = String(now.getMinutes()).padStart(2,'0');
+  const ss = String(now.getSeconds()).padStart(2,'0');
+  el.textContent = `auto ${kind} ${hh}:${mm}:${ss}`;
+  // Pulse animation
+  el.classList.remove('refresh-pulse');
+  void el.offsetWidth; // restart animation
+  el.classList.add('refresh-pulse');
 }
 
 // Initial load
 fullRefresh();
+slowRefresh();
 
-// Status auto-refreshes every 5 s; full data every 15 s
+// Fast: status every 5s; full data every 15s; slow (PM gap, CLV) every 60s
 setInterval(refreshStatus, 5_000);
 setInterval(fullRefresh,   15_000);
+setInterval(slowRefresh,   60_000);
 </script>
 </body>
 </html>
