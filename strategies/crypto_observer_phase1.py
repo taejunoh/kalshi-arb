@@ -828,10 +828,20 @@ class AtmHoldV1Strategy(_Phase1Base):
         self.SIGNAL_FRESHNESS_S = config.ATM_HOLD_SIGNAL_FRESHNESS_S
         self.SIZE_USDC = config.ATM_HOLD_SIZE_USDC
 
+    # 2026-05-25: 0.41-0.50 dead-zone. 30d audit n=17 WR 41% net -$65 / -16.7%
+    # ROI in this band (vs 0.31-0.40 +$72 n=5, 0.51-0.60 +$17 n=14, 0.61-0.70
+    # +$24 n=4). Excluding this band projected 30d net +$112 vs actual +$47.
+    # The 0.41-0.50 entries are right at coin-flip uncertainty for the
+    # "ATM holds" thesis; bands outside this remain +EV. Re-eval ~6/15.
+    PRICE_DEAD_ZONE = (0.40, 0.50)
+
     def _select_side_and_price(self, sig, market):
         if sig["predicted_outcome"] != "yes":
             return None
         ya = _safe_float(market.get("yes_ask_dollars"))
         if ya is None or ya <= 0 or ya >= 1:
+            return None
+        lo, hi = self.PRICE_DEAD_ZONE
+        if lo < ya <= hi:
             return None
         return ("yes", ya)
