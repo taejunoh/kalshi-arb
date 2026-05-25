@@ -8,6 +8,7 @@ __pycache__/
 data/*
 !data/polymarket_kalshi_mapping.json
 !data/schedule.json
+!data/mlb_stadiums.json
 logs/
 .pytest_cache/
 .claude/
