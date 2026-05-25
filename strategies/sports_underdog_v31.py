@@ -43,7 +43,12 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     # 0.40c sits at payoff=2.0 fee-boundary — fee-adjusted edge ≈ 0, so
     # base evaluate's payoff>=2.0 gate accepts trades with ~no real edge.
     # Counterfactual: full v31 underdog ROI +3.3% → +14.4% with this cap.
-    MAX_ENTRY_PRICE = 0.39
+    # 2026-05-25: 0.39 → 0.37. Fine-grained 30d audit shows 0.38-0.39 became
+    # the new cliff: n=98, WR 36%, net -$453, ROI -23%. The 5/03 +11% n=43
+    # at 0.39 has fully reverted. 0.30-0.37 retained as core (n=69, +$284
+    # 30d). Cuts 58% of fires but flips strategy from -$169/30d to +$284/30d
+    # projected. Re-eval ~6/15 with bigger post-fix sample.
+    MAX_ENTRY_PRICE = 0.37
     # Pre-game-only (2026-04-21). Phase split shows live-game v31 entries
     # systematically lose (-13% ROI live, paper+live n=176) while pre-game
     # wins (+20% ROI, n=116 — strongest sample among v31 trio).
