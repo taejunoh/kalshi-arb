@@ -50,6 +50,7 @@ from strategies.sports_tennis_bid_imbalance_v1 import SportsTennisBidImbalanceV1
 from strategies.sports_ufc_chalk_fade_v1 import SportsUfcChalkFadeV1Strategy
 from strategies.sports_tennis_surface_skew_v1 import SportsTennisSurfaceSkewV1Strategy
 from strategies.sports_tennis_underdog_v1 import SportsTennisUnderdogV1Strategy
+from strategies.sports_tennis_live_fade_v1 import SportsTennisLiveFadeV1Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
@@ -293,6 +294,12 @@ class Bot:
         # 2026-05-19 observer backtest (n=55 settled, ya[0.25,0.35] WR 37.5%
         # vs implied ~30%). Pattern mirrors team-sport v31 underdog edge.
         self.sports_tennis_underdog_v1 = SportsTennisUnderdogV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # 2026-05-25 — tennis live-phase fade-Pinnacle. 14d grid sim 100% WR
+        # on n=209 trades. Paper-only at launch — measure forward WR vs sim
+        # WR (sim has selection bias toward near-decided states).
+        self.sports_tennis_live_fade_v1 = SportsTennisLiveFadeV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
@@ -546,6 +553,9 @@ class Bot:
             ),
             asyncio.create_task(
                 self.sports_tennis_underdog_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_tennis_live_fade_v1.scan_loop(scan_interval_secs=1.0)
             ),
             # 2026-05-19 (eve): P1 — 19 remaining sports strategies moved out
             # of _strategy_loop's serial queue to dodge upstream tail latency.
