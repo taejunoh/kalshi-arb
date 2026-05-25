@@ -218,6 +218,19 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_pmq_slug_ts "
                 "ON polymarket_quotes(slug, fetched_at)"
             )
+            # 2026-05-25: depth fields (best_bid/best_ask/spread/liquidity_num).
+            # ALTER TABLE used since CREATE IF NOT EXISTS doesn't add columns
+            # to pre-existing tables. Idempotent via try/except.
+            for col_sql in (
+                "ALTER TABLE polymarket_quotes ADD COLUMN best_bid REAL",
+                "ALTER TABLE polymarket_quotes ADD COLUMN best_ask REAL",
+                "ALTER TABLE polymarket_quotes ADD COLUMN spread REAL",
+                "ALTER TABLE polymarket_quotes ADD COLUMN liquidity_num REAL",
+            ):
+                try:
+                    await conn.execute(col_sql)
+                except aiosqlite.OperationalError:
+                    pass  # column already exists
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS cross_venue_signals (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -757,19 +770,29 @@ class Database:
     async def record_polymarket_quote(
         self, slug: str, yes_price: float, no_price: float,
         volume_24h: float | None = None,
+        best_bid: float | None = None,
+        best_ask: float | None = None,
+        spread: float | None = None,
+        liquidity_num: float | None = None,
     ) -> int:
         ts = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             cur = await conn.execute(
                 "INSERT INTO polymarket_quotes "
-                "(slug, yes_price, no_price, volume_24h, fetched_at) "
-                "VALUES (?, ?, ?, ?, ?) "
+                "(slug, yes_price, no_price, volume_24h, fetched_at, "
+                " best_bid, best_ask, spread, liquidity_num) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(slug) DO UPDATE SET "
                 "yes_price = excluded.yes_price, "
                 "no_price = excluded.no_price, "
                 "volume_24h = excluded.volume_24h, "
-                "fetched_at = excluded.fetched_at",
-                (slug, yes_price, no_price, volume_24h, ts),
+                "fetched_at = excluded.fetched_at, "
+                "best_bid = excluded.best_bid, "
+                "best_ask = excluded.best_ask, "
+                "spread = excluded.spread, "
+                "liquidity_num = excluded.liquidity_num",
+                (slug, yes_price, no_price, volume_24h, ts,
+                 best_bid, best_ask, spread, liquidity_num),
             )
             await conn.commit()
             return cur.lastrowid

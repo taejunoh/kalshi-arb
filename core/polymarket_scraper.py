@@ -28,10 +28,15 @@ def _decode_field(value):
 
 
 def parse_market_response(raw: dict) -> Optional[dict]:
-    """Normalize gamma-api market dict → {slug, yes_price, no_price, volume_24h}.
+    """Normalize gamma-api market dict → {slug, yes_price, no_price,
+    volume_24h, best_bid, best_ask, spread, liquidity_num}.
 
     Returns None if market is closed, inactive, multi-outcome, or has
     malformed price data.
+
+    2026-05-25: extended with order-book-derived fields (best_bid/best_ask
+    from gamma-api). yes_price/no_price are still the "last trade" prices
+    (outcomePrices); best_bid/best_ask are the order-book top.
     """
     if not raw.get("active") or raw.get("closed"):
         return None
@@ -54,11 +59,22 @@ def parse_market_response(raw: dict) -> Optional[dict]:
     slug = raw.get("slug")
     if not slug:
         return None
+
+    def _safe_float(v):
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
     return {
         "slug": slug,
         "yes_price": yes_price,
         "no_price": no_price,
         "volume_24h": volume_24h,
+        "best_bid": _safe_float(raw.get("bestBid")),
+        "best_ask": _safe_float(raw.get("bestAsk")),
+        "spread": _safe_float(raw.get("spread")),
+        "liquidity_num": _safe_float(raw.get("liquidityNum")),
     }
 
 
