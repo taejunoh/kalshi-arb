@@ -50,7 +50,14 @@ class SportsSoccerUnderdogV1Strategy(SportsUnderdogV31Strategy):
     # any further fire on season-end games. BUN/LAL/MLS retained (LIVE
     # +$192/+$80/+$80, paper consistent). Re-eval at start of 2026-27 EPL
     # season (~Aug 2026).
-    SPORT_BLOCKLIST = frozenset({"NBA", "WNBA", "MLB", "NHL", "NPB", "KBO", "EPL"})
+    # 2026-05-25: ATP/WTA/UFC added — individual-sport h2h leak surfaced when
+    # 5/19 trade audit showed 3× ATP tennis fires (KXATPMATCH-26MAY18CUEDEL,
+    # 26MAY19GASKHA, 26MAY18BROCAD) all -$36 wipes despite "soccer-only" name.
+    # Parent v31 doesn't block individual sports; deny-list intent was league
+    # leagues only.
+    SPORT_BLOCKLIST = frozenset({
+        "NBA", "WNBA", "MLB", "NHL", "NPB", "KBO", "EPL", "ATP", "WTA", "UFC"
+    })
 
     # Override parent's OBSERVATION_ONLY_SPORTS (which contains soccer leagues)
     # so soccer tickers actually reach evaluate(). v37 is the explicit live
