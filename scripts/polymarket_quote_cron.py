@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from core.config import Config
 from core.database import Database
 from core.polymarket_mapping import PolymarketKalshiMapping
-from core.polymarket_scraper import PolymarketScraper
+from core.polymarket_scraper import PolymarketScraper, fetch_clob_book_top
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s | %(message)s")
@@ -44,6 +44,22 @@ async def refresh(db: Database, scraper: PolymarketScraper,
         chunk = slugs[i:i + BATCH]
         out = scraper.fetch_batch(chunk)
         for slug, parsed in out.items():
+            # Sports mappings get CLOB book-top depth (extra 2 HTTP calls per slug).
+            # Macro/FOMC skip — gamma-api fields are sufficient for those.
+            yes_bs = yes_as = no_bs = no_as = None
+            if any(s in slug.lower() for s in ("nba-finals", "stanley-cup", "world-cup", "nhl", "fifa")):
+                yt = parsed.get("yes_token")
+                nt = parsed.get("no_token")
+                if yt:
+                    yb = fetch_clob_book_top(yt)
+                    if yb:
+                        yes_bs = yb.get("best_bid_size_clob")
+                        yes_as = yb.get("best_ask_size_clob")
+                if nt:
+                    nb = fetch_clob_book_top(nt)
+                    if nb:
+                        no_bs = nb.get("best_bid_size_clob")
+                        no_as = nb.get("best_ask_size_clob")
             await db.record_polymarket_quote(
                 slug=slug,
                 yes_price=parsed["yes_price"],
@@ -53,6 +69,10 @@ async def refresh(db: Database, scraper: PolymarketScraper,
                 best_ask=parsed.get("best_ask"),
                 spread=parsed.get("spread"),
                 liquidity_num=parsed.get("liquidity_num"),
+                yes_bid_size=yes_bs,
+                yes_ask_size=yes_as,
+                no_bid_size=no_bs,
+                no_ask_size=no_as,
             )
             updated += 1
         missing = set(chunk) - set(out.keys())

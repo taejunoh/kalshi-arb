@@ -1848,13 +1848,17 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         for m in sports_maps:
             slug = m["polymarket_slug"]
             cur.execute(
-                "SELECT yes_price, best_bid, best_ask, fetched_at FROM polymarket_quotes WHERE slug = ?",
+                "SELECT yes_price, best_bid, best_ask, fetched_at, "
+                " yes_bid_size, yes_ask_size, no_bid_size, no_ask_size "
+                "FROM polymarket_quotes WHERE slug = ?",
                 (slug,),
             )
             row = cur.fetchone()
             if row:
                 pm_data[slug] = {"yes_price": row[0], "best_bid": row[1],
-                                 "best_ask": row[2], "fetched_at": row[3]}
+                                 "best_ask": row[2], "fetched_at": row[3],
+                                 "yes_bid_size": row[4], "yes_ask_size": row[5],
+                                 "no_bid_size": row[6], "no_ask_size": row[7]}
         conn.close()
 
         # Fetch live Kalshi prices via shared client (passed to create_app)
@@ -1890,6 +1894,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "gap": gap,
                 "fires_arb": abs(gap) >= min_dev,
                 "pm_fetched_at": pm.get("fetched_at"),
+                "pm_yes_bid_size": pm.get("yes_bid_size"),
+                "pm_yes_ask_size": pm.get("yes_ask_size"),
+                "pm_no_bid_size": pm.get("no_bid_size"),
+                "pm_no_ask_size": pm.get("no_ask_size"),
             })
 
         rows.sort(key=lambda r: abs(r["gap"]), reverse=True)
@@ -1969,6 +1977,23 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
 
         d7_data = _window(7)
         d30_data = _window(30)
+
+        # 14-day daily cumulative equity curve (LIVE strategies only).
+        cur.execute(
+            f"""SELECT substr(timestamp,1,10) day, SUM(pnl) daily_pnl
+                FROM trades
+                WHERE status IN ('settled','filled')
+                  AND strategy IN ({placeholders})
+                  AND timestamp >= datetime('now','-14 days')
+                GROUP BY day ORDER BY day""",
+            params,
+        )
+        equity_daily = []
+        cum = 0.0
+        for day, daily_pnl in cur.fetchall():
+            cum += float(daily_pnl or 0)
+            equity_daily.append({"day": day, "pnl": round(float(daily_pnl or 0), 2),
+                                  "cum_pnl": round(cum, 2)})
         conn.close()
 
         return {
@@ -1979,6 +2004,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "d30": d30_data,
             "best_today": {"strategy": best[0], "pnl": float(best[1])} if best else None,
             "worst_today": {"strategy": worst[0], "pnl": float(worst[1])} if worst else None,
+            "equity_14d": equity_daily,
         }
 
     def _classify_schedule_gate(gate: dict) -> str:
