@@ -535,6 +535,112 @@
     body[data-view-mode="paper"] .stat.live-only {
       display: none;
     }
+    /* Schedule mode hides ALL live/paper stats from header */
+    body[data-view-mode="schedule"] .status-items .stat {
+      display: none;
+    }
+
+    /* ── Schedule view ── */
+    .schedule-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .schedule-grid:has(#schedule-other-col[style*="block"]) {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+    .schedule-col {
+      background: var(--card-bg, #1a1d24);
+      border: 1px solid var(--border, #2a2e36);
+      border-radius: 6px;
+      padding: 12px;
+      min-height: 200px;
+    }
+    .schedule-col-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border, #2a2e36);
+    }
+    .schedule-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+    .schedule-tag-sports { background: rgba(244, 114, 182, 0.15); color: #f472b6; }
+    .schedule-tag-crypto { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
+    .schedule-tag-other  { background: rgba(168, 162, 158, 0.15); color: #a8a29e; }
+    .schedule-item {
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .schedule-item:last-child { border-bottom: none; }
+    .schedule-item-head {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .schedule-date {
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+      color: var(--text);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .schedule-time {
+      font-variant-numeric: tabular-nums;
+      font-size: 10px;
+      color: var(--text-dim);
+      padding: 1px 5px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 3px;
+    }
+    .schedule-kind {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+    .schedule-kind-decision { background: rgba(74, 222, 128, 0.12); color: #4ade80; }
+    .schedule-kind-progress { background: rgba(250, 204, 21, 0.12); color: #facc15; }
+    .schedule-label {
+      font-size: 12px;
+      color: var(--text);
+      margin-top: 2px;
+    }
+    .schedule-details {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+    .schedule-criteria {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 4px;
+      font-family: var(--font-mono, monospace);
+      opacity: 0.8;
+    }
+    .schedule-days-away {
+      font-size: 10px;
+      color: var(--accent);
+      margin-left: auto;
+      font-variant-numeric: tabular-nums;
+    }
+    .schedule-empty {
+      color: var(--text-dim);
+      font-size: 12px;
+      font-style: italic;
+      padding: 16px 0;
+      text-align: center;
+    }
 
     /* ── Sparkline (per-strategy equity curve) ── */
     .sparkline {
@@ -672,6 +778,7 @@
       <button type="button" data-view="all"   class="active">All</button>
       <button type="button" data-view="live">Live</button>
       <button type="button" data-view="paper">Paper</button>
+      <button type="button" data-view="schedule">Schedule</button>
     </div>
     <div class="status-items">
       <div class="stat live-only">
@@ -714,6 +821,37 @@
   </header>
 
   <main>
+
+    <!-- ── Schedule (visible only when view-toggle == schedule) ── -->
+    <section id="schedule-section" style="display:none;">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div class="section-title" style="margin-bottom:0">Schedule — upcoming eval gates</div>
+        <span style="color:var(--text-dim);font-size:11px;" id="schedule-meta">—</span>
+      </div>
+      <div class="schedule-grid">
+        <div class="schedule-col">
+          <div class="schedule-col-title">
+            <span class="schedule-tag schedule-tag-sports">Sports</span>
+            <span id="schedule-sports-count" style="color:var(--text-dim);font-size:11px;">—</span>
+          </div>
+          <div id="schedule-sports-list"></div>
+        </div>
+        <div class="schedule-col">
+          <div class="schedule-col-title">
+            <span class="schedule-tag schedule-tag-crypto">Crypto</span>
+            <span id="schedule-crypto-count" style="color:var(--text-dim);font-size:11px;">—</span>
+          </div>
+          <div id="schedule-crypto-list"></div>
+        </div>
+        <div class="schedule-col" id="schedule-other-col" style="display:none;">
+          <div class="schedule-col-title">
+            <span class="schedule-tag schedule-tag-other">Other</span>
+            <span id="schedule-other-count" style="color:var(--text-dim);font-size:11px;">—</span>
+          </div>
+          <div id="schedule-other-list"></div>
+        </div>
+      </div>
+    </section>
 
     <!-- ── Regime / scanner state ── -->
     <section id="regime-section">
@@ -2162,16 +2300,33 @@ function applyViewMode(mode) {
     btn.classList.toggle('active', btn.dataset.view === mode);
   });
 
+  const isSchedule = (mode === 'schedule');
+  const showLive  = !isSchedule && (mode === 'all' || mode === 'live');
+  const showPaper = !isSchedule && (mode === 'all' || mode === 'paper');
+
   // Section visibility — settlement history & live positions are Kalshi-only.
-  const showLive  = (mode === 'all' || mode === 'live');
-  const showPaper = (mode === 'all' || mode === 'paper');
   document.getElementById('perf-live-section').style.display     = showLive  ? '' : 'none';
   document.getElementById('perf-demoted-section').style.display  = showLive  ? '' : 'none';
   document.getElementById('perf-section').style.display          = showPaper ? '' : 'none';
   document.getElementById('perf-archived-section').style.display = showPaper ? '' : 'none';
   document.getElementById('settlement-history-section').style.display = showLive ? '' : 'none';
   document.getElementById('positions-section').style.display     = showLive  ? '' : 'none';
-  // Regime + observer signals are scanner-state, relevant in any mode — keep them visible.
+
+  // Schedule mode hides everything else; show the schedule section.
+  document.getElementById('schedule-section').style.display = isSchedule ? '' : 'none';
+  const regimeSection = document.getElementById('regime-section');
+  if (regimeSection) regimeSection.style.display = isSchedule ? 'none' : '';
+  // Hide other large sections in schedule mode (defensive — most are toggled above).
+  ['trades-section', 'orders-section', 'observer-signals-section', 'crypto-observer-section',
+   'strategy-monitor-section', 'gates-section', 'equity-section'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = isSchedule ? 'none' : '';
+  });
+
+  if (isSchedule) {
+    renderSchedule();
+    return;
+  }
 
   // Auto-filter the trade history dropdown to match.
   const modeFilter = document.getElementById('mode-filter');
@@ -2179,6 +2334,76 @@ function applyViewMode(mode) {
   else if (mode === 'paper') modeFilter.value = 'paper';
   else                       modeFilter.value = '';
   renderTrades();
+}
+
+// ─────────────────────────────────────────────
+//  Schedule view rendering
+// ─────────────────────────────────────────────
+async function renderSchedule() {
+  const sportsList = document.getElementById('schedule-sports-list');
+  const cryptoList = document.getElementById('schedule-crypto-list');
+  const otherList  = document.getElementById('schedule-other-list');
+  const otherCol   = document.getElementById('schedule-other-col');
+  sportsList.innerHTML = '<div class="schedule-empty">Loading…</div>';
+  cryptoList.innerHTML = '<div class="schedule-empty">Loading…</div>';
+  let data;
+  try {
+    const r = await fetch('/api/schedule');
+    data = await r.json();
+  } catch (e) {
+    sportsList.innerHTML = '<div class="schedule-empty">Failed to load schedule.</div>';
+    cryptoList.innerHTML = '';
+    return;
+  }
+  const byCategory = data.by_category || {sports: [], crypto: [], other: []};
+  document.getElementById('schedule-meta').textContent =
+    `${(data.gates||[]).length} upcoming · today UTC ${data.today_utc}`;
+  document.getElementById('schedule-sports-count').textContent = `(${byCategory.sports.length})`;
+  document.getElementById('schedule-crypto-count').textContent = `(${byCategory.crypto.length})`;
+  document.getElementById('schedule-other-count').textContent  = `(${byCategory.other.length})`;
+  sportsList.innerHTML = renderScheduleList(byCategory.sports, data.today_utc);
+  cryptoList.innerHTML = renderScheduleList(byCategory.crypto, data.today_utc);
+  if (byCategory.other && byCategory.other.length) {
+    otherCol.style.display = '';
+    otherList.innerHTML = renderScheduleList(byCategory.other, data.today_utc);
+  } else {
+    otherCol.style.display = 'none';
+  }
+}
+
+function renderScheduleList(gates, todayUtc) {
+  if (!gates || gates.length === 0) {
+    return '<div class="schedule-empty">No upcoming gates.</div>';
+  }
+  const todayDate = new Date(todayUtc + 'T00:00:00Z');
+  return gates.map(g => {
+    const gd = new Date(g.date + 'T00:00:00Z');
+    const daysAway = Math.round((gd - todayDate) / 86400000);
+    const daysLabel = daysAway === 0 ? 'today'
+                    : daysAway === 1 ? 'tomorrow'
+                    : `+${daysAway}d`;
+    const time = g.time_utc ? `<span class="schedule-time">${g.time_utc} UTC</span>` : '';
+    const kindCls = g.kind === 'decision' ? 'schedule-kind-decision' : 'schedule-kind-progress';
+    return `
+      <div class="schedule-item">
+        <div class="schedule-item-head">
+          <span class="schedule-date">${g.date}</span>
+          ${time}
+          <span class="schedule-kind ${kindCls}">${g.kind || '?'}</span>
+          <span class="schedule-days-away">${daysLabel}</span>
+        </div>
+        <div class="schedule-label">${escapeHtml(g.label || '')}</div>
+        ${g.details ? `<div class="schedule-details">${escapeHtml(g.details)}</div>` : ''}
+        ${g.criteria ? `<div class="schedule-criteria">${escapeHtml(g.criteria)}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
 }
 
 document.querySelectorAll('.view-toggle button').forEach(btn => {
