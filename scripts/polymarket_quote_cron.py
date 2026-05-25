@@ -49,6 +49,10 @@ async def refresh(db: Database, scraper: PolymarketScraper,
                 yes_price=parsed["yes_price"],
                 no_price=parsed["no_price"],
                 volume_24h=parsed.get("volume_24h"),
+                best_bid=parsed.get("best_bid"),
+                best_ask=parsed.get("best_ask"),
+                spread=parsed.get("spread"),
+                liquidity_num=parsed.get("liquidity_num"),
             )
             updated += 1
         missing = set(chunk) - set(out.keys())
