@@ -1755,11 +1755,47 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "rollback_triggers": triggers,
         }
 
+    def _classify_schedule_gate(gate: dict) -> str:
+        """Categorize a schedule gate as 'sports', 'crypto', or 'other'.
+        Derived from label + memory fields. Sports patterns checked first
+        to avoid 'ladder_crypto' false-matching 'kxbtc' etc.
+        """
+        text = " ".join([
+            gate.get("label", ""),
+            gate.get("memory", ""),
+            gate.get("details", ""),
+        ]).lower()
+        sports_keys = (
+            "sport", "soccer", "tennis", "ufc", "npb", "kbo", "mlb", "mls",
+            "nba", "nhl", "wta", "atp", "underdog", "midshot", "longshot",
+            "playoff", "v31", "v32", "v34", "v35", "v36", "v37", "v40",
+            "consensus_aligned", "fade_favorite", "chalk_fade", "pinnacle_arb",
+            "surface_skew", "gs_bo5", "live_fade",
+        )
+        crypto_keys = (
+            "cme_basis", "deribit", "atm_hold", "atm_fade", "ladder_crypto",
+            "late_close", "etf_flow", "settlement_edge", "depth_skew",
+            "mid_otm_tail", "cross_venue", "cross_asset", "phase0",
+            "kxbtc", "kxeth", "kxxrp", "kxsol", "bid_imbalance",
+            "open_no_touch", "universe_expansion", "fed", "fomc",
+            "vol_skew", "tail_fade", "lognormal", "fair_value",
+        )
+        if any(k in text for k in sports_keys):
+            return "sports"
+        if any(k in text for k in crypto_keys):
+            return "crypto"
+        return "other"
+
     @app.get("/api/schedule")
     async def get_schedule():
         """Upcoming eval/promotion gates loaded from data/schedule.json.
         Past gates (date < today UTC) are dropped — the file is treated
-        as forward-looking only.  Returns gates sorted by date ascending."""
+        as forward-looking only.  Returns gates sorted by date ascending.
+
+        Each gate is tagged with a derived `category` field: 'sports',
+        'crypto', or 'other'. Pattern-matched from label + memory (see
+        _classify_schedule_gate).
+        """
         import json
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         schedule_path = os.path.join(repo_root, "data", "schedule.json")
@@ -1767,15 +1803,25 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             with open(schedule_path) as f:
                 data = json.load(f)
         except (OSError, json.JSONDecodeError) as e:
-            return {"version": None, "gates": [], "error": str(e)}
+            return {"version": None, "gates": [], "by_category": {}, "error": str(e)}
         today_utc = datetime.now(timezone.utc).date().isoformat()
-        future = [g for g in data.get("gates", []) if g.get("date", "") >= today_utc]
+        future = []
+        for g in data.get("gates", []):
+            if g.get("date", "") < today_utc:
+                continue
+            g = dict(g)
+            g["category"] = _classify_schedule_gate(g)
+            future.append(g)
         future.sort(key=lambda g: (g.get("date", ""), g.get("time_utc", "")))
+        by_category: dict[str, list] = {"sports": [], "crypto": [], "other": []}
+        for g in future:
+            by_category.setdefault(g["category"], []).append(g)
         return {
             "version": data.get("version"),
             "note": data.get("note"),
             "today_utc": today_utc,
             "gates": future,
+            "by_category": by_category,
         }
 
     # Serve static frontend files if they exist
