@@ -410,9 +410,13 @@ class Bot:
         # self.deribit_tail_fade_high_v1 = DeribitTailFadeHighV1Strategy(
         #     self.config, self.order_manager, self.scanner, self.kalshi_client,
         # )
-        self.bid_imbalance_v1 = BidImbalanceV1Strategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client,
-        )
+        # 2026-05-26 MOTHBALL: 30d audit n=825 / -$1,665 / EV -10.1% / WR 61.6%.
+        # All price bands -EV (worst D 0.70-0.85 −$900 EV -23%). 5/21 observer
+        # +EV cohort (ya 0.35-0.40) did NOT translate to trader edge — MIN_PRICE
+        # 0.50 gate concentrated fires in -EV zone. Observer kept for watchlist.
+        # self.bid_imbalance_v1 = BidImbalanceV1Strategy(
+        #     self.config, self.order_manager, self.scanner, self.kalshi_client,
+        # )
         # Flipped-prediction Phase 1 variants (2026-05-14). Phase 0 cohort
         # showed original observers' WR ≪ 50% — flipping yields +30% / break-even
         # ROI on n=325 / 10. New observers `open_no_touch` / `atm_hold` emit
@@ -423,12 +427,12 @@ class Bot:
         self.atm_hold_v1 = AtmHoldV1Strategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client,
         )
-        # bid_imbalance_fade_v1 (2026-05-15): conditional-flip sibling for
-        # ya<0.60. Full Phase 0 cohort (n=266) showed original 36% WR but
-        # flipped 64% WR; ya<0.60 sub-cohort flips at 83% WR. Paper-only.
-        self.bid_imbalance_fade_v1 = BidImbalanceFadeV1Strategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client,
-        )
+        # 2026-05-26 MOTHBALL: 30d audit n=895 / -$1,459 / EV -8.2% / WR 66.8%.
+        # All bands -EV incl. F (≥0.95) at -2.45% — slip+fee wipe even at WR 87-90%.
+        # Observer kept (used by phase01_watchlist + sister direction logic).
+        # self.bid_imbalance_fade_v1 = BidImbalanceFadeV1Strategy(
+        #     self.config, self.order_manager, self.scanner, self.kalshi_client,
+        # )
         # 2026-05-18 additions: gap-fill (late_close_tail) + new-hypothesis
         # (deribit_atm_fade). Both paper-only at launch; Phase 2 promotion
         # gate is n ≥ 100 settled + ROI ≥ +5%.
@@ -571,18 +575,20 @@ class Bot:
             # asyncio.create_task(
             #     self.deribit_tail_fade_high_v1.scan_loop(scan_interval_secs=1.0)
             # ),
-            asyncio.create_task(
-                self.bid_imbalance_v1.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-05-26 MOTHBALL: bid_imbalance_v1 — see __init__ for context
+            # asyncio.create_task(
+            #     self.bid_imbalance_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
             asyncio.create_task(
                 self.open_no_touch_v1.scan_loop(scan_interval_secs=1.0)
             ),
             asyncio.create_task(
                 self.atm_hold_v1.scan_loop(scan_interval_secs=1.0)
             ),
-            asyncio.create_task(
-                self.bid_imbalance_fade_v1.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-05-26 MOTHBALL: bid_imbalance_fade_v1 — see __init__ for context
+            # asyncio.create_task(
+            #     self.bid_imbalance_fade_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
             asyncio.create_task(
                 self.late_close_tail_v1.scan_loop(scan_interval_secs=1.0)
             ),
