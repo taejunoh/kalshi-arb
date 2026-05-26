@@ -217,7 +217,17 @@ def get_pregame_obs(conn, kalshi_ticker):
     return cur.fetchone()
 
 
+CACHE_PATH = "/tmp/mlb_combo_rows.json"
+
+
 def main():
+    # Load cached rows if available — re-analysis only takes ms.
+    if os.path.exists(CACHE_PATH) and not os.getenv("MLB_BT_REFRESH"):
+        with open(CACHE_PATH) as f:
+            rows = json.load(f)
+        print(f"Loaded cached rows from {CACHE_PATH}: n={len(rows)}")
+        return analyze(rows)
+
     conn = sqlite3.connect(DB)
     conn.execute("PRAGMA query_only = 1")
     stadiums = load_stadiums()
@@ -344,6 +354,15 @@ def main():
         print("\nNo rows — check API access.")
         return
 
+    # Persist rows for instant re-analysis
+    with open(CACHE_PATH, "w") as f:
+        json.dump(rows, f, default=lambda o: bool(o) if isinstance(o, (bool,)) else str(o))
+    print(f"Saved {len(rows)} rows to {CACHE_PATH}")
+
+    analyze(rows)
+
+
+def analyze(rows):
     print(f"\n=== Total backtest rows: {len(rows)} ===")
     print(f"Overall (no filter): n={len(rows)} "
           f"pnl=${sum(r['pnl'] for r in rows):.2f} "
@@ -375,26 +394,17 @@ def main():
 
     print(f"Combos with n≥15: {len(results)}")
 
-    print(f"\n=== TOP 15 by EV/$1 ===")
-    print(f"{'k':<2} {'combo':<60} {'n':>4} {'WR%':>6} {'EV/$1':>9} {'PnL':>9}")
-    for r in sorted(results, key=lambda x: -x["ev"])[:15]:
+    print(f"\n=== ALL {len(results)} COMBOS — sorted by EV/$1 descending ===")
+    print(f"{'#':>3} {'k':<2} {'combo':<60} {'n':>4} {'WR%':>6} {'EV/$1':>9} {'PnL':>9}")
+    print(f"{'-'*3} {'-'*2} {'-'*60} {'-'*4} {'-'*6} {'-'*9} {'-'*9}")
+    for i, r in enumerate(sorted(results, key=lambda x: -x["ev"]), 1):
         c = "+".join(r["combo"])
-        print(f"{r['k']:<2} {c:<60} {r['n']:>4} {100*r['wr']:>5.1f}% "
-              f"{r['ev']:>+8.3f} {r['pnl']:>+8.2f}")
-
-    print(f"\n=== BOTTOM 10 by EV/$1 (avoid zones) ===")
-    for r in sorted(results, key=lambda x: x["ev"])[:10]:
-        c = "+".join(r["combo"])
-        print(f"{r['k']:<2} {c:<60} {r['n']:>4} {100*r['wr']:>5.1f}% "
-              f"{r['ev']:>+8.3f} {r['pnl']:>+8.2f}")
-
-    # n >= 30 subset for higher confidence
-    high_n = [r for r in results if r["n"] >= 30]
-    print(f"\n=== TOP 10 by EV (n>=30 for higher confidence) ===")
-    for r in sorted(high_n, key=lambda x: -x["ev"])[:10]:
-        c = "+".join(r["combo"])
-        print(f"{r['k']:<2} {c:<60} {r['n']:>4} {100*r['wr']:>5.1f}% "
-              f"{r['ev']:>+8.3f} {r['pnl']:>+8.2f}")
+        marker = ""
+        if r["ev"] > 0.04 and r["n"] >= 30: marker = " ⭐"
+        elif r["ev"] > 0.0 and r["n"] >= 30: marker = " ✓"
+        elif r["ev"] < -0.04 and r["n"] >= 30: marker = " ⚠️"
+        print(f"{i:>3} {r['k']:<2} {c:<60} {r['n']:>4} {100*r['wr']:>5.1f}% "
+              f"{r['ev']:>+8.3f} {r['pnl']:>+8.2f}{marker}")
 
 
 if __name__ == "__main__":
