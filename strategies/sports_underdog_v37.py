@@ -26,9 +26,12 @@ class SportsUnderdogV37Strategy(SportsSoccerUnderdogV1Strategy):
     BADGE_LABEL = "V3.7"
     BADGE_COLOR = "#f97316"
     DISPLAY_SPORTS = ("NBA", "MLB", "NHL", "WNBA")
-    # Block everything except WNBA (soccer blocked here too)
+    # Block everything except WNBA (soccer blocked here too).
+    # 2026-05-26: ATP added after 14d audit (n=3 LIVE -$36/100% loss).
+    # WTA/UFC blocked defensively (individual sports outside our WNBA thesis).
     SPORT_BLOCKLIST = frozenset({"NBA", "MLB", "NHL", "NPB", "KBO",
-                                  "MLS", "EPL", "LAL", "UCL", "BUN"})
+                                  "MLS", "EPL", "LAL", "UCL", "BUN",
+                                  "ATP", "WTA", "UFC"})
 
     # Inherit OBSERVATION_ONLY_SPORTS = frozenset() from parent
     # → already allows WNBA + all other sports. Combined with SPORT_BLOCKLIST
