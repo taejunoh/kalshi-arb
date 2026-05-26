@@ -1,0 +1,11 @@
+[Unit]
+Description=MLB pitcher collector every 30min
+Requires=kalshi-mlb-pitchers.service
+
+[Timer]
+OnBootSec=120
+OnUnitActiveSec=1800
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
