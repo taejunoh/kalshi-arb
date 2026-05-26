@@ -1,26 +1,24 @@
 """NPB Pinnacle sharp-FOLLOW v1 — paper-only POC.
 
-Built 2026-05-26 from cross-sport Pinnacle-move backtest finding:
+Built 2026-05-26 from cross-sport Pinnacle-move backtest finding.
 
-Drill-down 60d NPB sharp-follow (PIT):
-  All NPB |move|≥3pp:                          n=62, WR 64.5%, EV +$0.045/$1
-  |move|∈[3,8]pp + ya∈[0.30,0.70] (FINAL):     n=33, WR 78.8%, EV +$0.175/$1 ⭐⭐
-  Direction asymmetry:
-    UP→YES (move up, bet favorite):  n=31 EV -$0.058 (LOSES)
-    DN→NO (move down, bet underdog): n=31 EV +$0.149 (WINS)
+⚠️ MIRROR-DEDUP CORRECTION (2026-05-26 EoD audit):
+NPB markets are mirror pairs (-TOH + -CHU for TOHCHU match). Pinnacle
+move on one side triggers FOLLOW on both — mirrors always agree on
+win/loss (14/14 pairs agree in 60d data). Per-ticker n is inflated 1.6×.
+**Live runs with PAIR_FIRE_DEDUP=True so each match is bet only once**.
 
-THESIS: In NPB pre-game, when Pinnacle moves DOWN on a side's win prob,
-that side is being correctly downgraded. Buying the OTHER side (NO on
-the downgraded side = YES on the opponent at low ya converted to high
-no_ask) captures the correction. UP moves on a side are over-reactions
-to lineup announcements / public sentiment that don't pan out.
+Drill-down 60d NPB sharp-follow (PIT, |move|∈[3,8]pp, ya∈[0.30,0.70]):
+  Per-ticker (original):       n=33, WR 78.8%, EV +$0.175/$1
+  Per-unique-event (corrected): n=19, WR 73.7%, EV +$0.108/$1   ← truth
+    UP→YES:  n=12, WR 75.0%, EV +$0.094/$1
+    DN→NO:   n=7,  WR 71.4%, EV +$0.133/$1
 
-For v1 we run BOTH directions (n=33 combined +$0.175) — the asymmetry
-is real but each direction's n is still small enough that one-direction-only
-loses defensive coverage. Future v2 could split by direction if forward
-data confirms.
+THESIS: NPB Pinnacle moves in mid-priced markets carry signal —
+Japanese baseball book is sharp on lineup news / pitcher rotation.
+Kalshi lags. FOLLOWING the move captures the correction.
 
-KEY EXCLUSIONS (data-driven):
+KEY EXCLUSIONS (data-driven, per-ticker accounting):
   - |move| > 8pp: inverts to -$0.171 (n=8) and -$0.298 (12pp+, n=6). Real
     information beyond 8pp; sharp-follow is too late.
   - ya > 0.70 OR ya < 0.30: extreme prices wash out the signal.
@@ -30,10 +28,11 @@ CAVEATS:
     fills may face wider spreads.
   - Japanese baseball season runs ~March → October. We're mid-season now;
     promotion timing safe.
+  - Unique-event rate ~0.3/day → 21d ≈ n=6. Need ≥45d to hit n=20.
 
 PROMOTION GATE (paper → LIVE):
-  - 21d forward, n ≥ 25, net positive, WR ≥ 65%
-  - Both directions (UP & DOWN) contribute non-trivially (each ≥30% of fires)
+  - 45d forward, n ≥ 20 unique events (NOT raw tickers), net positive, WR ≥ 65%
+  - Both directions (UP & DOWN) must remain non-negative
   - Kalshi NPB book depth check (avg n_books ≥ 8) before promotion
 """
 import logging
@@ -66,6 +65,13 @@ class SportsNpbSharpFollowV1Strategy(SportsTraderStrategy):
                                   "ATP", "WTA"})
     PLAYOFF_BLOCKLIST = frozenset()
     PRE_GAME_ONLY = True
+
+    # NPB markets are mirror pairs (-TOH + -CHU). Follow signal fires
+    # on both sides equivalently → double exposure per unique event.
+    # 2026-05-26 audit found same pattern in tennis_pinnacle_fade
+    # (per-ticker n=55 → unique-event n=35). Apply dedup here too so
+    # backtest projections and live execution stay in sync.
+    PAIR_FIRE_DEDUP = True
 
     # Faster cadence — NPB games cluster in tight evening windows JST.
     SCAN_INTERVAL_OVERRIDE = 60.0
