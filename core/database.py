@@ -881,19 +881,36 @@ class Database:
         market_id: str, predicted_outcome: str, features_json: str,
     ) -> int:
         """Insert a crypto observer signal. actual_outcome / resolution_ts
-        are filled later by the settlement backfill cron."""
+        are filled later by the settlement backfill cron.
+
+        2026-05-26: 60s timeout + explicit busy_timeout PRAGMA + retry-once
+        on "database is locked". Was failing ~12x/24h previously due to
+        WAL checkpoint contention with concurrent collectors.
+        """
         ts = datetime.now(timezone.utc).isoformat()
-        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
-            cur = await conn.execute(
-                "INSERT INTO crypto_observer_signals "
-                "(ts, observer, series, event_key, market_id, "
-                " predicted_outcome, features_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (ts, observer, series, event_key, market_id,
-                 predicted_outcome, features_json),
-            )
-            await conn.commit()
-            return cur.lastrowid
+        last_err = None
+        for attempt in range(2):
+            try:
+                async with aiosqlite.connect(self.db_path, timeout=60.0) as conn:
+                    await conn.execute("PRAGMA busy_timeout = 60000")
+                    cur = await conn.execute(
+                        "INSERT INTO crypto_observer_signals "
+                        "(ts, observer, series, event_key, market_id, "
+                        " predicted_outcome, features_json) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (ts, observer, series, event_key, market_id,
+                         predicted_outcome, features_json),
+                    )
+                    await conn.commit()
+                    return cur.lastrowid
+            except Exception as e:
+                last_err = e
+                if "database is locked" in str(e).lower() and attempt == 0:
+                    import asyncio
+                    await asyncio.sleep(0.5)
+                    continue
+                raise
+        raise last_err
 
     async def fetch_recent_crypto_observer_signals(
         self, observer: str | None = None, limit: int = 100,
