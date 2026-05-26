@@ -56,7 +56,8 @@ CREATE TABLE IF NOT EXISTS mlb_pitcher_observations (
     era_diff REAL,
     better_team TEXT,
     ticker_better_yes TEXT,          -- KXMLBGAME-...-BETTER (buy YES to win)
-    raw_json TEXT
+    raw_json TEXT,
+    UNIQUE(game_date_et, game_time_et, away_code, home_code)
 );
 CREATE INDEX IF NOT EXISTS idx_mlb_pitcher_ticker
     ON mlb_pitcher_observations(ticker_better_yes);
@@ -122,6 +123,7 @@ def run():
     pitcher_era_cache = {}
     games_processed = 0
     upserts = 0
+    unknown_team_ids = set()
 
     for date_str in dates:
         try:
@@ -136,6 +138,10 @@ def run():
                 away_id, home_id = away["team"]["id"], home["team"]["id"]
                 away_code = TEAM_MAP.get(away_id)
                 home_code = TEAM_MAP.get(home_id)
+                if not away_code:
+                    unknown_team_ids.add((away_id, away.get("team", {}).get("name", "?")))
+                if not home_code:
+                    unknown_team_ids.add((home_id, home.get("team", {}).get("name", "?")))
                 if not (away_code and home_code):
                     continue
                 away_pp = away.get("probablePitcher", {}) or {}
@@ -184,6 +190,17 @@ def run():
                      away_pitcher_id, home_pitcher_id, away_pitcher_name, home_pitcher_name,
                      away_era, home_era, era_diff, better_team, ticker_better_yes, raw_json)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(game_date_et, game_time_et, away_code, home_code) DO UPDATE SET
+                        fetched_at=excluded.fetched_at,
+                        away_pitcher_id=excluded.away_pitcher_id,
+                        home_pitcher_id=excluded.home_pitcher_id,
+                        away_pitcher_name=excluded.away_pitcher_name,
+                        home_pitcher_name=excluded.home_pitcher_name,
+                        away_era=excluded.away_era,
+                        home_era=excluded.home_era,
+                        era_diff=excluded.era_diff,
+                        better_team=excluded.better_team,
+                        ticker_better_yes=excluded.ticker_better_yes
                 """, (
                     now_utc.isoformat(), ymd, hm, away_code, home_code,
                     away_pid, home_pid,
@@ -197,6 +214,37 @@ def run():
     conn.commit()
     conn.close()
     logger.info(f"games processed: {games_processed}, rows inserted: {upserts}")
+
+    # Alert if any unknown team_ids encountered (rebrand/relocation/expansion).
+    if unknown_team_ids:
+        msg = (
+            "[mlb_pitchers] UNKNOWN TEAM IDS — update TEAM_MAP in "
+            f"data_collectors/mlb_pitchers.py:\n"
+            + "\n".join(f"  {tid}: {tname}" for tid, tname in sorted(unknown_team_ids))
+        )
+        logger.warning(msg)
+        _send_telegram_critical(msg)
+
+
+def _send_telegram_critical(message: str):
+    """Best-effort Telegram alert for critical collector issues. Uses same
+    env vars as the bot (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID).
+    """
+    import os
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not (token and chat_id):
+        return
+    try:
+        import urllib.parse
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = urllib.parse.urlencode({
+            "chat_id": chat_id,
+            "text": message,
+        }).encode()
+        urllib.request.urlopen(url, data=data, timeout=10).read()
+    except Exception as e:
+        logger.warning(f"telegram alert failed: {e}")
 
 
 if __name__ == "__main__":
