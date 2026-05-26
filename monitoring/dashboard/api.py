@@ -158,8 +158,13 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     "total_pnl": 0.0, "wins": 0, "losses": 0}
 
         def empty_stats():
+            # open_count/open_exposure are CURRENTLY open positions (any entry
+            # date), distinct from today.trade_count which is entries since
+            # the most recent 06:00 ET. A position entered yesterday and still
+            # unsettled shows in open_count but not in today.*.
             return {"trade_count": 0, "total_pnl": 0.0, "total_size": 0.0, "wins": 0, "losses": 0,
-                    "clv_positive_rate": 0.0, "today": empty_today()}
+                    "clv_positive_rate": 0.0, "open_count": 0, "open_exposure": 0.0,
+                    "today": empty_today()}
 
         def empty_split():
             return {"trade_count": 0, "total_pnl": 0.0, "wins": 0, "losses": 0}
@@ -239,6 +244,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 bucket["wins"] += 1
             elif pnl < 0:
                 bucket["losses"] += 1
+            # Currently-open paper positions (any entry date). paper_stale
+            # is excluded — it marks abandoned/expired paper rows that won't
+            # settle. Settled rows have pnl set and live in trade_count above.
+            if status in ("paper_open", "paper_filled"):
+                bucket["open_count"] += 1
+                bucket["open_exposure"] += size
             # Today (since most recent 06:00 ET) — based on entry timestamp
             if trade.get("timestamp", "") >= today_cutoff:
                 t = bucket["today"]
@@ -404,6 +415,21 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 bucket = strategies[strat]["live"]
                 bucket["trade_count"] += 1
                 bucket["total_size"] += exp
+
+            # Live open_count/open_exposure — DB filled rows are the source of
+            # truth for per-strategy attribution (Kalshi positions API can't
+            # disambiguate sports v31/v37/etc. or crypto subtypes that share
+            # tickers). Mirrors the DB-attribution path used for live settled
+            # rows above.
+            for trade in all_trades:
+                if trade.get("status") != "filled":
+                    continue
+                strat = trade.get("strategy")
+                if not strat or strat in RETIRED or strat not in strategies:
+                    continue
+                bucket = strategies[strat]["live"]
+                bucket["open_count"] += 1
+                bucket["open_exposure"] += trade.get("size", 0) or 0
 
         # CLV+ rate per strategy, split by mode so paper vs live cards show
         # independent signal quality (same-strategy live trades get their
