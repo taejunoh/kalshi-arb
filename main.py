@@ -421,12 +421,20 @@ class Bot:
         # showed original observers' WR ≪ 50% — flipping yields +30% / break-even
         # ROI on n=325 / 10. New observers `open_no_touch` / `atm_hold` emit
         # flipped predictions; these traders execute them as paper trades.
-        self.open_no_touch_v1 = OpenNoTouchV1Strategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client,
-        )
-        self.atm_hold_v1 = AtmHoldV1Strategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client,
-        )
+        # 2026-05-26 MOTHBALL: 30d n=319 / -$880 / EV -13.8% / WR 50%. KXETH
+        # exclude works post-5/21 PM, but residual non-KXETH is still -EV in
+        # every band (worst C 0.50-0.70: EV -27%). 4 days post-exclude n=103
+        # / -$163 / EV -8%. Observer kept.
+        # self.open_no_touch_v1 = OpenNoTouchV1Strategy(
+        #     self.config, self.order_manager, self.scanner, self.kalshi_client,
+        # )
+        # 2026-05-26 MOTHBALL: 30d n=107 / -$245 / EV -8.1% / WR 54%. Already
+        # demoted LIVE→paper 5/25 per [[atm_hold_v1_demote_2026-05-25]];
+        # 7d post-demote -$327 EV -12% confirms accelerating bleed. Observer
+        # kept.
+        # self.atm_hold_v1 = AtmHoldV1Strategy(
+        #     self.config, self.order_manager, self.scanner, self.kalshi_client,
+        # )
         # 2026-05-26 MOTHBALL: 30d audit n=895 / -$1,459 / EV -8.2% / WR 66.8%.
         # All bands -EV incl. F (≥0.95) at -2.45% — slip+fee wipe even at WR 87-90%.
         # Observer kept (used by phase01_watchlist + sister direction logic).
@@ -439,15 +447,23 @@ class Bot:
         self.late_close_tail_v1 = LateCloseTailV1Strategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client,
         )
-        self.deribit_atm_fade_v1 = DeribitAtmFadeV1Strategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client,
-        )
+        # 2026-05-26 MOTHBALL: 30d n=43 / -$193 / EV -22.5% / WR 49%. Smallest
+        # sample but worst EV. Observer kept.
+        # self.deribit_atm_fade_v1 = DeribitAtmFadeV1Strategy(
+        #     self.config, self.order_manager, self.scanner, self.kalshi_client,
+        # )
         # 2026-05-20: cme_basis_fade_v1 — first Phase 1 trader promoted via
         # fee-adjusted EV audit. Paper-only at launch; ya gate [0.17, 0.42]
         # selects the +$0.05/c sub-cohort from the full observer cohort.
-        self.cme_basis_fade_v1 = CmeBasisFadeV1Strategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client,
-        )
+        # 2026-05-26 MOTHBALL: 30d n=700 / -$1,501 / EV -10.8% / WR 78.3%.
+        # Gate INVERTED — gate ya [0.17, 0.42] captures bands C+D (-EV
+        # catastrophe at -$1,021 in band C alone). +EV is at no_ask ≥ 0.85
+        # (n=110 / +$67 / EV +3%) — outside the gate. +$67/30d at n=110 is
+        # too marginal to justify maintenance. Already demoted LIVE→paper
+        # 5/26 per [[cme_basis_fade_v1_demote_2026-05-26]]. Observer kept.
+        # self.cme_basis_fade_v1 = CmeBasisFadeV1Strategy(
+        #     self.config, self.order_manager, self.scanner, self.kalshi_client,
+        # )
         # Macro Event Trader (C1) — paper-only at launch.
         # Requires scripts/macro_consensus_cron.py to populate consensus
         # cache. See spec:
@@ -579,12 +595,14 @@ class Bot:
             # asyncio.create_task(
             #     self.bid_imbalance_v1.scan_loop(scan_interval_secs=1.0)
             # ),
-            asyncio.create_task(
-                self.open_no_touch_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.atm_hold_v1.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-05-26 MOTHBALL: open_no_touch_v1 — see __init__ for context
+            # asyncio.create_task(
+            #     self.open_no_touch_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-05-26 MOTHBALL: atm_hold_v1 — see __init__ for context
+            # asyncio.create_task(
+            #     self.atm_hold_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
             # 2026-05-26 MOTHBALL: bid_imbalance_fade_v1 — see __init__ for context
             # asyncio.create_task(
             #     self.bid_imbalance_fade_v1.scan_loop(scan_interval_secs=1.0)
@@ -592,12 +610,14 @@ class Bot:
             asyncio.create_task(
                 self.late_close_tail_v1.scan_loop(scan_interval_secs=1.0)
             ),
-            asyncio.create_task(
-                self.deribit_atm_fade_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.cme_basis_fade_v1.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-05-26 MOTHBALL: deribit_atm_fade_v1 — see __init__ for context
+            # asyncio.create_task(
+            #     self.deribit_atm_fade_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-05-26 MOTHBALL: cme_basis_fade_v1 — see __init__ for context
+            # asyncio.create_task(
+            #     self.cme_basis_fade_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
             # 2026-05-19 (eve): 5 tennis/UFC paper strategies moved out of
             # _strategy_loop to dodge the upstream serial queue. Each runs
             # at 1 s poll cadence — internal `_get_scan_interval()` still
