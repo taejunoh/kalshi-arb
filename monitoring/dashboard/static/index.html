@@ -1804,15 +1804,33 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
         </div>
         ${sportRows}
         ` : ''}
+        ${(() => {
+          // Currently-open positions across any entry date (distinct from
+          // Today, which is entries since 06:00 ET). open_count counts
+          // paper_open+paper_filled rows for paper, status='filled' DB rows
+          // for live. Hidden when 0.
+          const openN = d.open_count || 0;
+          if (openN === 0) return '';
+          const exp = d.open_exposure || 0;
+          const expSpan = exp > 0
+            ? ` <span style="color:var(--text-dim);">(${fmtMoney(exp)})</span>`
+            : '';
+          return `<div class="perf-row" style="border-top:1px solid var(--text-dim);padding-top:6px;margin-top:4px;"><span class="perf-key">Open</span><span class="perf-val">${openN}${expSpan}</span></div>`;
+        })()}
         ${d.today ? (() => {
           const total = d.today.trade_count || 0;
-          const open = total - (d.today.settled_count || 0);
+          const todayOpen = total - (d.today.settled_count || 0);
           const pnl = d.today.total_pnl || 0;
           const wl = (d.today.wins || 0) + (d.today.losses || 0);
-          const countVal = open > 0
-            ? `${total} <span style="color:var(--text-dim);">(${open} open)</span>`
+          // "(N pending)" annotates today's still-unsettled subset — distinct
+          // from the "Open" row above, which counts ALL currently-open
+          // positions regardless of entry date.
+          const countVal = todayOpen > 0
+            ? `${total} <span style="color:var(--text-dim);">(${todayOpen} pending)</span>`
             : `${total}`;
-          let html = `<div class="perf-row" style="border-top:1px solid var(--text-dim);padding-top:6px;margin-top:4px;"><span class="perf-key">Today</span><span class="perf-val">${countVal}</span></div>`;
+          const openExists = (d.open_count || 0) > 0;
+          const topBorder = openExists ? '' : 'border-top:1px solid var(--text-dim);padding-top:6px;margin-top:4px;';
+          let html = `<div class="perf-row" style="${topBorder}"><span class="perf-key">Today</span><span class="perf-val">${countVal}</span></div>`;
           if (pnl !== 0 || wl > 0) {
             const pnlSpan = pnl !== 0 ? `<span class="${pnl >= 0 ? 'positive' : 'negative'}">${fmtMoney(pnl)}</span>` : '—';
             const wrSpan = wl > 0 ? ` <span style="color:var(--text-dim);">(${Math.round((d.today.wins / wl) * 100)}%)</span>` : '';
