@@ -1,0 +1,9 @@
+[Unit]
+Description=WNBA injuries collector every 30min
+Requires=kalshi-wnba-injuries.service
+[Timer]
+OnBootSec=300
+OnUnitActiveSec=1800
+RandomizedDelaySec=60
+[Install]
+WantedBy=timers.target
