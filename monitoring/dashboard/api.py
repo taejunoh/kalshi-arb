@@ -129,6 +129,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_tennis_chalk_v1",
             "sports_mlb_pitcher_edge_v1",
             "sports_mlb_pitcher_edge_v2",
+            "sports_mlb_pitcher_edge_v2_1",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Crypto Phase 1 traders (paper-only unless promoted via .env).
             # Listed here so they render with empty stats before first fire.
@@ -541,6 +542,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_tennis_chalk_v1",
             "sports_mlb_pitcher_edge_v1",
             "sports_mlb_pitcher_edge_v2",
+            "sports_mlb_pitcher_edge_v2_1",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
             # Phase 1 paper traders promoted from crypto_observer 2026-05-14.
             "deribit_tail_fade_v1", "bid_imbalance_v1",

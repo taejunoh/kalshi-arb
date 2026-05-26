@@ -54,6 +54,7 @@ from strategies.sports_tennis_live_fade_v1 import SportsTennisLiveFadeV1Strategy
 from strategies.sports_tennis_chalk_v1 import SportsTennisChalkV1Strategy
 from strategies.sports_mlb_pitcher_edge_v1 import SportsMlbPitcherEdgeV1Strategy
 from strategies.sports_mlb_pitcher_edge_v2 import SportsMlbPitcherEdgeV2Strategy
+from strategies.sports_mlb_pitcher_edge_v2_1 import SportsMlbPitcherEdgeV21Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
@@ -327,6 +328,12 @@ class Bot:
         self.sports_mlb_pitcher_edge_v2 = SportsMlbPitcherEdgeV2Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
+        # 2026-05-26 — v2.1: era≥2.0 + n_books_eu+us≥10 book-depth gate.
+        # 7-signal × 127-combo backtest sweet spot (n=47, WR 66%, +$0.041).
+        # Paper-only A/B vs v2 — see [[mlb_signal_combo_backtest_2026-05-26]].
+        self.sports_mlb_pitcher_edge_v2_1 = SportsMlbPitcherEdgeV21Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
             self.config, self.order_manager, self.kalshi_client
         )
@@ -593,6 +600,9 @@ class Bot:
             ),
             asyncio.create_task(
                 self.sports_mlb_pitcher_edge_v2.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_mlb_pitcher_edge_v2_1.scan_loop(scan_interval_secs=1.0)
             ),
             # 2026-05-19 (eve): P1 — 19 remaining sports strategies moved out
             # of _strategy_loop's serial queue to dodge upstream tail latency.
