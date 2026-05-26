@@ -43,6 +43,34 @@ class SportsMlbPitcherEdgeV21Strategy(SportsMlbPitcherEdgeV2Strategy):
     # snapshot. 10 = the threshold tested in combo backtest.
     MIN_BOOKS_TOTAL = 10
 
+    # 2026-05-26 stake-sizing-by-edge upgrade. Backtest split by era_diff:
+    #   era 2.0-2.5: EV -$0.058 (n=16) ← keep but de-emphasized
+    #   era 2.5-3.0: EV +$0.102 (n=14)
+    #   era 3.0-3.5: EV ~+$0.04  (n=10)
+    #   era 3.5+   : EV +$0.31  (n=7)
+    # Scaling stake by tier improves total EV/$1 from +$0.041 → +$0.059
+    # (STEP scheme) without changing fire frequency.
+    SIZE_TIER_LOW = 4.0      # era_diff [2.0, 2.5)
+    SIZE_TIER_MID = 6.0      # era_diff [2.5, 3.5)
+    SIZE_TIER_HIGH = 8.0     # era_diff ≥ 3.5
+
+    def _get_trade_size(self, signal: dict) -> float:
+        """Tier-based stake by era_diff (from `edge` field in signal).
+
+        Backtest finding: era_diff 2.0-2.5 is -EV cohort that drags v2.1 down.
+        Don't skip (preserves sample n for forward eval) but de-emphasize via
+        smaller stake; concentrate capital on era_diff ≥ 3.5 high-conviction tier.
+        Bankroll cap (2%) preserved as safety upper bound.
+        """
+        edge = signal.get("edge", 0.0) or 0.0
+        if edge >= 3.5:
+            base = self.SIZE_TIER_HIGH
+        elif edge >= 2.5:
+            base = self.SIZE_TIER_MID
+        else:
+            base = self.SIZE_TIER_LOW
+        return min(base, self._order_manager.bankroll * 0.02)
+
     def _check_books_deep(self, ticker: str) -> bool:
         """True iff latest odds_observations row for ticker has
         n_books_eu + n_books_us ≥ MIN_BOOKS_TOTAL.
