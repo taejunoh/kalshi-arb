@@ -1,0 +1,9 @@
+[Unit]
+Description=MLB point-in-time collector — every 60min (gameLog fetched per pitcher)
+Requires=kalshi-mlb-pitcher-pointtime.service
+[Timer]
+OnBootSec=420
+OnUnitActiveSec=3600
+RandomizedDelaySec=120
+[Install]
+WantedBy=timers.target
