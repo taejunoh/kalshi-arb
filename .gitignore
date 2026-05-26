@@ -16,3 +16,11 @@ logs/
 # Research raw API dumps (regenerable via scripts/research/*.py)
 scripts/research/shutdown_fade_data/markets_*.json
 scripts/research/shutdown_fade_data/candles_*.json
+
+# EC2 .env timestamped backups (35+ files accumulate from manual deploys)
+.env.bak
+.env.bak.*
+.env.bak-*
+
+# Local deploy staging directory (EC2-side rsync target)
+_deploy_staging/
