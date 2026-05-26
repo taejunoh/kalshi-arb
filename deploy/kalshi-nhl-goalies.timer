@@ -1,0 +1,9 @@
+[Unit]
+Description=NHL goalie collector every 30min
+Requires=kalshi-nhl-goalies.service
+[Timer]
+OnBootSec=180
+OnUnitActiveSec=1800
+RandomizedDelaySec=60
+[Install]
+WantedBy=timers.target
