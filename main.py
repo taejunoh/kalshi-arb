@@ -52,6 +52,7 @@ from strategies.sports_tennis_surface_skew_v1 import SportsTennisSurfaceSkewV1St
 from strategies.sports_tennis_underdog_v1 import SportsTennisUnderdogV1Strategy
 from strategies.sports_tennis_live_fade_v1 import SportsTennisLiveFadeV1Strategy
 from strategies.sports_tennis_chalk_v1 import SportsTennisChalkV1Strategy
+from strategies.sports_tennis_pinnacle_fade_v1 import SportsTennisPinnacleFadeV1Strategy
 from strategies.sports_mlb_pitcher_edge_v1 import SportsMlbPitcherEdgeV1Strategy
 from strategies.sports_mlb_pitcher_edge_v2 import SportsMlbPitcherEdgeV2Strategy
 from strategies.sports_mlb_pitcher_edge_v2_1 import SportsMlbPitcherEdgeV21Strategy
@@ -311,6 +312,13 @@ class Bot:
         # complement to sports_tennis_live_fade_v1 (different mechanism:
         # exploits favorite-longshot bias not Pinnacle-lag).
         self.sports_tennis_chalk_v1 = SportsTennisChalkV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # 2026-05-26 — Tennis Pinnacle FADE v1 (paper-only). Drill-down
+        # backtest (60d, FADE, |move|∈[3,8]pp + ya∈[0.40,0.70]): n=48 ATP+WTA,
+        # WR ~81%, +$0.24/$1. WTA component strongest (+$0.32 n=22).
+        # See [[pinnacle_line_movement_backtest_2026-05-26]].
+        self.sports_tennis_pinnacle_fade_v1 = SportsTennisPinnacleFadeV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         # 2026-05-26 — MLB starting-pitcher ERA edge (paper-only). Backtest
@@ -594,6 +602,9 @@ class Bot:
             ),
             asyncio.create_task(
                 self.sports_tennis_chalk_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_tennis_pinnacle_fade_v1.scan_loop(scan_interval_secs=1.0)
             ),
             asyncio.create_task(
                 self.sports_mlb_pitcher_edge_v1.scan_loop(scan_interval_secs=1.0)
