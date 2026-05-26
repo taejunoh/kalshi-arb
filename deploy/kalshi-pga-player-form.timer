@@ -1,0 +1,11 @@
+[Unit]
+Description=PGA player form collector daily
+Requires=kalshi-pga-player-form.service
+
+[Timer]
+OnBootSec=420
+OnUnitActiveSec=86400
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
