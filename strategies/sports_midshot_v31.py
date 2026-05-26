@@ -78,14 +78,19 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
     PAIR_FIRE_DEDUP = True
 
     def _get_trade_size(self, signal: dict) -> float:
-        """Depth-tiered cap (2026-05-12).
+        """Depth-tiered cap (2026-05-12, sized up 5/25).
 
         Cross-strategy tier ROI analysis (4/24+, MLB regular):
-          $500-2k:  +135% (n=7) ⭐ sweet spot — cap raised to 60
+          $500-2k:  +135% (n=7) ⭐ sweet spot — cap raised to 80
           $2k-10k:  −59%  (n=6) — small sample, cap unchanged (no dead-zone
                                   unlike v31 underdog where n=13/13 stronger)
-          $10k+:    +26%  (n=23) — cap raised to 60
-          Other:    insufficient sample — cap unchanged at 36
+          $10k+:    +26%  (n=23) — cap raised to 80
+          Other:    insufficient sample — cap raised 36→54
+
+        2026-05-25 size bump 1.5x (36→54, 60→80) — WNBA cohort driving recent
+        +$469/n=17 LIVE; observer EV +$0.180/$1 / n=46 confirms structural +EV.
+        Other sport-blocks (MLB) and dead-zones intact. Rollback if 14d
+        forward WNBA WR < 35% or any sport-band reverses to -$50 cumulative.
         """
         ticker = signal.get("ticker", "")
         side = signal.get("side", "yes")
@@ -97,13 +102,13 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
             except Exception:
                 pass
         if depth is None:
-            cap = 36.0
+            cap = 54.0
         elif depth >= 10000:
-            cap = 60.0        # thick book +26% (n=23)
+            cap = 80.0        # thick book +26% (n=23)
         elif depth >= 2000:
-            cap = 36.0        # UNREACHABLE — DEPTH_DEAD_ZONE skips $2k-10k
+            cap = 54.0        # UNREACHABLE — DEPTH_DEAD_ZONE skips $2k-10k
         elif depth >= 500:
-            cap = 60.0        # SWEET SPOT +135% (n=7) — cap raised
+            cap = 80.0        # SWEET SPOT +135% (n=7) — cap raised
         else:
-            cap = 36.0
+            cap = 54.0
         return min(cap, self._order_manager.bankroll * 0.02)
