@@ -64,6 +64,15 @@ class SportsMlbPitcherEdgeV2Strategy(SportsTraderStrategy):
     PLAYOFF_BLOCKLIST = frozenset()
     PRE_GAME_ONLY = True
 
+    # Faster scan cadence than the 300s parent default. Paper-only strategy
+    # with a narrow candidate universe (era_diff ≥ 2.5 + both ERAs ∈ [1.0, 8.0])
+    # — typically 3-6 firable games coexist, so max_trades_per_cycle=3 means
+    # 1-2 cycles are needed to hit them all. With 5min interval, candidates
+    # closer to game-start can wipe before cycle 2 lands. 60s catches them
+    # while still leaving headroom for cache refresh and odds-API quota.
+    # See [[mlb_pitcher_edge_v2_missed_fire_2026-05-26]].
+    SCAN_INTERVAL_OVERRIDE = 60.0
+
     # Stricter ERA gate than v1 (concentrates +EV cohort)
     MIN_ERA_DIFF = 2.5
 
