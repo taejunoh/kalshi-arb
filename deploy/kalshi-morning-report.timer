@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily morning report at 08:30 UTC
+Requires=kalshi-morning-report.service
+[Timer]
+OnCalendar=*-*-* 08:30:00 UTC
+Persistent=true
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Kalshi WebSocket game-time measurement (60min one-shot)
+After=network.target
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+EnvironmentFile=/home/ubuntu/kalshi-arb/.env
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/kalshi_ws_gametime.py
+Environment=PYTHONUNBUFFERED=1 WS_RUN_DURATION_S=3600
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs
+TimeoutStartSec=4500

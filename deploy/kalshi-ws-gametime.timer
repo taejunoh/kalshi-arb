@@ -1,0 +1,8 @@
+[Unit]
+Description=Kalshi WS game-time measurement — runs once at 04:30 UTC (peak MLB game activity)
+Requires=kalshi-ws-gametime.service
+[Timer]
+OnCalendar=2026-05-26 04:30:00 UTC
+Persistent=false
+[Install]
+WantedBy=timers.target
