@@ -1,0 +1,9 @@
+[Unit]
+Description=NBA injuries collector every 30min
+Requires=kalshi-nba-injuries.service
+[Timer]
+OnBootSec=240
+OnUnitActiveSec=1800
+RandomizedDelaySec=60
+[Install]
+WantedBy=timers.target
