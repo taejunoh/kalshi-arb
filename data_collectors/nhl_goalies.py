@@ -58,11 +58,24 @@ CREATE TABLE IF NOT EXISTS nhl_game_observations (
     away_injuries_json TEXT,
     home_injuries_json TEXT,
     ticker_better_savepct_reg TEXT,
+    -- 2026-05-26: starter workload signals (gameLog-derived, point-in-time).
+    away_starter_days_rest INTEGER,    -- days since starter's last appearance with TOI≥30min
+    home_starter_days_rest INTEGER,
+    away_starter_games_l7 INTEGER,     -- starts in last 7 days (workload pressure)
+    home_starter_games_l7 INTEGER,
     UNIQUE(game_date_et, away_code, home_code)
 );
 CREATE INDEX IF NOT EXISTS idx_nhl_obs_ticker ON nhl_game_observations(ticker_better_savepct_reg);
 CREATE INDEX IF NOT EXISTS idx_nhl_obs_date ON nhl_game_observations(game_date_et);
 """
+
+# Idempotent column backfill for pre-existing tables.
+WORKLOAD_MIGRATIONS = (
+    "ALTER TABLE nhl_game_observations ADD COLUMN away_starter_days_rest INTEGER",
+    "ALTER TABLE nhl_game_observations ADD COLUMN home_starter_days_rest INTEGER",
+    "ALTER TABLE nhl_game_observations ADD COLUMN away_starter_games_l7 INTEGER",
+    "ALTER TABLE nhl_game_observations ADD COLUMN home_starter_games_l7 INTEGER",
+)
 
 
 def http_get_json(url, timeout=12):
@@ -122,6 +135,51 @@ def fetch_player_savepct(player_id):
                 career(fs.get("playoffs", {})))
     except Exception:
         return None, None, None
+
+
+def _current_nhl_season():
+    """NHL season ID format YYYYYYYY (e.g., 20252026). Season starts in October."""
+    today = datetime.now(timezone.utc).date()
+    yr = today.year
+    if today.month >= 7:
+        return yr * 10000 + (yr + 1)
+    return (yr - 1) * 10000 + yr
+
+
+def fetch_goalie_workload(player_id, season, game_date_iso):
+    """Returns (days_rest, games_l7) for the goalie's prior starts.
+
+    Pulls gameLog for both regular season and playoffs in `season`, filters
+    to games strictly BEFORE game_date_iso, sorts by date, and computes:
+      - days_rest: days since most recent start (TOI implied by row presence)
+      - games_l7: count of starts in the 7 days preceding game_date_iso
+
+    Returns (None, None) on API failure or no prior starts.
+    """
+    try:
+        from datetime import date as _date
+        starts = []
+        for gt in (2, 3):  # regular, playoffs
+            d = http_get_json(
+                f"https://api-web.nhle.com/v1/player/{player_id}/game-log/{season}/{gt}"
+            )
+            for g in d.get("gameLog", []):
+                gd = g.get("gameDate")
+                if gd and gd < game_date_iso:
+                    starts.append(gd)
+        if not starts:
+            return None, None
+        starts.sort()
+        last = starts[-1]
+        last_dt = _date.fromisoformat(last)
+        game_dt = _date.fromisoformat(game_date_iso)
+        days_rest = (game_dt - last_dt).days
+        cutoff_dt = (game_dt - timedelta(days=7)).isoformat()
+        games_l7 = sum(1 for d in starts if d >= cutoff_dt)
+        return days_rest, games_l7
+    except Exception as e:
+        logger.debug(f"workload fetch {player_id}: {e}")
+        return None, None
 
 
 def fetch_team_recent_wins(team_abbrev):
@@ -186,6 +244,11 @@ def run():
     conn = sqlite3.connect(DB)
     conn.execute("PRAGMA busy_timeout = 5000")
     conn.executescript(SCHEMA)
+    for stmt in WORKLOAD_MIGRATIONS:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
 
     et = ZoneInfo("America/New_York")
@@ -243,6 +306,16 @@ def run():
                         time.sleep(0.05)
                     h_reg, h_po, h_pocar = sv_cache[h_pid]
 
+                # Starter workload (PIT — gameLog filtered to dates before this game).
+                wl_season = _current_nhl_season()
+                a_drest = a_g7 = h_drest = h_g7 = None
+                if a_pid is not None:
+                    a_drest, a_g7 = fetch_goalie_workload(a_pid, wl_season, date_iso)
+                    time.sleep(0.05)
+                if h_pid is not None:
+                    h_drest, h_g7 = fetch_goalie_workload(h_pid, wl_season, date_iso)
+                    time.sleep(0.05)
+
                 espn_eid = fetch_espn_event_id(date_iso, away_ab, home_ab)
                 inj = fetch_espn_injuries(espn_eid) if espn_eid else {}
                 a_inj = inj.get(away_ab, {})
@@ -262,8 +335,10 @@ def run():
                      away_savepct_pocar, home_savepct_pocar,
                      away_wins_l10, home_wins_l10,
                      away_injuries_out, home_injuries_out, away_injuries_json, home_injuries_json,
-                     ticker_better_savepct_reg)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     ticker_better_savepct_reg,
+                     away_starter_days_rest, home_starter_days_rest,
+                     away_starter_games_l7, home_starter_games_l7)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(game_date_et, away_code, home_code) DO UPDATE SET
                       fetched_at=excluded.fetched_at,
                       nhl_game_id=excluded.nhl_game_id, espn_event_id=excluded.espn_event_id,
@@ -275,7 +350,11 @@ def run():
                       away_wins_l10=excluded.away_wins_l10, home_wins_l10=excluded.home_wins_l10,
                       away_injuries_out=excluded.away_injuries_out, home_injuries_out=excluded.home_injuries_out,
                       away_injuries_json=excluded.away_injuries_json, home_injuries_json=excluded.home_injuries_json,
-                      ticker_better_savepct_reg=excluded.ticker_better_savepct_reg
+                      ticker_better_savepct_reg=excluded.ticker_better_savepct_reg,
+                      away_starter_days_rest=excluded.away_starter_days_rest,
+                      home_starter_days_rest=excluded.home_starter_days_rest,
+                      away_starter_games_l7=excluded.away_starter_games_l7,
+                      home_starter_games_l7=excluded.home_starter_games_l7
                 """, (
                     now_utc.isoformat(), ymd, away_ab, home_ab, game_id, espn_eid,
                     a_pid, h_pid, a_name, h_name,
@@ -284,6 +363,7 @@ def run():
                     a_inj.get("out_count"), h_inj.get("out_count"),
                     a_inj.get("names_json"), h_inj.get("names_json"),
                     ticker_better,
+                    a_drest, h_drest, a_g7, h_g7,
                 ))
                 upserts += 1
 
