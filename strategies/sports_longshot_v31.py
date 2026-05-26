@@ -63,12 +63,12 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
     )
 
     def _get_trade_size(self, signal: dict) -> float:
-        # Raised 4→12 on 2026-04-25. LIVE −53% (n=140) was the biggest
-        # selection-bias victim; SOLO_PAPER post-promo +71% (n=17) suggests
-        # the aggression fix should recover most of the gap. Smaller raise
-        # than midshot/underdog because the LIVE gap is largest, so fix
-        # uncertainty is highest. v34/v35 longshot use their own overrides.
-        return min(12.0, self._order_manager.bankroll * 0.02)
+        # 2026-05-25: size-up 12→20. 30d trajectory steady positive: 0-7d
+        # n=3/+$56/ROI 670%, 7-14d n=6/+$15, 14-30d n=10/+$58. Fire rate
+        # too low to compound at $12; 1.67x bump keeps per-fire bet under
+        # 2% bankroll cap while doubling expected $/week. Rollback gate:
+        # if 14d forward WR < 22% or net < $0, revert to $12.
+        return min(20.0, self._order_manager.bankroll * 0.02)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
