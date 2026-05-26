@@ -52,6 +52,7 @@ from strategies.sports_tennis_surface_skew_v1 import SportsTennisSurfaceSkewV1St
 from strategies.sports_tennis_underdog_v1 import SportsTennisUnderdogV1Strategy
 from strategies.sports_tennis_live_fade_v1 import SportsTennisLiveFadeV1Strategy
 from strategies.sports_tennis_chalk_v1 import SportsTennisChalkV1Strategy
+from strategies.sports_mlb_pitcher_edge_v1 import SportsMlbPitcherEdgeV1Strategy
 from strategies.sports_pinnacle_edge import SportsPinnacleEdgeStrategy
 from strategies.sports_v4_edge import SportsV4EdgeStrategy
 from strategies.sports_chalk_shadow import SportsChalkShadowStrategy
@@ -308,6 +309,13 @@ class Bot:
         # complement to sports_tennis_live_fade_v1 (different mechanism:
         # exploits favorite-longshot bias not Pinnacle-lag).
         self.sports_tennis_chalk_v1 = SportsTennisChalkV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # 2026-05-26 — MLB starting-pitcher ERA edge (paper-only). Backtest
+        # 358 games / 30d: ERA diff ≥2.0 → WR 74%, EV +$0.087/$1. Reads
+        # pitcher data from `mlb_pitcher_observations` populated by
+        # data_collectors/mlb_pitchers.py (systemd timer every 30 min).
+        self.sports_mlb_pitcher_edge_v1 = SportsMlbPitcherEdgeV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         self.sports_pinnacle_edge = SportsPinnacleEdgeStrategy(
@@ -570,6 +578,9 @@ class Bot:
             ),
             asyncio.create_task(
                 self.sports_tennis_chalk_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_mlb_pitcher_edge_v1.scan_loop(scan_interval_secs=1.0)
             ),
             # 2026-05-19 (eve): P1 — 19 remaining sports strategies moved out
             # of _strategy_loop's serial queue to dodge upstream tail latency.
