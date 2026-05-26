@@ -36,17 +36,30 @@ def query(sql, params=()):
         conn.close()
 
 
+def _tg_post(payload):
+    data = urllib.parse.urlencode(payload).encode()
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", data=data)
+    return urllib.request.urlopen(req, timeout=10).read()
+
+
 def send_telegram(msg):
     if not (TG_TOKEN and TG_CHAT):
         logger.warning("missing telegram credentials")
         print(msg)
         return
     try:
-        data = urllib.parse.urlencode({"chat_id": TG_CHAT, "text": msg, "parse_mode": "Markdown"}).encode()
-        urllib.request.urlopen(
-            f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", data=data, timeout=10).read()
+        _tg_post({"chat_id": TG_CHAT, "text": msg, "parse_mode": "Markdown"})
+        return
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "replace")[:300] if hasattr(e, "read") else ""
+        logger.warning(f"telegram markdown failed ({e.code}): {body}")
     except Exception as e:
-        logger.warning(f"telegram: {e}")
+        logger.warning(f"telegram markdown failed: {e}")
+    try:
+        _tg_post({"chat_id": TG_CHAT, "text": msg})
+    except Exception as e:
+        logger.warning(f"telegram plain-text fallback failed: {e}")
         print(msg)
 
 
