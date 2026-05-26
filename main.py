@@ -53,6 +53,8 @@ from strategies.sports_tennis_underdog_v1 import SportsTennisUnderdogV1Strategy
 from strategies.sports_tennis_live_fade_v1 import SportsTennisLiveFadeV1Strategy
 from strategies.sports_tennis_chalk_v1 import SportsTennisChalkV1Strategy
 from strategies.sports_tennis_pinnacle_fade_v1 import SportsTennisPinnacleFadeV1Strategy
+from strategies.sports_npb_sharp_follow_v1 import SportsNpbSharpFollowV1Strategy
+from strategies.sports_lal_sharp_follow_v1 import SportsLalSharpFollowV1Strategy
 from strategies.sports_mlb_pitcher_edge_v1 import SportsMlbPitcherEdgeV1Strategy
 from strategies.sports_mlb_pitcher_edge_v2 import SportsMlbPitcherEdgeV2Strategy
 from strategies.sports_mlb_pitcher_edge_v2_1 import SportsMlbPitcherEdgeV21Strategy
@@ -319,6 +321,18 @@ class Bot:
         # WR ~81%, +$0.24/$1. WTA component strongest (+$0.32 n=22).
         # See [[pinnacle_line_movement_backtest_2026-05-26]].
         self.sports_tennis_pinnacle_fade_v1 = SportsTennisPinnacleFadeV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # 2026-05-26 — NPB Pinnacle sharp-FOLLOW (paper-only). Drill-down 60d:
+        # |move|∈[3,8]pp + ya∈[0.30,0.70] FOLLOW → n=33 WR 78.8% +$0.175/$1.
+        # Direction asymmetry: DN→NO is stronger, but run both for n coverage.
+        self.sports_npb_sharp_follow_v1 = SportsNpbSharpFollowV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # 2026-05-26 — LaLiga (LAL) Pinnacle sharp-FOLLOW (paper-only).
+        # Drill: |move|∈[3,5]pp + ya∈[0.30,0.70] → n=27-31 WR 67.7% +$0.094.
+        # Caveat: LaLiga 2025-26 season ends late May/June — narrow window.
+        self.sports_lal_sharp_follow_v1 = SportsLalSharpFollowV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         # 2026-05-26 — MLB starting-pitcher ERA edge (paper-only). Backtest
@@ -605,6 +619,12 @@ class Bot:
             ),
             asyncio.create_task(
                 self.sports_tennis_pinnacle_fade_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_npb_sharp_follow_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_lal_sharp_follow_v1.scan_loop(scan_interval_secs=1.0)
             ),
             asyncio.create_task(
                 self.sports_mlb_pitcher_edge_v1.scan_loop(scan_interval_secs=1.0)
