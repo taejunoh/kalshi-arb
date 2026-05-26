@@ -59,6 +59,12 @@ class SportsTennisChalkV1Strategy(SportsTraderStrategy):
 
     # Tennis-specific opt-in (matches existing tennis_*_v1 strategies).
     INDIVIDUAL_SPORTS_OPT_IN = True
+    # Override parent OBSERVATION_ONLY_SPORTS — parent treats ATP/WTA as
+    # observation-only (no trading). We're explicitly trading tennis, so
+    # subtract ATP+WTA. Without this override, evaluate() is never called.
+    OBSERVATION_ONLY_SPORTS = (
+        SportsTraderStrategy.OBSERVATION_ONLY_SPORTS - {"ATP", "WTA"}
+    )
     # Block team sports — tennis-only.
     SPORT_BLOCKLIST = frozenset({"NBA", "WNBA", "MLB", "NHL", "NPB", "KBO",
                                   "EPL", "MLS", "LAL", "BUN", "UCL", "UFC"})
