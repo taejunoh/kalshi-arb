@@ -157,6 +157,33 @@ class TestSlipAdjustedPnl:
         assert result is None
 
 
+class TestContinuousWipeRisk:
+    def test_safe_band_zero(self):
+        from core.execution_realism import continuous_wipe_risk
+        assert continuous_wipe_risk(0.40) == 0.0
+        assert continuous_wipe_risk(0.50) == 0.0
+        assert continuous_wipe_risk(0.65) == 0.0
+
+    def test_ramp_high_side(self):
+        from core.execution_realism import continuous_wipe_risk
+        # At 0.85: (0.85-0.80)/0.15 = 0.333
+        assert continuous_wipe_risk(0.85) == pytest.approx(0.333, abs=0.01)
+        # At 0.95: ramp saturated to 1.0
+        assert continuous_wipe_risk(0.95) == pytest.approx(1.0)
+
+    def test_ramp_low_side(self):
+        from core.execution_realism import continuous_wipe_risk
+        # At 0.15: (0.20-0.15)/0.15 = 0.333
+        assert continuous_wipe_risk(0.15) == pytest.approx(0.333, abs=0.01)
+        # At 0.05: ramp saturated
+        assert continuous_wipe_risk(0.05) == pytest.approx(1.0)
+
+    def test_extreme_capped(self):
+        from core.execution_realism import continuous_wipe_risk
+        assert continuous_wipe_risk(0.99) == 1.0
+        assert continuous_wipe_risk(0.01) == 1.0
+
+
 class TestCalibrationAwarePnl:
     """Calibration-aware path — depends on data/slip_calibration.json
     if present, otherwise falls back to legacy behavior."""
