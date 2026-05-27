@@ -374,18 +374,26 @@ class Bot:
         self.ladder_fed = LadderFedStrategy(
             self.config, self.order_manager, self.scanner, self.kalshi_client
         )
+        # 2026-05-27 CRYPTO FULL FREEZE: all remaining active crypto strategies
+        # mothballed. 30d portfolio audit showed only deribit_tail_fade_v1 was
+        # +EV (+$473/n=634) and it was already commented 5/25. Everything else
+        # cumulative -$7,585 across 11 strategies. Resource motivation: crypto
+        # observer scans 500 markets vs sports 309 → 60%+ of odds_observations
+        # write share. Disabling cuts WAL/cache pressure on the 5GB bot.db.
+        # Stablecoin_mints collector kept alive for 6/09 backtest validation.
+        # Revive any individual strategy by uncommenting its block.
         # ladder_crypto Phase 0 resurrection (2026-05-19): paper-only
         # walked-edge logging via core.orderbook_walk. No market_order calls.
         # Phantom-quote defense: top-vs-walked gap gate (2c) + fillability gate.
         # Spec: docs/superpowers/specs/2026-05-19-ladder-crypto-resurrection-design.md
-        self.ladder_crypto = LadderCryptoStrategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client,
-            db=self.db,
-        )
-        self.crypto_observer = CryptoObserverStrategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client,
-            price_feed=self.price_feed,
-        )
+        # self.ladder_crypto = LadderCryptoStrategy(
+        #     self.config, self.order_manager, self.scanner, self.kalshi_client,
+        #     db=self.db,
+        # )
+        # self.crypto_observer = CryptoObserverStrategy(
+        #     self.config, self.order_manager, self.scanner, self.kalshi_client,
+        #     price_feed=self.price_feed,
+        # )
         # Phase 1 paper traders promoted from crypto_observer (2026-05-14).
         # 24h cohort showed deribit_tail_skew 26/26 = 100% WR and
         # bid_imbalance 18/26 = 69.2% WR — both above break-even at the
@@ -444,9 +452,12 @@ class Bot:
         # 2026-05-18 additions: gap-fill (late_close_tail) + new-hypothesis
         # (deribit_atm_fade). Both paper-only at launch; Phase 2 promotion
         # gate is n ≥ 100 settled + ROI ≥ +5%.
-        self.late_close_tail_v1 = LateCloseTailV1Strategy(
-            self.config, self.order_manager, self.scanner, self.kalshi_client,
-        )
+        # 2026-05-27 MOTHBALL: rolled into crypto full freeze (see top). 30d
+        # n=106 / -$83 — small loss, but no path to +EV without crypto_observer
+        # signals which are also off now.
+        # self.late_close_tail_v1 = LateCloseTailV1Strategy(
+        #     self.config, self.order_manager, self.scanner, self.kalshi_client,
+        # )
         # 2026-05-26 MOTHBALL: 30d n=43 / -$193 / EV -22.5% / WR 49%. Smallest
         # sample but worst EV. Observer kept.
         # self.deribit_atm_fade_v1 = DeribitAtmFadeV1Strategy(
@@ -576,9 +587,10 @@ class Bot:
             # portfolio's degraded-odds-API path takes 30+ min per iter,
             # which choked observer scan rate to ~0 (12:13 UTC silent fail).
             # Dedicated 1 s scan_loop matches BTC/ETH market freshness.
-            asyncio.create_task(
-                self.crypto_observer.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-05-27 MOTHBALL: crypto full freeze — instance commented in __init__.
+            # asyncio.create_task(
+            #     self.crypto_observer.scan_loop(scan_interval_secs=1.0)
+            # ),
             # 2026-05-19 (Phase 1 traders): same scan-rate problem. With
             # SIGNAL_FRESHNESS_S=15 s, signals age out before the main loop
             # comes back around (10-30 min/iter), so every signal gets skipped
@@ -607,9 +619,10 @@ class Bot:
             # asyncio.create_task(
             #     self.bid_imbalance_fade_v1.scan_loop(scan_interval_secs=1.0)
             # ),
-            asyncio.create_task(
-                self.late_close_tail_v1.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-05-27 MOTHBALL: late_close_tail_v1 — see __init__ for context
+            # asyncio.create_task(
+            #     self.late_close_tail_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
             # 2026-05-26 MOTHBALL: deribit_atm_fade_v1 — see __init__ for context
             # asyncio.create_task(
             #     self.deribit_atm_fade_v1.scan_loop(scan_interval_secs=1.0)
@@ -943,7 +956,8 @@ class Bot:
             # ladder_crypto Phase 0 resurrection (2026-05-19) — paper-only
             # walked-edge logging. No market_order calls. Phantom-quote defense
             # via orderbook walk. Gated by LADDER_PHASE0_ENABLED env var.
-            ("ladder_crypto", self.ladder_crypto),
+            # 2026-05-27 MOTHBALL: crypto full freeze — instance commented in __init__.
+            # ("ladder_crypto", self.ladder_crypto),
             # Macro Event Trader (C1) — paper-only. Requires consensus cron.
             ("macro_event", self.macro_event),
             # Cross-Venue Polymarket Trader (B1) — paper-only. Requires
