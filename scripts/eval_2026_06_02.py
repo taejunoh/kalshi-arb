@@ -33,6 +33,19 @@ OUT = os.getenv("EVAL_OUT_PATH", "/home/ubuntu/kalshi-arb/data/eval_2026_06_02.m
 
 STRATEGIES = [
     {
+        "name": "sports_tennis_underdog_v1",
+        "label": "Tennis underdog v1 (ya 0.25-0.35)",
+        "promo_gate": "Mothball if WR<32% on n≥50 (breakeven ~37% at ya 0.30 avg). Tail risk: "
+                     "5/20 -$36 single-day wipe — narrow gate or kill.",
+        "deploy_ts": "2026-05-19T18:28:25+00:00",
+    },
+    {
+        "name": "sports_tennis_chalk_v1",
+        "label": "Tennis chalk v1 (favorite buy)",
+        "promo_gate": "Continue paper if WR≥70% at n≥20. LIVE if n≥50 WR≥70% EV≥+$0.05/$1.",
+        "deploy_ts": "2026-05-26T02:13:53+00:00",
+    },
+    {
         "name": "sports_mlb_pitcher_edge_v1",
         "label": "MLB pitcher v1 (look-ahead baseline)",
         "promo_gate": "Mothball if confirmed -EV (n≥15) since v1's backtest had season-aggregate bias.",
@@ -165,6 +178,21 @@ def decide(strat, snap):
     n = snap["settled"]
     ev_per_dollar = (snap["pnl"] / snap["vol"]) if snap["vol"] else 0
     name = strat["name"]
+    if name == "sports_tennis_underdog_v1":
+        # ya 0.25-0.35 narrow band. Breakeven WR ~37% at avg ya 0.30.
+        if n >= 50 and wr < 32:
+            return ("MOTHBALL", f"WR {wr:.0f}% below breakeven on n={n} — confirm structural -EV")
+        if n >= 50 and wr < 37:
+            return ("REVIEW", f"WR {wr:.0f}% borderline at n={n} — drill day skew + tighten gate")
+        return ("CONTINUE", f"n={n} — watch trend")
+    if name == "sports_tennis_chalk_v1":
+        if n >= 50 and wr >= 70 and ev_per_dollar >= 0.05:
+            return ("PROMOTE LIVE", f"Hit LIVE gate (n={n}, WR {wr:.0f}%, EV +${ev_per_dollar:.3f})")
+        if n >= 20 and wr >= 70:
+            return ("CONTINUE", f"On track (n={n}, WR {wr:.0f}%)")
+        if n >= 30 and wr < 60:
+            return ("MOTHBALL", f"Chalk WR {wr:.0f}% — below typical chalk implied prob")
+        return ("WAIT", f"n={n} too small")
     if name == "sports_mlb_pitcher_edge_v1":
         if n >= 15 and wr < 50:
             return ("MOTHBALL", f"v1 baseline confirmed -EV (n={n}, WR {wr:.0f}%) — biased backtest")
