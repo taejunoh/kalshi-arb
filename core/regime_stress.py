@@ -24,6 +24,8 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Iterable, Optional
 
+from core.bootstrap import bootstrap_mean_ci
+
 
 def day_skew_report(entries: Iterable, ts_key: str = "ts",
                     pnl_key: str = "pnl", n_key: Optional[str] = None) -> dict:
@@ -112,11 +114,26 @@ def day_skew_report(entries: Iterable, ts_key: str = "ts",
     median_pnl = sorted([r[3] for r in rows])[unique_days // 2]
     above_median = sum(1 for r in rows if r[3] > median_pnl)
 
-    # Verdict gate
+    # Bootstrap CI on per-row PnL (statistical significance)
+    per_row_pnls = []
+    for entry in entries:
+        if isinstance(entry, (tuple, list)):
+            pnl = entry[1] if len(entry) > 1 else None
+        elif isinstance(entry, dict):
+            pnl = entry.get(pnl_key)
+        else:
+            pnl = None
+        if pnl is not None:
+            per_row_pnls.append(pnl)
+    ci = bootstrap_mean_ci(per_row_pnls, n_resamples=500) if per_row_pnls else None
+
+    # Verdict gate (incl. bootstrap CI)
     # FAIL: >50% of positive PnL from single day (catastrophic
     #       concentration — pattern of cme_basis_fade FLIPPED 5/26).
     # FAIL: ≥3 wipe days with combined PnL > 30% of total positive PnL.
-    # WARN: top-1 day share > 30% OR ≥1 wipe day.
+    # FAIL: CI of per-row mean PnL overlaps zero on n >= 50 (statistically
+    #       no evidence of edge).
+    # WARN: top-1 day share > 30% OR ≥1 wipe day OR CI overlaps zero on n>=20.
     # PASS: otherwise.
     verdict = "PASS"
     reason = "regime distribution acceptable"
@@ -129,10 +146,18 @@ def day_skew_report(entries: Iterable, ts_key: str = "ts",
             verdict = "FAIL"
             reason = (f"{len(wipe_days)} wipe days lost "
                       f"{abs(wipe_pnl)/pos_total:.0%} of total positive PnL")
+        elif ci is not None and ci["overlap_zero"] and total_n >= 50:
+            verdict = "FAIL"
+            reason = (f"95% CI of mean PnL [{ci['lower']:.4f}, {ci['upper']:.4f}] "
+                      f"overlaps zero — pooled +EV statistically weak (n={total_n})")
         elif top1 > 0.30 or len(wipe_days) >= 1:
             verdict = "WARN"
             reason = (f"top-1 day = {top1:.0%}, {len(wipe_days)} wipe day(s) "
                       f"— review for regime sensitivity")
+        elif ci is not None and ci["overlap_zero"] and total_n >= 20:
+            verdict = "WARN"
+            reason = (f"95% CI of mean PnL [{ci['lower']:.4f}, {ci['upper']:.4f}] "
+                      f"overlaps zero — n={total_n} too small to claim edge")
     elif total_pnl < 0 and len(wipe_days) >= 1:
         verdict = "FAIL"
         reason = f"negative pooled PnL with {len(wipe_days)} wipe days"
@@ -153,6 +178,7 @@ def day_skew_report(entries: Iterable, ts_key: str = "ts",
         "days_above_median_pnl": above_median,
         "verdict": verdict,
         "verdict_reason": reason,
+        "ci_mean_pnl": ci,
         "by_day": [(day, n, wins, round(pnl, 2)) for day, n, wins, pnl in rows],
     }
 

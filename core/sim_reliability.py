@@ -1,4 +1,4 @@
-"""Sim reliability tier — wires Phase A+B utilities into a single verdict.
+"""Sim reliability tier - wires Phase A+B+D utilities into a single verdict.
 
 Implements the tier system from [[feedback_sim_reliability_tier_explicit]]:
 
@@ -41,11 +41,16 @@ PAPER_TWIN_GAP_OK_PP = 10     # 5-10pp → acceptable
 DEPLOY_DAYS_FOR_TIER4 = 21    # 21d paper minimum for ★★★★
 DEPLOY_DAYS_FOR_TIER5 = 60    # ~2 months for ★★★★★
 
+# Survivorship bias: paper_stale ratio thresholds
+STALE_RATIO_WARN = 0.10   # 10%+ stale rows → hidden losses suspected
+STALE_RATIO_FAIL = 0.30   # 30%+ stale rows → sample fundamentally biased
+
 
 def assess(entries: list,
            has_paper_twin_gap_pp: Optional[float] = None,
            deploy_age_days: Optional[int] = None,
            sample_avg_price: Optional[float] = None,
+           stale_ratio: Optional[float] = None,
            extra_notes: Optional[list[str]] = None) -> dict:
     """Run all sim reliability checks and return tier + verdict.
 
@@ -130,7 +135,20 @@ def assess(entries: list,
                            "detail": f"|gap| {abs_gap:.1f}pp > "
                                      f"{PAPER_TWIN_GAP_OK_PP}pp — LIVE diverges"})
 
-    # 6. Deploy age
+    # 6. Survivorship bias — paper_stale ratio (rows that fired but never settled)
+    if stale_ratio is not None:
+        if stale_ratio >= STALE_RATIO_FAIL:
+            checks.append({"name": "survivorship", "verdict": "FAIL",
+                           "detail": f"{stale_ratio:.0%} of paper rows stale — "
+                                     f"sample fundamentally biased toward settled wins"})
+        elif stale_ratio >= STALE_RATIO_WARN:
+            checks.append({"name": "survivorship", "verdict": "WARN",
+                           "detail": f"{stale_ratio:.0%} stale — hidden losses possible"})
+        else:
+            checks.append({"name": "survivorship", "verdict": "PASS",
+                           "detail": f"{stale_ratio:.0%} stale (acceptable)"})
+
+    # 7. Deploy age
     if deploy_age_days is not None:
         if deploy_age_days >= DEPLOY_DAYS_FOR_TIER5:
             checks.append({"name": "deploy_age", "verdict": "PASS",
@@ -147,7 +165,7 @@ def assess(entries: list,
 
     # Tier scoring
     tier = _compute_tier(n, ds, wf, sample_avg_price, has_paper_twin_gap_pp,
-                         deploy_age_days)
+                         deploy_age_days, stale_ratio)
 
     return _build_result(tier, checks, notes)
 
@@ -155,13 +173,15 @@ def assess(entries: list,
 def _compute_tier(n: int, ds: dict, wf: dict,
                   avg_price: Optional[float],
                   paper_twin_gap_pp: Optional[float],
-                  deploy_age_days: Optional[int]) -> int:
+                  deploy_age_days: Optional[int],
+                  stale_ratio: Optional[float] = None) -> int:
     """Score from 1 to 5 stars based on aggregated checks."""
     # Tier 1 floor — fail-fast on any FAIL
     has_fail = (ds["verdict"] == "FAIL" or wf["verdict"] == "FAIL"
                 or (avg_price is not None and is_wipe_zone(avg_price))
                 or (paper_twin_gap_pp is not None
-                    and abs(paper_twin_gap_pp) > PAPER_TWIN_GAP_OK_PP))
+                    and abs(paper_twin_gap_pp) > PAPER_TWIN_GAP_OK_PP)
+                or (stale_ratio is not None and stale_ratio >= STALE_RATIO_FAIL))
     if has_fail:
         return 1
 

@@ -26,6 +26,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Iterable, Optional
 
+from core.bootstrap import bootstrap_mean_ci
+
 
 def _parse_ts(ts):
     if isinstance(ts, datetime):
@@ -101,6 +103,9 @@ def walk_forward_report(entries: Iterable, ts_key: str = "ts",
         wins = sum(1 for _, p in in_window if p > 0)
         pnl_sum = sum(p for _, p in in_window)
         skipped = n < min_n_per_window
+        # Per-window CI on mean EV — only computed when not skipped
+        window_pnls = [p for _, p in in_window]
+        ci = bootstrap_mean_ci(window_pnls, n_resamples=300) if not skipped and window_pnls else None
         windows.append({
             "label": f"{w+1}/{n_windows}",
             "start": w_start.isoformat()[:10],
@@ -110,14 +115,23 @@ def walk_forward_report(entries: Iterable, ts_key: str = "ts",
             "wr": wins / n if n else 0.0,
             "pnl": round(pnl_sum, 2),
             "ev": round(pnl_sum / n, 4) if n else 0.0,
+            "ci_lower": ci["lower"] if ci else None,
+            "ci_upper": ci["upper"] if ci else None,
+            "ci_overlap_zero": ci["overlap_zero"] if ci else None,
             "skipped": skipped,
         })
 
     # Consistency over EVALUATED windows (skipping low-n)
     evaluated = [w for w in windows if not w["skipped"]]
     positive_windows = sum(1 for w in evaluated if w["pnl"] > 0)
+    # Statistical positives: window with CI clearly above zero
+    statistically_positive = sum(
+        1 for w in evaluated
+        if w.get("ci_lower") is not None and w["ci_lower"] > 0
+    )
     n_evaluated = len(evaluated)
     consistency = positive_windows / n_evaluated if n_evaluated else 0.0
+    stat_consistency = statistically_positive / n_evaluated if n_evaluated else 0.0
 
     pooled_pnl = sum(p for _, p in rows)
     pooled_n = len(rows)
@@ -158,8 +172,10 @@ def walk_forward_report(entries: Iterable, ts_key: str = "ts",
         "pooled_wr": round(pooled_wins / pooled_n, 3) if pooled_n else 0.0,
         "windows": windows,
         "positive_windows": positive_windows,
+        "statistically_positive_windows": statistically_positive,
         "evaluated_windows": n_evaluated,
         "win_consistency_ratio": round(consistency, 3),
+        "statistical_consistency_ratio": round(stat_consistency, 3),
         "verdict": verdict,
         "verdict_reason": reason,
     }

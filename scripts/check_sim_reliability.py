@@ -79,6 +79,28 @@ def fetch_live_paper_gap_pp(conn: sqlite3.Connection, strategy: str,
     return live_roi_pct - paper_roi_pct
 
 
+def fetch_stale_ratio(conn: sqlite3.Connection, strategy: str,
+                       days_back: int = 60) -> float | None:
+    """Compute paper_stale / (paper_stale + paper_settled) ratio.
+
+    High stale ratio = hidden losses (entries that never settled, possibly
+    because the market closed under conditions that paper-sim doesn't model).
+    """
+    row = conn.execute(
+        """SELECT
+             SUM(CASE WHEN status='paper_stale' THEN 1 ELSE 0 END) AS stale,
+             SUM(CASE WHEN status='paper_settled' THEN 1 ELSE 0 END) AS settled
+           FROM trades
+           WHERE strategy = ?
+             AND timestamp >= datetime('now', ?)""",
+        (strategy, f"-{days_back} days"),
+    ).fetchone()
+    if not row or (row[0] or 0) + (row[1] or 0) == 0:
+        return None
+    stale, settled = row[0] or 0, row[1] or 0
+    return stale / (stale + settled)
+
+
 def fetch_deploy_age(conn: sqlite3.Connection, strategy: str) -> int | None:
     row = conn.execute(
         """SELECT MIN(timestamp) FROM trades WHERE strategy = ?""",
@@ -101,17 +123,21 @@ def check_strategy(conn: sqlite3.Connection, strategy: str,
     entries = fetch_entries(conn, strategy, days_back=days_back)
     gap_pp = fetch_live_paper_gap_pp(conn, strategy, days_back=min(30, days_back))
     deploy_age = fetch_deploy_age(conn, strategy)
+    stale_ratio = fetch_stale_ratio(conn, strategy, days_back=days_back)
 
     extra_notes = []
     if gap_pp is not None:
         extra_notes.append(f"LIVE-PAPER twin gap: {gap_pp:+.1f}pp ROI (30d)")
     if deploy_age is not None:
         extra_notes.append(f"Deploy age: {deploy_age}d (first trade ever)")
+    if stale_ratio is not None and stale_ratio > 0:
+        extra_notes.append(f"Stale ratio: {stale_ratio:.1%} of paper rows never settled")
 
     result = assess(
         entries=entries,
         has_paper_twin_gap_pp=gap_pp,
         deploy_age_days=deploy_age,
+        stale_ratio=stale_ratio,
         extra_notes=extra_notes,
     )
     result["strategy"] = strategy

@@ -87,6 +87,31 @@ class TestTierAssignment:
         assert "day_skew" in out
 
 
+class TestSurvivorshipBias:
+    def test_high_stale_ratio_fails(self):
+        entries = _consistent_paper(n=80, n_days=30)
+        # 35% stale → FAIL
+        r = assess(entries, deploy_age_days=30, stale_ratio=0.35)
+        assert r["tier"] == 1
+        survivorship = [c for c in r["checks"] if c["name"] == "survivorship"][0]
+        assert survivorship["verdict"] == "FAIL"
+
+    def test_moderate_stale_warns(self):
+        entries = _consistent_paper(n=80, n_days=30)
+        # 15% stale → WARN
+        r = assess(entries, deploy_age_days=30, stale_ratio=0.15)
+        survivorship = [c for c in r["checks"] if c["name"] == "survivorship"][0]
+        assert survivorship["verdict"] == "WARN"
+        # Should NOT auto-FAIL (just WARN)
+        assert r["tier"] >= 3
+
+    def test_low_stale_passes(self):
+        entries = _consistent_paper(n=80, n_days=30)
+        r = assess(entries, deploy_age_days=30, stale_ratio=0.03)
+        survivorship = [c for c in r["checks"] if c["name"] == "survivorship"][0]
+        assert survivorship["verdict"] == "PASS"
+
+
 class TestCmeBasisFlipped:
     """Apply assess() to the real cme_basis_fade FLIPPED 30d data —
     should output tier 1 (regime-fragile)."""
