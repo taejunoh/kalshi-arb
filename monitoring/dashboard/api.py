@@ -431,18 +431,18 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 bucket["open_count"] += 1
                 bucket["open_exposure"] += trade.get("size", 0) or 0
 
-        # CLV+ rate per strategy, split by mode so paper vs live cards show
-        # independent signal quality (same-strategy live trades get their
-        # own clv_snapshots rows now that live settlement records closing).
+        # CLV+ rate per (strategy, mode). Batched single query — the prior
+        # per-strategy loop ran ~120 sequential SQLite connections (~1.2s on
+        # the bot DB) and dominated /api/performance latency.
+        try:
+            clv_rates = await database.get_clv_positive_rates_batch(days=30)
+        except Exception:
+            clv_rates = {}
         for strat_name in strategies:
             for mode in ("paper", "live"):
-                try:
-                    rate = await database.get_clv_positive_rate(
-                        strat_name, days=30, mode=mode
-                    )
-                except Exception:
-                    rate = 0.0
-                strategies[strat_name][mode]["clv_positive_rate"] = rate
+                strategies[strat_name][mode]["clv_positive_rate"] = clv_rates.get(
+                    (strat_name, mode), 0.0
+                )
 
         return strategies
 
