@@ -1,0 +1,37 @@
+#!/bin/bash
+# Pre-commit hook — auto-runs lint_lookahead.py on staged backtest files.
+# Installed 2026-05-27 as part of sim-reliability automation.
+#
+# To bypass (emergency): git commit --no-verify
+# To regenerate: just re-write this file and `chmod +x .git/hooks/pre-commit`
+
+set -e
+
+# Find staged Python files in backtest categories.
+STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E "(backtest|replay|drill|scanner|observer)" | grep -E "\.py$" || true)
+
+if [ -z "$STAGED" ]; then
+    exit 0
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+PYTHON="$REPO_ROOT/venv/bin/python"
+
+if [ ! -x "$PYTHON" ]; then
+    PYTHON=$(command -v python3)
+fi
+
+echo "[pre-commit] Running lint_lookahead.py on staged backtest files..."
+echo "$STAGED" | while read -r file; do
+    echo "  -> $file"
+done
+
+if ! "$PYTHON" "$REPO_ROOT/scripts/lint_lookahead.py" $STAGED; then
+    echo ""
+    echo "[pre-commit] LOOK-AHEAD BIAS check FAILED."
+    echo "  Fix the warnings above or bypass with: git commit --no-verify"
+    exit 2
+fi
+
+echo "[pre-commit] Lint passed."
+exit 0

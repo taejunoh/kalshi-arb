@@ -208,6 +208,48 @@ def section_stablecoin():
     return "\n".join(lines)
 
 
+def section_live_sim_tier():
+    """For each LIVE strategy, compute current sim reliability tier.
+    Wires Phase A-F utilities into the morning report."""
+    try:
+        sys_path_prepend = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        import sys
+        if sys_path_prepend not in sys.path:
+            sys.path.insert(0, sys_path_prepend)
+        from scripts.check_sim_reliability import check_strategy
+        from core.sim_reliability import format_result
+    except Exception as e:
+        return f"## LIVE Sim Reliability\n_Import error: {e}_\n"
+
+    LIVE_STRATS = [
+        "sports_longshot_v31", "sports_midshot_v31",
+        "sports_underdog_v31", "sports_underdog_v37",
+    ]
+    import sqlite3
+    conn = sqlite3.connect(DB)
+    conn.execute("PRAGMA query_only = 1")
+    conn.execute("PRAGMA busy_timeout = 10000")
+
+    lines = ["## LIVE Sim Reliability (per-strategy tier)", ""]
+    lines.append("| Strategy | Tier | Verdict | Key Check Failures |")
+    lines.append("|---|---|---|---|")
+    for strat in LIVE_STRATS:
+        try:
+            result = check_strategy(conn, strat, days_back=30)
+        except Exception as e:
+            lines.append(f"| `{strat}` | — | ERROR | {e} |")
+            continue
+        tier = result["tier"]
+        tier_str = "*" * tier
+        verdict = result["overall_verdict"]
+        failed = [c["name"] for c in result["checks"] if c["verdict"] == "FAIL"]
+        fail_str = ", ".join(failed) if failed else "none"
+        lines.append(f"| `{strat}` | {tier_str} ({tier}/5) | {verdict} | {fail_str} |")
+    lines.append("")
+    lines.append("_Tier 1-2 = SKIP/BACKTEST_ONLY, 3 = DRILL, 4 = CONTINUE_PAPER, 5 = PROMOTE._")
+    return "\n".join(lines)
+
+
 def section_observer_leads():
     """Surface overnight observer mass-backtest findings if file exists."""
     findings_path = "/home/ubuntu/kalshi-arb/data/observer_mass_findings.md"
@@ -280,6 +322,8 @@ def main():
         section_silence(),
         "",
         section_stablecoin(),
+        "",
+        section_live_sim_tier(),
         "",
         section_observer_leads(),
         "",

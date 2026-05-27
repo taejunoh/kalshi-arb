@@ -49,6 +49,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.strategy_replay import STRATEGIES, sim_pnl, sim_cost
 
+try:
+    from core.sim_reliability import assess as sim_assess
+except ImportError:
+    sim_assess = None
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("promotion_eval")
 
@@ -517,6 +522,13 @@ def _section_summary(results: dict, baselines: dict) -> list[str]:
         if d.get("best_strategy") and d.get("best_roi") is not None:
             line += f" (best: {d['best_strategy']} +{d['best_roi']:.1%})"
         lines.append(line)
+        # Append sim_reliability tier per strategy (D-F utilities)
+        tiers = r.get("sim_tiers", {})
+        if tiers:
+            tier_strs = [f"{s}: {'*' * t['tier']}/{t['verdict']}"
+                         for s, t in tiers.items() if t.get("tier")]
+            if tier_strs:
+                lines.append("    sim tier: " + " | ".join(tier_strs))
 
     # Currently-live baselines — the comparison bar for promotion decisions
     live_now = baselines.get("live_now", {})
@@ -724,10 +736,38 @@ def _evaluate(db_path: str, window_days: int, sport_filter: str | None,
             else None
         )
         decision = _decide(quality, replay, len(entries), ci_required)
+        # Sim reliability tier — wired via Phase A-F utilities.
+        # For each strategy in the replay, derive per-trade PnL list and run
+        # assess(). Reports the BEST tier across strategies for this sport.
+        tiers = {}
+        if sim_assess is not None and entries:
+            for strat_name, replay_data in (replay or {}).items():
+                trades = replay_data.get("trades") or []
+                if not trades:
+                    continue
+                # `trades` are dicts with ts + pnl per fired entry
+                tier_entries = []
+                for t in trades:
+                    ts = t.get("ts") or t.get("timestamp")
+                    pnl = t.get("pnl")
+                    if ts is None or pnl is None:
+                        continue
+                    tier_entries.append({"ts": ts, "pnl": pnl,
+                                         "price": t.get("price")})
+                if len(tier_entries) >= 15:
+                    try:
+                        result = sim_assess(tier_entries, deploy_age_days=window_days)
+                        tiers[strat_name] = {
+                            "tier": result["tier"],
+                            "verdict": result["overall_verdict"],
+                        }
+                    except Exception:
+                        pass
         results[sport] = {
             "quality": quality, "clv": clv, "replay": replay,
             "legs": legs, "archetype_buckets": archetype_buckets,
             "n_games": len(entries), "decision": decision,
+            "sim_tiers": tiers,
         }
     baselines = _load_live_baselines(conn, window_days)
     conn.close()
