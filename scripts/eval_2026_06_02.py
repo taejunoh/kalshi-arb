@@ -26,7 +26,13 @@ Writes Markdown to /home/ubuntu/kalshi-arb/data/eval_2026_06_02.md.
 import argparse
 import os
 import sqlite3
+import sys
 from datetime import datetime, timezone
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from scripts.check_sim_reliability import check_strategy as _sim_rel_check
+from core.sim_reliability import format_result as _sim_rel_format
 
 DB = os.getenv("KALSHI_BOT_DB", "/home/ubuntu/kalshi-arb/data/bot.db")
 OUT = os.getenv("EVAL_OUT_PATH", "/home/ubuntu/kalshi-arb/data/eval_2026_06_02.md")
@@ -259,6 +265,17 @@ def main():
                 wr_b = (100 * wins / n) if n else 0
                 lines.append(f"| {band} | {n} | {wr_b:.0f}% | {fmt_money(pnl)} | {avg_price} |")
             lines.append("")
+
+        # Sim reliability tier — wires day-skew + walk-forward + paper-twin gap
+        # + wipe-zone + sample-size into a single ★1-5 verdict.
+        try:
+            sim_rel = _sim_rel_check(conn, strat["name"], days_back=max(args.days, 30))
+            lines.append("### Sim reliability tier")
+            lines.append("")
+            lines.append(_sim_rel_format(sim_rel))
+            lines.append("")
+        except Exception as e:
+            lines.append(f"### Sim reliability tier\n_Error: {e}_\n")
 
         # Paper vs LIVE comparison (only if both buckets present)
         comp = section_paper_vs_live(conn, strat["name"], strat["deploy_ts"], args.days)
