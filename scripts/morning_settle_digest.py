@@ -159,12 +159,16 @@ def section_silence():
             hours = (now - tt).total_seconds() / 3600
         except Exception:
             continue
-        if hours >= 18:
+        # Thresholds tuned for 07:30 UTC wake-up: most US sports games end
+        # 02-04 UTC, settle 05-06 UTC, next-day prep starts 12 UTC — so
+        # 7-12h-since-fire is the natural lull at digest time. >18h is
+        # unusual; >24h likely indicates a real silence event.
+        if hours >= 24:
             issues.append(f"- 🚨 {strat}: last fire {hours:.1f}h ago ({last})")
-        elif hours >= 12:
+        elif hours >= 18:
             issues.append(f"- ⚠️ {strat}: last fire {hours:.1f}h ago ({last})")
     if not issues:
-        lines.append("All 4 LIVE strategies fired within last 12h ✓")
+        lines.append("All 4 LIVE strategies fired within last 18h ✓")
     else:
         lines.extend(issues)
     return "\n".join(lines)
