@@ -208,6 +208,41 @@ def section_stablecoin():
     return "\n".join(lines)
 
 
+def section_observer_leads():
+    """Surface overnight observer mass-backtest findings if file exists."""
+    findings_path = "/home/ubuntu/kalshi-arb/data/observer_mass_findings.md"
+    if not os.path.exists(findings_path):
+        return ""
+    try:
+        with open(findings_path) as f:
+            content = f.read()
+    except Exception:
+        return ""
+    # Extract just the "Actionable cohorts" table from the report.
+    lines_out = ["## Observer Phase 0 leads (overnight scan)", ""]
+    in_actionable = False
+    pulled = 0
+    for line in content.splitlines():
+        if line.startswith("## Actionable cohorts"):
+            in_actionable = True
+            continue
+        if in_actionable:
+            if line.startswith("## ") and pulled > 0:
+                break
+            if line.startswith("##"):
+                continue
+            lines_out.append(line)
+            if line.startswith("|"):
+                pulled += 1
+    if pulled == 0:
+        lines_out.append("_No actionable cohorts in last 30d._")
+    else:
+        lines_out.append("")
+        lines_out.append("_Full report: `data/observer_mass_findings.md`. "
+                         "Drill-down required before any deploy._")
+    return "\n".join(lines_out)
+
+
 def section_daily_loss_status():
     """Daily loss breaker status — silent breaker is the #1 culprit per memory."""
     lines = ["## Daily loss breaker", ""]
@@ -245,6 +280,8 @@ def main():
         section_silence(),
         "",
         section_stablecoin(),
+        "",
+        section_observer_leads(),
         "",
         section_daily_loss_status(),
         "",
