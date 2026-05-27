@@ -13,9 +13,15 @@ Reports per observer:
 Output: writes ranked findings to data/observer_mass_findings.md.
 """
 import json
+import os
 import sqlite3
+import sys
 from collections import defaultdict
 from datetime import datetime, timezone
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.sim_reliability import assess, format_result
 
 FEE = 0.07
 LOOKBACK_DAYS = 30
@@ -66,7 +72,7 @@ def band_of(price):
 
 def run_observer(c, observer):
     cur = c.execute(
-        """SELECT predicted_outcome, actual_outcome, features_json
+        """SELECT predicted_outcome, actual_outcome, features_json, ts
            FROM crypto_observer_signals
            WHERE observer = ?
              AND actual_outcome IS NOT NULL
@@ -78,9 +84,11 @@ def run_observer(c, observer):
     flipped = {"n": 0, "pnl": 0.0, "wins": 0}
     bands = defaultdict(lambda: {"n": 0, "pnl": 0.0, "wins": 0})
     flip_bands = defaultdict(lambda: {"n": 0, "pnl": 0.0, "wins": 0})
+    # Per-(direction, band) per-row entries for sim_reliability assessment
+    band_entries: dict = defaultdict(list)
     rejected = 0
 
-    for pred, actual, features_json in cur:
+    for pred, actual, features_json, ts in cur:
         try:
             f = json.loads(features_json)
         except Exception:
@@ -95,15 +103,18 @@ def run_observer(c, observer):
         b = band_of(price)
         bands[b]["n"] += 1; bands[b]["pnl"] += p
         if p > 0: bands[b]["wins"] += 1
+        band_entries[("orig", b)].append({"ts": ts, "pnl": p, "price": price})
         # Flipped (contrarian)
         flip_pred = "no" if pred == "yes" else "yes"
         fp = pnl(flip_pred, ya, na, actual)
         if fp is not None:
             flipped["n"] += 1; flipped["pnl"] += fp
             if fp > 0: flipped["wins"] += 1
-            fb = band_of(ya if flip_pred == "yes" else na)
+            flip_price = ya if flip_pred == "yes" else na
+            fb = band_of(flip_price)
             flip_bands[fb]["n"] += 1; flip_bands[fb]["pnl"] += fp
             if fp > 0: flip_bands[fb]["wins"] += 1
+            band_entries[("flip", fb)].append({"ts": ts, "pnl": fp, "price": flip_price})
 
     return {
         "observer": observer,
@@ -112,24 +123,41 @@ def run_observer(c, observer):
         "flipped": flipped,
         "bands": dict(bands),
         "flip_bands": dict(flip_bands),
+        "band_entries": dict(band_entries),
     }
 
 
 def find_actionable_cohorts(result):
-    """Return cohorts meeting: n≥MIN_N_BAND AND WR≥60% AND EV≥+$0.02/ct."""
+    """Return cohorts meeting: n>=MIN_N_BAND AND WR>=60% AND EV>=+$0.02/ct.
+    Each cohort is enriched with sim_reliability tier assessment."""
     actionable = []
+    band_entries = result.get("band_entries", {})
     for direction, source in (("orig", result["bands"]), ("flip", result["flip_bands"])):
         for band, st in source.items():
             if st["n"] < MIN_N_BAND: continue
             wr = st["wins"] / st["n"]
             ev = st["pnl"] / st["n"]
             if wr >= 0.60 and ev >= 0.02:
-                actionable.append({
+                cohort = {
                     "observer": result["observer"],
                     "direction": direction,
                     "band": band,
                     "n": st["n"], "wr": wr, "ev": ev, "pnl": st["pnl"],
-                })
+                }
+                # Enrich with sim_reliability tier — wires Phase A-F utilities
+                entries = band_entries.get((direction, band), [])
+                if entries:
+                    try:
+                        avg_price = sum(e["price"] for e in entries) / len(entries)
+                        tier_result = assess(entries, sample_avg_price=avg_price)
+                        cohort["tier"] = tier_result["tier"]
+                        cohort["tier_verdict"] = tier_result["overall_verdict"]
+                        cohort["tier_reason"] = tier_result["recommendation"]
+                    except Exception as e:
+                        cohort["tier"] = None
+                        cohort["tier_verdict"] = "ERROR"
+                        cohort["tier_reason"] = str(e)
+                actionable.append(cohort)
     return actionable
 
 
@@ -173,18 +201,30 @@ def main():
             "actionable_count": len(actionable),
         })
 
-    lines.append("## Actionable cohorts (n≥{}, WR≥60%, EV≥+$0.02/ct)".format(MIN_N_BAND))
+    lines.append("## Actionable cohorts (n>={}, WR>=60%, EV>=+$0.02/ct)".format(MIN_N_BAND))
     lines.append("")
     if not all_actionable:
         lines.append("_None._")
     else:
-        lines.append("| Observer | Dir | Band | n | WR | EV/ct | PnL |")
-        lines.append("|---|---|---|---:|---:|---:|---:|")
+        lines.append("| Observer | Dir | Band | n | WR | EV/ct | PnL | Tier | Verdict |")
+        lines.append("|---|---|---|---:|---:|---:|---:|---|---|")
         for a in sorted(all_actionable, key=lambda x: -x["ev"]):
+            tier = a.get("tier")
+            tier_str = ("★" * tier) if tier else "—"
+            verdict = a.get("tier_verdict", "—")
             lines.append(
                 f"| `{a['observer']}` | {a['direction']} | {a['band']} "
-                f"| {a['n']} | {100*a['wr']:.1f}% | ${a['ev']:+.4f} | ${a['pnl']:+.2f} |"
+                f"| {a['n']} | {100*a['wr']:.1f}% | ${a['ev']:+.4f} | ${a['pnl']:+.2f} "
+                f"| {tier_str} | {verdict} |"
             )
+        # Highlight high-tier cohorts (>= 3 stars) as ready for paper drill
+        promotable = [a for a in all_actionable if a.get("tier", 0) >= 3]
+        if promotable:
+            lines.append("")
+            lines.append("### Tier 3+ cohorts (passing day-skew + walk-forward)")
+            for a in promotable:
+                lines.append(f"- `{a['observer']}` {a['direction']} {a['band']}: "
+                             f"{'*' * a['tier']} — {a['tier_reason']}")
 
     lines.append("")
     lines.append("## Per-observer pooled summary")
