@@ -125,6 +125,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_ufc_chalk_fade_v1",
             "sports_tennis_surface_skew_v1",
             "sports_tennis_live_fade_v1",
+            "sports_tennis_underdog_v1",
             # 2026-05-26 additions — paper-only Phase 0
             "sports_tennis_chalk_v1",
             "sports_tennis_pinnacle_fade_v1",
@@ -143,9 +144,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "cme_basis_fade_v1",
             # 2026-05-21: sister of deribit_tail_fade_v1 for high-ya zone
             "deribit_tail_fade_high_v1",
+            # Ladder strategies (econ + crypto-strike).
+            "ladder_fed", "ladder_crypto",
             # Archived — historical data surfaced in dashboard's Archived section.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
+            "crypto_fair_value", "crypto_fair_value_mid_v1",
         ]
 
         today_cutoff = _today_cutoff_utc()
@@ -566,6 +570,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_ufc_chalk_fade_v1",
             "sports_tennis_surface_skew_v1",
             "sports_tennis_live_fade_v1",
+            "sports_tennis_underdog_v1",
             # 2026-05-26 additions — paper-only Phase 0
             "sports_tennis_chalk_v1",
             "sports_tennis_pinnacle_fade_v1",
@@ -584,9 +589,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "cme_basis_fade_v1",
             # 2026-05-21: sister of deribit_tail_fade_v1 for high-ya zone
             "deribit_tail_fade_high_v1",
+            # Ladder strategies (econ + crypto-strike).
+            "ladder_fed", "ladder_crypto",
             # Archived — surfaced in dashboard Archived section with reason.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
+            "crypto_fair_value", "crypto_fair_value_mid_v1",
         ]
         archived_set = {
             # Older infra retirements
