@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ast
 import glob
 import os
 import re
@@ -105,6 +106,70 @@ class FileReport:
             self.passed = False
 
 
+def ast_scan(content: str, path: str) -> list:
+    """AST-based scan — catches dynamic look-ahead patterns SQL regex misses.
+
+    Detects:
+      1. Functions that consume an `actual_outcome` / `result` arg AND
+         produce a feature/signal (vs only computing PnL).
+      2. .iloc[N:] or .shift(-N) with negative offset (future-leak in pandas).
+      3. Direct assignment from a future-indexed slice within a loop.
+    """
+    findings = []
+    try:
+        tree = ast.parse(content, filename=path)
+    except SyntaxError:
+        return findings
+
+    OUTCOME_NAMES = {"actual_outcome", "actual", "result", "settlement", "settled_at"}
+    SIGNAL_NAMES = {"signal", "prediction", "feature", "gate"}
+
+    for node in ast.walk(tree):
+        # Pattern 1: function body references actual_outcome AND a signal name
+        if isinstance(node, ast.FunctionDef):
+            body_src = ast.unparse(node) if hasattr(ast, "unparse") else ""
+            mentions_outcome = any(o in body_src for o in OUTCOME_NAMES)
+            mentions_signal = any(s in body_src for s in SIGNAL_NAMES)
+            if mentions_outcome and mentions_signal:
+                # Skip if the function name itself implies it's an evaluator/replay
+                if not any(kw in node.name.lower() for kw in
+                           ("pnl", "replay", "settle", "score", "eval",
+                            "audit", "report", "stat", "_compute",
+                            "simulate", "backtest", "drill", "test_",
+                            "format_", "main", "fmt", "run", "calc",
+                            "decide", "_section", "fetch", "analyze",
+                            "load", "build")):
+                    findings.append((node.lineno,
+                                     f"function `{node.name}` references "
+                                     f"outcome AND signal names",
+                                     "warn"))
+
+        # Pattern 2: .shift(-N) or .iloc[future index]
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute):
+                if node.func.attr == "shift" and node.args:
+                    arg = node.args[0]
+                    if isinstance(arg, ast.UnaryOp) and isinstance(arg.op, ast.USub):
+                        findings.append((node.lineno,
+                                         ".shift(-N) — negative shift = future leak",
+                                         "warn"))
+        # Pattern 3: pandas iloc with negative slice index inside loop
+        # (rough — only catches direct df.iloc[future] patterns)
+        if isinstance(node, ast.Subscript):
+            value = node.value
+            if (isinstance(value, ast.Attribute) and value.attr == "iloc"):
+                # Look at the slice
+                slc = node.slice
+                # Match patterns like df.iloc[i+1:] or df.iloc[i+1] in loop context
+                slc_src = ast.unparse(slc) if hasattr(ast, "unparse") else ""
+                if re.search(r"\+\s*\d+\s*:?\s*$", slc_src):
+                    findings.append((node.lineno,
+                                     f".iloc[{slc_src}] — index past current = potential leak",
+                                     "warn"))
+
+    return findings
+
+
 def scan_file(path: str) -> FileReport:
     report = FileReport(file=path)
     if path in WHITELIST:
@@ -125,6 +190,11 @@ def scan_file(path: str) -> FileReport:
             if re.search(pat, line, re.IGNORECASE):
                 # Treat as warn — needs review, not auto-fail
                 report.add(idx, line, f"suspicious column: {label}", "warn")
+
+    # 2b. AST-based dynamic look-ahead detection
+    for line_no, msg, severity in ast_scan(content, path):
+        report.add(line_no, lines[line_no - 1] if line_no <= len(lines) else "",
+                   msg, severity)
 
     # 2. SQL block analysis — look at triple-quoted SQL strings
     # Find """...""" or '''...''' blocks
