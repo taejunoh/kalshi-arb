@@ -36,11 +36,66 @@ Usage in backtests:
 from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Optional
+import json
+import os
 import sqlite3
 
 KALSHI_FEE = 0.07
 WIPE_ZONE_HIGH = 0.85
 WIPE_ZONE_LOW = 0.15
+
+# Empirical calibration (loaded from data/slip_calibration.json if available;
+# falls back to the prior 0.02 heuristic otherwise).
+_CALIBRATION_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data", "slip_calibration.json",
+)
+_CALIBRATION_CACHE: Optional[dict] = None
+
+
+def _load_calibration() -> Optional[dict]:
+    """Return cached calibration dict or load on first access.
+    Returns None if file missing — caller falls back to heuristic."""
+    global _CALIBRATION_CACHE
+    if _CALIBRATION_CACHE is not None:
+        return _CALIBRATION_CACHE
+    if not os.path.exists(_CALIBRATION_PATH):
+        return None
+    try:
+        with open(_CALIBRATION_PATH) as f:
+            _CALIBRATION_CACHE = json.load(f)
+        return _CALIBRATION_CACHE
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def calibrated_slip(price: float) -> float:
+    """Return the empirically-calibrated slip magnitude for the price band.
+    Uses p75 of |slip| (conservative — covers 75% of actual fills).
+
+    Fallback policy when no calibration data:
+      - Wipe zone (price>=0.85 or <=0.15): 0.02 (legacy heuristic)
+      - Mid band: 0.0 (no slip claim without data)
+    """
+    cal = _load_calibration()
+    if not cal or "bands" not in cal:
+        return 0.02 if is_wipe_zone(price) else 0.0
+    bands = [
+        ("A_lt15", 0.0, 0.15),
+        ("B_15_30", 0.15, 0.30),
+        ("C_30_45", 0.30, 0.45),
+        ("D_45_55", 0.45, 0.55),
+        ("E_55_70", 0.55, 0.70),
+        ("F_70_85", 0.70, 0.85),
+        ("G_85_plus", 0.85, 1.0),
+    ]
+    for name, lo, hi in bands:
+        if lo <= price < hi:
+            stats = cal["bands"].get(name, {})
+            if stats.get("skipped"):
+                return 0.02 if is_wipe_zone(price) else 0.0
+            return stats.get("p75_abs", 0.02)
+    return 0.02 if is_wipe_zone(price) else 0.0
 
 
 def realistic_pnl(price: float, predicted: str, actual: str,
@@ -140,21 +195,24 @@ def slip_adjusted_pnl(price: float, predicted: str, actual: str,
                       signal_ts: Optional[str] = None,
                       db_conn: Optional[sqlite3.Connection] = None,
                       ttl_secs: int = 180,
-                      wipe_zone_extra_slip: float = 0.02,
-                      fee: float = KALSHI_FEE) -> Optional[float]:
-    """Slip-adjusted PnL with TTL miss + wipe-zone penalty modeled.
+                      wipe_zone_extra_slip: Optional[float] = None,
+                      fee: float = KALSHI_FEE,
+                      use_calibration: bool = True) -> Optional[float]:
+    """Slip-adjusted PnL with TTL miss + slip penalty modeled.
 
-    Two paths:
-      A. ticker + db_conn provided -> actual TTL scan against price tape.
-         Returns None on miss (would not have filled LIVE).
-      B. Otherwise -> heuristic: in wipe zone, add 2pp slip; mid-prices
-         get just the flat fee.
+    Three paths in priority order:
+      A. ticker + db_conn -> actual TTL scan against price tape (most realistic).
+         Returns None on miss (LIMIT would not have filled).
+      B. use_calibration=True -> per-band empirical slip from
+         data/slip_calibration.json (computed by scripts/calibrate_slip.py).
+      C. Else heuristic -> 2pp in wipe zone only; mid-band gets flat fee.
 
     Returns None if degenerate price or order missed.
     """
     if price is None or price <= 0 or price >= 1:
         return None
 
+    # A. Actual TTL scan
     if ticker is not None and db_conn is not None and signal_ts is not None:
         fill = simulate_ttl_fill(db_conn, ticker, signal_ts, price,
                                  side=predicted, ttl_secs=ttl_secs)
@@ -162,9 +220,14 @@ def slip_adjusted_pnl(price: float, predicted: str, actual: str,
             return None
         return realistic_pnl(fill["fill_price"], predicted, actual, fee)
 
-    effective_price = price
-    if is_wipe_zone(price):
-        effective_price = price + wipe_zone_extra_slip
-        if effective_price >= 1.0:
-            return None
+    # B / C. Heuristic — calibrated when available, falls back to old 2pp.
+    if use_calibration:
+        slip = calibrated_slip(price)
+    else:
+        slip = wipe_zone_extra_slip if wipe_zone_extra_slip is not None else 0.02
+        if not is_wipe_zone(price):
+            slip = 0.0
+    effective_price = price + slip
+    if effective_price >= 1.0:
+        return None
     return realistic_pnl(effective_price, predicted, actual, fee)
