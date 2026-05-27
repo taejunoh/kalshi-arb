@@ -1097,6 +1097,55 @@ class Database:
                 pos += 1
         return pos / total if total > 0 else 0.0
 
+    async def get_clv_positive_rates_batch(self, days: int = 30) -> dict:
+        """Batched CLV+ rates for all (strategy, mode) in a single query.
+        Returns {(strategy, mode): rate}. Used by /api/performance to replace
+        a per-strategy loop that was making 100+ sequential SQLite connections
+        (~10ms each → 1s+ overhead). Same scoring rules as the per-strategy
+        variant; reads `t.status` to bucket each row into paper/live."""
+        from collections import defaultdict
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute(
+                """
+                SELECT t.strategy, t.status, t.direction,
+                       e.yes_ask AS entry_yes, e.no_ask AS entry_no,
+                       COALESCE(pc.yes_ask, cl.yes_ask) AS close_yes,
+                       COALESCE(pc.no_ask, cl.no_ask) AS close_no
+                FROM trades t
+                JOIN clv_snapshots e ON e.trade_id = t.id AND e.snapshot_at = 'entry'
+                LEFT JOIN clv_snapshots pc ON pc.trade_id = t.id AND pc.snapshot_at = 'pre_close'
+                LEFT JOIN clv_snapshots cl ON cl.trade_id = t.id AND cl.snapshot_at = 'closing'
+                WHERE t.timestamp >= datetime('now', ?)
+                  AND (pc.id IS NOT NULL OR cl.id IS NOT NULL)
+                """,
+                (f"-{int(days)} days",),
+            )
+            rows = await cursor.fetchall()
+        counts: dict = defaultdict(lambda: [0, 0])
+        for r in rows:
+            strat = r["strategy"]
+            if not strat:
+                continue
+            status = r["status"] or ""
+            if status.startswith("paper"):
+                mode = "paper"
+            elif status in ("filled", "settled"):
+                mode = "live"
+            else:
+                continue
+            if (r["direction"] or "").lower() == "yes":
+                entry, close = r["entry_yes"], r["close_yes"]
+            else:
+                entry, close = r["entry_no"], r["close_no"]
+            if entry is None or close is None:
+                continue
+            counts[(strat, mode)][1] += 1
+            if close > entry:
+                counts[(strat, mode)][0] += 1
+        return {key: (pos / total if total > 0 else 0.0)
+                for key, (pos, total) in counts.items()}
+
     async def set_bot_state(self, key: str, value: float) -> None:
         now = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
