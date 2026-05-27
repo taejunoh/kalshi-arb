@@ -311,14 +311,13 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         if kalshi_client:
             import asyncio
             loop = asyncio.get_event_loop()
-            try:
-                positions = await loop.run_in_executor(None, kalshi_client.get_positions)
-            except Exception:
-                positions = []
-            try:
-                settlements = await loop.run_in_executor(None, kalshi_client.get_settlements)
-            except Exception:
-                settlements = []
+            # Run both Kalshi API calls concurrently — they're independent and
+            # each takes ~100-300ms; gather halves the wall time.
+            pos_task = loop.run_in_executor(None, kalshi_client.get_positions)
+            set_task = loop.run_in_executor(None, kalshi_client.get_settlements)
+            results = await asyncio.gather(pos_task, set_task, return_exceptions=True)
+            positions = results[0] if not isinstance(results[0], Exception) else []
+            settlements = results[1] if not isinstance(results[1], Exception) else []
 
             # Settled trades: wins/losses/realized PnL
             for s in settlements:
