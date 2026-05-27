@@ -130,24 +130,46 @@ class TestSimulateTtlFill:
 
 
 class TestSlipAdjustedPnl:
-    def test_mid_price_unchanged(self):
+    """Legacy heuristic path — use_calibration=False explicitly to keep
+    these tests pinned to the original 2pp-in-wipe-zone behavior even
+    after calibration data is loaded."""
+
+    def test_mid_price_unchanged_legacy(self):
         # Mid-price (not wipe), heuristic path = same as realistic_pnl
         expected = realistic_pnl(0.40, "yes", "yes")
-        actual = slip_adjusted_pnl(0.40, "yes", "yes")
+        actual = slip_adjusted_pnl(0.40, "yes", "yes", use_calibration=False)
         assert actual == pytest.approx(expected)
 
-    def test_wipe_zone_extra_slip(self):
+    def test_wipe_zone_extra_slip_legacy(self):
         # ya 0.90 (wipe zone) → heuristic adds 0.02 slip → effective 0.92
         # win: 1 - 0.92 - 0.07 = 0.01 (was 0.03 without slip)
-        result = slip_adjusted_pnl(0.90, "yes", "yes")
+        result = slip_adjusted_pnl(0.90, "yes", "yes", use_calibration=False)
         assert result == pytest.approx(0.01, abs=0.001)
 
-    def test_wipe_zone_loss_penalty(self):
+    def test_wipe_zone_loss_penalty_legacy(self):
         # ya 0.90 + 0.02 slip = 0.92, loss → -0.92 - 0.07 = -0.99
-        result = slip_adjusted_pnl(0.90, "yes", "no")
+        result = slip_adjusted_pnl(0.90, "yes", "no", use_calibration=False)
         assert result == pytest.approx(-0.99, abs=0.001)
 
     def test_wipe_zone_extreme_returns_none(self):
         # ya 0.99 + 0.02 slip > 1.0 → can't model
-        result = slip_adjusted_pnl(0.99, "yes", "yes")
+        result = slip_adjusted_pnl(0.99, "yes", "yes", use_calibration=False)
         assert result is None
+
+
+class TestCalibrationAwarePnl:
+    """Calibration-aware path — depends on data/slip_calibration.json
+    if present, otherwise falls back to legacy behavior."""
+
+    def test_uses_calibration_when_present(self):
+        """If calibration file exists, mid-price gets non-zero slip
+        (the data shows ~1pp slip in band C). Otherwise = realistic_pnl."""
+        from core.execution_realism import calibrated_slip
+        slip = calibrated_slip(0.40)
+        # Whatever it is, applying it should give the same pnl as
+        # manually adding that slip to price.
+        expected = realistic_pnl(0.40 + slip, "yes", "yes")
+        actual = slip_adjusted_pnl(0.40, "yes", "yes", use_calibration=True)
+        # If calibration loaded, slip > 0; if not, slip = 0 → both paths
+        # produce equivalent result.
+        assert actual == pytest.approx(expected)
