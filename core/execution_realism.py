@@ -122,6 +122,28 @@ def is_wipe_zone(price: float) -> bool:
     return price >= WIPE_ZONE_HIGH or price <= WIPE_ZONE_LOW
 
 
+def continuous_wipe_risk(price: float) -> float:
+    """Return risk multiplier (0.0-1.0) for continuous wipe-zone exposure.
+
+    Binary is_wipe_zone() flags only ≥0.85 or ≤0.15. But risk grows
+    smoothly toward tails. This returns:
+      0.0 in safe band (0.20-0.80)
+      Linear ramp to 1.0 at extreme (0.05 or 0.95)
+      Capped at 1.0 outside
+
+    Useful for adjusting confidence intervals or risk-weighted EV.
+    """
+    if price is None:
+        return 0.0
+    if 0.20 <= price <= 0.80:
+        return 0.0
+    if price < 0.20:
+        # 0.20 → 0.0, 0.05 → 1.0, linear
+        return min(1.0, max(0.0, (0.20 - price) / 0.15))
+    # price > 0.80
+    return min(1.0, max(0.0, (price - 0.80) / 0.15))
+
+
 def breakeven_wr(price: float, fee: float = KALSHI_FEE) -> Optional[float]:
     """Win rate required to break even at given entry price after fee."""
     if price is None or price <= 0 or price >= 1:

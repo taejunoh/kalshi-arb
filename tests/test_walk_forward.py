@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.walk_forward import format_report, walk_forward_report
+from core.walk_forward import format_report, format_train_test, train_test_report, walk_forward_report
 
 
 class TestWalkForward:
@@ -61,6 +61,41 @@ class TestWalkForward:
             entries.append((f"2026-05-{d+1:02d}T12:00:00", 1.0))
         r = walk_forward_report(entries, n_windows=4, min_n_per_window=3)
         assert r["pooled_n"] == 20
+
+    def test_train_test_generalizes_passes(self):
+        # Consistent +EV across full period → train and test both positive
+        entries = []
+        for d in range(40):
+            for _ in range(5):
+                entries.append({"ts": f"2026-05-{(d % 30) + 1:02d}T12:00:00",
+                                "pnl": 0.08})
+        r = train_test_report(entries, train_frac=0.7)
+        assert r["verdict"] == "PASS"
+        assert r["train"]["ev"] > 0
+        assert r["test"]["ev"] > 0
+
+    def test_train_test_overfit_fails(self):
+        # Train period +EV, test period -EV → OVERFIT
+        entries = []
+        # First 70% (train): +EV
+        for d in range(28):
+            for _ in range(5):
+                entries.append({"ts": f"2026-05-{d+1:02d}T12:00:00",
+                                "pnl": 0.10})
+        # Last 30% (test): -EV
+        for d in range(28, 40):
+            for _ in range(5):
+                entries.append({"ts": f"2026-06-{d - 27:02d}T12:00:00",
+                                "pnl": -0.08})
+        r = train_test_report(entries, train_frac=0.7)
+        assert r["verdict"] == "FAIL"
+        assert "OVERFIT" in r["verdict_reason"]
+
+    def test_train_test_insufficient_n(self):
+        entries = [{"ts": f"2026-05-{d+1:02d}T12:00:00", "pnl": 0.1}
+                   for d in range(10)]
+        r = train_test_report(entries)
+        assert r["verdict"] == "FAIL"
 
     def test_format_report_includes_windows(self):
         entries = [{"ts": f"2026-05-{d+1:02d}T12:00:00", "pnl": 1.0}

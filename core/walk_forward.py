@@ -181,6 +181,131 @@ def walk_forward_report(entries: Iterable, ts_key: str = "ts",
     }
 
 
+def train_test_report(entries: Iterable, ts_key: str = "ts",
+                      pnl_key: str = "pnl", price_key: str = "price",
+                      train_frac: float = 0.7) -> dict:
+    """TRUE walk-forward: estimate parameters on early data, evaluate on holdout.
+
+    Splits entries chronologically:
+      - First train_frac (default 70%) = estimation window
+      - Last 1-train_frac = holdout test
+
+    Reports EV in both windows. Strategy validates if HOLDOUT also positive
+    (signal generalized) rather than just train period (in-sample fit).
+
+    Returns dict:
+        {
+          "train": {"n", "pnl", "ev", "wr"},
+          "test":  {"n", "pnl", "ev", "wr", "ci_lower", "ci_upper", "ci_overlap_zero"},
+          "generalization_ratio": test_ev / train_ev (1.0 = perfect),
+          "verdict": PASS|WARN|FAIL,
+          "verdict_reason": str,
+        }
+
+    Verdict:
+      PASS:  train +EV AND test +EV AND test CI excludes zero
+      WARN:  train +EV but test EV/sign uncertain (CI overlaps zero)
+      FAIL:  train +EV but test -EV (overfit) OR no holdout (low n)
+    """
+    rows = []
+    for e in entries:
+        if isinstance(e, (tuple, list)):
+            ts, pnl = e[0], e[1]
+        elif isinstance(e, dict):
+            ts, pnl = e.get(ts_key), e.get(pnl_key)
+        else:
+            continue
+        dt = _parse_ts(ts)
+        if dt is None or pnl is None:
+            continue
+        rows.append((dt, pnl))
+
+    if len(rows) < 20:  # need enough for meaningful split
+        return {"verdict": "FAIL",
+                "verdict_reason": f"n={len(rows)} < 20 — insufficient for train/test"}
+
+    rows.sort(key=lambda r: r[0])
+    split_idx = int(len(rows) * train_frac)
+    train = rows[:split_idx]
+    test = rows[split_idx:]
+
+    def _stats(window: list) -> dict:
+        n = len(window)
+        if n == 0:
+            return {"n": 0}
+        pnls = [p for _, p in window]
+        wins = sum(1 for p in pnls if p > 0)
+        ci = bootstrap_mean_ci(pnls, n_resamples=300) if n >= 10 else None
+        return {
+            "n": n,
+            "pnl": round(sum(pnls), 2),
+            "ev": round(sum(pnls) / n, 4),
+            "wr": round(wins / n, 3),
+            "ci_lower": ci["lower"] if ci else None,
+            "ci_upper": ci["upper"] if ci else None,
+            "ci_overlap_zero": ci["overlap_zero"] if ci else None,
+        }
+
+    train_s = _stats(train)
+    test_s = _stats(test)
+
+    # Generalization ratio
+    train_ev = train_s.get("ev", 0)
+    test_ev = test_s.get("ev", 0)
+    gen_ratio = (test_ev / train_ev) if train_ev else 0.0
+
+    # Verdict
+    if test_s["n"] < 10:
+        verdict = "FAIL"
+        reason = f"holdout n={test_s['n']} < 10 — cannot validate generalization"
+    elif train_ev <= 0 and test_ev <= 0:
+        verdict = "PASS"  # consistent -EV is consistent
+        reason = "consistently -EV in both train and holdout"
+    elif train_ev > 0 and test_ev > 0 and not test_s["ci_overlap_zero"]:
+        verdict = "PASS"
+        reason = (f"train EV {train_ev:+.4f} → test EV {test_ev:+.4f} "
+                  f"(generalization {gen_ratio:.1%}), holdout CI excludes 0")
+    elif train_ev > 0 > test_ev:
+        verdict = "FAIL"
+        reason = (f"OVERFIT: train +EV {train_ev:+.4f} → test -EV {test_ev:+.4f} "
+                  f"(signal does not generalize)")
+    else:
+        verdict = "WARN"
+        reason = (f"train EV {train_ev:+.4f} → test EV {test_ev:+.4f}, "
+                  f"holdout CI overlaps zero (n={test_s['n']})")
+
+    return {
+        "train": train_s,
+        "test": test_s,
+        "train_frac": train_frac,
+        "generalization_ratio": round(gen_ratio, 3),
+        "verdict": verdict,
+        "verdict_reason": reason,
+    }
+
+
+def format_train_test(report: dict) -> str:
+    """Pretty-print train/test report."""
+    if "verdict" not in report:
+        return "_No data._"
+    lines = [
+        f"**Train/test verdict: {report['verdict']}** — {report['verdict_reason']}",
+        "",
+    ]
+    if "train" in report and report["train"].get("n", 0) > 0:
+        t = report["train"]
+        h = report["test"]
+        lines.append(f"- Train ({int(report['train_frac']*100)}%): "
+                     f"n={t['n']}, EV {t['ev']:+.4f}, WR {t['wr']:.1%}")
+        lines.append(f"- Test  ({100 - int(report['train_frac']*100)}%): "
+                     f"n={h['n']}, EV {h['ev']:+.4f}, WR {h['wr']:.1%}")
+        if h.get("ci_lower") is not None:
+            lines.append(f"  - Holdout 95% CI: [{h['ci_lower']:+.4f}, {h['ci_upper']:+.4f}]")
+        lines.append(f"- Generalization: {report['generalization_ratio']:.1%} "
+                     f"(1.0 = perfect)")
+    return "\n".join(lines)
+
+
 def format_report(report: dict) -> str:
     """Pretty-print walk-forward report for inclusion in eval output."""
     if report.get("pooled_n", 0) == 0:
