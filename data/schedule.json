@@ -1,6 +1,6 @@
 {
-  "version": "2026-05-21-b+c",
-  "note": "Upcoming eval gates + intermediate progress checks. kind='decision' = promote/retire/size-up bar; kind='progress' = trajectory snapshot (참고, NOT decision-grade).",
+  "version": "2026-05-28-crypto-cleanup",
+  "note": "Upcoming eval gates + intermediate progress checks. kind='decision' = promote/retire/size-up bar; kind='progress' = trajectory snapshot (참고, NOT decision-grade). 2026-05-27 crypto Phase 1 frozen — all crypto entries removed. See [[crypto_full_freeze_2026-05-27]].",
   "gates": [
     {
       "date": "2026-05-23",
@@ -10,26 +10,6 @@
       "details": "First Sat/Sun fire — verify Pattern A/B (EPL underdog 0.25-0.30 / MLS fade-fav NO 0.40-0.50) fires at least once.",
       "criteria": "n >= 1 per pattern over Sat+Sun",
       "memory": "next_session_entry_2026-05-22"
-    },
-    {
-      "date": "2026-05-24",
-      "kind": "progress",
-      "type": "manual",
-      "label": "cme_basis_fade_v1 T+3d trajectory (참고)",
-      "details": "Mid-window snapshot of narrowed gate [0.17, 0.25]. Parent decision: 5/27.",
-      "criteria": "Track n trajectory toward >= 100 + WR drift vs 5/21 baseline. Retire-flag only if WR < 50% on n >= 20.",
-      "memory": "cme_basis_fade_v1_bleed_2026-05-21",
-      "parent": "2026-05-27 cme_basis_fade_v1 narrowed-gate 1w eval"
-    },
-    {
-      "date": "2026-05-24",
-      "kind": "progress",
-      "type": "manual",
-      "label": "deribit_tail_fade_high_v1 T+3d trajectory (참고)",
-      "details": "ya 0.65-0.95 zone paper trader — 3d cumulative + per-cluster sanity.",
-      "criteria": "Trajectory toward baseline; flag if cumulative < -$10 on n >= 15.",
-      "memory": "phase1_lifetime_audit_sweep_2026-05-21",
-      "parent": "2026-05-27 deribit_tail_fade_high_v1 1w eval"
     },
     {
       "date": "2026-05-24",
@@ -52,61 +32,14 @@
       "parent": "2026-05-27 Multi-cohort eval snapshot"
     },
     {
-      "date": "2026-05-24",
-      "kind": "progress",
-      "type": "manual",
-      "label": "atm_hold_v1 sizing T+4d trajectory (참고)",
-      "details": "$40 size since 5/20 23:54 UTC. Rolling 3d PnL preview before 5/27 sizing decision.",
-      "criteria": "Rolling 3d > +$30 trending toward $40→$60 step; rolling 3d < -$40 trending toward rollback to $20.",
-      "memory": "atm_hold_v1_size_up_2026-05-20",
-      "parent": "2026-05-27 atm_hold_v1 sizing decision"
-    },
-    {
-      "date": "2026-05-26",
-      "time_utc": "13:00",
-      "kind": "decision",
-      "type": "auto",
-      "label": "Phase 0 cross-venue T+7d eval",
-      "details": "vol_skew_fade + cme_basis_fade + etf_flow_lag — auto-Telegram via kalshi-phase0-observer-eval.timer.",
-      "criteria": "Per cohort: WR sustained + fee-net positive vs 5/19 baseline",
-      "memory": "phase0_eval_alarm_timer_2026-05-19"
-    },
-    {
       "date": "2026-05-27",
       "time_utc": "13:00",
       "kind": "decision",
       "type": "auto",
-      "label": "Multi-cohort eval snapshot",
-      "details": "One-shot eval_2026_05_27_snapshot.py: cross_asset + cme_basis + mid_otm_tail (incl. new Section 3b cliff_zone) + universe_expansion T-leg.",
+      "label": "Multi-cohort eval snapshot (sports observers)",
+      "details": "One-shot eval_2026_05_27_snapshot.py: mid_otm_tail (incl. new Section 3b cliff_zone) + universe_expansion T-leg. Crypto sub-cohorts (cross_asset, cme_basis) removed — strategies mothballed.",
       "criteria": "Per cohort: promote / extend / retire per memory bar",
       "memory": "phase0_eval_alarm_timer_2026-05-19"
-    },
-    {
-      "date": "2026-05-27",
-      "kind": "decision",
-      "type": "manual",
-      "label": "cme_basis_fade_v1 narrowed-gate 1w eval",
-      "details": "Validate 5/21 gate narrowing to ya [0.17, 0.25] (was [0.17, 0.42]).",
-      "criteria": "n >= 100 in [0.17, 0.25] + WR >= 80% + fee-net/ct >= +$0.04; else retire",
-      "memory": "cme_basis_fade_v1_bleed_2026-05-21"
-    },
-    {
-      "date": "2026-05-27",
-      "kind": "decision",
-      "type": "manual",
-      "label": "deribit_tail_fade_high_v1 1w eval",
-      "details": "New sister paper trader from 5/21 PM (ya 0.65-0.95 zone, disjoint from deribit_tail_fade_v1).",
-      "criteria": "Per [[sister_strategy_for_disjoint_signal_classes]] — independent +EV vs paper baseline",
-      "memory": "phase1_lifetime_audit_sweep_2026-05-21"
-    },
-    {
-      "date": "2026-05-27",
-      "kind": "decision",
-      "type": "manual",
-      "label": "atm_hold_v1 sizing decision $40→$60",
-      "details": "1-week cumulative PnL @ $40 size. Promotion to $60 step.",
-      "criteria": "7d net >= +$70 + max-intraday DD > -$120 + cooldown gate triggers stay 0 → step up to $60; if 7d net < +$30 → hold or rollback to $20.",
-      "memory": "atm_hold_v1_size_up_2026-05-20"
     },
     {
       "date": "2026-05-28",
@@ -117,43 +50,6 @@
       "details": "5/21 new sister observer pair — auto-Telegram via extended kalshi-phase0-observer-eval.timer.",
       "criteria": "Per-observer tradable WR + fee-net EV; v2 must beat v1 in-sample",
       "memory": "settlement_edge_v2_retune_2026-05-21"
-    },
-    {
-      "date": "2026-05-29",
-      "kind": "progress",
-      "type": "manual",
-      "label": "ladder_crypto T+10d trajectory (참고)",
-      "details": "2/3 way to 6/02 Phase 1 promotion decision. Walked-edge stability + per-day cumulative.",
-      "criteria": "Walked-edge >= $0.15 holds + cumulative trend non-degrading. Flag if walked-edge < $0.10 for 3 consecutive days.",
-      "memory": "ladder_crypto_phase0_resurrection_2026-05-19",
-      "parent": "2026-06-02 ladder_crypto Phase 1 promotion gate"
-    },
-    {
-      "date": "2026-06-02",
-      "kind": "decision",
-      "type": "manual",
-      "label": "ladder_crypto Phase 1 promotion gate",
-      "details": "14d Phase 0 walked-edge data + cross-venue T+14d eval.",
-      "criteria": "Walked-edge >= $0.15 with stable n; promote to Phase 1 paper if held",
-      "memory": "ladder_crypto_phase0_resurrection_2026-05-19"
-    },
-    {
-      "date": "2026-06-03",
-      "kind": "decision",
-      "type": "manual",
-      "label": "late_close_tail_v1 0.88-0.89 cliff re-eval",
-      "details": "Re-audit fine-grain bin 0.88-0.89 once n >= 15 — confirm cliff vs artifact.",
-      "criteria": "If cliff persists at n >= 15 → narrow gate; else attribute to artifact",
-      "memory": "late_close_tail_v1_subcohort_audit_2026-05-20"
-    },
-    {
-      "date": "2026-06-03",
-      "kind": "decision",
-      "type": "manual",
-      "label": "atm_hold_v1 sizing decision $60→$100",
-      "details": "2-week cumulative PnL — promotion to $100 step. Gated on 5/27 step up to $60 having happened.",
-      "criteria": "14d net >= +$200 + max-intraday DD > -$200 + slip vs paper twin < 10% → step to $100; else hold at $60.",
-      "memory": "atm_hold_v1_size_up_2026-05-20"
     },
     {
       "date": "2026-06-04",
@@ -175,15 +71,6 @@
       "memory": "settlement_edge_v2_retune_2026-05-21"
     },
     {
-      "date": "2026-06-04",
-      "kind": "decision",
-      "type": "manual",
-      "label": "Phase 1 lifetime audit sweep 2w eval",
-      "details": "deribit_tail_fade_high_v1 + atm_hold ya 0.40-0.45 + deribit_atm_fade re-check.",
-      "criteria": "Paper ROI >= +20% AND fill-realism holds -> LIVE promotion candidate",
-      "memory": "phase1_lifetime_audit_sweep_2026-05-21"
-    },
-    {
       "date": "2026-06-09",
       "kind": "decision",
       "type": "manual",
@@ -191,6 +78,15 @@
       "details": "NPB consensus-strong underdog 0.38-0.40 paper trader, launched 5/19.",
       "criteria": "n >= 15 + ROI >= 30% + drop-top-3 > 0",
       "memory": "sports_npb_underdog_v1_2026-05-19"
+    },
+    {
+      "date": "2026-06-09",
+      "kind": "decision",
+      "type": "manual",
+      "label": "Stablecoin mint/burn → BTC/ETH backtest (last surviving crypto path)",
+      "details": "14d backtest using stablecoin_mint_observations collected since 5/26. Only crypto data source still alive after crypto full freeze. Run scripts/stablecoin_flow_backtest.py.",
+      "criteria": "Per-direction edge on n >= 30 mint/burn events; if no signal, retire stablecoin collector too",
+      "memory": "phase_c_execution_2026-05-26"
     },
     {
       "date": "2026-06-15",
