@@ -1161,68 +1161,10 @@
       </div>
     </section>
 
-    <!-- ── Crypto Phase 1 strategy gates ── -->
-    <!-- ── Upcoming eval/promo gates (data/schedule.json) ── -->
-    <!-- 2026-05-25: eval-schedule-section removed (was duplicate of new
-         Schedule tab). To see upcoming gates, click "Schedule" in the
-         view-toggle in the header. -->
-
-    <section id="strategy-gates-section">
-      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
-        <div class="section-title" style="margin-bottom:0">Crypto Phase 1 strategy gates</div>
-        <span style="color:var(--text-dim);font-size:11px;">Live snapshot of gate config — what each signal must clear to fire</span>
-      </div>
-      <div class="table-wrap">
-        <div class="table-scroll" style="max-height:280px;">
-          <table id="strategy-gates-table">
-            <thead>
-              <tr>
-                <th>Strategy</th>
-                <th>Mode</th>
-                <th>Gates</th>
-              </tr>
-            </thead>
-            <tbody id="strategy-gates-body">
-              <tr class="empty-row"><td colspan="3">Loading…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── Crypto observer Phase 0 (per-hypothesis WR) ── -->
-    <section id="crypto-observer-section">
-      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
-        <div class="section-title" style="margin-bottom:0">Crypto observer Phase 0 + Phase 1 paper — last 7 days</div>
-        <span style="color:var(--text-dim);font-size:11px;">17 hypotheses on KXBTC/KXETH (5/19: +4 cross-venue — funding, vol-skew, ETF flow, CME basis). Phase 0 = signal-only WR (Wilson 95% CI). Phase 1 = promoted paper trader P&amp;L. Direct rows (crypto_fair_value family) skip the observer columns.</span>
-      </div>
-      <div class="table-wrap">
-        <div class="table-scroll" style="max-height:280px;">
-          <table id="crypto-observer-table">
-            <thead>
-              <tr>
-                <th>Observer</th>
-                <th>Sig</th>
-                <th>Open</th>
-                <th>Settled</th>
-                <th>WR</th>
-                <th>95% CI</th>
-                <th>Phase 1 strat</th>
-                <th>Paper</th>
-                <th>P-Settled</th>
-                <th>P-Wins</th>
-                <th>P-PnL</th>
-                <th>P-ROI</th>
-                <th>Last fire</th>
-              </tr>
-            </thead>
-            <tbody id="crypto-observer-body">
-              <tr class="empty-row"><td colspan="13">Loading…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+    <!-- 2026-05-27 CRYPTO ARCHIVED: strategy-gates-section + crypto-observer-section
+         removed. All crypto Phase 1 strategies mothballed; gates panel was empty
+         and observer panel was no longer fed. See [[crypto_full_freeze_2026-05-27]].
+         For historical loss summary, see "crypto_archived" entry in performance section. -->
 
     <!-- ── Observer high-edge signals ── -->
     <section id="observer-section">
@@ -2106,7 +2048,19 @@ async function refreshPositions() {
   try {
     const data = await apiFetch('/api/positions-edge');
     const tbody = document.getElementById('positions-body');
-    const positions = (data || []).filter(p => parseFloat(p.position_fp || 0) !== 0);
+    const positions = (data || []).filter(p => {
+      if (parseFloat(p.position_fp || 0) === 0) return false;
+      // 2026-05-27 CRYPTO ARCHIVED: hide crypto/econ leftover positions —
+      // they have no LIVE strategy driving them anymore. Sports v31/v37
+      // open positions remain visible. See [[crypto_full_freeze_2026-05-27]].
+      const t = p.ticker || '';
+      if (t.startsWith('KXBTC') || t.startsWith('KXETH') ||
+          t.startsWith('KXXRP') || t.startsWith('KXSOL')) return false;
+      if (t.startsWith('KXFED') || t.startsWith('KXCPI') ||
+          t.startsWith('KXGDP')) return false;
+      if (t.startsWith('KXNUMSHUTDOWNS')) return false;
+      return true;
+    });
 
     if (!positions || positions.length === 0) {
       tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No live positions.</td></tr>';
@@ -2266,113 +2220,9 @@ function todayPlusDays(isoDate, days) {
   return d.toISOString().slice(0, 10);
 }
 
-// ─────────────────────────────────────────────
-//  Crypto Phase 1 strategy gates
-// ─────────────────────────────────────────────
-async function refreshStrategyGates() {
-  try {
-    const data = await apiFetch('/api/strategy-gates');
-    const tbody = document.getElementById('strategy-gates-body');
-    const rows = (data && data.strategies) || [];
-    if (rows.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="3">No strategies configured.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = rows.map(s => {
-      const modeBadge = s.live
-        ? '<span class="badge badge-green">LIVE</span>'
-        : '<span class="badge" style="background:var(--bg-2);color:var(--text-dim);">paper</span>';
-      const gateChips = (s.gates || []).map(g =>
-        `<span style="display:inline-block;background:var(--bg-2);border:1px solid var(--border);border-radius:4px;padding:2px 8px;margin:1px 4px 1px 0;font-size:11px;"><span style="color:var(--text-dim);">${g.label}:</span> <span class="td-mono">${g.value}</span></span>`
-      ).join('');
-      return `
-        <tr>
-          <td class="td-mono" style="vertical-align:top;"><div>${s.name}</div><div style="font-size:10px;color:var(--text-dim);font-family:inherit;margin-top:2px;">${s.desc}</div></td>
-          <td style="vertical-align:top;">${modeBadge}</td>
-          <td style="vertical-align:top;">${gateChips}</td>
-        </tr>`;
-    }).join('');
-  } catch (e) {
-    document.getElementById('strategy-gates-body').innerHTML =
-      `<tr class="empty-row" style="color:var(--red);"><td colspan="3">Failed: ${e.message}</td></tr>`;
-  }
-}
-
-// ─────────────────────────────────────────────
-//  Crypto observer Phase 0 — per-hypothesis WR
-// ─────────────────────────────────────────────
-async function refreshCryptoObserver() {
-  try {
-    const data = await apiFetch('/api/crypto-observer?hours=168');
-    const tbody = document.getElementById('crypto-observer-body');
-    const rows = (data && data.observers) || [];
-    if (rows.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="13">No signals yet — Phase 0 just started.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = rows.map(r => {
-      const wrTxt = r.wr == null ? '—' : (r.wr * 100).toFixed(1) + '%';
-      const ciTxt = r.wr_ci_lo == null ? '—'
-        : `[${(r.wr_ci_lo * 100).toFixed(0)}, ${(r.wr_ci_hi * 100).toFixed(0)}]%`;
-      const promoCand = (r.n_settled >= 30 && r.wr_ci_lo != null && r.wr_ci_lo >= 0.60);
-      const wrBadge = promoCand
-        ? `<span class="badge badge-green">${wrTxt}</span>`
-        : wrTxt;
-      // Phase 1 cells — only populated for observers with a promoted strategy.
-      const ph1Strat = r.phase1_strategy
-        ? `<span class="badge badge-blue">${r.phase1_strategy}</span>`
-        : '—';
-      const ph1Trades = r.phase1_strategy ? r.phase1_paper_trades : '—';
-      const ph1Settled = r.phase1_strategy ? r.phase1_paper_settled : '—';
-      const ph1Wins = r.phase1_strategy ? r.phase1_paper_wins : '—';
-      let ph1Pnl = '—';
-      if (r.phase1_strategy) {
-        const v = r.phase1_paper_pnl || 0;
-        const cls = v >= 0 ? 'edge-pos' : 'edge-neg';
-        const s = (v >= 0 ? '+' : '') + '$' + v.toFixed(2);
-        ph1Pnl = `<span class="${cls}">${s}</span>`;
-      }
-      let ph1Roi = '—';
-      if (r.phase1_strategy && r.phase1_paper_roi != null) {
-        const v = r.phase1_paper_roi;
-        const cls = v >= 0 ? 'edge-pos' : 'edge-neg';
-        const s = (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
-        ph1Roi = `<span class="${cls}">${s}</span>`;
-      }
-      // Direct-trader observers (crypto_fair_value family) write Phase 0 rows
-      // under their own STRATEGY_NAME — tag visually so they're distinguishable
-      // from hypothesis observers in the same table.
-      const isDirect = r.observer === r.phase1_strategy
-        && r.phase1_strategy != null
-        && r.observer.startsWith('crypto_fair_value');
-      const obsLabel = isDirect
-        ? `<span class="badge badge-gray">direct</span> ${r.observer}`
-        : r.observer;
-      const nt = r.n_total == null ? '—' : r.n_total;
-      const no = r.n_open == null ? '—' : r.n_open;
-      const ns = r.n_settled == null ? '—' : r.n_settled;
-      return `
-        <tr>
-          <td class="td-mono">${obsLabel}</td>
-          <td class="td-mono">${nt}</td>
-          <td class="td-mono">${no}</td>
-          <td class="td-mono">${ns}</td>
-          <td class="td-mono">${wrBadge}</td>
-          <td class="td-mono">${ciTxt}</td>
-          <td class="td-mono">${ph1Strat}</td>
-          <td class="td-mono">${ph1Trades}</td>
-          <td class="td-mono">${ph1Settled}</td>
-          <td class="td-mono">${ph1Wins}</td>
-          <td class="td-mono">${ph1Pnl}</td>
-          <td class="td-mono">${ph1Roi}</td>
-          <td class="td-mono">${fmtTs(r.last_ts)}</td>
-        </tr>`;
-    }).join('');
-  } catch (e) {
-    document.getElementById('crypto-observer-body').innerHTML =
-      `<tr class="empty-row"><td colspan="13">Error: ${e.message}</td></tr>`;
-  }
-}
+// 2026-05-27 CRYPTO ARCHIVED: refreshStrategyGates() + refreshCryptoObserver()
+// removed entirely — both HTML sections deleted, both API endpoints unused now.
+// See [[crypto_full_freeze_2026-05-27]].
 
 // ─────────────────────────────────────────────
 //  Observer high-edge signals
@@ -2893,10 +2743,10 @@ async function fullRefresh() {
     refreshPositions(),
     refreshRegime(),
     refreshObserverSignals(),
-    refreshCryptoObserver(),
+    // refreshCryptoObserver(): removed 2026-05-27 — crypto observer section deleted
     // refreshEvalSchedule(): removed 2026-05-25 — replaced by Schedule tab (renderSchedule())
     renderSnapshot(),
-    refreshStrategyGates(),
+    // refreshStrategyGates(): removed 2026-05-27 — crypto strategy-gates section deleted
   ]);
   markRefresh('full');
 }
