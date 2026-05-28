@@ -1532,13 +1532,20 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     return hasActivity || stratMode === mode;
   });
 
-  // Sort: TRULY-LIVE first, then DISABLED last. Within each tier keep insertion order.
+  // Sort: TRULY-LIVE first, then DISABLED last. Within each tier, by
+  // mode-specific trade_count DESC so the most active strategies float
+  // to the top of each Performance section.
   const tierOf = (s) => {
     const st = stratStatusCache[s] || {};
     if (st.active === false) return 2; // disabled
     return 0; // active
   };
-  filtered.sort((a, b) => tierOf(a) - tierOf(b));
+  const tradesOf = (s) => ((perfCache[s] || {})[modeKey] || {}).trade_count || 0;
+  filtered.sort((a, b) => {
+    const td = tierOf(a) - tierOf(b);
+    if (td !== 0) return td;
+    return tradesOf(b) - tradesOf(a);  // within tier: most active first
+  });
 
   if (filtered.length === 0) {
     grid.innerHTML = `<div class="perf-card" style="color:var(--text-dim);font-size:12px;">No ${modeKey} strategies.</div>`;
