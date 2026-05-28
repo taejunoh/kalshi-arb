@@ -1532,27 +1532,36 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     return hasActivity || stratMode === mode;
   });
 
-  // Sort: 3 tiers in priority order —
-  //   0) "최근 거래 활발한순" — fired today (since 06:00 ET), by today's trade_count DESC
-  //   1) "전체 거래순"        — has lifetime trades but quiet today, by cumulative DESC
-  //   2) DISABLED            — pinned to bottom
-  // Idle strategies (active, never fired in this mode) naturally sink to the
-  // bottom of tier 1 (trade_count=0 sorts last).
+  // Sort: health dot first, then today's trades, then lifetime trades.
+  // Disabled / demoted pinned to bottom regardless of health.
+  //
+  // Priority (best to worst, top to bottom):
+  //   0) 🟢 green  — ROI >= +3%
+  //   1) 🟡 amber  — flat / small sample / watch
+  //   2) 🔴 red    — structural -EV (n>=20, ROI<=-5%)
+  //   3) ⚫ gray    — active but never fired in this mode
+  //   4) DISABLED — active=false or demoted
+  // Within same health tier: today.trade_count DESC, then cumulative DESC.
   const todayTradesOf = (s) => (((perfCache[s] || {})[modeKey] || {}).today || {}).trade_count || 0;
   const cumTradesOf   = (s) => ((perfCache[s] || {})[modeKey] || {}).trade_count || 0;
-  const tierOf = (s) => {
+  const healthTier = (s) => {
     const st = stratStatusCache[s] || {};
-    if (st.active === false) return 2;       // disabled
-    if (todayTradesOf(s) > 0) return 0;      // recently active (today)
-    return 1;                                // lifetime / idle
+    if (!st || st.active === false || st.demoted) return 4;
+    const d = (perfCache[s] || {})[modeKey] || {};
+    const n = (d.wins || 0) + (d.losses || 0);
+    const size = d.total_size || 0;
+    if (!n || size === 0) return 3;
+    const roi = (parseFloat(d.total_pnl) / size) * 100;
+    if (roi >= 3) return 0;
+    if (n >= 20 && roi <= -5) return 2;
+    return 1;
   };
   filtered.sort((a, b) => {
-    const td = tierOf(a) - tierOf(b);
-    if (td !== 0) return td;
-    const t = tierOf(a);
-    if (t === 0) return todayTradesOf(b) - todayTradesOf(a);  // today DESC
-    if (t === 1) return cumTradesOf(b)   - cumTradesOf(a);    // cumulative DESC
-    return 0;
+    const ht = healthTier(a) - healthTier(b);
+    if (ht !== 0) return ht;
+    const tt = todayTradesOf(b) - todayTradesOf(a);
+    if (tt !== 0) return tt;
+    return cumTradesOf(b) - cumTradesOf(a);
   });
 
   if (filtered.length === 0) {
