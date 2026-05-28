@@ -135,21 +135,15 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_mlb_pitcher_edge_v2",
             "sports_mlb_pitcher_edge_v2_1",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
-            # Crypto Phase 1 traders (paper-only unless promoted via .env).
-            # Listed here so they render with empty stats before first fire.
-            "deribit_tail_fade_v1", "bid_imbalance_v1", "bid_imbalance_fade_v1",
-            "open_no_touch_v1", "atm_hold_v1",
-            # 2026-05-18 additions
-            "late_close_tail_v1", "deribit_atm_fade_v1",
-            "cme_basis_fade_v1",
-            # 2026-05-21: sister of deribit_tail_fade_v1 for high-ya zone
-            "deribit_tail_fade_high_v1",
-            # Ladder strategies (econ + crypto-strike).
-            "ladder_fed", "ladder_crypto",
+            # 2026-05-27 CRYPTO ARCHIVED — all 10 Phase 1 strategies + ladder_crypto
+            # collapsed into single summary entry. Lifetime LIVE PnL: -$458 across
+            # 248 fills. See [[crypto_full_freeze_2026-05-27]].
+            "crypto_archived",
+            # Ladder strategies (econ only — ladder_crypto archived above).
+            "ladder_fed",
             # Archived — historical data surfaced in dashboard's Archived section.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
-            "crypto_fair_value", "crypto_fair_value_mid_v1",
         ]
 
         today_cutoff = _today_cutoff_utc()
@@ -184,6 +178,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         # *GAME tickers). Pre-fix (2026-05-20) crypto LIVE trades fell
         # through both paths and rendered as 0 on the dashboard despite
         # populating trades.status='settled' rows correctly.
+        # 2026-05-27 CRYPTO ARCHIVED — kept in this set so historical LIVE
+        # crypto trades (still in DB with status=settled) get DB-attributed
+        # if anything references them downstream. Individual strategies hidden
+        # from the dashboard UI; aggregate shown as "crypto_archived".
         CRYPTO_DB_ATTRIBUTED = {
             "deribit_tail_fade_v1", "deribit_tail_fade_high_v1",
             "atm_hold_v1",
@@ -191,6 +189,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "open_no_touch_v1", "late_close_tail_v1",
             "deribit_atm_fade_v1", "cme_basis_fade_v1",
             "crypto_fair_value", "crypto_fair_value_mid_v1",
+            "ladder_crypto",
         }
         # Retired strategies — still rendered but flagged via `archived: true`
         # so the frontend can show them in a separate Archived section.
@@ -209,11 +208,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v34",
             # Non-sports retired
             "econ_trader",
-            # 2026-05-20: crypto_fair_value pair retired — both deeply -EV.
-            # parent -$870/104 (41% WR), mid_v1 -$1,017/55 (20% WR). Lognormal
-            # fair systematically overstates short-dated tail prob;
-            # deribit_tail_fade_v1 already captures the inverse.
-            "crypto_fair_value", "crypto_fair_value_mid_v1",
+            # 2026-05-27 crypto archived — aggregated summary entry.
+            "crypto_archived",
         }
 
         def _stats_with_split(strat_name: str) -> dict:
@@ -235,6 +231,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             if not status.startswith("paper"):
                 continue
             strat = trade["strategy"]
+            # 2026-05-27 crypto aggregation: remap individual crypto strategies
+            # into single archived summary entry. See [[crypto_full_freeze_2026-05-27]].
+            if strat in CRYPTO_DB_ATTRIBUTED:
+                strat = "crypto_archived"
             if strat not in strategies:
                 strategies[strat] = {"live": _stats_with_split(strat), "paper": _stats_with_split(strat),
                                      "archived": strat in RETIRED}
@@ -355,9 +355,13 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 if trade.get("status") != "settled":
                     continue
                 strat = trade["strategy"]
-                if strat in RETIRED:
+                # 2026-05-27 crypto aggregation — remap before RETIRED check so
+                # historical LIVE crypto fills count toward crypto_archived.
+                if strat in CRYPTO_DB_ATTRIBUTED:
+                    strat = "crypto_archived"
+                if strat in RETIRED and strat != "crypto_archived":
                     continue
-                if not (strat.startswith(SPORTS_PREFIX) or strat in CRYPTO_DB_ATTRIBUTED):
+                if not (strat.startswith(SPORTS_PREFIX) or strat == "crypto_archived"):
                     continue
                 if strat not in strategies:
                     continue
@@ -391,9 +395,12 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 if trade.get("timestamp", "") < today_cutoff:
                     continue
                 strat = trade["strategy"]
-                if strat in RETIRED:
+                # 2026-05-27 crypto aggregation — remap before RETIRED check.
+                if strat in CRYPTO_DB_ATTRIBUTED:
+                    strat = "crypto_archived"
+                if strat in RETIRED and strat != "crypto_archived":
                     continue
-                if not (strat.startswith(SPORTS_PREFIX) or strat in CRYPTO_DB_ATTRIBUTED):
+                if not (strat.startswith(SPORTS_PREFIX) or strat == "crypto_archived"):
                     continue
                 if strat not in strategies:
                     continue
@@ -580,21 +587,16 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_mlb_pitcher_edge_v2",
             "sports_mlb_pitcher_edge_v2_1",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
-            # Phase 1 paper traders promoted from crypto_observer 2026-05-14.
-            "deribit_tail_fade_v1", "bid_imbalance_v1",
-            "open_no_touch_v1", "atm_hold_v1",
-            "bid_imbalance_fade_v1",
-            # 2026-05-18 additions
-            "late_close_tail_v1", "deribit_atm_fade_v1",
-            "cme_basis_fade_v1",
-            # 2026-05-21: sister of deribit_tail_fade_v1 for high-ya zone
-            "deribit_tail_fade_high_v1",
-            # Ladder strategies (econ + crypto-strike).
-            "ladder_fed", "ladder_crypto",
+            # 2026-05-27 CRYPTO ARCHIVED — 10 Phase 1 strategies + ladder_crypto +
+            # crypto_fair_value pair collapsed into single summary entry.
+            # Lifetime LIVE PnL: -$458 across 248 fills. See
+            # [[crypto_full_freeze_2026-05-27]].
+            "crypto_archived",
+            # Ladder strategies (econ only).
+            "ladder_fed",
             # Archived — surfaced in dashboard Archived section with reason.
             "sports_trader", "sports_liquidity_filtered", "sports_consolidated",
             "econ_trader",
-            "crypto_fair_value", "crypto_fair_value_mid_v1",
         ]
         archived_set = {
             # Older infra retirements
@@ -611,18 +613,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_longshot_v34",
             # Non-sports retired
             "econ_trader",
-            # 2026-05-20: crypto_fair_value pair retired — both deeply -EV.
-            "crypto_fair_value", "crypto_fair_value_mid_v1",
-            # 2026-05-25 → 5/27 crypto Phase 1 mothball cascade. 30d portfolio
-            # audit found only deribit_tail_fade_v1 was +EV (+$473/n=634);
-            # all other Phase 1 traders cumulative -$7,585. Then 5/27 full
-            # freeze killed the remaining live + observer scan to reclaim
-            # bot.db write share. See [[crypto_full_freeze_2026-05-27]].
-            "deribit_tail_fade_v1", "deribit_tail_fade_high_v1",
-            "bid_imbalance_v1", "bid_imbalance_fade_v1",
-            "open_no_touch_v1", "atm_hold_v1",
-            "cme_basis_fade_v1", "deribit_atm_fade_v1",
-            "late_close_tail_v1", "ladder_crypto",
+            # 2026-05-27 CRYPTO ARCHIVED — single summary entry replaces 12
+            # individual crypto strategies. See [[crypto_full_freeze_2026-05-27]].
+            "crypto_archived",
         }
         # Strategies removed from main.py _strategy_loop (no env flag to toggle).
         # Keep in sync with main.py; see commits 59f7e44 (sports_trader) and
@@ -640,14 +633,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                          # Retired 2026-04-26 — duplicate of v35's paper twin
                          # after (MLB,pre) cell removal
                          "sports_longshot_v34",
-                         # 2026-05-25 → 5/27 crypto Phase 1 mothball cascade.
-                         # All 9 Phase 1 traders + ladder_crypto commented out
-                         # in main.py. See [[crypto_full_freeze_2026-05-27]].
-                         "deribit_tail_fade_v1", "deribit_tail_fade_high_v1",
-                         "bid_imbalance_v1", "bid_imbalance_fade_v1",
-                         "open_no_touch_v1", "atm_hold_v1",
-                         "cme_basis_fade_v1", "deribit_atm_fade_v1",
-                         "late_close_tail_v1", "ladder_crypto"}
+                         # 2026-05-27 crypto archived (single summary entry).
+                         "crypto_archived"}
         # env-flag mapping: which config attribute gates each strategy
         flag_map = {
             "market_maker": "MM_ENABLED",
@@ -759,44 +746,15 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "Retired (2026-04-24): pre-game-only +21.5% (n=91) → v31 underdog "
                 "+19.7% 와 거의 동률. 추가 mechanism (cap) 정당화 안 됨, 단순 v31 유지가 "
                 "더 깔끔. v32 underdog (+27.1%) 가 동일 슬롯에서 명백히 우월하므로 거기 집중.",
-            "deribit_tail_fade_v1":
-                "Mothballed (2026-05-25): LIVE 5/13-5/25 net -$80 across 169 fills. "
-                "KXBTC exclude × KXETH (10 fills) -$38 baseline; cap 0.90 sim "
-                "yields +$1.27/2w = ~$33/year. Operational overhead >> edge.",
-            "deribit_tail_fade_high_v1":
-                "Mothballed (2026-05-25): LIVE 5/22 (0/22+ FOK) → LIMIT TTL 180s "
-                "redesign 5/23 → 30/30 paper LIMIT cancelled over 44h. Kalshi "
-                "yes_bid_size_fp depth field unreliable for high-ya cohort.",
-            "bid_imbalance_v1":
-                "Mothballed (2026-05-26): 30d audit n=825 / -$1,665 / EV -10.1% / "
-                "WR 61.6%. All price bands -EV (worst D 0.70-0.85 -$900 EV -23%). "
-                "5/21 observer +EV cohort (ya 0.35-0.40) did NOT translate to trader edge.",
-            "bid_imbalance_fade_v1":
-                "Mothballed (2026-05-26): 30d audit n=895 / -$1,459 / EV -8.2% / "
-                "WR 66.8%. All bands -EV incl. F (≥0.95) at -2.45% — slip+fee wipe "
-                "even at WR 87-90%.",
-            "open_no_touch_v1":
-                "Mothballed (2026-05-26): 30d n=319 / -$880 / EV -13.8% / WR 50%. "
-                "KXETH exclude works post-5/21 PM, but residual non-KXETH is still "
-                "-EV in every band.",
-            "atm_hold_v1":
-                "Mothballed (2026-05-26): 30d n=107 / -$245 / EV -8.1% / WR 54%. "
-                "Already demoted LIVE→paper 5/25; 7d post-demote -$327 EV -12% "
-                "confirms accelerating bleed.",
-            "cme_basis_fade_v1":
-                "Mothballed (2026-05-26): 30d n=700 / -$1,501 / EV -10.8% / WR 78.3%. "
-                "Gate INVERTED — gate ya [0.17, 0.42] captures bands C+D (-EV "
-                "catastrophe -$1,021 in band C alone). Demoted LIVE→paper 5/26.",
-            "deribit_atm_fade_v1":
-                "Mothballed (2026-05-26): 30d n=43 / -$193 / EV -22.5% / WR 49%. "
-                "Smallest sample but worst EV.",
-            "late_close_tail_v1":
-                "Mothballed (2026-05-27): 30d n=106 / -$83. Small loss, but rolled "
-                "into crypto full freeze — no path to +EV without crypto_observer "
-                "signals which are also off. See [[crypto_full_freeze_2026-05-27]].",
-            "ladder_crypto":
-                "Mothballed (2026-05-27): Phase 0 resurrection from 2026-05-19 went "
-                "silent 15d (last fire 5/12). Rolled into crypto full freeze.",
+            "crypto_archived":
+                "Crypto 거래 전면 종료 (2026-05-27). 누적 LIVE 손실 -$457.99 / 248 fills. "
+                "Breakdown: cme_basis_fade_v1 -$257/n=151 (LIVE 5/20-5/26), "
+                "atm_hold_v1 -$143/n=46 (5/13-5/25), deribit_tail_fade_v1 -$58/n=50 "
+                "(5/13-5/25), late_close_tail_v1 $0/n=1. "
+                "Paper 손실 (참고): 10 strategies 누적 -$7,585 over 30d. "
+                "전면 freeze 이유: 모든 strategy -EV + odds_observations write의 "
+                "60% 차지하던 crypto data scan이 EC2 SQLite contention 야기. "
+                "See [[crypto_full_freeze_2026-05-27]].",
         }
         # Demotion details for strategies that are NOT retired but have been
         # removed from LIVE_STRATEGIES env (still in main.py loop, paper-only).
@@ -1103,7 +1061,8 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "sports_underdog_v35",
                 "mentions_trader",
                 "econ_trader",
-                "late_close_tail_v1",
+                # late_close_tail_v1 + 9 other crypto Phase 1 strategies
+                # collapsed into single "crypto_archived" entry 2026-05-27.
             }
             is_demoted = s in DEMOTED_FROM_LIVE
             # Paper-twin flag: LIVE strategies that ALSO record paper-twin
