@@ -114,8 +114,8 @@ def section_strategy_snapshot(conn, strat, days):
           ROUND(MIN(CASE WHEN status='paper_settled' THEN pnl END), 2) AS worst
         FROM trades
         WHERE strategy = ?
-          AND timestamp >= ?
-          AND timestamp < datetime(?, '+' || ? || ' days')
+          AND datetime(timestamp) >= datetime(?)
+          AND datetime(timestamp) < datetime(?, '+' || ? || ' days')
     """, (name, deploy_ts, deploy_ts, days))
     if not rows:
         return None
@@ -151,8 +151,8 @@ def section_by_band(conn, name, deploy_ts, days):
         FROM trades
         WHERE strategy = ?
           AND status = 'paper_settled'
-          AND timestamp >= ?
-          AND timestamp < datetime(?, '+' || ? || ' days')
+          AND datetime(timestamp) >= datetime(?)
+          AND datetime(timestamp) < datetime(?, '+' || ? || ' days')
         GROUP BY band ORDER BY band
     """, (name, deploy_ts, deploy_ts, days))
     return rows
@@ -169,8 +169,8 @@ def section_paper_vs_live(conn, name, deploy_ts, days):
           ROUND(SUM(CASE WHEN status IN ('paper_settled','settled') THEN pnl ELSE 0 END), 2) AS pnl
         FROM trades
         WHERE strategy = ?
-          AND timestamp >= ?
-          AND timestamp < datetime(?, '+' || ? || ' days')
+          AND datetime(timestamp) >= datetime(?)
+          AND datetime(timestamp) < datetime(?, '+' || ? || ' days')
         GROUP BY bucket
     """, (name, deploy_ts, deploy_ts, days))
     return rows
