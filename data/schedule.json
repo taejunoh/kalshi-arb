@@ -1,6 +1,6 @@
 {
-  "version": "2026-05-28-crypto-cleanup",
-  "note": "Upcoming eval gates + intermediate progress checks. kind='decision' = promote/retire/size-up bar; kind='progress' = trajectory snapshot (참고, NOT decision-grade). 2026-05-27 crypto Phase 1 frozen — all crypto entries removed. See [[crypto_full_freeze_2026-05-27]].",
+  "version": "2026-05-28-crypto-full-cleanup",
+  "note": "Upcoming eval gates + intermediate progress checks. kind='decision' = promote/retire/size-up bar; kind='progress' = trajectory snapshot (참고, NOT decision-grade). 2026-05-27 crypto Phase 1 frozen + crypto observers disabled — all crypto eval entries removed except 6/09 stablecoin backtest (only surviving crypto data path). See [[crypto_full_freeze_2026-05-27]].",
   "gates": [
     {
       "date": "2026-05-23",
@@ -12,46 +12,6 @@
       "memory": "next_session_entry_2026-05-22"
     },
     {
-      "date": "2026-05-24",
-      "kind": "progress",
-      "type": "manual",
-      "label": "settlement_edge_v2 + depth_skew_flip T+3d trajectory (참고)",
-      "details": "5/21 new sister observer pair — early WR + tradable-subset check.",
-      "criteria": "Tradable WR > breakeven-by-2pp on n >= 30 each; flag if v2 worse than v1 in-sample.",
-      "memory": "settlement_edge_v2_retune_2026-05-21",
-      "parent": "2026-05-28 settlement_edge_v2 + depth_skew_flip T+7d"
-    },
-    {
-      "date": "2026-05-24",
-      "kind": "progress",
-      "type": "manual",
-      "label": "mid_otm_tail SAFE_ZONE T+3d trajectory (참고)",
-      "details": "cliff_zone flag deployed 5/21 — track whether SAFE +EV holds post-deploy OOS.",
-      "criteria": "SAFE-only PnL since 5/21 13:00 UTC; flag if 5/22-5/24 trend cumulatively negative (confirms 5/20 was lucky-day).",
-      "memory": "mid_otm_tail_observer_2026-05-20",
-      "parent": "2026-05-27 Multi-cohort eval snapshot"
-    },
-    {
-      "date": "2026-05-27",
-      "time_utc": "13:00",
-      "kind": "decision",
-      "type": "auto",
-      "label": "Multi-cohort eval snapshot (sports observers)",
-      "details": "One-shot eval_2026_05_27_snapshot.py: mid_otm_tail (incl. new Section 3b cliff_zone) + universe_expansion T-leg. Crypto sub-cohorts (cross_asset, cme_basis) removed — strategies mothballed.",
-      "criteria": "Per cohort: promote / extend / retire per memory bar",
-      "memory": "phase0_eval_alarm_timer_2026-05-19"
-    },
-    {
-      "date": "2026-05-28",
-      "time_utc": "13:00",
-      "kind": "decision",
-      "type": "auto",
-      "label": "settlement_edge_v2 + depth_skew_flip T+7d",
-      "details": "5/21 new sister observer pair — auto-Telegram via extended kalshi-phase0-observer-eval.timer.",
-      "criteria": "Per-observer tradable WR + fee-net EV; v2 must beat v1 in-sample",
-      "memory": "settlement_edge_v2_retune_2026-05-21"
-    },
-    {
       "date": "2026-06-04",
       "kind": "decision",
       "type": "manual",
@@ -59,16 +19,6 @@
       "details": "MLB+EPL block + playoff size halve (16->8) + soccer_draw demote — verify ~$1,800/60d bleed stopped.",
       "criteria": "May LIVE cumulative no worse than -$1,580 baseline; cohort PnL flat or up",
       "memory": "sports_cohort_block_2026-05-21"
-    },
-    {
-      "date": "2026-06-04",
-      "time_utc": "13:00",
-      "kind": "decision",
-      "type": "auto",
-      "label": "settlement_edge_v2 + depth_skew_flip T+14d",
-      "details": "Same kalshi-phase0-observer-eval.timer second fire (T+14d).",
-      "criteria": "Tradable WR + fee-net EV held vs T+7d snapshot",
-      "memory": "settlement_edge_v2_retune_2026-05-21"
     },
     {
       "date": "2026-06-09",
