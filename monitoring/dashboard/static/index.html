@@ -1532,19 +1532,27 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     return hasActivity || stratMode === mode;
   });
 
-  // Sort: TRULY-LIVE first, then DISABLED last. Within each tier, by
-  // mode-specific trade_count DESC so the most active strategies float
-  // to the top of each Performance section.
+  // Sort: 3 tiers in priority order —
+  //   0) "최근 거래 활발한순" — fired today (since 06:00 ET), by today's trade_count DESC
+  //   1) "전체 거래순"        — has lifetime trades but quiet today, by cumulative DESC
+  //   2) DISABLED            — pinned to bottom
+  // Idle strategies (active, never fired in this mode) naturally sink to the
+  // bottom of tier 1 (trade_count=0 sorts last).
+  const todayTradesOf = (s) => (((perfCache[s] || {})[modeKey] || {}).today || {}).trade_count || 0;
+  const cumTradesOf   = (s) => ((perfCache[s] || {})[modeKey] || {}).trade_count || 0;
   const tierOf = (s) => {
     const st = stratStatusCache[s] || {};
-    if (st.active === false) return 2; // disabled
-    return 0; // active
+    if (st.active === false) return 2;       // disabled
+    if (todayTradesOf(s) > 0) return 0;      // recently active (today)
+    return 1;                                // lifetime / idle
   };
-  const tradesOf = (s) => ((perfCache[s] || {})[modeKey] || {}).trade_count || 0;
   filtered.sort((a, b) => {
     const td = tierOf(a) - tierOf(b);
     if (td !== 0) return td;
-    return tradesOf(b) - tradesOf(a);  // within tier: most active first
+    const t = tierOf(a);
+    if (t === 0) return todayTradesOf(b) - todayTradesOf(a);  // today DESC
+    if (t === 1) return cumTradesOf(b)   - cumTradesOf(a);    // cumulative DESC
+    return 0;
   });
 
   if (filtered.length === 0) {
