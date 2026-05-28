@@ -39,7 +39,15 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
     # NHL long pre eu as the active losing cell for v31. With PRE_GAME_ONLY=True
     # the only NHL signals v31 fires on are (NHL, pre eu); blocking the sport
     # fully stops both live trades and the paper twin on NHL.
-    SPORT_BLOCKLIST = frozenset({"NHL"})
+    # MLB added 2026-05-28 — closes the cohort-block leak from commit 374c300
+    # (2026-05-20), which added MLB to underdog_v31 + midshot_v31 but missed
+    # longshot_v31. longshot MLB record: lifetime n=84, WR 21%, -$30.41 —
+    # below the ~25% fee-adjusted breakeven for the 5-25c band ($0.07/ct flat
+    # fee), vs non-MLB n=87, WR 29%, +$99.25. The 5/26 COL-yes + LAD-no
+    # double-fire (-$42.54, both = "COL wins") was the visible leak; full
+    # PAIR_FIRE_DEDUP can't fix it here (2026-05-15 audit: dedup hurts longshot
+    # -36pp), so the sport block is the correct lever — no MLB fires at all.
+    SPORT_BLOCKLIST = frozenset({"NHL", "MLB"})
     # 2026-05-25 N4: Pinnacle-agreement gate. 60d data: extreme band
     # n=17/-$52, center band n=3/+$27 (longshot fires rarely overall).
     # Conservative MAX_PIN_GAP=0.05 cuts the bleed without killing fire rate.
