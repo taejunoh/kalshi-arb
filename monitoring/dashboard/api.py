@@ -612,10 +612,17 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             # Non-sports retired
             "econ_trader",
             # 2026-05-20: crypto_fair_value pair retired — both deeply -EV.
-            # parent -$870/104 (41% WR), mid_v1 -$1,017/55 (20% WR). Lognormal
-            # fair systematically overstates short-dated tail prob;
-            # deribit_tail_fade_v1 already captures the inverse.
             "crypto_fair_value", "crypto_fair_value_mid_v1",
+            # 2026-05-25 → 5/27 crypto Phase 1 mothball cascade. 30d portfolio
+            # audit found only deribit_tail_fade_v1 was +EV (+$473/n=634);
+            # all other Phase 1 traders cumulative -$7,585. Then 5/27 full
+            # freeze killed the remaining live + observer scan to reclaim
+            # bot.db write share. See [[crypto_full_freeze_2026-05-27]].
+            "deribit_tail_fade_v1", "deribit_tail_fade_high_v1",
+            "bid_imbalance_v1", "bid_imbalance_fade_v1",
+            "open_no_touch_v1", "atm_hold_v1",
+            "cme_basis_fade_v1", "deribit_atm_fade_v1",
+            "late_close_tail_v1", "ladder_crypto",
         }
         # Strategies removed from main.py _strategy_loop (no env flag to toggle).
         # Keep in sync with main.py; see commits 59f7e44 (sports_trader) and
@@ -632,7 +639,15 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                          "sports_chalk_shadow",
                          # Retired 2026-04-26 — duplicate of v35's paper twin
                          # after (MLB,pre) cell removal
-                         "sports_longshot_v34"}
+                         "sports_longshot_v34",
+                         # 2026-05-25 → 5/27 crypto Phase 1 mothball cascade.
+                         # All 9 Phase 1 traders + ladder_crypto commented out
+                         # in main.py. See [[crypto_full_freeze_2026-05-27]].
+                         "deribit_tail_fade_v1", "deribit_tail_fade_high_v1",
+                         "bid_imbalance_v1", "bid_imbalance_fade_v1",
+                         "open_no_touch_v1", "atm_hold_v1",
+                         "cme_basis_fade_v1", "deribit_atm_fade_v1",
+                         "late_close_tail_v1", "ladder_crypto"}
         # env-flag mapping: which config attribute gates each strategy
         flag_map = {
             "market_maker": "MM_ENABLED",
@@ -744,6 +759,44 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "Retired (2026-04-24): pre-game-only +21.5% (n=91) → v31 underdog "
                 "+19.7% 와 거의 동률. 추가 mechanism (cap) 정당화 안 됨, 단순 v31 유지가 "
                 "더 깔끔. v32 underdog (+27.1%) 가 동일 슬롯에서 명백히 우월하므로 거기 집중.",
+            "deribit_tail_fade_v1":
+                "Mothballed (2026-05-25): LIVE 5/13-5/25 net -$80 across 169 fills. "
+                "KXBTC exclude × KXETH (10 fills) -$38 baseline; cap 0.90 sim "
+                "yields +$1.27/2w = ~$33/year. Operational overhead >> edge.",
+            "deribit_tail_fade_high_v1":
+                "Mothballed (2026-05-25): LIVE 5/22 (0/22+ FOK) → LIMIT TTL 180s "
+                "redesign 5/23 → 30/30 paper LIMIT cancelled over 44h. Kalshi "
+                "yes_bid_size_fp depth field unreliable for high-ya cohort.",
+            "bid_imbalance_v1":
+                "Mothballed (2026-05-26): 30d audit n=825 / -$1,665 / EV -10.1% / "
+                "WR 61.6%. All price bands -EV (worst D 0.70-0.85 -$900 EV -23%). "
+                "5/21 observer +EV cohort (ya 0.35-0.40) did NOT translate to trader edge.",
+            "bid_imbalance_fade_v1":
+                "Mothballed (2026-05-26): 30d audit n=895 / -$1,459 / EV -8.2% / "
+                "WR 66.8%. All bands -EV incl. F (≥0.95) at -2.45% — slip+fee wipe "
+                "even at WR 87-90%.",
+            "open_no_touch_v1":
+                "Mothballed (2026-05-26): 30d n=319 / -$880 / EV -13.8% / WR 50%. "
+                "KXETH exclude works post-5/21 PM, but residual non-KXETH is still "
+                "-EV in every band.",
+            "atm_hold_v1":
+                "Mothballed (2026-05-26): 30d n=107 / -$245 / EV -8.1% / WR 54%. "
+                "Already demoted LIVE→paper 5/25; 7d post-demote -$327 EV -12% "
+                "confirms accelerating bleed.",
+            "cme_basis_fade_v1":
+                "Mothballed (2026-05-26): 30d n=700 / -$1,501 / EV -10.8% / WR 78.3%. "
+                "Gate INVERTED — gate ya [0.17, 0.42] captures bands C+D (-EV "
+                "catastrophe -$1,021 in band C alone). Demoted LIVE→paper 5/26.",
+            "deribit_atm_fade_v1":
+                "Mothballed (2026-05-26): 30d n=43 / -$193 / EV -22.5% / WR 49%. "
+                "Smallest sample but worst EV.",
+            "late_close_tail_v1":
+                "Mothballed (2026-05-27): 30d n=106 / -$83. Small loss, but rolled "
+                "into crypto full freeze — no path to +EV without crypto_observer "
+                "signals which are also off. See [[crypto_full_freeze_2026-05-27]].",
+            "ladder_crypto":
+                "Mothballed (2026-05-27): Phase 0 resurrection from 2026-05-19 went "
+                "silent 15d (last fire 5/12). Rolled into crypto full freeze.",
         }
         # Demotion details for strategies that are NOT retired but have been
         # removed from LIVE_STRATEGIES env (still in main.py loop, paper-only).
@@ -1367,37 +1420,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             return {"strategies": [], "as_of": datetime.now(timezone.utc).isoformat()}
 
         # (display_name, attr_prefix, gates_spec, has_depth_gate)
-        # gates_spec = list of (label, format_fn). Format fn reads from config.
-        SPECS = [
-            ("deribit_tail_fade_v1",  "DERIBIT_TAIL_FADE",
-             "BUY NO on Kalshi tail strike when ya overprices vs Deribit lognormal",
-             True),
-            ("deribit_tail_fade_high_v1", "DERIBIT_TAIL_FADE_HIGH",
-             "Sister of tail_fade_v1 for high-ya near-expiry near-strike zone (paper)",
-             True),
-            ("late_close_tail_v1",    "LATE_CLOSE_TAIL",
-             "Tail fade variant for near-close cohort",
-             True),
-            ("deribit_atm_fade_v1",   "DERIBIT_ATM_FADE",
-             "Inverse of tail_fade for high-ya (ITM) strikes",
-             True),
-            ("cme_basis_fade_v1",     "CME_BASIS_FADE",
-             "BUY NO when Kalshi pricing diverges from CME futures basis, "
-             "fee-positive ya band only",
-             True),
-            ("open_no_touch_v1",      "OPEN_NO_TOUCH",
-             "BUY NO at event open on ATM±1% buckets",
-             False),
-            ("atm_hold_v1",           "ATM_HOLD",
-             "BUY YES on ATM bucket near close",
-             False),
-            ("bid_imbalance_v1",      "BID_IMBALANCE",
-             "BUY predicted side on top-of-book imbalance, rich-end only",
-             False),
-            ("bid_imbalance_fade_v1", "BID_IMBALANCE_FADE",
-             "Flipped bid_imbalance for low-ya zone",
-             False),
-        ]
+        # 2026-05-27 crypto full freeze: all 9 Phase 1 traders mothballed.
+        # See [[crypto_full_freeze_2026-05-27]]. SPECS intentionally empty
+        # — strategy-gates endpoint now reports an empty crypto Phase 1
+        # roster. Revive an entry here when re-enabling a strategy.
+        SPECS = []
 
         live_set = config.LIVE_STRATEGIES if hasattr(config, "LIVE_STRATEGIES") else set()
         out = []
