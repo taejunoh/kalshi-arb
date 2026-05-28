@@ -59,7 +59,7 @@ def section_today_deploys():
               SUM(CASE WHEN status IN ('paper_settled','settled') AND pnl < 0 THEN 1 ELSE 0 END) AS losses,
               ROUND(SUM(CASE WHEN status IN ('paper_settled','settled') THEN pnl ELSE 0 END), 2) AS pnl
             FROM trades
-            WHERE strategy = ? AND timestamp >= datetime('now', '-18 hours')
+            WHERE strategy = ? AND datetime(timestamp) >= datetime('now', '-18 hours')
         """, (strat,))[0]
         fires, settled, wins, losses, pnl = rows
         if not fires:
@@ -83,7 +83,7 @@ def section_live_24h():
           SUM(CASE WHEN status='settled' AND pnl < 0 THEN 1 ELSE 0 END) AS losses,
           ROUND(SUM(CASE WHEN status='settled' THEN pnl ELSE 0 END), 2) AS pnl
         FROM trades
-        WHERE timestamp >= datetime('now', '-24 hours')
+        WHERE datetime(timestamp) >= datetime('now', '-24 hours')
           AND status NOT LIKE 'paper%'
           AND strategy IN ('sports_longshot_v31','sports_midshot_v31','sports_underdog_v31','sports_underdog_v37')
         GROUP BY strategy ORDER BY strategy
@@ -114,7 +114,7 @@ def section_dedup_check():
         rows = q("""
             SELECT market_id, timestamp
             FROM trades
-            WHERE strategy = ? AND timestamp >= '2026-05-26T20:01:00'
+            WHERE strategy = ? AND datetime(timestamp) >= datetime('2026-05-26T20:01:00')
             ORDER BY timestamp
         """, (strat,))
         if not rows:
@@ -180,7 +180,7 @@ def section_stablecoin():
     rows = q("""
         SELECT direction, COUNT(*) AS n, ROUND(SUM(amount_usd)/1e6, 1) AS sum_M
         FROM stablecoin_mint_observations
-        WHERE detected_at >= datetime('now', '-12 hours')
+        WHERE datetime(detected_at) >= datetime('now', '-12 hours')
         GROUP BY direction
     """)
     if not rows:
@@ -257,7 +257,7 @@ def section_daily_loss_status():
         SELECT ROUND(SUM(pnl), 2)
         FROM trades
         WHERE status = 'settled'
-          AND timestamp >= datetime('now', 'start of day')
+          AND datetime(timestamp) >= datetime('now', 'start of day')
     """)
     daily = rows[0][0] if rows else 0
     cap = 200  # MAX_DAILY_LOSS from .env
