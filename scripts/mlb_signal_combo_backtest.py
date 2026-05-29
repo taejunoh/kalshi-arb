@@ -92,7 +92,7 @@ def get_settled_games(conn):
     cur = conn.execute("""
         SELECT kalshi_ticker, result FROM ticker_settlements
         WHERE kalshi_ticker LIKE 'KXMLBGAME-%'
-          AND fetched_at >= datetime('now', ?)
+          AND fetched_at >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)
     """, (f"-{LOOKBACK_DAYS} days",))
     by_game = {}
     for tk, res in cur.fetchall():

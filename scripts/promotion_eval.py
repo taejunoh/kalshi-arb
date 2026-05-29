@@ -204,7 +204,7 @@ def _load_entries(conn: sqlite3.Connection, sport: str, window_days: int) -> lis
         FROM odds_observations o
         JOIN ticker_settlements s ON o.kalshi_ticker = s.kalshi_ticker
         WHERE o.sport = ?
-          AND o.timestamp >= datetime('now', '-{int(window_days)} days')
+          AND o.timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-{int(window_days)} days')
           AND o.n_books_eu >= ?
           AND o.minutes_to_start BETWEEN ? AND ?
           AND o.phase = 'pre'
@@ -241,7 +241,7 @@ def _load_quality_stats(conn: sqlite3.Connection, sport: str, window_days: int) 
                kalshi_yes_ask, kalshi_yes_ask_size, kalshi_no_ask, kalshi_no_ask_size
         FROM odds_observations
         WHERE sport = ?
-          AND timestamp >= datetime('now', '-{int(window_days)} days')
+          AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-{int(window_days)} days')
           AND n_books_eu IS NOT NULL
         """,
         (sport,),
@@ -317,7 +317,7 @@ def _load_live_baselines(conn: sqlite3.Connection, window_days: int) -> dict:
                SUM(pnl) AS total_pnl,
                SUM(price * 100) AS total_size_proxy
         FROM trades
-        WHERE timestamp >= datetime('now', '-{int(window_days)} days')
+        WHERE timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-{int(window_days)} days')
           AND status IN ('filled', 'settled', 'paper_filled', 'paper_settled')
           AND strategy IS NOT NULL
         GROUP BY strategy, status
@@ -364,7 +364,7 @@ def _load_clv(conn: sqlite3.Connection, sport: str, window_days: int) -> dict:
                minutes_to_start, is_yes_home, is_yes_draw
         FROM odds_observations
         WHERE sport = ?
-          AND timestamp >= datetime('now', '-{int(window_days)} days')
+          AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-{int(window_days)} days')
           AND minutes_to_start IS NOT NULL
           AND minutes_to_start > 0
           AND kalshi_yes_ask IS NOT NULL

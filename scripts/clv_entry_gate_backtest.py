@@ -27,7 +27,7 @@ cur = c.execute("""
     JOIN clv_snapshots e ON e.trade_id = t.id AND e.snapshot_at = 'entry'
     JOIN clv_snapshots cl ON cl.trade_id = t.id AND cl.snapshot_at = 'closing'
     WHERE t.status IN ('settled','paper_settled','paper_filled','filled')
-      AND t.timestamp >= datetime('now', ?)
+      AND t.timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)
       AND e.pinnacle_yes_prob IS NOT NULL
       AND cl.yes_ask IS NOT NULL
 """, (f"-{LB} days",))

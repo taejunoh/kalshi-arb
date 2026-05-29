@@ -78,7 +78,7 @@ def cohort_a_lognormal_fair_dev_kxethd(con: sqlite3.Connection) -> None:
             actual_outcome
           FROM crypto_observer_signals
           WHERE observer = 'lognormal_fair_dev'
-            AND ts >= datetime('now', '-14 days')
+            AND ts >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-14 days')
             AND series = 'KXETHD'
             AND predicted_outcome = 'yes'
             AND actual_outcome IN ('yes', 'no')
@@ -115,7 +115,7 @@ def cohort_b_bid_imbalance_kxbtcd(con: sqlite3.Connection) -> None:
             actual_outcome
           FROM crypto_observer_signals
           WHERE observer = 'bid_imbalance'
-            AND ts >= datetime('now', '-14 days')
+            AND ts >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-14 days')
             AND series = 'KXBTCD'
             AND predicted_outcome = 'yes'
             AND actual_outcome IN ('yes', 'no')
@@ -143,7 +143,7 @@ def cohort_b_bid_imbalance_kxbtcd(con: sqlite3.Connection) -> None:
             actual_outcome
           FROM crypto_observer_signals
           WHERE observer = 'bid_imbalance'
-            AND ts >= datetime('now', '-3 days')
+            AND ts >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-3 days')
             AND series = 'KXBTCD'
             AND predicted_outcome = 'yes'
             AND actual_outcome IN ('yes', 'no')

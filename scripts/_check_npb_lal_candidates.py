@@ -6,7 +6,7 @@ for sport, prefix, mvmax in [("NPB", "KXNPBGAME", 0.08), ("LAL", "KXLALIGAGAME",
     cur = c.execute("""
       SELECT DISTINCT kalshi_ticker FROM odds_observations
       WHERE kalshi_ticker LIKE ? AND minutes_to_start > 30
-        AND timestamp >= datetime('now', '-2 hours')
+        AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-2 hours')
     """, (prefix + "-%",))
     tickers = [r[0] for r in cur.fetchall()]
     cands = []

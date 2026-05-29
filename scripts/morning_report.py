@@ -78,10 +78,10 @@ def main():
     new_strats = ["sports_tennis_chalk_v1", "sports_mlb_pitcher_edge_v1"]
     for s in new_strats:
         fires = query(
-            "SELECT COUNT(*), ROUND(AVG(price),3) FROM trades WHERE strategy=? AND timestamp>=datetime('now','-12 hours') AND status IN ('paper_filled','filled')",
+            "SELECT COUNT(*), ROUND(AVG(price),3) FROM trades WHERE strategy=? AND timestamp>=strftime('%Y-%m-%dT%H:%M:%S', 'now','-12 hours') AND status IN ('paper_filled','filled')",
             (s,))[0]
         settles = query(
-            "SELECT COUNT(*), ROUND(SUM(pnl),2), ROUND(100.0*SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END)/MAX(COUNT(*),1),1) FROM trades WHERE strategy=? AND timestamp>=datetime('now','-12 hours') AND status IN ('paper_settled','settled')",
+            "SELECT COUNT(*), ROUND(SUM(pnl),2), ROUND(100.0*SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END)/MAX(COUNT(*),1),1) FROM trades WHERE strategy=? AND timestamp>=strftime('%Y-%m-%dT%H:%M:%S', 'now','-12 hours') AND status IN ('paper_settled','settled')",
             (s,))[0]
         n_fire, avg_p = fires[0], fires[1]
         n_settle, pnl, wr = settles[0], settles[1], settles[2]
@@ -97,7 +97,7 @@ def main():
     total_n = 0
     for s in live_strats:
         r = query(
-            "SELECT COUNT(*), ROUND(SUM(pnl),2) FROM trades WHERE strategy=? AND timestamp>=datetime('now','-12 hours') AND status='settled'",
+            "SELECT COUNT(*), ROUND(SUM(pnl),2) FROM trades WHERE strategy=? AND timestamp>=strftime('%Y-%m-%dT%H:%M:%S', 'now','-12 hours') AND status='settled'",
             (s,))[0]
         n, pnl = r[0], r[1] or 0
         if n > 0:

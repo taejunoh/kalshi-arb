@@ -50,7 +50,7 @@ def _per_sport_stats(conn: sqlite3.Connection, hours: int) -> dict:
                   kalshi_open_interest, kalshi_volume_24h,
                   is_yes_home, is_yes_draw, kalshi_ticker, series
             FROM odds_observations
-            WHERE timestamp >= datetime('now', '-{int(hours)} hours')"""
+            WHERE timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-{int(hours)} hours')"""
     )
     rows = cur.fetchall()
     stats: dict = {}
@@ -94,8 +94,8 @@ def _settlement_lag(conn: sqlite3.Connection) -> dict:
            FROM odds_observations o
            LEFT JOIN ticker_settlements s ON o.kalshi_ticker = s.kalshi_ticker
            WHERE s.kalshi_ticker IS NULL
-             AND o.timestamp <= datetime('now', '-6 hours')
-             AND o.timestamp >= datetime('now', '-7 days')"""
+             AND o.timestamp <= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-6 hours')
+             AND o.timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-7 days')"""
     )
     row = cur.fetchone()
     return {"unsettled_old_tickers": row[0] if row else 0}

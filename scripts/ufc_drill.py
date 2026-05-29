@@ -6,7 +6,7 @@ c = sqlite3.connect(DB); c.execute("PRAGMA query_only=1")
 
 cur = c.execute("""SELECT kalshi_ticker, result FROM ticker_settlements
     WHERE kalshi_ticker LIKE 'KXUFCFIGHT-%'
-    AND fetched_at >= datetime('now', '-60 days')
+    AND fetched_at >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-60 days')
     AND result IN ('yes','no')""")
 settled = cur.fetchall()
 print(f"UFC settled last 60d: {len(settled)}")

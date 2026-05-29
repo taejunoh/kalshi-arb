@@ -40,7 +40,7 @@ def main():
         cur = c.execute("""
             SELECT DISTINCT substr(kalshi_ticker, 1, instr(kalshi_ticker, '-') - 1) AS prefix
             FROM ticker_settlements
-            WHERE fetched_at >= datetime('now', '-60 days')
+            WHERE fetched_at >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-60 days')
               AND kalshi_ticker LIKE ?
             LIMIT 5
         """, (f"%{sport}%-%",))
@@ -52,7 +52,7 @@ def main():
         cur = c.execute("""
             SELECT kalshi_ticker, result FROM ticker_settlements
             WHERE kalshi_ticker LIKE ?
-              AND fetched_at >= datetime('now', ?)
+              AND fetched_at >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)
               AND result IN ('yes', 'no')
         """, (f"%{sport}%-%", f"-{LB} days"))
         settled = [(tk, res) for tk, res in cur.fetchall() if sport_of(tk) == sport]

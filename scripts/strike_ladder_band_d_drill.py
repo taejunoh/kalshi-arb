@@ -22,7 +22,7 @@ q = """SELECT ts, predicted_outcome, actual_outcome, features_json, market_id
        FROM crypto_observer_signals
        WHERE observer = 'strike_ladder_literal'
          AND actual_outcome IS NOT NULL
-         AND ts > datetime('now','-30 days')"""
+         AND ts > strftime('%Y-%m-%dT%H:%M:%S', 'now','-30 days')"""
 
 for ts, pred, actual, fj, mid in c.execute(q):
     try:
