@@ -1,23 +1,29 @@
-"""CLV-gate alert — Telegram alert when rolling CLV crosses promotion/demote thresholds.
+"""CLV-gate alert — Telegram alert when rolling CLV crosses demote/collapse thresholds.
 
-Built 2026-05-25 after by-band audit (see [[by-band-audit-2026-05-25]]) revealed
-CLV (Closing Line Value) is a clean leading indicator of realized PnL:
+Built 2026-05-25 after by-band audit (see [[by-band-audit-2026-05-25]]). CLV
+(Closing Line Value) is a clean leading indicator of realized PnL ON THE
+DOWNSIDE only:
 
-  +CLV ≥ 0.12 → 7/8 winners in current LIVE portfolio (realized +$50 to +$296 / 30d)
-  CLV ≤ −0.04 → 4/4 losers (realized −$72 to −$638 / 30d, all demoted today)
+  CLV ≤ −0.04 → 4/4 losers (realized −$72 to −$638 / 30d, all demoted)
 
-Standard "wait 30d for realized PnL" promotion gate is slow. This script
-surfaces candidates ~2x faster:
+Surfaces two actionable, validated signals:
 
-  PROMOTE_CANDIDATE   paper + 30d n≥30 + 30d CLV ≥ +0.10
   DEMOTE_RISK         LIVE  + 14d n≥20 + 14d CLV ≤ −0.05
   CLV_COLLAPSE        LIVE  + 30d CLV ≥ +0.05 BUT 7d CLV ≤ −0.05  (alpha decay)
+
+PROMOTE arm REMOVED 2026-05-29: +CLV has NO predictive validity for realized
+PnL on the upside. Verified across all strategies with CLV data: of those with
+30d CLV ≥ +0.10, soccer_underdog_v1 was −$51 (WR 29%) and underdog_v37 +$8,
+while the biggest winner midshot_v31 (+$311) was not even flagged (CLV +0.097).
+The arm also structurally surfaced only demoted (ex-LIVE) strategies, because
+its query requires real settled/filled trades. Only the −CLV direction holds.
+See [[clv_entry_gate_finding_2026-05-26]].
 
 CLV is computed per-trade as (closing_price - entry_price) on the direction
 side, joining clv_snapshots (snapshot_at='entry' vs 'closing') with trades.
 
 Run modes:
-  --console  Print only (default for dry-test)
+  (default)  Print only (dry-test)
   --send     Send Telegram (used by systemd timer)
 
 Read-only on DB. Idempotent.
@@ -36,8 +42,6 @@ from core.config import Config
 
 logger = logging.getLogger("clv_gate_alert")
 
-PROMOTE_CLV_MIN = 0.10
-PROMOTE_N_MIN_30D = 30
 DEMOTE_CLV_MAX = -0.05
 DEMOTE_N_MIN_14D = 20
 COLLAPSE_30D_CLV_MIN = 0.05
@@ -46,7 +50,13 @@ COLLAPSE_N_MIN_7D = 8
 
 
 def compute_clv_window(cursor, strategy: str, days: int) -> tuple[int, float] | None:
-    """Return (n, avg_clv) for trades in last `days` days, or None if no data."""
+    """Return (n, avg_clv) for trades in last `days` days, or None if no data.
+
+    NOTE: datetime(t.timestamp) wrap is required — stored timestamps are ISO-T
+    (2026-05-28T04:22:25+00:00) while datetime('now',...) is space-separated;
+    a raw TEXT compare ("T" > " ") over-includes the cutoff date.
+    See [[feedback-sqlite-timestamp-t-space-compare]].
+    """
     cursor.execute(
         """
         SELECT t.direction,
@@ -57,7 +67,7 @@ def compute_clv_window(cursor, strategy: str, days: int) -> tuple[int, float] | 
         JOIN clv_snapshots c ON c.trade_id = t.id AND c.snapshot_at = 'closing'
         WHERE t.strategy = ?
           AND t.status IN ('settled', 'filled')
-          AND t.timestamp >= datetime('now', ?)
+          AND datetime(t.timestamp) >= datetime('now', ?)
           AND e.yes_ask IS NOT NULL AND e.no_ask IS NOT NULL
           AND c.yes_ask IS NOT NULL AND c.no_ask IS NOT NULL
         """,
@@ -83,7 +93,7 @@ def list_strategies_with_clv(cursor, lookback_days: int = 30) -> list[str]:
         SELECT DISTINCT t.strategy
         FROM trades t
         JOIN clv_snapshots c ON c.trade_id = t.id
-        WHERE t.timestamp >= datetime('now', ?)
+        WHERE datetime(t.timestamp) >= datetime('now', ?)
           AND t.strategy LIKE 'sports_%'
         """,
         (f"-{lookback_days} days",),
@@ -100,7 +110,6 @@ async def audit(send: bool = False):
     cursor = conn.cursor()
     strategies = list_strategies_with_clv(cursor)
 
-    promote = []
     demote_risk = []
     collapse = []
     ok = []
@@ -111,9 +120,9 @@ async def audit(send: bool = False):
         c7 = compute_clv_window(cursor, s, 7)
         is_live = s in live_strategies
 
-        if not is_live and c30 and c30[0] >= PROMOTE_N_MIN_30D and c30[1] >= PROMOTE_CLV_MIN:
-            promote.append((s, c30[0], c30[1]))
-        elif is_live and c14 and c14[0] >= DEMOTE_N_MIN_14D and c14[1] <= DEMOTE_CLV_MAX:
+        # PROMOTE arm removed 2026-05-29 (see module docstring): +CLV does not
+        # predict +PnL. Only the −CLV demote/collapse directions are actionable.
+        if is_live and c14 and c14[0] >= DEMOTE_N_MIN_14D and c14[1] <= DEMOTE_CLV_MAX:
             demote_risk.append((s, c14[0], c14[1]))
         elif (is_live and c30 and c30[1] >= COLLAPSE_30D_CLV_MIN
               and c7 and c7[0] >= COLLAPSE_N_MIN_7D and c7[1] <= COLLAPSE_7D_CLV_MAX):
@@ -125,11 +134,6 @@ async def audit(send: bool = False):
 
     lines = [f"<b>📊 CLV-Gate Alert</b> ({datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')})"]
     lines.append("")
-    if promote:
-        lines.append("<b>🟢 PROMOTE CANDIDATES</b> (paper, 30d CLV ≥ +0.10, n ≥ 30):")
-        for s, n, clv in sorted(promote, key=lambda x: -x[2]):
-            lines.append(f"  • <b>{s}</b>  n={n}  CLV=+{clv:.3f}")
-        lines.append("")
     if collapse:
         lines.append(f"<b>🟡 CLV COLLAPSE</b> (LIVE, 30d +CLV but 7d ≤ {COLLAPSE_7D_CLV_MAX:.2f}):")
         for s, clv30, clv7, n7 in sorted(collapse, key=lambda x: x[2]):
@@ -141,7 +145,7 @@ async def audit(send: bool = False):
             lines.append(f"  • <b>{s}</b>  n={n}  14d CLV={clv:+.3f}")
         lines.append("")
 
-    if not (promote or demote_risk or collapse):
+    if not (demote_risk or collapse):
         lines.append("<b>✅ No CLV-gate flags</b>")
         lines.append("")
 
@@ -157,7 +161,7 @@ async def audit(send: bool = False):
         logger.warning("Telegram credentials missing — skipping send.")
         return
 
-    if not (promote or demote_risk or collapse):
+    if not (demote_risk or collapse):
         logger.info("No CLV flags — skipping Telegram send.")
         return
 
@@ -165,8 +169,7 @@ async def audit(send: bool = False):
     notifier = TelegramNotifier(config.TELEGRAM_BOT_TOKEN, config.TELEGRAM_CHAT_ID)
     await notifier.send(msg, msg_type="clv_gate")
     logger.info(
-        f"Telegram sent: {len(promote)} promote / {len(collapse)} collapse / "
-        f"{len(demote_risk)} demote / {len(ok)} OK"
+        f"Telegram sent: {len(collapse)} collapse / {len(demote_risk)} demote / {len(ok)} OK"
     )
 
 
