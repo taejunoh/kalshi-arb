@@ -55,7 +55,7 @@ def pull_slip_data(conn: sqlite3.Connection, days_back: int) -> list:
            WHERE status IN ('filled', 'settled')
              AND price IS NOT NULL
              AND realized_fill_price IS NOT NULL
-             AND timestamp >= datetime('now', ?)""",
+             AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)""",
         (f"-{int(days_back)} days",),
     ).fetchall()
     out = []

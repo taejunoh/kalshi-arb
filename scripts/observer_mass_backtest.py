@@ -76,7 +76,7 @@ def run_observer(c, observer):
            FROM crypto_observer_signals
            WHERE observer = ?
              AND actual_outcome IS NOT NULL
-             AND ts > datetime('now', ?)""",
+             AND ts > strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)""",
         (observer, f"-{LOOKBACK_DAYS} days"),
     )
 
@@ -168,7 +168,7 @@ def main():
     observers = [
         r[0] for r in c.execute(
             f"""SELECT observer FROM crypto_observer_signals
-                WHERE actual_outcome IS NOT NULL AND ts > datetime('now','-{LOOKBACK_DAYS} days')
+                WHERE actual_outcome IS NOT NULL AND ts > strftime('%Y-%m-%dT%H:%M:%S', 'now','-{LOOKBACK_DAYS} days')
                 GROUP BY observer HAVING COUNT(*) >= {MIN_N_OBSERVER}
                 ORDER BY observer"""
         ).fetchall()

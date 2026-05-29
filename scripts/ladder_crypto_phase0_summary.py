@@ -45,7 +45,7 @@ def _query_summary(db_path: str) -> dict:
         cur.execute("""
             SELECT series, COUNT(*) FROM ladder_violations
             WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
-              AND would_fire=1 AND ts >= datetime('now', '-1 days')
+              AND would_fire=1 AND ts >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-1 days')
             GROUP BY series
         """)
         by_series_24h = dict(cur.fetchall())
@@ -55,14 +55,14 @@ def _query_summary(db_path: str) -> dict:
             SELECT AVG(walked_edge_usdc) FROM ladder_violations
             WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
               AND would_fire=1 AND action_taken='phase0_arb_log'
-              AND ts >= datetime('now', '-1 days')
+              AND ts >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-1 days')
         """)
         avg_edge_24h = cur.fetchone()[0]
         # 14d cumulative would_fire count
         cur.execute("""
             SELECT COUNT(*) FROM ladder_violations
             WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
-              AND would_fire=1 AND ts >= datetime('now', '-14 days')
+              AND would_fire=1 AND ts >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-14 days')
         """)
         count_14d = cur.fetchone()[0]
         # Phantom rate: p90 of top_vs_walked_max_gap_cents on candidates (all detected, fire or not)
@@ -70,7 +70,7 @@ def _query_summary(db_path: str) -> dict:
             SELECT top_vs_walked_max_gap_cents FROM ladder_violations
             WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
               AND top_vs_walked_max_gap_cents IS NOT NULL
-              AND ts >= datetime('now', '-14 days')
+              AND ts >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-14 days')
             ORDER BY top_vs_walked_max_gap_cents
         """)
         gaps = [r[0] for r in cur.fetchall()]
@@ -83,14 +83,14 @@ def _query_summary(db_path: str) -> dict:
         cur.execute("""
             SELECT COUNT(*) FROM ladder_violations
             WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
-              AND ts >= datetime('now', '-2 days')
+              AND ts >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-2 days')
         """)
         candidates_48h = cur.fetchone()[0]
         # Distinct event_key count in 14d (concentration vs distribution signal)
         cur.execute("""
             SELECT COUNT(DISTINCT event_key) FROM ladder_violations
             WHERE sub_strategy='ladder_crypto' AND phase='phase0_paper'
-              AND would_fire=1 AND ts >= datetime('now', '-14 days')
+              AND would_fire=1 AND ts >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-14 days')
         """)
         distinct_events_14d = cur.fetchone()[0]
         return {

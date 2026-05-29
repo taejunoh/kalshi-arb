@@ -48,7 +48,7 @@ weather_cache = defaultdict(dict)  # team -> {date: (temp_c, wind_kmh)}
 cur = c.execute("""
     SELECT team, fetched_at, current_temp_f, current_wind_mph
     FROM weather_observations
-    WHERE fetched_at >= datetime('now', '-90 days')
+    WHERE fetched_at >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-90 days')
 """)
 for team, fetched_at, t_f, w_mph in cur.fetchall():
     try:

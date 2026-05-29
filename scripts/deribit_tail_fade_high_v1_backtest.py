@@ -61,7 +61,7 @@ def fetch_signals(con: sqlite3.Connection, days: int = 14):
           CAST(json_extract(features_json, '$.ya') AS REAL) AS ya
         FROM crypto_observer_signals
         WHERE observer = 'deribit_tail_skew'
-          AND ts >= datetime('now', '-{days} days')
+          AND ts >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-{days} days')
           AND predicted_outcome = 'no'
           AND actual_outcome IN ('yes', 'no')
           AND CAST(json_extract(features_json, '$.ya') AS REAL) BETWEEN ? AND ?

@@ -35,7 +35,7 @@ def fetch_entries(conn: sqlite3.Connection, strategy: str,
             FROM trades
             WHERE strategy = ?
               AND status IN ({placeholders})
-              AND timestamp >= datetime('now', ?)
+              AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)
             ORDER BY timestamp""",
         (strategy, *status_in, f"-{days_back} days"),
     ).fetchall()
@@ -66,7 +66,7 @@ def fetch_live_paper_gap_pp(conn: sqlite3.Connection, strategy: str,
              SUM(CASE WHEN status = 'paper_settled' THEN pnl ELSE 0 END) AS paper_pnl
            FROM trades
            WHERE strategy = ?
-             AND timestamp >= datetime('now', ?)""",
+             AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)""",
         (strategy, f"-{days_back} days"),
     ).fetchone()
     if not rows:
@@ -92,7 +92,7 @@ def fetch_stale_ratio(conn: sqlite3.Connection, strategy: str,
              SUM(CASE WHEN status='paper_settled' THEN 1 ELSE 0 END) AS settled
            FROM trades
            WHERE strategy = ?
-             AND timestamp >= datetime('now', ?)""",
+             AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)""",
         (strategy, f"-{days_back} days"),
     ).fetchone()
     if not row or (row[0] or 0) + (row[1] or 0) == 0:
@@ -172,7 +172,7 @@ def main():
         rows = conn.execute(
             """SELECT strategy, COUNT(*) FROM trades
                WHERE status = 'paper_settled'
-                 AND timestamp >= datetime('now','-30 days')
+                 AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now','-30 days')
                GROUP BY strategy HAVING COUNT(*) >= 5
                ORDER BY strategy"""
         ).fetchall()

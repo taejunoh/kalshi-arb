@@ -66,7 +66,7 @@ def main():
         """SELECT ts, observer, market_id, predicted_outcome, features_json
            FROM crypto_observer_signals
            WHERE observer IN ({})
-             AND ts > datetime('now','-30 days')""".format(
+             AND ts > strftime('%Y-%m-%dT%H:%M:%S', 'now','-30 days')""".format(
             ",".join("?" * len(OBSERVERS))
         ),
         OBSERVERS,
@@ -92,7 +92,7 @@ def main():
            FROM crypto_observer_signals
            WHERE observer = ?
              AND actual_outcome IS NOT NULL
-             AND ts > datetime('now','-30 days')""",
+             AND ts > strftime('%Y-%m-%dT%H:%M:%S', 'now','-30 days')""",
         (SPINE,),
     )
 

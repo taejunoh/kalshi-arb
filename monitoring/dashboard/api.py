@@ -1816,7 +1816,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             JOIN clv_snapshots e ON e.trade_id = t.id AND e.snapshot_at = 'entry'
             JOIN clv_snapshots c ON c.trade_id = t.id AND c.snapshot_at = 'closing'
             WHERE t.status IN ('settled','filled')
-              AND t.timestamp >= datetime('now','-30 days')
+              AND t.timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now','-30 days')
               AND e.yes_ask IS NOT NULL AND c.yes_ask IS NOT NULL
               AND t.strategy LIKE 'sports_%'
             ORDER BY t.timestamp ASC
@@ -1969,7 +1969,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     FROM trades
                     WHERE status IN ('settled','filled')
                       AND strategy IN ({placeholders})
-                      AND timestamp >= datetime('now', '-{days} days')""",
+                      AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-{days} days')""",
                 params,
             )
             n, net, wins = cur.fetchone()
@@ -2021,7 +2021,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 FROM trades
                 WHERE status IN ('settled','filled')
                   AND strategy IN ({placeholders})
-                  AND timestamp >= datetime('now','-14 days')
+                  AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now','-14 days')
                 GROUP BY day ORDER BY day""",
             params,
         )

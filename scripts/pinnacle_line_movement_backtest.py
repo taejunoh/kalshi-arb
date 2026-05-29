@@ -63,7 +63,7 @@ def main():
     cur = conn.execute("""
         SELECT kalshi_ticker, result
         FROM ticker_settlements
-        WHERE fetched_at >= datetime('now', ?)
+        WHERE fetched_at >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)
           AND result IN ('yes', 'no')
     """, (f"-{LOOKBACK_DAYS} days",))
     settlements = {tk: res for tk, res in cur.fetchall()}

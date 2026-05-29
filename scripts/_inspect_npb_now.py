@@ -2,7 +2,7 @@ import sqlite3
 c = sqlite3.connect("/home/ubuntu/kalshi-arb/data/bot.db"); c.execute("PRAGMA query_only=1")
 ts = c.execute("""SELECT DISTINCT kalshi_ticker FROM odds_observations
     WHERE kalshi_ticker LIKE 'KXNPBGAME%' AND minutes_to_start > 30
-    AND timestamp >= datetime('now', '-2 hours')""").fetchall()
+    AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-2 hours')""").fetchall()
 print(f"NPB active: {len(ts)}")
 print(f"{'ticker':<32} {'ya':>5} {'open':>5} {'close':>5} {'move':>6} {'absmv':>5} {'mts':>5}")
 moves = []

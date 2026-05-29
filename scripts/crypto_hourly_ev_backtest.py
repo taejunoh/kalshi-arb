@@ -41,7 +41,7 @@ def run():
             """SELECT timestamp, pnl, size FROM trades
                WHERE strategy = ?
                  AND status IN ('paper_settled', 'settled', 'closed')
-                 AND timestamp > datetime('now', '-30 days')""",
+                 AND timestamp > strftime('%Y-%m-%dT%H:%M:%S', 'now', '-30 days')""",
             (strat,),
         )
 

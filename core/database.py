@@ -1074,7 +1074,7 @@ class Database:
                 LEFT JOIN clv_snapshots pc ON pc.trade_id = t.id AND pc.snapshot_at = 'pre_close'
                 LEFT JOIN clv_snapshots cl ON cl.trade_id = t.id AND cl.snapshot_at = 'closing'
                 WHERE t.strategy = ?
-                  AND t.timestamp >= datetime('now', ?)
+                  AND t.timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)
                   AND (pc.id IS NOT NULL OR cl.id IS NOT NULL)
                   {status_clause}
                 """,
@@ -1116,7 +1116,7 @@ class Database:
                 JOIN clv_snapshots e ON e.trade_id = t.id AND e.snapshot_at = 'entry'
                 LEFT JOIN clv_snapshots pc ON pc.trade_id = t.id AND pc.snapshot_at = 'pre_close'
                 LEFT JOIN clv_snapshots cl ON cl.trade_id = t.id AND cl.snapshot_at = 'closing'
-                WHERE t.timestamp >= datetime('now', ?)
+                WHERE t.timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)
                   AND (pc.id IS NOT NULL OR cl.id IS NOT NULL)
                 """,
                 (f"-{int(days)} days",),

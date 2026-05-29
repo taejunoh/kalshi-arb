@@ -7,7 +7,7 @@ c = sqlite3.connect(DB); c.execute("PRAGMA query_only=1")
 cur = c.execute("""
   SELECT kalshi_ticker, result FROM ticker_settlements
   WHERE (kalshi_ticker LIKE 'KXATPMATCH-%' OR kalshi_ticker LIKE 'KXWTAMATCH-%')
-    AND fetched_at >= datetime('now', '-60 days')
+    AND fetched_at >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-60 days')
     AND result IN ('yes', 'no')
 """)
 rows = []

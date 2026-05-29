@@ -39,7 +39,7 @@ def main():
     cur = conn.execute("""
         SELECT kalshi_ticker, result FROM ticker_settlements
         WHERE (kalshi_ticker LIKE 'KXATPMATCH-%' OR kalshi_ticker LIKE 'KXWTAMATCH-%')
-          AND fetched_at >= datetime('now', ?)
+          AND fetched_at >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)
           AND result IN ('yes', 'no')
     """, (f"-{LOOKBACK_DAYS} days",))
     settled = list(cur.fetchall())
@@ -155,7 +155,7 @@ def main():
     cur14 = conn.execute("""
         SELECT kalshi_ticker FROM ticker_settlements
         WHERE kalshi_ticker LIKE 'KXWTAMATCH-%'
-          AND fetched_at >= datetime('now', '-14 days')
+          AND fetched_at >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-14 days')
           AND result IN ('yes', 'no')
     """)
     rg_tickers = {row[0] for row in cur14.fetchall()}

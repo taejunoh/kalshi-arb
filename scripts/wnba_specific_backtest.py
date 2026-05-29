@@ -23,7 +23,7 @@ c = sqlite3.connect(DB); c.execute("PRAGMA query_only = 1")
 cur = c.execute("""
     SELECT kalshi_ticker, result FROM ticker_settlements
     WHERE kalshi_ticker LIKE 'KXWNBAGAME-%'
-      AND fetched_at >= datetime('now', ?)
+      AND fetched_at >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)
       AND result IN ('yes', 'no')
 """, (f"-{LB} days",))
 settled = list(cur.fetchall())

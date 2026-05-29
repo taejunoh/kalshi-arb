@@ -31,7 +31,7 @@ def daily_pnl_series(conn: sqlite3.Connection, strategy: str,
             FROM trades
             WHERE strategy = ?
               AND status IN ({placeholders})
-              AND timestamp >= datetime('now', ?)
+              AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)
             GROUP BY day
             ORDER BY day""",
         (strategy, *status_in, f"-{days_back} days"),

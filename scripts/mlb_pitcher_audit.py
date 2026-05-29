@@ -144,7 +144,7 @@ def main():
         FROM trades t
         WHERE t.strategy='sports_mlb_pitcher_edge_v1'
           AND t.status IN ('settled', 'paper_settled')
-          AND t.timestamp >= datetime('now','-7 days')
+          AND t.timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now','-7 days')
     """)
     rows = cur.fetchall()
     logger.info(f"settled trades for audit: {len(rows)}")
