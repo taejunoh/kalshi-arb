@@ -4,8 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from typing import Optional
 from zoneinfo import ZoneInfo
+import asyncio
+import logging
 import os
 import sqlite3
+
+logger = logging.getLogger("dashboard")
 
 
 def _today_cutoff_utc() -> str:
@@ -50,6 +54,34 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # ── Settlement pre-warmer ────────────────────────────────────────
+    # /api/performance and /api/settlement aggregate the FULL Kalshi
+    # settlement history (~3,400 rows = ~17 paginated round-trips, 3-8s
+    # cold). The settlements cache TTL is 600s (see kalshi_client), but
+    # the dashboard's 15s perf refresh would still make one unlucky
+    # request per 10 min eat the cold re-pagination. This task force-
+    # refreshes the settlements cache every 5 min in the background so
+    # every user-facing request stays warm (~0.2s). Settlements are
+    # append-only and only feed lifetime aggregates of two inactive
+    # strategies, so a few minutes of staleness is invisible.
+    @app.on_event("startup")
+    async def _start_settlement_prewarmer():
+        if kalshi_client is None:
+            return
+
+        async def _loop():
+            loop = asyncio.get_event_loop()
+            while True:
+                try:
+                    await loop.run_in_executor(
+                        None, lambda: kalshi_client.get_settlements(force_refresh=True)
+                    )
+                except Exception as e:  # best-effort — never crash the dashboard
+                    logger.warning("settlement pre-warm failed: %s", e)
+                await asyncio.sleep(300)
+
+        app.state._settlement_prewarm_task = asyncio.create_task(_loop())
 
     @app.get("/api/status")
     async def get_status():
