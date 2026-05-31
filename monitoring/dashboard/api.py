@@ -2004,10 +2004,13 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                  "wins": wins_t or 0,
                  "wr_pct": round((wins_t or 0) * 100.0 / n_t, 1) if n_t else None}
 
-        # Best/worst trade today (settlement-day attributed, same cutoff)
+        # Best/worst trade today (settlement-day attributed, same cutoff).
+        # status='settled' only — an unsettled 'filled' leg has pnl=0 and would
+        # otherwise win ORDER BY pnl on a uniformly-signed day, masking the real
+        # biggest/worst REALIZED trade behind a spurious $0.00.
         cur.execute(
             f"""SELECT strategy, pnl FROM trades
-                WHERE status IN ('settled','filled')
+                WHERE status = 'settled'
                   AND strategy IN ({placeholders})
                   AND COALESCE(settled_at, timestamp) >= ?
                 ORDER BY pnl DESC LIMIT 1""",
@@ -2016,7 +2019,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         best = cur.fetchone()
         cur.execute(
             f"""SELECT strategy, pnl FROM trades
-                WHERE status IN ('settled','filled')
+                WHERE status = 'settled'
                   AND strategy IN ({placeholders})
                   AND COALESCE(settled_at, timestamp) >= ?
                 ORDER BY pnl ASC LIMIT 1""",

@@ -170,3 +170,57 @@ async def test_clv_snapshots_has_new_instrumentation_columns(tmp_path):
     expected = {"us_consensus_prob", "eu_consensus_prob",
                 "pinnacle_age_s", "kalshi_yes_bid", "kalshi_yes_ask"}
     assert expected.issubset(cols), f"missing: {expected - cols}"
+
+
+@pytest.mark.asyncio
+async def test_get_trades_settled_since_includes_orphan_without_ticker_settlements(db):
+    """get_trades_settled_since attributes by COALESCE(trades.settled_at,
+    ticker_settlements.settled_at) via LEFT JOIN, so a settled win whose market
+    has NO ticker_settlements cache row (the WNBA LACONN orphan case) is no
+    longer silently dropped from the daily 'Realized PnL Today' report. Legacy
+    rows (settled_at NULL) still fall back to the ticker settlement time, and
+    trades settled before the cutoff are excluded."""
+    cutoff = "2026-05-30T10:00:00+00:00"
+
+    # (A) Orphan: settled after cutoff via settle_trade, NO ticker_settlements row.
+    orphan_id = await db.record_trade(
+        strategy="sports_midshot_v31", market_id="KXWNBAGAME-26MAY30LACONN-CONN",
+        direction="yes", price=0.33, size=82.0, fee=16.9, status="filled",
+    )
+    await db.settle_trade(orphan_id, pnl=143.05, status="settled")
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "UPDATE trades SET settled_at='2026-05-31T00:45:00+00:00' WHERE id=?",
+            (orphan_id,))
+        await conn.commit()
+
+    # (B) Legacy: trades.settled_at NULL (record_trade default), but a
+    #     ticker_settlements row dated after cutoff provides the fallback time.
+    legacy_id = await db.record_trade(
+        strategy="sports_midshot_v31", market_id="KXMLB-LEGACY",
+        direction="yes", price=0.5, size=10.0, fee=0.7, status="settled", pnl=5.0,
+    )
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "INSERT INTO ticker_settlements (kalshi_ticker, result, settled_at, fetched_at) "
+            "VALUES (?,?,?,?)",
+            ("KXMLB-LEGACY", "yes", "2026-05-30T20:00:00Z", "2026-05-30T20:05:00Z"))
+        await conn.commit()
+
+    # (C) Before cutoff: settled yesterday — must be excluded.
+    old_id = await db.record_trade(
+        strategy="sports_midshot_v31", market_id="KXOLD",
+        direction="yes", price=0.5, size=10.0, fee=0.7, status="settled", pnl=99.0,
+    )
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "UPDATE trades SET settled_at='2026-05-29T12:00:00+00:00' WHERE id=?",
+            (old_id,))
+        await conn.commit()
+
+    rows = await db.get_trades_settled_since(cutoff)
+    ids = {r["id"] for r in rows}
+    assert orphan_id in ids        # orphan (no ticker_settlements row) now included
+    assert legacy_id in ids        # legacy (settled_at NULL) via ticker fallback
+    assert old_id not in ids       # settled before cutoff excluded
+    assert sum(r["pnl"] for r in rows) == pytest.approx(143.05 + 5.0, abs=0.01)
