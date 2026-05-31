@@ -45,7 +45,18 @@ class SportsTennisUnderdogV1Strategy(SportsTraderStrategy):
     MAX_MTS_AT_ENTRY = 4320.0  # 3 days
     MIN_DEPTH_USDC = 30.0
     MIN_ENTRY_PRICE = 0.25
-    MAX_ENTRY_PRICE = 0.35
+    # 2026-05-31: tightened 0.35 -> 0.29 (<= check + cent prices = strict <0.30).
+    # Fine by-band drill + adversarial verify: the bleed is the 0.30-0.35 band
+    # (n=54, WR 14.8%, -$121.76; price==0.30 alone n=19/-$38.74), while 0.25-0.29
+    # is +EV (n=46, WR 43.5% vs 28.4% breakeven = +15pp margin, profit spread
+    # across 11 days, ATP +$50.62 & WTA +$46.89 both +EV, survived leave-best-day-
+    # out / variance / mirror refutations; NO mirror inflation here - 117 distinct
+    # games). Matches the longshot/midshot cheap-underdog dead-zone pattern.
+    # CAVEAT: single Roland Garros clay regime, n=46<50 -> PAPER ONLY. Re-validate
+    # on grass (Wimbledon ~6/30: grass n>=50, WR margin >=+8pp, multi-day) before
+    # any LIVE step. Do NOT re-add 0.35-0.40 (+EV but n=17 noise = barbell overfit);
+    # 0.30-inclusive is worse (drags in the price==0.30 loser cohort).
+    MAX_ENTRY_PRICE = 0.29
 
     # TU1 signal is price-band only — Pinnacle is used as a sanity veto, not
     # as a freshness-driven signal source. Unlike A1/C (which require fresh
