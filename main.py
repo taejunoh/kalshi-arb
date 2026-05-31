@@ -177,9 +177,11 @@ class Bot:
         self.sports_midshot_v34 = SportsMidshotV34Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
-        self.sports_underdog_v34 = SportsUnderdogV34Strategy(
-            self.config, self.order_manager, self.kalshi_client
-        )
+        # 2026-05-31 MOTHBALL: paper bleed -$114.54/30d (n=133, WR 32%),
+        # -$48/7d. Persistent -EV signal pollution. Sister midshot_v34 kept.
+        # self.sports_underdog_v34 = SportsUnderdogV34Strategy(
+        #     self.config, self.order_manager, self.kalshi_client
+        # )
         # V3.5 — V3.4's (NBA, pre) us cell promoted to live trading 2026-04-23.
         # Coexists with V3.4 paper on same cell; V3.5 fires live + paper-twin.
         self.sports_longshot_v35 = SportsLongshotV35Strategy(
@@ -275,9 +277,11 @@ class Bot:
         # NPB n=28 +13%. First non-underdog/non-longshot/non-midshot family.
         # PAPER-ONLY size 4 at launch. Drop-top-5 break-even — needs n=120+ for
         # robust read. Promotion gate ROI>=+5% + drop-5>0 by ~6/9.
-        self.sports_favorite_v40 = SportsFavoriteV40Strategy(
-            self.config, self.order_manager, self.kalshi_client
-        )
+        # 2026-05-31 MOTHBALL: paper bleed -$78.93/30d (n=220, WR 53%),
+        # -$60/7d. drop-top-5 break-even never materialized; -EV pollution.
+        # self.sports_favorite_v40 = SportsFavoriteV40Strategy(
+        #     self.config, self.order_manager, self.kalshi_client
+        # )
         # 2026-05-15 tennis/MMA portfolio — 5 paper-twin strategies built
         # from KXATPMATCH/KXWTAMATCH/KXUFCFIGHT observer + bucket-replay
         # analysis. Promotion gate: n>=25 per strategy + ROI per spec.
@@ -720,9 +724,10 @@ class Bot:
             asyncio.create_task(
                 self.sports_midshot_v34.scan_loop(scan_interval_secs=1.0)
             ),
-            asyncio.create_task(
-                self.sports_underdog_v34.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-05-31 MOTHBALL (see __init__): paper -EV pollution.
+            # asyncio.create_task(
+            #     self.sports_underdog_v34.scan_loop(scan_interval_secs=1.0)
+            # ),
             asyncio.create_task(
                 self.sports_longshot_v35.scan_loop(scan_interval_secs=1.0)
             ),
@@ -738,9 +743,10 @@ class Bot:
             asyncio.create_task(
                 self.sports_npb_underdog_v1.scan_loop(scan_interval_secs=1.0)
             ),
-            asyncio.create_task(
-                self.sports_favorite_v40.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-05-31 MOTHBALL (see __init__): paper -EV pollution.
+            # asyncio.create_task(
+            #     self.sports_favorite_v40.scan_loop(scan_interval_secs=1.0)
+            # ),
             # 2026-05-21 grid-search discovery paper strategies
             asyncio.create_task(
                 self.sports_soccer_weekend_v1.scan_loop(scan_interval_secs=1.0)

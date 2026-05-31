@@ -210,6 +210,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "econ_trader",
             # 2026-05-27 crypto archived — aggregated summary entry.
             "crypto_archived",
+            # 2026-05-31 paper mothball — persistent -EV signal pollution.
+            # favorite_v40 -$78.93/30d (n=220), underdog_v34 -$114.54/30d (n=133).
+            "sports_favorite_v40", "sports_underdog_v34",
         }
 
         def _stats_with_split(strat_name: str) -> dict:
