@@ -960,24 +960,32 @@ class Database:
             return [dict(row) for row in rows]
 
     async def get_trades_settled_since(self, since_iso: str, strategy: Optional[str] = None):
-        """Trades whose underlying Kalshi ticker settled at-or-after `since_iso`.
-        Joins trades.market_id → ticker_settlements.kalshi_ticker so the time
-        filter uses the actual Kalshi settlement timestamp, not the bot's entry
-        timestamp (entry can lead settlement by hours-to-days for sports).
-        Used by the daily report's "Realized PnL Today" section.
+        """Trades that SETTLED at-or-after `since_iso` (NOT entered — entry can
+        lead settlement by hours-to-days for sports).
+
+        Attributes by COALESCE(trades.settled_at, ticker_settlements.settled_at):
+        prefers the per-trade settled_at stamped by settle_trade() (and
+        backfilled historically), falling back via LEFT JOIN to the Kalshi
+        ticker settlement time for legacy rows that predate the column. The
+        LEFT JOIN (vs the prior INNER JOIN on ticker_settlements) is what keeps
+        this consistent with the dashboard's today buckets — an orphan ticker
+        with no ticker_settlements cache row (e.g. some WNBA games) is no longer
+        silently dropped from the report. Used by the daily report's "Realized
+        PnL Today" section.
         """
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             conn.row_factory = aiosqlite.Row
             sql = (
                 "SELECT t.* FROM trades t "
-                "JOIN ticker_settlements s ON t.market_id = s.kalshi_ticker "
-                "WHERE t.status = 'settled' AND s.settled_at >= ?"
+                "LEFT JOIN ticker_settlements s ON t.market_id = s.kalshi_ticker "
+                "WHERE t.status = 'settled' "
+                "AND COALESCE(t.settled_at, s.settled_at) >= ?"
             )
             params: list = [since_iso]
             if strategy is not None:
                 sql += " AND t.strategy = ?"
                 params.append(strategy)
-            sql += " ORDER BY s.settled_at DESC"
+            sql += " ORDER BY COALESCE(t.settled_at, s.settled_at) DESC"
             cursor = await conn.execute(sql, params)
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
