@@ -254,8 +254,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             if status in ("paper_open", "paper_filled"):
                 bucket["open_count"] += 1
                 bucket["open_exposure"] += size
-            # Today (since most recent 06:00 ET) — based on entry timestamp
-            if trade.get("timestamp", "") >= today_cutoff:
+            # Today (since most recent 06:00 ET) — settled PnL is attributed to
+            # when the trade SETTLED (settled_at), not when it was entered;
+            # sports entries lead settlement by hours-to-days. Rows without
+            # settled_at (legacy/unsettled) fall back to entry timestamp.
+            if (trade.get("settled_at") or trade.get("timestamp", "")) >= today_cutoff:
                 t = bucket["today"]
                 t["trade_count"] += 1
                 t["total_pnl"] += pnl
@@ -375,7 +378,9 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     bucket["wins"] += 1
                 elif pnl < 0:
                     bucket["losses"] += 1
-                if trade.get("timestamp", "") >= today_cutoff:
+                # Attribute realized PnL to settlement day (settled_at), not
+                # entry day — see paper path above. Fallback to entry timestamp.
+                if (trade.get("settled_at") or trade.get("timestamp", "")) >= today_cutoff:
                     t = bucket["today"]
                     t["trade_count"] += 1
                     t["total_pnl"] += pnl
@@ -1978,37 +1983,44 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                     "wr_pct": round((wins or 0) * 100.0 / n, 1) if n else None}
 
         today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        # "Today" = since the most recent 06:00 ET boundary (matches
+        # /api/performance's today_cutoff), and attributed by settlement time
+        # (settled_at) rather than entry timestamp: a game entered last night
+        # but settled tonight belongs to tonight's session. Plain UTC-midnight
+        # would both split one ET game-night across two days and miss
+        # overnight-held positions. Rows without settled_at fall back to entry.
+        today_cutoff = _today_cutoff_utc()
         cur.execute(
             f"""SELECT COUNT(*), ROUND(COALESCE(SUM(pnl),0),2),
                     SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END)
                 FROM trades
                 WHERE status IN ('settled','filled')
                   AND strategy IN ({placeholders})
-                  AND timestamp >= ?""",
-            params + [today_utc + "T00:00:00"],
+                  AND COALESCE(settled_at, timestamp) >= ?""",
+            params + [today_cutoff],
         )
         n_t, net_t, wins_t = cur.fetchone()
         today = {"n": n_t or 0, "net": float(net_t or 0),
                  "wins": wins_t or 0,
                  "wr_pct": round((wins_t or 0) * 100.0 / n_t, 1) if n_t else None}
 
-        # Best/worst trade today
+        # Best/worst trade today (settlement-day attributed, same cutoff)
         cur.execute(
             f"""SELECT strategy, pnl FROM trades
                 WHERE status IN ('settled','filled')
                   AND strategy IN ({placeholders})
-                  AND timestamp >= ?
+                  AND COALESCE(settled_at, timestamp) >= ?
                 ORDER BY pnl DESC LIMIT 1""",
-            params + [today_utc + "T00:00:00"],
+            params + [today_cutoff],
         )
         best = cur.fetchone()
         cur.execute(
             f"""SELECT strategy, pnl FROM trades
                 WHERE status IN ('settled','filled')
                   AND strategy IN ({placeholders})
-                  AND timestamp >= ?
+                  AND COALESCE(settled_at, timestamp) >= ?
                 ORDER BY pnl ASC LIMIT 1""",
-            params + [today_utc + "T00:00:00"],
+            params + [today_cutoff],
         )
         worst = cur.fetchone()
 

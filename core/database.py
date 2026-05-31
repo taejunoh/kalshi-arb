@@ -379,6 +379,14 @@ class Database:
             # going forward; backfill below populates historical NULL rows.
             await self._add_column_if_missing(conn, "trades", "is_playoff", "INTEGER")
             await self._backfill_is_playoff(conn)
+            # Settlement timestamp (2026-05-31). Entry `timestamp` can lead
+            # settlement by hours-to-days for sports (pre-game entry, evening
+            # settle), so dashboards that bucket realized PnL into "today" must
+            # use when the trade SETTLED, not when it was entered. Populated in
+            # settle_trade() going forward; historical rows backfilled from
+            # ticker_settlements.settled_at. Old rows stay NULL → consumers fall
+            # back to entry timestamp.
+            await self._add_column_if_missing(conn, "trades", "settled_at", "TEXT")
             await conn.commit()
 
     async def close(self):
@@ -985,9 +993,16 @@ class Database:
             return [dict(row) for row in rows]
 
     async def settle_trade(self, trade_id: int, pnl: float, status: str = "paper_settled"):
+        # Stamp settlement time at processing (within minutes of the actual
+        # Kalshi settlement, since the settlement loop polls). COALESCE keeps
+        # the FIRST settlement time if a trade is re-settled, so re-runs don't
+        # shift its "today" bucket. Read by dashboard today-PnL attribution.
+        settled_at = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             await conn.execute(
-                "UPDATE trades SET pnl = ?, status = ? WHERE id = ?", (pnl, status, trade_id)
+                "UPDATE trades SET pnl = ?, status = ?, "
+                "settled_at = COALESCE(settled_at, ?) WHERE id = ?",
+                (pnl, status, settled_at, trade_id),
             )
             await conn.commit()
 
