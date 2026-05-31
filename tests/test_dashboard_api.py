@@ -467,3 +467,108 @@ async def test_performance_splits_sports_paper_pre_live(tmp_path):
     mm_paper = data["market_maker"]["paper"]
     assert "pre" not in mm_paper
     assert "live" not in mm_paper
+
+
+@pytest.mark.asyncio
+async def test_today_bucket_attributes_by_settlement_not_entry(tmp_path):
+    """Realized PnL must land in "today" by SETTLEMENT day (settled_at), not
+    entry day. Regression for the 2026-05-30 WNBA LACONN win: a LIVE position
+    entered the night before settled tonight for +$143 but read $0.00 in both
+    live.today and "Today's biggest" because the day-window keyed off the
+    (yesterday) entry timestamp. A counterpart still-open entry from today must
+    NOT inflate today's realized PnL (stays 0 until it settles)."""
+    db_path = str(tmp_path / "t.db")
+    database = Database(db_path)
+    await database.initialize()
+
+    # (1) LIVE position entered last night, settled tonight (the LACONN case).
+    win_id = await database.record_trade(
+        strategy="sports_midshot_v31", market_id="KXWNBAGAME-LACONN-CONN",
+        direction="yes", price=0.33, size=82.0, fee=16.9,
+        status="filled", minutes_to_start=600.0,
+    )
+    # (2) A different LIVE position settled long ago — must stay OUT of today.
+    old_id = await database.record_trade(
+        strategy="sports_midshot_v31", market_id="KXWNBAGAME-OLD-X",
+        direction="yes", price=0.4, size=10.0, fee=0.7,
+        status="filled", minutes_to_start=600.0,
+    )
+    # (3) A LIVE position entered today but NOT yet settled — pnl stays 0.
+    await database.record_trade(
+        strategy="sports_midshot_v31", market_id="KXWNBAGAME-OPEN-Y",
+        direction="yes", price=0.2, size=20.0, fee=1.4,
+        status="filled", minutes_to_start=600.0,
+    )
+
+    # Back-date both settled entries to well before any today_cutoff, then
+    # settle: win settles NOW (today), old settles with a back-dated settled_at.
+    import aiosqlite
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.execute(
+            "UPDATE trades SET timestamp = '2026-01-01T01:00:00+00:00' "
+            "WHERE id IN (?, ?)", (win_id, old_id))
+        await conn.commit()
+    await database.settle_trade(win_id, pnl=143.05, status="settled")   # settled_at = now
+    await database.settle_trade(old_id, pnl=-4.0, status="settled")
+    async with aiosqlite.connect(db_path) as conn:
+        # Force the OLD trade's settlement into a previous day.
+        await conn.execute(
+            "UPDATE trades SET settled_at = '2026-01-02T01:00:00+00:00' WHERE id = ?",
+            (old_id,))
+        await conn.commit()
+
+    class FakeConfig:
+        LIVE_STRATEGIES = {"sports_midshot_v31"}
+        DATABASE_PATH = db_path
+
+    class MockKalshi:
+        def get_positions(self): return []
+        def get_settlements(self, limit=200): return []
+
+    app = create_app(database, bankroll=1000.0, config=FakeConfig(),
+                     kalshi_client=MockKalshi())
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        perf = (await ac.get("/api/performance")).json()
+        snap = (await ac.get("/api/snapshot")).json()
+
+    # Cumulative live counts settled rows (2); the still-open filled entry is
+    # not yet in the cumulative settled aggregation.
+    live = perf["sports_midshot_v31"]["live"]
+    assert live["trade_count"] == 2
+    # Today's realized PnL = only the win settled today (not the old -4, not
+    # the still-open entry whose pnl is 0).
+    today = live["today"]
+    assert today["settled_count"] == 1
+    assert today["total_pnl"] == pytest.approx(143.05, abs=0.01)
+
+    # "Today's biggest" widget (snapshot) reflects the same win, not $0.00.
+    assert snap["today"]["net"] == pytest.approx(143.05, abs=0.01)
+    assert snap["best_today"]["strategy"] == "sports_midshot_v31"
+    assert snap["best_today"]["pnl"] == pytest.approx(143.05, abs=0.01)
+
+
+@pytest.mark.asyncio
+async def test_settle_trade_stamps_settled_at_and_is_idempotent(tmp_path):
+    """settle_trade records settled_at on first settlement and COALESCE keeps
+    it stable across re-settlement, so a re-run never shifts the today bucket."""
+    db_path = str(tmp_path / "t.db")
+    database = Database(db_path)
+    await database.initialize()
+    tid = await database.record_trade(
+        strategy="sports_midshot_v31", market_id="KXWNBAGAME-Z", direction="yes",
+        price=0.5, size=10.0, fee=0.7, status="filled",
+    )
+
+    import aiosqlite
+    async def _settled_at():
+        async with aiosqlite.connect(db_path) as conn:
+            cur = await conn.execute("SELECT settled_at FROM trades WHERE id = ?", (tid,))
+            return (await cur.fetchone())[0]
+
+    assert await _settled_at() is None          # unsettled: NULL
+    await database.settle_trade(tid, pnl=5.0, status="settled")
+    first = await _settled_at()
+    assert first is not None and first.endswith("+00:00")
+    await database.settle_trade(tid, pnl=5.0, status="settled")   # re-settle
+    assert await _settled_at() == first         # unchanged (COALESCE)
