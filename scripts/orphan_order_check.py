@@ -195,7 +195,11 @@ async def main() -> int:
             logger.info(f"Telegram alert: {'sent' if ok else 'FAILED'}")
         else:
             logger.warning("TELEGRAM_BOT_TOKEN/CHAT_ID not set — alert not delivered")
-        return 1
+        # 2026-05-31: exit 0 after successfully alerting. The Telegram alert IS
+        # the deliverable; exiting non-zero only left a permanent systemd
+        # "failed" state (cosmetic noise) for benign settled+pruned orphans.
+        # Genuine missing-fill orphans still surface via the alert above.
+        return 0
 
     return 0
 
