@@ -73,6 +73,16 @@ class SportsTennisChalkV1Strategy(SportsTraderStrategy):
     # Pre-game only.
     PRE_GAME_ONLY = True
 
+    # 2026-05-31: dedup mirror fires. evaluate() buys the favorite side of
+    # whatever ticker it sees, so for match A-vs-B it fires "A-yes" on ticker A
+    # AND the same "A-wins" bet as "B-no" on mirror ticker B — one outcome bet
+    # twice (2x exposure, n inflated ~2x: 164 raw -> 84 matches). PAIR_FIRE_DEDUP
+    # makes it bet each match once. Edge-neutral (per-match WR/ROI% unchanged);
+    # this fixes n-count honesty for the 6/02 eval + sim-tier sample size so the
+    # inflated 164/WR70% can't read as falsely promotable. Matches the
+    # pinnacle_fade / npb sister strategies.
+    PAIR_FIRE_DEDUP = True
+
     # Favorite-buy price band. Backtest +EV centred at ya 0.65-0.85.
     # Below 0.55: signal too weak; above 0.95: dominated by tennis_live_fade
     # in live phase, pre-game thin cohort.
