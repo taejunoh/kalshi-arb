@@ -650,7 +650,7 @@ class OrderManager:
         if price <= 0:
             return 0.0
         count = max(1, int(size / price))
-        fee = self.config.estimate_fee(count, int(price * 100))
+        fee = self.config.real_fee(count, int(price * 100))
         refund = size + fee
         self.bankroll += refund
         await self._persist_bankroll()
@@ -684,7 +684,7 @@ class OrderManager:
                     "reason": "duplicate_trade", "size_usdc": size_usdc, "price": price}
         order_id = f"paper_{uuid.uuid4().hex[:8]}"
         count = max(1, int(size_usdc / price))
-        fee = self.config.estimate_fee(count, int(price * 100))
+        fee = self.config.real_fee(count, int(price * 100))
         self.bankroll -= (size_usdc + fee)
         await self._persist_bankroll()
         trade_id = await self._db.record_trade(
@@ -712,7 +712,7 @@ class OrderManager:
             return {"order_id": None, "status": "skipped", "reason": "duplicate_trade"}
         order_id = f"paper_{uuid.uuid4().hex[:8]}"
         count = max(1, int(size_usdc / price))
-        fee = self.config.estimate_fee(count, int(price * 100))
+        fee = self.config.real_fee(count, int(price * 100))
         self.bankroll -= (size_usdc + fee)
         await self._persist_bankroll()
         await self._db.record_order(
@@ -734,7 +734,7 @@ class OrderManager:
             )
             return {"status": "skipped", "reason": "duplicate_trade"}
         count = max(1, int(size_usdc / price))
-        fee = self.config.estimate_fee(count, int(price * 100))
+        fee = self.config.real_fee(count, int(price * 100))
         # Real balance guard — prevent Kalshi from rejecting order + error spam
         balance = self._client.get_balance(max_age_s=60)
         if balance is None:
@@ -836,7 +836,7 @@ class OrderManager:
         # stake systematically overstates losses on better-than-signal fills.
         if realized is not None and fill_count and fill_count > 0:
             actual_size = (fill_cost or 0) / 100.0  # cents → dollars
-            actual_fee = self.config.estimate_fee(fill_count, int(round(realized * 100)))
+            actual_fee = self.config.real_fee(fill_count, int(round(realized * 100)))
         else:
             actual_size = size_usdc  # fallback to intended
             actual_fee = fee
@@ -920,7 +920,7 @@ class OrderManager:
         # Worst-case per-contract cost; used for fee/balance reservation.
         max_cost_cents = price_cents + aggression_cents
         max_cost_cents = max(1, min(99, max_cost_cents))
-        expected_fee = self.config.estimate_fee(count, max_cost_cents)
+        expected_fee = self.config.real_fee(count, max_cost_cents)
 
         balance = self._client.get_balance(max_age_s=60)
         if balance is None:
@@ -950,7 +950,7 @@ class OrderManager:
         # trade (it excludes only 'cancelled'/'failed'), preventing double
         # fires during the brief in-flight window.
         signal_size_usdc = count * price  # signal-price size for DB
-        signal_fee = self.config.estimate_fee(count, price_cents)
+        signal_fee = self.config.real_fee(count, price_cents)
         trade_id = None
         last_db_error = None
         for attempt, delay in enumerate((0, 1, 2, 5)):
@@ -1098,7 +1098,7 @@ class OrderManager:
         effective_price = realized if (realized is not None and realized > 0) else price
         effective_price_cents = int(round(effective_price * 100))
         actual_size = filled_count * effective_price
-        actual_fee = self.config.estimate_fee(filled_count, effective_price_cents)
+        actual_fee = self.config.real_fee(filled_count, effective_price_cents)
         # P2 (2026-05-11): pre-record row already exists at status='placing'
         # — now UPDATE it to 'filled' with realized data. If this fails, the
         # row stays at 'placing' (still a valid record), orphan_order_check
@@ -1185,7 +1185,7 @@ class OrderManager:
             return {"status": "failed"}
         self._client.invalidate_balance_cache()
         order_id = resp.get("id", "unknown")
-        fee = self.config.estimate_fee(count, yes_price_cents)
+        fee = self.config.real_fee(count, yes_price_cents)
         self.bankroll -= (size_usdc + fee)
         await self._persist_bankroll()
         try:
