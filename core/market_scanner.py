@@ -25,6 +25,12 @@ STRATEGY_SERIES = [
     # ladder_shutdown — KXGOVTSHUTLENGTH is the active duration ladder
     # (KXGOVSHUTLENG above is empty in current Kalshi listing)
     "KXGOVTSHUTLENGTH",
+    # xvenue_polymarket — cross-venue vs Polymarket. Without these, the
+    # NBA/NHL/World-Cup entries in data/polymarket_kalshi_mapping.json
+    # resolve to an empty Kalshi market list and can never fire. (Only
+    # xvenue consumes the broad _all_markets pool by prefix; ladder/macro
+    # filter to their own TARGET_SERIES, so adding these is inert for them.)
+    "KXNBA", "KXNHL", "KXMENWORLDCUP",
 ]
 
 
