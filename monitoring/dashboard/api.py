@@ -821,6 +821,11 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "wipe-zone (NO 0.90+) 내부 — slip+fee 가 paper alpha 흡수. Promo "
                 "Config C sim (+$23.63/day) vs paper actual (−$71/25h) 44× 차이로 "
                 "sim over-fit 판명. Paper 만 유지하여 데이터 수집 계속.",
+            "sports_v4_edge":
+                "Demoted to paper 2026-06-02: .env LIVE_STRATEGIES 에서 빠진 뒤에도 "
+                "stale 인메모리 config 로 6/02 15:45 UTC 재시작 전까지 LIVE 거래 지속됨 "
+                "(마지막 settled 04:06). 미검증 엣지 — lifetime +$51 은 0.05¢ 롱샷 1건 "
+                "(n≈17, fake-headline 오염). Paper 로 관찰 유지.",
         }
         # Per-strategy gate config (entry-price + game phase + region +
         # sport blocklist). Read class-level attributes so frontend renders
@@ -1101,6 +1106,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
                 "sports_underdog_v35",
                 "mentions_trader",
                 "econ_trader",
+                "sports_v4_edge",  # ran LIVE on stale config until 6/02 15:45 restart; now paper
                 # late_close_tail_v1 + 9 other crypto Phase 1 strategies
                 # collapsed into single "crypto_archived" entry 2026-05-27.
             }
