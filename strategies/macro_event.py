@@ -26,6 +26,23 @@ SERIES_TO_EVENT_PREFIX = {
 }
 
 
+def _cpi_reference_to_release_month(ref_month: str) -> str:
+    """'26MAY' -> '26JUN'. CPI for reference month M is released in month M+1.
+
+    Kalshi names KXCPI markets by the data's REFERENCE month (KXCPI-26MAY =
+    May CPI), but scripts/macro_consensus_cron.py.event_key_cpi keys
+    macro_consensus rows by the RELEASE date (the following month). Shift +1
+    month so fetch_macro_consensus() finds the stored 'CPI-26JUN' rows.
+    Returns '' if the month token is unparseable."""
+    try:
+        dt = datetime.strptime(ref_month, "%y%b")
+    except ValueError:
+        return ""
+    year = dt.year + (1 if dt.month == 12 else 0)
+    month = 1 if dt.month == 12 else dt.month + 1
+    return dt.replace(year=year, month=month).strftime("%y%b").upper()
+
+
 class MacroEventStrategy:
     STRATEGY_NAME = "macro_event"
 
@@ -42,7 +59,9 @@ class MacroEventStrategy:
     @staticmethod
     def _extract_event_key(m: dict) -> str:
         """KXFEDDECISION-26JUN-C25 -> 'FOMC-26JUN'.
-        KXCPI-26JUN-T0.3 -> 'CPI-26JUN'."""
+        KXCPI-26MAY-T0.3 -> 'CPI-26JUN' (reference month shifted to release
+        month to match the consensus cron — see _cpi_reference_to_release_month).
+        FOMC tickers already use the meeting month, so no shift."""
         parts = m.get("ticker", "").split("-")
         if len(parts) < 3:
             return ""
@@ -51,6 +70,10 @@ class MacroEventStrategy:
         prefix = SERIES_TO_EVENT_PREFIX.get(series)
         if not prefix:
             return ""
+        if series == "KXCPI":
+            date_part = _cpi_reference_to_release_month(date_part)
+            if not date_part:
+                return ""
         return f"{prefix}-{date_part}"
 
     @staticmethod
