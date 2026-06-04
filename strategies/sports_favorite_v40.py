@@ -123,7 +123,7 @@ class SportsFavoriteV40Strategy(SportsTraderStrategy):
 
         # YES side fire: YES team is consensus favorite, kalshi_yes in band
         if fair_prob > fair_min and band_lo <= kalshi_yes <= band_hi:
-            fee_pct = min(fee, kalshi_yes, 1 - kalshi_yes) / kalshi_yes
+            fee_pct = self.config.gate_fee_pct(kalshi_yes)
             payoff = 1.0 / (kalshi_yes * (1 + fee_pct))
             return {
                 "side": "yes", "price": kalshi_yes,
@@ -133,7 +133,7 @@ class SportsFavoriteV40Strategy(SportsTraderStrategy):
         # NO side fire: NO team is consensus favorite (fair < 1-fair_min),
         # kalshi_no in band
         if fair_prob < (1 - fair_min) and band_lo <= kalshi_no <= band_hi:
-            fee_pct = min(fee, kalshi_no, 1 - kalshi_no) / kalshi_no
+            fee_pct = self.config.gate_fee_pct(kalshi_no)
             payoff = 1.0 / (kalshi_no * (1 + fee_pct))
             return {
                 "side": "no", "price": kalshi_no,

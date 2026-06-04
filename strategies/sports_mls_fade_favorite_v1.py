@@ -122,7 +122,7 @@ class SportsMLSFadeFavoriteV1Strategy(SportsUnderdogV31Strategy):
             return None
 
         fee = self.config.KALSHI_FEE_PER_CONTRACT
-        fee_pct = min(fee, kalshi_no, 1 - kalshi_no) / kalshi_no
+        fee_pct = self.config.gate_fee_pct(kalshi_no)
         cost = kalshi_no * (1 + fee_pct)
         payoff = 1.0 / cost
         if payoff < 2.0:
