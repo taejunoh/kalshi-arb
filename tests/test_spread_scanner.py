@@ -12,6 +12,11 @@ def _make_strategy():
     config.SPREAD_SCANNER_MAX_HOURS = 12
     config.SPREAD_SCANNER_MIN_EDGE = 0.05
     config.KALSHI_FEE_PER_CONTRACT = 0.07
+    # ④ gate flag: evaluate_crypto now calls config.gate_fee_pct(price) instead of
+    # the inline min(fee, X, 1-X)/X. With REAL_FEE_GATE OFF (live default) this is
+    # byte-identical to the legacy formula — stub it so the MagicMock config matches
+    # live behavior (otherwise the call returns a MagicMock -> TypeError).
+    config.gate_fee_pct = lambda price: 0.0 if (price <= 0 or price >= 1) else min(0.07, price, 1 - price) / price
     order_mgr = MagicMock()
     order_mgr.is_circuit_breaker_active.return_value = False
     order_mgr.calculate_position_size.return_value = 50.0

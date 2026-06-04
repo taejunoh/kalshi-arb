@@ -26,7 +26,10 @@ def test_pnl_lose_yes():
     checker, _, _, _ = _make_checker()
     # Bought YES at $0.30, market settles NO → lose
     pnl = checker.calculate_pnl("yes", 0.30, 30.0, 2.0, "no")
-    assert pnl == -30.0
+    # Loss = entire investment PLUS the entry fee (Kalshi charges the fee at
+    # fill time, win or lose). Fee-fix 2026-06-02 made the loss branch
+    # symmetric with the win branch (-size - fee).
+    assert pnl == pytest.approx(-32.0, abs=0.01)
 
 
 def test_pnl_win_no():
@@ -41,7 +44,8 @@ def test_pnl_lose_no():
     checker, _, _, _ = _make_checker()
     # Bought NO at $0.40, market settles YES → lose
     pnl = checker.calculate_pnl("no", 0.40, 40.0, 3.0, "yes")
-    assert pnl == -40.0
+    # Loss = entire investment PLUS the entry fee (see test_pnl_lose_yes).
+    assert pnl == pytest.approx(-43.0, abs=0.01)
 
 
 def test_settle_win_credits_full_payout():
@@ -119,8 +123,10 @@ def test_settle_uses_realized_fill_price_for_live():
     db.settle_trade.assert_called_once()
     args, kwargs = db.settle_trade.call_args
     assert args[0] == 1
-    # LOSS: pnl = -size_usdc = -$7.48 (actual paid), not -$20 (intended).
-    assert args[1] == pytest.approx(-7.48, abs=0.01)
+    # LOSS: pnl = -size_usdc - fee = -7.48 - 0.42 = -$7.90 (actual paid +
+    # entry fee), not -$20 (intended count × signal price). Fee-fix 2026-06-02
+    # added the entry fee to the loss branch.
+    assert args[1] == pytest.approx(-7.90, abs=0.01)
     # status should be 'settled' (LIVE), not 'paper_settled'
     assert kwargs.get("status") == "settled"
 
