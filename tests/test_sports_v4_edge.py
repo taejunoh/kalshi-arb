@@ -9,6 +9,14 @@ def _make_strategy(pinnacle_yes_prob=None, bankroll=2000.0) -> SportsV4EdgeStrat
     config.KALSHI_FEE_PER_CONTRACT = 0.07
     config.ODDS_API_KEY = ""
     config.ODDS_API_REGION = "eu"
+    # fee-fix/④: strategy now calls config.gate_fee_pct(price) instead of the
+    # inline min(fee, price, 1-price)/price. Stub it with the legacy formula
+    # (== gate_fee_pct with REAL_FEE_GATE flag OFF, the live default) so the
+    # MagicMock config returns a real float instead of a MagicMock.
+    config.gate_fee_pct = MagicMock(
+        side_effect=lambda price: 0.0 if (price <= 0 or price >= 1)
+        else min(0.07, price, 1.0 - price) / price
+    )
     order_mgr = MagicMock()
     order_mgr.bankroll = bankroll
     client = MagicMock()

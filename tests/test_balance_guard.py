@@ -14,6 +14,10 @@ def _mk_config(live_strategies=None):
     cfg.MAX_CONSECUTIVE_LOSSES = 1000
     cfg.KALSHI_FEE_PER_CONTRACT = 0.07
     cfg.estimate_fee = MagicMock(return_value=0.07)
+    # fee-fix (993a1a8): _live_market_order now uses config.real_fee(count, price_cents)
+    # instead of estimate_fee. Stub it numeric so the balance guard (balance < required)
+    # doesn't hit a MagicMock. Production uses real Config -> deterministic float.
+    cfg.real_fee = MagicMock(return_value=0.07)
     return cfg
 
 
@@ -74,6 +78,9 @@ async def test_balance_guard_required_includes_fee(tmp_path):
     client.place_market_order = MagicMock()
     cfg = _mk_config()
     cfg.estimate_fee = MagicMock(return_value=0.50)
+    # fee-fix (993a1a8): guard now reads config.real_fee, so stub that with the same
+    # 0.50 magnitude -> required = 3.00 + 0.50 = 3.50 > 3.00 balance (fee-driven reject).
+    cfg.real_fee = MagicMock(return_value=0.50)
     om = OrderManager(cfg, kalshi_client=client, database=db, notifier=None)
     result = await om._live_market_order(
         "KX-T1", "yes", 3.00, 0.30, "sports_longshot_v31", "KX-T1"

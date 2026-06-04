@@ -9,6 +9,12 @@ def _make_strategy(bankroll=2000.0) -> SportsConsolidatedStrategy:
     config.KALSHI_FEE_PER_CONTRACT = 0.07
     config.ODDS_API_KEY = ""
     config.ODDS_API_REGION = "eu"
+    # ④ gate flag (37b4f4c): inline `min(fee, price, 1-price)/price` was moved
+    # into config.gate_fee_pct(price). With REAL_FEE_GATE OFF (live default)
+    # it is byte-identical to the legacy formula, so stub the MagicMock with it.
+    config.gate_fee_pct = lambda price: (
+        0.0 if price <= 0 or price >= 1 else min(0.07, price, 1.0 - price) / price
+    )
     order_mgr = MagicMock()
     order_mgr.bankroll = bankroll
     client = MagicMock()
