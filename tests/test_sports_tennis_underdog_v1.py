@@ -1,4 +1,8 @@
-"""Tennis underdog band (0.25-0.35 BUY YES) paper strategy — 2026-05-19."""
+"""Tennis underdog band (0.25-0.29 BUY YES) paper strategy — 2026-05-19.
+
+Band tightened 0.35 -> 0.29 on 2026-05-31 (the 0.30-0.35 sub-band bled
+-$121.76 / WR 14.8%). Tests use kalshi_yes=0.28 (mid-band) accordingly.
+"""
 from unittest.mock import MagicMock
 
 from strategies.sports_tennis_underdog_v1 import SportsTennisUnderdogV1Strategy
@@ -21,11 +25,11 @@ def _make(pin=0.32):
 
 def test_fires_inside_underdog_band():
     s = _make(pin=0.32)
-    sig = s.evaluate(kalshi_yes=0.30, kalshi_no=0.71, fair_prob=0.31,
+    sig = s.evaluate(kalshi_yes=0.28, kalshi_no=0.72, fair_prob=0.29,
                      ticker="KXATPMATCH-26MAY26ABCDEF-ABC")
     assert sig is not None
     assert sig["side"] == "yes"
-    assert sig["price"] == 0.30
+    assert sig["price"] == 0.28
 
 
 def test_skips_below_band():
@@ -44,16 +48,16 @@ def test_skips_above_band():
 
 def test_skips_when_pinnacle_disagrees_strongly():
     """Pinnacle says underdog is MUCH less likely than Kalshi → veto."""
-    s = _make(pin=0.18)  # pin=0.18, kalshi_yes=0.30, gap=-0.12 < -0.05
-    sig = s.evaluate(kalshi_yes=0.30, kalshi_no=0.71, fair_prob=0.18,
+    s = _make(pin=0.18)  # pin=0.18, kalshi_yes=0.28, gap=-0.10 < -0.05
+    sig = s.evaluate(kalshi_yes=0.28, kalshi_no=0.72, fair_prob=0.18,
                      ticker="KXATPMATCH-X")
     assert sig is None
 
 
 def test_fires_when_pinnacle_mildly_disagrees():
     """Mild Pinnacle disagreement (within 5pp) still fires — keeps fire rate up."""
-    s = _make(pin=0.27)  # pin=0.27, kalshi_yes=0.30, gap=-0.03 inside tolerance
-    sig = s.evaluate(kalshi_yes=0.30, kalshi_no=0.71, fair_prob=0.27,
+    s = _make(pin=0.25)  # pin=0.25, kalshi_yes=0.28, gap=-0.03 inside tolerance
+    sig = s.evaluate(kalshi_yes=0.28, kalshi_no=0.72, fair_prob=0.25,
                      ticker="KXATPMATCH-X")
     assert sig is not None
 
@@ -64,7 +68,7 @@ def test_accepts_stale_pinnacle():
     inherited age gate was rejecting all candidates and producing 0 fires."""
     s = _make(pin=0.32)
     s._last_pinnacle_age_s = 100000  # very old — must still fire
-    sig = s.evaluate(kalshi_yes=0.30, kalshi_no=0.71, fair_prob=0.32,
+    sig = s.evaluate(kalshi_yes=0.28, kalshi_no=0.72, fair_prob=0.32,
                      ticker="KXATPMATCH-X")
     assert sig is not None
     assert sig["side"] == "yes"
@@ -98,6 +102,7 @@ def test_size_caps_at_4():
 
 
 def test_price_band_constants():
-    """Lock the calibrated band — change requires re-running the backtest."""
+    """Lock the calibrated band — change requires re-running the backtest.
+    MAX tightened 0.35 -> 0.29 on 2026-05-31 (0.30-0.35 sub-band bled)."""
     assert SportsTennisUnderdogV1Strategy.MIN_ENTRY_PRICE == 0.25
-    assert SportsTennisUnderdogV1Strategy.MAX_ENTRY_PRICE == 0.35
+    assert SportsTennisUnderdogV1Strategy.MAX_ENTRY_PRICE == 0.29

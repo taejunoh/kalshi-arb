@@ -34,8 +34,18 @@ def test_extract_event_key_for_kxfeddecision():
 
 
 def test_extract_event_key_for_kxcpi():
+    # Kalshi names KXCPI markets by the data's REFERENCE month, but the
+    # consensus cron keys macro_consensus rows by the RELEASE month (the
+    # following month — e.g. June CPI is released in July). _extract_event_key
+    # shifts +1 month so the lookup matches the stored rows. Asserting the old
+    # passthrough (CPI-26JUN) here is what silently blocked every CPI fire.
     s = MacroEventStrategy(_cfg(), MagicMock(), MagicMock(), MagicMock())
-    assert s._extract_event_key({"ticker": "KXCPI-26JUN-T0.3"}) == "CPI-26JUN"
+    assert s._extract_event_key({"ticker": "KXCPI-26JUN-T0.3"}) == "CPI-26JUL"
+    assert s._extract_event_key({"ticker": "KXCPI-26MAY-T0.3"}) == "CPI-26JUN"
+    # Year rollover: December reference -> January release of the next year.
+    assert s._extract_event_key({"ticker": "KXCPI-26DEC-T0.3"}) == "CPI-27JAN"
+    # Unparseable month token returns empty (no false match).
+    assert s._extract_event_key({"ticker": "KXCPI-ZZZ-T0.3"}) == ""
 
 
 def test_extract_bucket_returns_last_segment():
