@@ -11,6 +11,11 @@ class Config:
         self.KALSHI_RSA_PRIVATE_KEY_PATH = os.getenv("KALSHI_RSA_PRIVATE_KEY_PATH", "")
         self.KALSHI_API_BASE_URL = os.getenv("KALSHI_API_BASE_URL", "https://api.elections.kalshi.com")
         self.KALSHI_FEE_PER_CONTRACT = float(os.getenv("KALSHI_FEE_PER_CONTRACT", "0.07"))
+        # ④ Real-fee GATE flag (default OFF). When on, strategy +EV gates use the
+        # real Kalshi fee 0.07*p*(1-p) (via gate_fee_pct) instead of the inflated
+        # flat-$0.07 — opening marginal +EV trades the old gate rejected. OFF =
+        # identical legacy behaviour. Activate paper-first, then small-live.
+        self.REAL_FEE_GATE = os.getenv("REAL_FEE_GATE", "false").lower() == "true"
 
         # Trading mode
         self.TRADING_MODE = os.getenv("TRADING_MODE", "paper")
@@ -416,3 +421,19 @@ class Config:
         done as a SEPARATE, paper-validated step — not here.
         """
         return min(self.KALSHI_FEE_PER_CONTRACT, price_cents / 100, (100 - price_cents) / 100)
+
+    def gate_fee_pct(self, price: float) -> float:
+        """Fee as a fraction of the entry price, for strategy +EV gates (④).
+
+        REAL_FEE_GATE on  -> 0.07*(1-price)  [= (0.07*p*(1-p))/p, the real Kalshi
+          taker fee as a fraction of price] — ~4-9x lower than flat-$0.07, opens
+          marginal +EV trades the inflated gate rejected.
+        REAL_FEE_GATE off -> min(0.07, price, 1-price)/price — IDENTICAL to the
+          legacy `min(fee, price, 1-price)/price` the strategies used inline.
+        `price` in DOLLARS (0-1); returns 0 for degenerate prices.
+        """
+        if price <= 0 or price >= 1:
+            return 0.0
+        if self.REAL_FEE_GATE:
+            return 0.07 * (1.0 - price)
+        return min(self.KALSHI_FEE_PER_CONTRACT, price, 1.0 - price) / price

@@ -160,8 +160,8 @@ class EconTraderStrategy:
             fair_prob = max(0.02, min(0.98, fair_prob))
 
             # Edge calculation (net of fees)
-            yes_fee_pct = min(fee, ya, 1 - ya) / ya if ya > 0 else 0
-            no_fee_pct = min(fee, na, 1 - na) / na if na > 0 else 0
+            yes_fee_pct = self.config.gate_fee_pct(ya) if ya > 0 else 0
+            no_fee_pct = self.config.gate_fee_pct(na) if na > 0 else 0
             yes_edge = fair_prob - ya * (1 + yes_fee_pct)
             no_edge = (1 - fair_prob) - na * (1 + no_fee_pct)
 
