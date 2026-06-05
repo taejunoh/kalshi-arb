@@ -19,9 +19,10 @@ def _make(depth_yes=10.0, depth_no=10.0):
     return strat, client
 
 
-def test_v31_min_depth_is_5():
+def test_v31_min_depth_is_15():
     strat, _ = _make()
-    assert strat.MIN_DEPTH_USDC == 5.0
+    # Retuned from 5.0 -> 15.0 in sports_longshot_v31 (current production value)
+    assert strat.MIN_DEPTH_USDC == 15.0
 
 
 def test_v3_base_min_depth_is_zero():
