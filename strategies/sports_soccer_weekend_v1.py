@@ -90,7 +90,7 @@ class SportsSoccerWeekendV1Strategy(SportsUnderdogV31Strategy):
         # (a) discovery sample n=10-14 per pattern is small, may not generalize.
         # (b) live phase market depth at >=12h pre-game is thinner than 24h pre.
         # Promotion-gate sizes 2x on validation.
-        return min(4.0, self._order_manager.bankroll * 0.005)
+        return min(4.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.005)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,

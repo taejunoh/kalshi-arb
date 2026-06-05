@@ -82,7 +82,7 @@ class SportsUnderdogV36NHLPlayoffStrategy(SportsUnderdogV31Strategy):
         # Small starting size — n=35 baseline is borderline. Matches v36_NBA's
         # original size 8 launch. Validate with paper data through R2/R3
         # before any sizing increase.
-        return min(8.0, self._order_manager.bankroll * 0.02)
+        return min(8.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,

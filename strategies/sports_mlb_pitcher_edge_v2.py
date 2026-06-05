@@ -93,7 +93,7 @@ class SportsMlbPitcherEdgeV2Strategy(SportsTraderStrategy):
     CACHE_TTL_S = 300  # 5 min — point-in-time data refreshes daily, cache tight
 
     def _get_trade_size(self, signal: dict) -> float:
-        return min(self.BASE_SIZE_USDC, self._order_manager.bankroll * 0.02)
+        return min(self.BASE_SIZE_USDC, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def _load_pit_cache(self):
         """Refresh point-in-time pitcher cache from DB."""

@@ -40,6 +40,7 @@ def _make_config():
 def _make_order_manager():
     om = MagicMock()
     om.bankroll = 1000.0
+    om.sizing_bankroll = lambda s: om.bankroll
     om._notifier = None
     om._db = MagicMock()
     om._quota_last_alert_bucket = None

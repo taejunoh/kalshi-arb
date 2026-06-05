@@ -11,6 +11,7 @@ def _make():
     cfg.ODDS_API_REGION = "eu"
     order_mgr = MagicMock()
     order_mgr.bankroll = 8000.0
+    order_mgr.sizing_bankroll = lambda s: order_mgr.bankroll
     return SportsChalkShadowStrategy(cfg, order_mgr, MagicMock())
 
 

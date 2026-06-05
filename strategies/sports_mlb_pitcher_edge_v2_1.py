@@ -69,7 +69,7 @@ class SportsMlbPitcherEdgeV21Strategy(SportsMlbPitcherEdgeV2Strategy):
             base = self.SIZE_TIER_MID
         else:
             base = self.SIZE_TIER_LOW
-        return min(base, self._order_manager.bankroll * 0.02)
+        return min(base, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def _check_books_deep(self, ticker: str) -> bool:
         """True iff latest odds_observations row for ticker has

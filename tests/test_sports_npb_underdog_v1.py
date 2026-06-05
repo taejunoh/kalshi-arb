@@ -15,6 +15,7 @@ def _make_strategy():
     s = SportsNpbUnderdogV1Strategy.__new__(SportsNpbUnderdogV1Strategy)
     s.config = cfg
     s._order_manager = MagicMock(bankroll=10000)
+    s._order_manager.sizing_bankroll = lambda x: s._order_manager.bankroll
     s._traded_tickers = {}
     return s
 

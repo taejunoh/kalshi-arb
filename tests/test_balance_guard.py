@@ -87,3 +87,25 @@ async def test_balance_guard_required_includes_fee(tmp_path):
     )
     assert result["status"] == "failed"
     assert result.get("reason") == "insufficient_balance"
+
+
+@pytest.mark.asyncio
+async def test_sizing_bankroll_live_uses_real_balance_paper_uses_tracker(tmp_path):
+    """Permanent bankroll fix: LIVE strategies size off the real Kalshi balance,
+    NOT the (possibly drifted) shared paper tracker; paper strategies keep the
+    tracker; balance-fetch failure falls back to the tracker."""
+    db = Database(str(tmp_path / "t.db"))
+    await db.initialize()
+    client = MagicMock()
+    client.get_balance = MagicMock(return_value=150.0)  # real Kalshi cash
+    om = OrderManager(_mk_config(live_strategies={"sports_longshot_v31"}),
+                      kalshi_client=client, database=db, notifier=None)
+    om.bankroll = 4713.0  # inflated paper tracker (the bug this fix neutralises)
+
+    # live strategy -> real balance (not the $4,713 tracker)
+    assert om.sizing_bankroll("sports_longshot_v31") == 150.0
+    # paper strategy -> paper tracker
+    assert om.sizing_bankroll("sports_pinnacle_edge") == 4713.0
+    # balance unavailable -> fall back to tracker (per-order guard still caps spend)
+    client.get_balance = MagicMock(return_value=None)
+    assert om.sizing_bankroll("sports_longshot_v31") == 4713.0

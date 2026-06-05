@@ -60,7 +60,7 @@ class SportsLongshotStrategy(SportsTraderStrategy):
         """Small fixed size for portfolio approach. Raised 3→4 on 2026-04-20
         post dead-zone rollout — non-sub-20¢ subset is positive-EV so the
         scale-up is on a validated band, not an unproven strategy."""
-        return min(4.0, self._order_manager.bankroll * 0.02)
+        return min(4.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def _get_limit_price(self, signal: dict, fair_prob: float) -> float:
         """Buy at ask price (aggressive fill)."""

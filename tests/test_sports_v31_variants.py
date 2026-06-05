@@ -20,7 +20,11 @@ def _make(klass):
     config.gate_fee_pct = lambda price: (
         0.0 if (price <= 0 or price >= 1) else min(0.07, price, 1.0 - price) / price
     )
-    return klass(config, MagicMock(), MagicMock())
+    om = MagicMock()
+    # _get_trade_size now sizes via order_manager.sizing_bankroll (real balance
+    # for live strategies); in tests it mirrors the paper tracker bankroll.
+    om.sizing_bankroll = lambda s: om.bankroll
+    return klass(config, om, MagicMock())
 
 
 def test_v3_pinned_to_us():
@@ -231,6 +235,7 @@ def test_v33_cap_state_is_shared_via_order_manager():
     from unittest.mock import MagicMock
 
     om = MagicMock()
+    om.sizing_bankroll = lambda s: om.bankroll
     om._v33_game_spend = {}
 
     config = MagicMock()

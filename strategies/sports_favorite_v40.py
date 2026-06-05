@@ -83,7 +83,7 @@ class SportsFavoriteV40Strategy(SportsTraderStrategy):
     def _get_trade_size(self, signal: dict) -> float:
         # Launch size 4 (paper-only). Conservative because drop-top-5
         # break-even on MLB cohort. Scale to 8 only after n=120 + drop-5 > 0.
-        return min(4.0, self._order_manager.bankroll * 0.02)
+        return min(4.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def _band_for_ticker(self, ticker: str) -> Optional[tuple]:
         if "MLBGAME" in ticker:

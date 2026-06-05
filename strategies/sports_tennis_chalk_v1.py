@@ -106,7 +106,7 @@ class SportsTennisChalkV1Strategy(SportsTraderStrategy):
     BASE_SIZE_USDC = 4.0
 
     def _get_trade_size(self, signal: dict) -> float:
-        return min(self.BASE_SIZE_USDC, self._order_manager.bankroll * 0.02)
+        return min(self.BASE_SIZE_USDC, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,

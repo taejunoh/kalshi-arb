@@ -91,4 +91,4 @@ class SportsTennisSurfaceSkewV1Strategy(SportsTraderStrategy):
         }
 
     def _get_trade_size(self, signal: dict) -> float:
-        return min(4.0, self._order_manager.bankroll * 0.02)
+        return min(4.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)

@@ -84,7 +84,7 @@ class SportsMlbPitcherEdgeV1Strategy(SportsTraderStrategy):
     CACHE_TTL_S = 120
 
     def _get_trade_size(self, signal: dict) -> float:
-        return min(self.BASE_SIZE_USDC, self._order_manager.bankroll * 0.02)
+        return min(self.BASE_SIZE_USDC, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def _load_pitcher_cache(self):
         """Refresh ticker→(era_diff, better_team) cache from DB."""

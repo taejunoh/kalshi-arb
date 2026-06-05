@@ -95,7 +95,7 @@ class SportsMLSFadeFavoriteV1Strategy(SportsUnderdogV31Strategy):
         Smaller than soccer_underdog_v1 (cap 24 at sweet-spot tier) because
         observer n=14 is thin. Scale up post-promotion only.
         """
-        return min(4.0, self._order_manager.bankroll * 0.01)
+        return min(4.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.01)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,

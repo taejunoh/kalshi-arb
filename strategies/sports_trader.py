@@ -1453,8 +1453,11 @@ class SportsTraderStrategy:
         return None
 
     def _get_trade_size(self, signal: dict) -> float:
-        """Default sizing: 5% bankroll."""
-        return self._order_manager.bankroll * 0.05
+        """Default sizing: 5% of capital. Live strategies size against the real
+        Kalshi balance (the shared paper tracker drifts and would over-size real
+        money in mixed mode); paper strategies use the paper tracker. See
+        OrderManager.sizing_bankroll."""
+        return self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.05
 
     def _get_limit_price(self, signal: dict, fair_prob: float) -> float:
         """Default: limit at adjusted fair value."""
