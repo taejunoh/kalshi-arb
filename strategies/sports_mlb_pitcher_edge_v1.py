@@ -75,6 +75,16 @@ class SportsMlbPitcherEdgeV1Strategy(SportsTraderStrategy):
     MIN_YES_PRICE = 0.40
     MAX_YES_PRICE = 0.75
 
+    # 2026-06-05 PAIR-FIRE DEDUP (correctness fix). Probable starters can change
+    # between a >24h-early fire and game day, flipping better_team; without this
+    # the strategy can fire opposite sides of the same game across scan cycles
+    # (observed: MINCWS 5/28 MIN-YES then CWS-YES). Keeps the first side, blocks
+    # the later opposite-side fire. NOTE: v1 reads mlb_pitcher_observations
+    # (current-season ERA), which carries NO innings-pitched column, so the
+    # MIN_PITCHER_IP small-sample guard added to v2/v2.1 cannot apply here — v1
+    # remains the IP-blind, look-ahead-baseline variant for A/B only.
+    PAIR_FIRE_DEDUP = True
+
     # Small paper size — strategy hasn't been LIVE-validated.
     BASE_SIZE_USDC = 4.0
 
