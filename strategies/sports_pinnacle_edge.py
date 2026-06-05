@@ -50,8 +50,8 @@ class SportsPinnacleEdgeStrategy(SportsTraderStrategy):
             return None
         fee = self.config.KALSHI_FEE_PER_CONTRACT
 
-        yes_fee_pct = self.config.gate_fee_pct(kalshi_yes) if kalshi_yes > 0 else 0
-        no_fee_pct = self.config.gate_fee_pct(kalshi_no) if kalshi_no > 0 else 0
+        yes_fee_pct = self._gate_fee_pct(kalshi_yes) if kalshi_yes > 0 else 0
+        no_fee_pct = self._gate_fee_pct(kalshi_no) if kalshi_no > 0 else 0
         yes_edge = pin_yes - kalshi_yes * (1 + yes_fee_pct)
         no_edge = (1 - pin_yes) - kalshi_no * (1 + no_fee_pct)
 

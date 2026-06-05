@@ -126,7 +126,7 @@ class SportsConsensusAlignedLiveV1Strategy(SportsUnderdogV31Strategy):
         if 0.20 <= kalshi_yes <= 0.30:
             gap_pp = abs((kalshi_yes - fair_prob) * 100.0)
             if gap_pp < self.GAP_MAX_PP:
-                fee_pct = self.config.gate_fee_pct(kalshi_yes)
+                fee_pct = self._gate_fee_pct(kalshi_yes)
                 cost = kalshi_yes * (1 + fee_pct)
                 payoff = 1.0 / cost
                 if payoff >= 2.5:
@@ -142,7 +142,7 @@ class SportsConsensusAlignedLiveV1Strategy(SportsUnderdogV31Strategy):
             implied_yes_from_no = 1.0 - kalshi_no
             gap_pp = abs((implied_yes_from_no - fair_prob) * 100.0)
             if gap_pp < self.GAP_MAX_PP:
-                fee_pct = self.config.gate_fee_pct(kalshi_no)
+                fee_pct = self._gate_fee_pct(kalshi_no)
                 cost = kalshi_no * (1 + fee_pct)
                 payoff = 1.0 / cost
                 if payoff >= 2.5:

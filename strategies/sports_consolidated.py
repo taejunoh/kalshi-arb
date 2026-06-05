@@ -43,7 +43,7 @@ class SportsConsolidatedStrategy(SportsTraderStrategy):
         for side, price in (("yes", kalshi_yes), ("no", kalshi_no)):
             if not (self.PRICE_MIN <= price <= self.PRICE_MAX):
                 continue
-            fee_pct = self.config.gate_fee_pct(price) if price > 0 else 0
+            fee_pct = self._gate_fee_pct(price) if price > 0 else 0
             payoff = 1.0 / (price * (1 + fee_pct))
             if payoff < self.PAYOFF_MIN:
                 continue

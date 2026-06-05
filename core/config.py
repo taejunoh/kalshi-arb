@@ -11,11 +11,21 @@ class Config:
         self.KALSHI_RSA_PRIVATE_KEY_PATH = os.getenv("KALSHI_RSA_PRIVATE_KEY_PATH", "")
         self.KALSHI_API_BASE_URL = os.getenv("KALSHI_API_BASE_URL", "https://api.elections.kalshi.com")
         self.KALSHI_FEE_PER_CONTRACT = float(os.getenv("KALSHI_FEE_PER_CONTRACT", "0.07"))
-        # ④ Real-fee GATE flag (default OFF). When on, strategy +EV gates use the
-        # real Kalshi fee 0.07*p*(1-p) (via gate_fee_pct) instead of the inflated
-        # flat-$0.07 — opening marginal +EV trades the old gate rejected. OFF =
-        # identical legacy behaviour. Activate paper-first, then small-live.
-        self.REAL_FEE_GATE = os.getenv("REAL_FEE_GATE", "false").lower() == "true"
+        # ④ Real-fee GATE mode (default 'off'). Strategy +EV gates can use the real
+        # Kalshi fee 0.07*p*(1-p) (via gate_fee_pct) instead of the inflated flat-$0.07,
+        # opening marginal +EV trades the old gate rejected.
+        #   'off'   — legacy flat-fee gate everywhere (zero behaviour change).
+        #   'paper' — real-fee gate for PAPER strategies only; LIVE_STRATEGIES stay on
+        #             the legacy gate (no real-money change). The paper-first step:
+        #             collect forward data on the looser gate before any live flip.
+        #   'all'   — real-fee gate everywhere (paper + live).
+        # Back-compat: the old boolean REAL_FEE_GATE=true maps to mode 'all'.
+        _legacy_gate_on = os.getenv("REAL_FEE_GATE", "").lower() == "true"
+        self.REAL_FEE_GATE_MODE = os.getenv(
+            "REAL_FEE_GATE_MODE", "all" if _legacy_gate_on else "off").lower()
+        # Back-compat attribute: gate_fee_pct() applies the real fee when this is True
+        # (mode 'all'). The 'paper' split is resolved per-strategy in _gate_fee_pct().
+        self.REAL_FEE_GATE = self.REAL_FEE_GATE_MODE == "all"
 
         # Trading mode
         self.TRADING_MODE = os.getenv("TRADING_MODE", "paper")
@@ -425,11 +435,12 @@ class Config:
     def gate_fee_pct(self, price: float) -> float:
         """Fee as a fraction of the entry price, for strategy +EV gates (④).
 
-        REAL_FEE_GATE on  -> 0.07*(1-price)  [= (0.07*p*(1-p))/p, the real Kalshi
-          taker fee as a fraction of price] — ~4-9x lower than flat-$0.07, opens
-          marginal +EV trades the inflated gate rejected.
-        REAL_FEE_GATE off -> min(0.07, price, 1-price)/price — IDENTICAL to the
-          legacy `min(fee, price, 1-price)/price` the strategies used inline.
+        Resolves the 'off' vs 'all' modes (the per-strategy 'paper' split is applied
+        upstream in Strategy._gate_fee_pct, which only delegates here for off/all):
+          mode 'all' (REAL_FEE_GATE True) -> 0.07*(1-price)  [= (0.07*p*(1-p))/p, the
+            real Kalshi taker fee as a fraction of price] — ~4-9x lower than flat-$0.07.
+          mode 'off' -> min(0.07, price, 1-price)/price — IDENTICAL to the legacy
+            inline `min(fee, price, 1-price)/price` the strategies used.
         `price` in DOLLARS (0-1); returns 0 for degenerate prices.
         """
         if price <= 0 or price >= 1:
@@ -437,3 +448,13 @@ class Config:
         if self.REAL_FEE_GATE:
             return 0.07 * (1.0 - price)
         return min(self.KALSHI_FEE_PER_CONTRACT, price, 1.0 - price) / price
+
+    def is_live_strategy(self, name: str) -> bool:
+        """True if a strategy named `name` trades real money under the current mode.
+
+        Mirrors OrderManager._is_live: global live mode => always True; otherwise
+        live only if `name` is in LIVE_STRATEGIES. Used by the ④ 'paper' gate split.
+        """
+        if not self.is_paper_mode:
+            return True
+        return name in self.LIVE_STRATEGIES
