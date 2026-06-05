@@ -55,8 +55,22 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 # Sports + non-sports prefixes handled by record_trade-writing strategies.
 # Ticker prefixes handled by the limit-only reconciler (mentions/econ/spread)
-# are EXCLUDED here to avoid double-counting.
-RECONCILE_HANDLED_PREFIXES = ("KXFEDMENTION", "KXCPI", "KXGDP", "KXUNEMPLOY", "KXFED-")
+# OR by strategies that never write to trades by design (crypto spread/ladder:
+# KXBTC*/KXETH*/KXSOL*/KXXRP*, incl. KXBTCD Bitcoin-daily ladders) are EXCLUDED
+# here — they are NOT orphans, just non-writers, so flagging them is pure noise
+# (2026-06-04: 745 KXBTCD + 79 KXBTC dominated a 792-orphan false alert).
+RECONCILE_HANDLED_PREFIXES = (
+    "KXFEDMENTION", "KXCPI", "KXGDP", "KXUNEMPLOY", "KXFED-",
+    "KXBTC", "KXETH", "KXSOL", "KXXRP",  # crypto spread/ladder — never write to trades
+)
+
+# Only reconcile settlements from the recent window. get_settlements() returns
+# the full account history (thousands of rows), so old pre-block sport
+# settlements (e.g. MLB traded live before the 2026-05-21 block) show as
+# perma-orphans. A genuine missing-fill bug (live fill that failed to write to
+# trades) surfaces within the hourly cadence, so a short window keeps the signal
+# without the deep-history noise.
+SETTLEMENT_LOOKBACK_DAYS = 7
 
 
 def _is_handled_by_reconciler(ticker: str) -> bool:
@@ -112,9 +126,14 @@ async def main() -> int:
             "cost": float(p.get("market_exposure_dollars") or 0),
         }
 
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=SETTLEMENT_LOOKBACK_DAYS)).isoformat()
     for s in settlements:
         tk = s.get("ticker")
         if not tk or _is_handled_by_reconciler(tk):
+            continue
+        # Only recent settlements — old pre-block sport history is not a live bug.
+        if (s.get("settled_time") or "") < cutoff:
             continue
         no_count = float(s.get("no_count_fp") or 0)
         yes_count = float(s.get("yes_count_fp") or 0)
