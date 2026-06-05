@@ -283,9 +283,33 @@ class OrderManager:
                 f"(recovery ${self.LOW_BALANCE_RECOVERY:.0f})"
             )
 
-    def calculate_position_size(self, net_edge: float) -> float:
-        kelly_size = self.bankroll * self.config.KELLY_FRACTION * net_edge
-        max_size = self.bankroll * self.config.MAX_SINGLE_TRADE_PCT
+    def sizing_bankroll(self, strategy: str) -> float:
+        """Capital basis for position sizing.
+
+        LIVE strategies size against the REAL Kalshi cash balance, NOT the shared
+        order_manager.bankroll. Rationale: in mixed mode (TRADING_MODE=paper + some
+        live strategies) bankroll is the PAPER running tracker, which drifts far
+        above the real account (it accumulates paper+live activity), so sizing a
+        real-money trade at `bankroll * pct` over-sizes vs actual capital. The
+        per-order real-balance guard only rejects trades larger than the whole
+        balance — it does not cap the fraction — so sizing must use real balance
+        directly. Paper strategies keep using the paper tracker.
+
+        Falls back to the paper tracker if the balance fetch is unavailable; the
+        per-order guard still caps actual spend. Cached (60s) to avoid API churn.
+        """
+        if self._is_live(strategy):
+            real = self._client.get_balance(max_age_s=60)
+            if real is not None and real > 0:
+                return real
+        return self.bankroll
+
+    def calculate_position_size(self, net_edge: float, strategy: Optional[str] = None) -> float:
+        # Live strategies size off the real Kalshi balance (see sizing_bankroll);
+        # paper/unspecified keep the paper tracker. All current callers are paper.
+        basis = self.sizing_bankroll(strategy) if strategy else self.bankroll
+        kelly_size = basis * self.config.KELLY_FRACTION * net_edge
+        max_size = basis * self.config.MAX_SINGLE_TRADE_PCT
         return min(kelly_size, max_size)
 
     def is_kill_switch_active(self) -> bool:

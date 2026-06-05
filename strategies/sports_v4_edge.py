@@ -114,7 +114,7 @@ class SportsV4EdgeStrategy(SportsTraderStrategy):
 
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 3→4 on 2026-04-20 alongside v31 base classes.
-        return min(4.0, self._order_manager.bankroll * 0.02)
+        return min(4.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def _get_limit_price(self, signal: dict, fair_prob: float) -> float:
         return signal["price"]

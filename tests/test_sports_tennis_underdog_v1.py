@@ -13,6 +13,7 @@ def _make(pin=0.32):
     s = SportsTennisUnderdogV1Strategy.__new__(SportsTennisUnderdogV1Strategy)
     s.config = cfg
     s._order_manager = MagicMock(bankroll=10000)
+    s._order_manager.sizing_bankroll = lambda x: s._order_manager.bankroll
     s._last_pinnacle_yes_prob = pin
     s._last_pinnacle_age_s = 100
     s._traded_tickers = {}

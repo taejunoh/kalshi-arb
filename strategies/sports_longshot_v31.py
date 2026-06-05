@@ -76,7 +76,7 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
         # too low to compound at $12; 1.67x bump keeps per-fire bet under
         # 2% bankroll cap while doubling expected $/week. Rollback gate:
         # if 14d forward WR < 22% or net < $0, revert to $12.
-        return min(20.0, self._order_manager.bankroll * 0.02)
+        return min(20.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,

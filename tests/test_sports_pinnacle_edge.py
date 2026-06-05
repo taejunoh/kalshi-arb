@@ -20,6 +20,7 @@ def _make_strategy(yes_depth: float = 100.0, no_depth: float = 100.0,
     )
     order_mgr = MagicMock()
     order_mgr.bankroll = bankroll
+    order_mgr.sizing_bankroll = lambda s: order_mgr.bankroll
     client = MagicMock()
     client.get_order_book_depth = MagicMock(return_value=(yes_depth, no_depth))
     s = SportsPinnacleEdgeStrategy(config, order_mgr, client)

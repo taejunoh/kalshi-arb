@@ -101,7 +101,7 @@ class SportsConsensusAlignedLiveV1Strategy(SportsUnderdogV31Strategy):
         # Paper-only at launch — size 4. Live-phase markets at 0.20-0.30 have
         # thinner depth than pre-game (especially WNBA where total obs n=86K
         # vs MLB 1.5M). Promotion-gate raises to 8 on validation.
-        return min(4.0, self._order_manager.bankroll * 0.005)
+        return min(4.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.005)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
