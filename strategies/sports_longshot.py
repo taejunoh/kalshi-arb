@@ -37,7 +37,7 @@ class SportsLongshotStrategy(SportsTraderStrategy):
 
         # Check YES side
         if 0.05 <= kalshi_yes <= 0.25:
-            fee_pct = min(fee, kalshi_yes, 1 - kalshi_yes) / kalshi_yes
+            fee_pct = self.config.gate_fee_pct(kalshi_yes)
             cost = kalshi_yes * (1 + fee_pct)
             payoff = 1.0 / cost
             if payoff >= 3.0 and payoff > best_payoff:
@@ -47,7 +47,7 @@ class SportsLongshotStrategy(SportsTraderStrategy):
 
         # Check NO side
         if 0.05 <= kalshi_no <= 0.25:
-            fee_pct = min(fee, kalshi_no, 1 - kalshi_no) / kalshi_no
+            fee_pct = self.config.gate_fee_pct(kalshi_no)
             cost = kalshi_no * (1 + fee_pct)
             payoff = 1.0 / cost
             if payoff >= 3.0 and payoff > best_payoff:

@@ -43,7 +43,7 @@ class SportsUnderdogStrategy(SportsTraderStrategy):
 
         # Consensus says YES team is favorite (>60%), bet NO (underdog)
         if fair_prob > 0.60 and 0.05 <= kalshi_no <= 0.40:
-            fee_pct = min(fee, kalshi_no, 1 - kalshi_no) / kalshi_no
+            fee_pct = self.config.gate_fee_pct(kalshi_no)
             payoff = 1.0 / (kalshi_no * (1 + fee_pct))
             if payoff >= 2.0:
                 return {"side": "no", "price": kalshi_no,
@@ -51,7 +51,7 @@ class SportsUnderdogStrategy(SportsTraderStrategy):
 
         # Consensus says NO team is favorite (fair_prob < 40%), bet YES (underdog)
         elif fair_prob < 0.40 and 0.05 <= kalshi_yes <= 0.40:
-            fee_pct = min(fee, kalshi_yes, 1 - kalshi_yes) / kalshi_yes
+            fee_pct = self.config.gate_fee_pct(kalshi_yes)
             payoff = 1.0 / (kalshi_yes * (1 + fee_pct))
             if payoff >= 2.0:
                 return {"side": "yes", "price": kalshi_yes,

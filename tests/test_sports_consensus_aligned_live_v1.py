@@ -15,6 +15,13 @@ from strategies.sports_consensus_aligned_live_v1 import (
 def _strat():
     cfg = MagicMock()
     cfg.KALSHI_FEE_PER_CONTRACT = 0.07
+    # ④ REAL_FEE_GATE flag OFF (production default/live state): gate_fee_pct
+    # is byte-identical to the legacy inline min(fee, X, 1-X)/X. The strategy
+    # now delegates to config.gate_fee_pct, so the mock must reproduce it or
+    # it returns a MagicMock and breaks the payoff>=2.5 comparison.
+    cfg.gate_fee_pct = lambda price: (
+        0.0 if price <= 0 or price >= 1 else min(0.07, price, 1.0 - price) / price
+    )
     om = MagicMock()
     om.bankroll = 10000.0
     return SportsConsensusAlignedLiveV1Strategy(cfg, om, MagicMock())

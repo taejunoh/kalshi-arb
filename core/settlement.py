@@ -68,8 +68,11 @@ class SettlementChecker:
             # pnl = payout - size_usdc - fee
             pnl = size_usdc * ((1.0 - price) / price) - fee
         else:
-            # Lost: contracts worth $0, lose entire investment
-            pnl = -size_usdc
+            # Lost: contracts worth $0, lose entire investment PLUS the entry
+            # fee (Kalshi charges the fee at fill time, win or lose). The old
+            # code omitted the fee on losses — an asymmetric-accounting bug that
+            # made losers look better than reality. Fixed 2026-06-02.
+            pnl = -size_usdc - fee
         return round(pnl, 2)
 
     async def simulate_paper_fills(self):
@@ -104,7 +107,7 @@ class SettlementChecker:
 
                 if should_fill:
                     count = max(1, int(order["size"] / order_price))
-                    fee = self._order_manager.config.estimate_fee(count, int(order_price * 100))
+                    fee = self._order_manager.config.real_fee(count, int(order_price * 100))
                     await self._db.update_order_status(order["order_id"], "paper_filled")
                     await self._db.record_trade(
                         strategy=order["strategy"],

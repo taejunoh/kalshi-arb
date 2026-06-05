@@ -5,6 +5,13 @@ from strategies.sports_mls_fade_favorite_v1 import SportsMLSFadeFavoriteV1Strate
 
 def _make_strategy():
     cfg = MagicMock(KALSHI_FEE_PER_CONTRACT=0.07, INITIAL_BANKROLL=10000)
+    # ④ REAL_FEE_GATE refactor: evaluate() now calls config.gate_fee_pct(price)
+    # in place of the inline min(fee, X, 1-X)/X. Stub it with the legacy
+    # flag-OFF formula (byte-identical to the old inline expression) so the
+    # MagicMock config returns a numeric instead of a MagicMock.
+    cfg.gate_fee_pct = lambda price: (
+        0.0 if price <= 0 or price >= 1 else min(0.07, price, 1.0 - price) / price
+    )
     s = SportsMLSFadeFavoriteV1Strategy.__new__(SportsMLSFadeFavoriteV1Strategy)
     s.config = cfg
     s._order_manager = MagicMock(bankroll=10000)

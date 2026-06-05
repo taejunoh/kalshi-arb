@@ -50,6 +50,14 @@ class SportsTennisLiveFadeV1Strategy(SportsTraderStrategy):
 
     # Tennis-specific opt-in (matches existing tennis_*_v1 strategies)
     INDIVIDUAL_SPORTS_OPT_IN = True
+    # Override parent OBSERVATION_ONLY_SPORTS — parent treats ATP/WTA as
+    # observation-only (no trading), so scan_and_execute silently `continue`s
+    # every tennis ticker before evaluate() is ever called. We're explicitly
+    # trading tennis, so subtract ATP+WTA. Without this override the strategy
+    # never fires (matches tennis_chalk_v1/pinnacle_fade_v1/underdog_v1).
+    OBSERVATION_ONLY_SPORTS = (
+        SportsTraderStrategy.OBSERVATION_ONLY_SPORTS - {"ATP", "WTA"}
+    )
     # Block team sports — we're tennis-specific
     SPORT_BLOCKLIST = frozenset({"NBA", "WNBA", "MLB", "NHL", "NPB", "KBO",
                                   "EPL", "MLS", "LAL", "BUN", "UCL", "UFC"})

@@ -151,11 +151,11 @@ class SpreadScannerStrategy:
         fee = self.config.KALSHI_FEE_PER_CONTRACT
 
         # YES side edge
-        yes_fee_pct = min(fee, yes_ask, 1 - yes_ask) / yes_ask if yes_ask > 0 else 0
+        yes_fee_pct = self.config.gate_fee_pct(yes_ask) if yes_ask > 0 else 0
         yes_edge = fair_prob - yes_ask * (1 + yes_fee_pct)
 
         # NO side edge
-        no_fee_pct = min(fee, no_ask, 1 - no_ask) / no_ask if no_ask > 0 else 0
+        no_fee_pct = self.config.gate_fee_pct(no_ask) if no_ask > 0 else 0
         no_edge = (1.0 - fair_prob) - no_ask * (1 + no_fee_pct)
 
         # Pick better side if above threshold

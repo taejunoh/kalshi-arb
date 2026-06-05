@@ -113,7 +113,7 @@ class SportsUnderdogV36NHLPlayoffStrategy(SportsUnderdogV31Strategy):
         for side, price in (("yes", kalshi_yes), ("no", kalshi_no)):
             if not in_band(price):
                 continue
-            fee_pct = min(fee, price, 1 - price) / price
+            fee_pct = self.config.gate_fee_pct(price)
             cost = price * (1 + fee_pct)
             payoff = 1.0 / cost
             if payoff > best_payoff:

@@ -117,7 +117,7 @@ class SportsSoccerDrawV1Strategy(SportsSoccerUnderdogV1Strategy):
             return None
 
         fee = self.config.KALSHI_FEE_PER_CONTRACT
-        fee_pct = min(fee, price, 1 - price) / price
+        fee_pct = self.config.gate_fee_pct(price)
         cost = price * (1 + fee_pct)
         payoff = 1.0 / cost
         if payoff < 2.0:

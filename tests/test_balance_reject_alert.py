@@ -17,6 +17,11 @@ def _make_manager(balance_value):
     config.is_paper_mode = True
     config.LIVE_STRATEGIES = {"sports_underdog_v31"}
     config.estimate_fee = MagicMock(return_value=0.5)
+    # fee-fix (993a1a8): balance guard now uses config.real_fee (real Kalshi
+    # 0.07*p*(1-p)*count) instead of flat estimate_fee. These tests only assert
+    # the reject status/reason, not the fee magnitude, so a fixed numeric fee is
+    # enough to keep `balance < size_usdc + fee` numeric and on the reject path.
+    config.real_fee = MagicMock(return_value=0.07)
     client = MagicMock()
     client.get_balance = MagicMock(return_value=balance_value)
     db = MagicMock()
@@ -86,6 +91,8 @@ def test_no_alert_when_notifier_is_none():
     config.is_paper_mode = True
     config.LIVE_STRATEGIES = {"sports_underdog_v31"}
     config.estimate_fee = MagicMock(return_value=0.5)
+    # fee-fix (993a1a8): balance guard now uses config.real_fee — see _make_manager.
+    config.real_fee = MagicMock(return_value=0.07)
     client = MagicMock()
     client.get_balance = MagicMock(return_value=10.0)
     db = MagicMock()

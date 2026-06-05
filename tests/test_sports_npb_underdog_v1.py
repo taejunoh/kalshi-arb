@@ -5,6 +5,13 @@ from strategies.sports_npb_underdog_v1 import SportsNpbUnderdogV1Strategy
 
 def _make_strategy():
     cfg = MagicMock(KALSHI_FEE_PER_CONTRACT=0.07, INITIAL_BANKROLL=10000)
+    # ④ gate-fee flag: evaluate() now calls config.gate_fee_pct(price) instead
+    # of the inline min(fee, X, 1-X)/X. With REAL_FEE_GATE OFF (live default)
+    # gate_fee_pct is byte-identical to the legacy formula — stub it so the
+    # MagicMock config returns a float, not a MagicMock.
+    cfg.gate_fee_pct = lambda price: (
+        0.0 if price <= 0 or price >= 1 else min(0.07, price, 1 - price) / price
+    )
     s = SportsNpbUnderdogV1Strategy.__new__(SportsNpbUnderdogV1Strategy)
     s.config = cfg
     s._order_manager = MagicMock(bankroll=10000)

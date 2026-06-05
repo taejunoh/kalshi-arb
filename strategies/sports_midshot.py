@@ -48,7 +48,7 @@ class SportsMidshotStrategy(SportsTraderStrategy):
         for side, price in (("yes", kalshi_yes), ("no", kalshi_no)):
             if not (0.05 <= price <= 0.35):
                 continue
-            fee_pct = min(fee, price, 1 - price) / price
+            fee_pct = self.config.gate_fee_pct(price)
             cost = price * (1 + fee_pct)
             payoff = 1.0 / cost
             if payoff >= 2.5 and payoff > best_payoff:

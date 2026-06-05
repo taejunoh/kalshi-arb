@@ -33,8 +33,9 @@ async def test_paper_market_order(paper_manager):
     )
     assert result["status"] == "paper_filled"
     assert result["size_usdc"] == 100.0
-    # bankroll = 1000 - 100 (size) - 14 (fee: 200 contracts * $0.07) = 886
-    assert paper_manager.bankroll == 886.0
+    # fee-fix 993a1a8: real Kalshi taker fee is 0.07*p*(1-p)*count, not flat $0.07*count.
+    # bankroll = 1000 - 100 (size) - 3.50 (fee: 0.07 * 0.50 * 0.50 * 200 contracts) = 896.50
+    assert paper_manager.bankroll == 896.50
 
 
 @pytest.mark.asyncio

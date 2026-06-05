@@ -26,6 +26,14 @@ def _make_config():
     cfg.is_paper_mode = False
     cfg.INITIAL_BANKROLL = 1000.0
     cfg.ODDS_API_KEY = "test-key"
+    # ④ REAL_FEE_GATE refactor: strategy gates now call config.gate_fee_pct(price)
+    # instead of the inline min(fee, X, 1-X)/X. With the flag OFF (live default)
+    # it is byte-identical to the legacy formula, so stub it that way here.
+    cfg.gate_fee_pct = MagicMock(
+        side_effect=lambda price: 0.0
+        if (price <= 0 or price >= 1)
+        else min(0.07, price, 1.0 - price) / price
+    )
     return cfg
 
 

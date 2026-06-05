@@ -15,6 +15,13 @@ from strategies.sports_soccer_weekend_v1 import SportsSoccerWeekendV1Strategy
 def _strat():
     cfg = MagicMock()
     cfg.KALSHI_FEE_PER_CONTRACT = 0.07
+    # ④ REAL_FEE_GATE (commit 37b4f4c): strategy now calls
+    # config.gate_fee_pct(price) instead of the inline min(fee,X,1-X)/X.
+    # Stub with the exact legacy formula (flag OFF / live state) so the mock
+    # config returns a numeric fee_pct — byte-identical to the old inline calc.
+    cfg.gate_fee_pct = lambda price: (
+        0.0 if price <= 0 or price >= 1 else min(0.07, price, 1 - price) / price
+    )
     om = MagicMock()
     om.bankroll = 10000.0
     return SportsSoccerWeekendV1Strategy(cfg, om, MagicMock())
