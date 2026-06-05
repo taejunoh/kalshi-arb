@@ -80,7 +80,7 @@ def test_cancels_all_on_circuit_breaker():
         "T2": {"yes_order_id": "y2", "no_order_id": "n2", "last_quote_time": 0, "mid_price": 0.5, "size_usdc": 50},
     }
     import asyncio
-    asyncio.get_event_loop().run_until_complete(strat.scan_and_execute())
+    asyncio.run(strat.scan_and_execute())
     assert len(strat._active_quotes) == 0
     assert order_mgr.cancel_order.call_count == 4  # 2 markets × 2 sides
 
@@ -89,5 +89,5 @@ def test_skips_when_disabled():
     strat, scanner, _, _ = _make_strategy()
     strat.config.MM_ENABLED = False
     import asyncio
-    asyncio.get_event_loop().run_until_complete(strat.scan_and_execute())
+    asyncio.run(strat.scan_and_execute())
     scanner.get_unlocked_markets.assert_not_called()

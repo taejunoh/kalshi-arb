@@ -360,13 +360,22 @@ async def test_performance_live_pre_live_split_includes_demoted_strategy(tmp_pat
 
 @pytest.mark.asyncio
 async def test_performance_live_includes_crypto_phase1_db_attribution(tmp_path):
-    """Crypto Phase 1 LIVE trades must be DB-attributed to the dashboard's
+    """Crypto Phase 1 LIVE trades are DB-attributed to the dashboard's
     'Strategy Performance (Live)' bucket. Kalshi settlements API can't
     disambiguate which Phase 1 trader (atm_hold / atm_fade / deribit_tail_fade
     / late_close_tail / bid_imbalance) bought a given KXBTC/KXETH ticker, so
-    the pre-fix logic (sports prefix only) dropped these on the floor — the
-    case observed 2026-05-20 where 6 atm_hold_v1 + 3 deribit_tail_fade_v1
-    LIVE settled rows existed in DB but rendered 0 on the dashboard.
+    the per-strategy DB attribution exists — the case observed 2026-05-20
+    where 6 atm_hold_v1 + 3 deribit_tail_fade_v1 LIVE settled rows existed in
+    DB but rendered 0 on the dashboard.
+
+    2026-05-27 CRYPTO FREEZE ([[crypto_full_freeze_2026-05-27]]): all 10
+    Phase 1 crypto strategies are now archived and REMAPPED into a single
+    `crypto_archived` aggregate bucket in /api/performance (CRYPTO_DB_ATTRIBUTED
+    → "crypto_archived" in api.py). The DB-attribution path still runs — these
+    settled rows are NOT dropped on the floor — but the individual atm_hold_v1 /
+    deribit_tail_fade_v1 keys are intentionally collapsed into the aggregate so
+    the dashboard renders one Archived row instead of ten. Synced to assert the
+    aggregate; the per-strategy keys no longer exist post-freeze.
     """
     database = Database(str(tmp_path / "t.db"))
     await database.initialize()
@@ -404,16 +413,20 @@ async def test_performance_live_includes_crypto_phase1_db_attribution(tmp_path):
         resp = await ac.get("/api/performance")
     data = resp.json()
 
-    atm = data["atm_hold_v1"]["live"]
-    assert atm["trade_count"] == 2
-    assert atm["wins"] == 1
-    assert atm["losses"] == 1
-    assert atm["total_pnl"] == pytest.approx(9.30 - 19.89, abs=0.01)
+    # Post-freeze: individual crypto Phase 1 strategies are collapsed into
+    # the `crypto_archived` aggregate, not surfaced as their own keys.
+    assert "atm_hold_v1" not in data
+    assert "deribit_tail_fade_v1" not in data
 
-    deribit = data["deribit_tail_fade_v1"]["live"]
-    assert deribit["trade_count"] == 1
-    assert deribit["wins"] == 1
-    assert deribit["total_pnl"] == pytest.approx(0.21, abs=0.01)
+    crypto = data["crypto_archived"]["live"]
+    # All 3 settled crypto rows DB-attributed into the aggregate.
+    assert crypto["trade_count"] == 3
+    assert crypto["wins"] == 2          # 2 winners (one atm_hold + the deribit)
+    assert crypto["losses"] == 1        # 1 losing atm_hold
+    assert crypto["total_pnl"] == pytest.approx(9.30 - 19.89 + 0.21, abs=0.01)
+    assert crypto["total_size"] == pytest.approx(19.53 + 19.89 + 19.32, abs=0.01)
+    # Flagged for the dashboard's Archived section.
+    assert data["crypto_archived"]["archived"] is True
 
 
 @pytest.mark.asyncio

@@ -1321,14 +1321,17 @@ async def test_cme_basis_fade_fires_under_event_cap():
 
 @pytest.mark.asyncio
 async def test_cooldown_blocks_same_price_within_window():
-    """Same ticker, same price (.49 → .49), 10s gap: BLOCK.
-    Mirrors the 15:55:06 → 15:55:33 atm_hold_v1 restart-pollution case."""
+    """Same ticker, same price (.55 → .55), 10s gap: BLOCK.
+    Mirrors the 15:55:06 → 15:55:33 atm_hold_v1 restart-pollution case.
+    2026-05-25: price moved .49→.55 to clear AtmHoldV1 PRICE_DEAD_ZONE=
+    (0.40, 0.50]; at .49 the order skips at select_side (dead zone), so
+    the cooldown gate this test targets was never actually reached."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2012-B77450",
            "predicted_outcome": "yes"}
     markets = {"KXBTC-26MAY2012-B77450": {
-        "yes_ask_dollars": 0.49, "no_ask_dollars": 0.50,
+        "yes_ask_dollars": 0.55, "no_ask_dollars": 0.44,
     }}
-    last = {"timestamp": _now_iso(10.0), "price": 0.49}
+    last = {"timestamp": _now_iso(10.0), "price": 0.55}
     s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
                             market_lookup=markets.get, last_trade=last)
     await s.scan_and_execute()
@@ -1356,13 +1359,18 @@ async def test_cooldown_allows_price_cascade_within_window():
 
 @pytest.mark.asyncio
 async def test_cooldown_expires_after_window():
-    """Same ticker, same price, but 60s gap (>30s window): ALLOW."""
+    """Same ticker, same price, but 60s gap (>30s window): ALLOW.
+    2026-05-25: AtmHoldV1 added PRICE_DEAD_ZONE=(0.40, 0.50] (0.41-0.50
+    coin-flip band -16.7% ROI). ya moved to 0.55 (+EV 0.51-0.60 band) so
+    this test isolates the cooldown gate instead of being masked by the
+    dead zone — the original 0.49 would now skip on select_side, not
+    cooldown."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2012-B77450",
            "predicted_outcome": "yes"}
     markets = {"KXBTC-26MAY2012-B77450": {
-        "yes_ask_dollars": 0.49, "no_ask_dollars": 0.50,
+        "yes_ask_dollars": 0.55, "no_ask_dollars": 0.44,
     }}
-    last = {"timestamp": _now_iso(60.0), "price": 0.49}
+    last = {"timestamp": _now_iso(60.0), "price": 0.55}
     s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
                             market_lookup=markets.get, last_trade=last)
     await s.scan_and_execute()
@@ -1371,11 +1379,14 @@ async def test_cooldown_expires_after_window():
 
 @pytest.mark.asyncio
 async def test_cooldown_no_prior_trade_allows():
-    """First-ever fire on this ticker: no DB row → ALLOW."""
+    """First-ever fire on this ticker: no DB row → ALLOW.
+    2026-05-25: ya 0.50→0.55 to clear AtmHoldV1 PRICE_DEAD_ZONE=(0.40,
+    0.50]; otherwise select_side skips before the cooldown gate and this
+    no-longer tests the no-prior-trade path."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2001-B76750",
            "predicted_outcome": "yes"}
     markets = {"KXBTC-26MAY2001-B76750": {
-        "yes_ask_dollars": 0.50, "no_ask_dollars": 0.49,
+        "yes_ask_dollars": 0.55, "no_ask_dollars": 0.44,
     }}
     s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
                             market_lookup=markets.get, last_trade=None)
@@ -1390,11 +1401,14 @@ async def test_cooldown_survives_restart_via_db():
     must still honor the cooldown."""
     sig = {"id": 9001, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2012-B77450",
            "predicted_outcome": "yes"}
+    # 2026-05-25: price .49→.55 to clear AtmHoldV1 PRICE_DEAD_ZONE=(0.40,
+    # 0.50]; otherwise the dead-zone gate (not the DB cooldown this test
+    # targets) is what blocks the fire.
     markets = {"KXBTC-26MAY2012-B77450": {
-        "yes_ask_dollars": 0.49, "no_ask_dollars": 0.50,
+        "yes_ask_dollars": 0.55, "no_ask_dollars": 0.44,
     }}
-    # Simulate: previous PID fired at 0.49 27s ago. Fresh instance starts.
-    last = {"timestamp": _now_iso(27.0), "price": 0.49}
+    # Simulate: previous PID fired at 0.55 27s ago. Fresh instance starts.
+    last = {"timestamp": _now_iso(27.0), "price": 0.55}
     s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
                             market_lookup=markets.get, last_trade=last)
     assert s._processed == set()  # fresh in-memory state, as on restart
@@ -1443,8 +1457,11 @@ async def test_cooldown_db_error_does_not_block_fire():
     the strategy on transient sqlite errors)."""
     sig = {"id": 1, "ts": _now_iso(2.0), "market_id": "KXBTC-26MAY2001-B76750",
            "predicted_outcome": "yes"}
+    # 2026-05-25: ya 0.50→0.55 to clear AtmHoldV1 PRICE_DEAD_ZONE=(0.40,
+    # 0.50]; otherwise the order is skipped at select_side and this never
+    # reaches the cooldown DB-error path it intends to test.
     markets = {"KXBTC-26MAY2001-B76750": {
-        "yes_ask_dollars": 0.50, "no_ask_dollars": 0.49,
+        "yes_ask_dollars": 0.55, "no_ask_dollars": 0.44,
     }}
     s, om = _build_strategy(AtmHoldV1Strategy, signals=[sig],
                             market_lookup=markets.get)
