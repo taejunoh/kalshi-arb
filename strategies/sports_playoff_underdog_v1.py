@@ -76,4 +76,4 @@ class SportsPlayoffUnderdogV1Strategy(SportsUnderdogV31Strategy):
         # restore to 16 on 2026-06-04. If <0%, demote fully. See
         # [[sports_cohort_block_2026-05-21]]. Cushion 1.92× → 3.85× — depth
         # gate MIN_DEPTH_USDC=20 still appropriate.
-        return min(8.0, self._order_manager.bankroll * 0.02)
+        return min(8.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)

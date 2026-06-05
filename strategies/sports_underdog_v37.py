@@ -62,7 +62,7 @@ class SportsUnderdogV37Strategy(SportsSoccerUnderdogV1Strategy):
         # 2026-05-13: override parent's depth-tiered soccer caps (2-24 by tier)
         # with fixed size 12. WNBA depth p50 $567 (tier4 territory) → 12 USDC
         # peak stake at 0.29 = $3.48 → 163× cushion. Sized symmetric with v36.
-        return min(12.0, self._order_manager.bankroll * 0.02)
+        return min(12.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float,
                  fair_prob: float, ticker: str = "", **kwargs) -> Optional[dict]:

@@ -85,7 +85,7 @@ class SportsNpbSharpFollowV1Strategy(SportsTraderStrategy):
     BASE_SIZE_USDC = 4.0
 
     def _get_trade_size(self, signal: dict) -> float:
-        return min(self.BASE_SIZE_USDC, self._order_manager.bankroll * 0.02)
+        return min(self.BASE_SIZE_USDC, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def _open_pinnacle(self, ticker: str) -> Optional[float]:
         try:

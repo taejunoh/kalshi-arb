@@ -111,4 +111,4 @@ class SportsMidshotV31Strategy(SportsMidshotStrategy):
             cap = 80.0        # SWEET SPOT +135% (n=7) — cap raised
         else:
             cap = 54.0
-        return min(cap, self._order_manager.bankroll * 0.02)
+        return min(cap, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)

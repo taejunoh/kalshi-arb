@@ -146,7 +146,7 @@ class SportsSoccerUnderdogV1Strategy(SportsUnderdogV31Strategy):
             cap = 2.0
         else:
             cap = 2.0  # very thin (5-15) — same as tier1 floor
-        return min(cap, self._order_manager.bankroll * 0.02)
+        return min(cap, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
