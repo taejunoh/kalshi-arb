@@ -26,18 +26,23 @@ def _make_strategy(pinnacle_yes_prob=None, bankroll=2000.0) -> SportsV4EdgeStrat
 
 
 def test_fires_when_price_in_range_and_pinnacle_edge_ok():
-    """price 0.20, pinnacle yes_prob 0.35 → 0.35 - 0.20*(1+0.35) = 0.08 > 0.03. Also payoff 1/(0.27)=3.7 > 2.5."""
-    strat = _make_strategy(pinnacle_yes_prob=0.35)
-    signal = strat.evaluate(kalshi_yes=0.20, kalshi_no=0.82, fair_prob=0.35, ticker="T")
+    """price 0.20, pinnacle yes_prob 0.55. Current code: cost=0.20*(1+0.35)=0.27,
+    payoff=1/0.27=3.7>2.5, edge=side_prob-cost=0.55-0.27=0.28>0.03, and
+    side_prob 0.55>=MIN_SIDE_PROB 0.50 (favorite-only gate added 2026-04-26)."""
+    # MIN_SIDE_PROB=0.50 now requires the bet side to be the favorite, so the
+    # old 0.35 prob no longer fires; raise to 0.55 to exercise the fire path.
+    strat = _make_strategy(pinnacle_yes_prob=0.55)
+    signal = strat.evaluate(kalshi_yes=0.20, kalshi_no=0.82, fair_prob=0.55, ticker="T")
     assert signal is not None
     assert signal["side"] == "yes"
     assert signal["price"] == 0.20
 
 
 def test_falls_back_to_consensus_when_pinnacle_missing():
-    """No Pinnacle → use consensus fair_prob."""
+    """No Pinnacle → use consensus fair_prob. fair_prob 0.55 >= MIN_SIDE_PROB."""
+    # Same MIN_SIDE_PROB=0.50 favorite gate: consensus prob must be >= 0.50.
     strat = _make_strategy(pinnacle_yes_prob=None)
-    signal = strat.evaluate(kalshi_yes=0.20, kalshi_no=0.82, fair_prob=0.35, ticker="T")
+    signal = strat.evaluate(kalshi_yes=0.20, kalshi_no=0.82, fair_prob=0.55, ticker="T")
     assert signal is not None
     assert signal["side"] == "yes"
 
@@ -65,9 +70,13 @@ def test_rejects_when_edge_below_3pct():
 
 
 def test_selects_no_side_when_better():
-    """NO side edge better: no_ask 0.20, yes 0.82. Pinnacle says NO 0.35 prob → no_edge = 0.35 - 0.20*1.35 = 0.08."""
-    strat = _make_strategy(pinnacle_yes_prob=0.65)
-    signal = strat.evaluate(kalshi_yes=0.82, kalshi_no=0.20, fair_prob=0.65, ticker="T")
+    """NO side selected: no_ask 0.20, yes 0.82. Pinnacle yes_prob 0.35 → no side
+    prob = 1-0.35 = 0.65 >= MIN_SIDE_PROB 0.50, while yes price 0.82 > PRICE_MAX
+    0.35 is filtered. no_edge = 0.65 - 0.20*1.35 = 0.38 > 0.03."""
+    # NO side is the favorite (0.65) so it passes MIN_SIDE_PROB; the YES leg at
+    # 0.82 is rejected by the price-range filter, leaving NO as the only signal.
+    strat = _make_strategy(pinnacle_yes_prob=0.35)
+    signal = strat.evaluate(kalshi_yes=0.82, kalshi_no=0.20, fair_prob=0.35, ticker="T")
     assert signal is not None
     assert signal["side"] == "no"
     assert signal["price"] == 0.20
@@ -80,7 +89,22 @@ def test_strategy_name():
 
 
 def test_v4_edge_has_depth_and_dead_zone_gates():
-    """Live-promotion safety rails: 5 USDC depth + 10–20¢ dead zone."""
+    """Live-promotion safety rails: 5 USDC depth + dead-zone.
+
+    The global ENTRY_PRICE_DEAD_ZONE = (0.10, 0.20) was SUPERSEDED on 2026-04-26
+    by per-cell ALLOWED_CELLS + CELL_PRICE_BANDS (see strategy docstring). The
+    strategy-level dead-zone attr is now None; the 0.10¢ dead zone is instead
+    enforced structurally by leaving 0.10 out of every cell's price band.
+    """
     assert SportsV4EdgeStrategy.MIN_DEPTH_USDC == 5.0
-    assert SportsV4EdgeStrategy.ENTRY_PRICE_DEAD_ZONE == (0.10, 0.20)
     assert SportsV4EdgeStrategy.MIN_ENTRY_PRICE is None
+    # Old global dead-zone retired in favour of per-cell bands.
+    assert SportsV4EdgeStrategy.ENTRY_PRICE_DEAD_ZONE is None
+    # Per-cell bands now carry the gating; 0.10 must remain excluded from every
+    # band (the historic dead-zone), and no band may exceed PRICE_MAX.
+    bands = SportsV4EdgeStrategy.CELL_PRICE_BANDS
+    assert bands  # whitelist is populated
+    for cell, ranges in bands.items():
+        for lo, hi in ranges:
+            assert not (lo <= 0.10 <= hi), f"{cell} band {lo}-{hi} re-admits dead-zone 0.10"
+            assert hi <= SportsV4EdgeStrategy.PRICE_MAX
