@@ -86,7 +86,7 @@ class SportsUnderdogV36Strategy(SportsUnderdogV31Strategy):
         # YES side: YES team is favorite (fair > 0.55), priced at 0.35-0.55
         if (fair_prob > self.FAIR_PROB_MIN_FAVORITE and
                 self.MIN_ENTRY_PRICE <= kalshi_yes <= self.MAX_ENTRY_PRICE):
-            fee_pct = self.config.gate_fee_pct(kalshi_yes)
+            fee_pct = self._gate_fee_pct(kalshi_yes)
             payoff = 1.0 / (kalshi_yes * (1 + fee_pct))
             return {
                 "side": "yes", "price": kalshi_yes,
@@ -97,7 +97,7 @@ class SportsUnderdogV36Strategy(SportsUnderdogV31Strategy):
         # priced at 0.35-0.55
         if (fair_prob < (1 - self.FAIR_PROB_MIN_FAVORITE) and
                 self.MIN_ENTRY_PRICE <= kalshi_no <= self.MAX_ENTRY_PRICE):
-            fee_pct = self.config.gate_fee_pct(kalshi_no)
+            fee_pct = self._gate_fee_pct(kalshi_no)
             payoff = 1.0 / (kalshi_no * (1 + fee_pct))
             return {
                 "side": "no", "price": kalshi_no,

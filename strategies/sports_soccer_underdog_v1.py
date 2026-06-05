@@ -178,7 +178,7 @@ class SportsSoccerUnderdogV1Strategy(SportsUnderdogV31Strategy):
         for side, price in (("yes", kalshi_yes), ("no", kalshi_no)):
             if not (self.MIN_ENTRY_PRICE <= price <= self.MAX_ENTRY_PRICE):
                 continue
-            fee_pct = self.config.gate_fee_pct(price)
+            fee_pct = self._gate_fee_pct(price)
             cost = price * (1 + fee_pct)
             payoff = 1.0 / cost
             if payoff >= 2.0 and payoff > best_payoff:

@@ -42,6 +42,15 @@ class EconTraderStrategy:
             logger.error(f"[ECON] Failed to get exposure, blocking trades: {e}")
             return float("inf")
 
+    def _gate_fee_pct(self, price: float) -> float:
+        """④ per-mode gate fee. With REAL_FEE_GATE_MODE='paper', a non-live
+        strategy uses the real Kalshi fee 0.07*(1-p) as the gate; LIVE strategies
+        (and modes 'off'/'all') delegate to config.gate_fee_pct unchanged."""
+        cfg = self.config
+        if cfg.REAL_FEE_GATE_MODE == "paper" and not cfg.is_live_strategy(getattr(self, "STRATEGY_NAME", "")):
+            return 0.0 if price <= 0 or price >= 1 else 0.07 * (1.0 - price)
+        return cfg.gate_fee_pct(price)
+
     def _load_traded_tickers(self):
         try:
             if os.path.exists(self.TRADED_TICKERS_FILE):
@@ -160,8 +169,8 @@ class EconTraderStrategy:
             fair_prob = max(0.02, min(0.98, fair_prob))
 
             # Edge calculation (net of fees)
-            yes_fee_pct = self.config.gate_fee_pct(ya) if ya > 0 else 0
-            no_fee_pct = self.config.gate_fee_pct(na) if na > 0 else 0
+            yes_fee_pct = self._gate_fee_pct(ya) if ya > 0 else 0
+            no_fee_pct = self._gate_fee_pct(na) if na > 0 else 0
             yes_edge = fair_prob - ya * (1 + yes_fee_pct)
             no_edge = (1 - fair_prob) - na * (1 + no_fee_pct)
 

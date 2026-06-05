@@ -769,6 +769,15 @@ class SportsTraderStrategy:
         # Load persisted traded tickers to survive restarts
         self._load_traded_tickers()
 
+    def _gate_fee_pct(self, price: float) -> float:
+        """④ per-mode gate fee. With REAL_FEE_GATE_MODE='paper', a non-live
+        strategy uses the real Kalshi fee 0.07*(1-p) as the gate; LIVE strategies
+        (and modes 'off'/'all') delegate to config.gate_fee_pct unchanged."""
+        cfg = self.config
+        if cfg.REAL_FEE_GATE_MODE == "paper" and not cfg.is_live_strategy(getattr(self, "STRATEGY_NAME", "")):
+            return 0.0 if price <= 0 or price >= 1 else 0.07 * (1.0 - price)
+        return cfg.gate_fee_pct(price)
+
     def _load_traded_tickers(self):
         try:
             if os.path.exists(self.TRADED_TICKERS_FILE):
@@ -1432,8 +1441,8 @@ class SportsTraderStrategy:
             adjusted_prob += line_movement * 0.5
         adjusted_prob = max(0.03, min(0.97, adjusted_prob))
 
-        yes_fee_pct = self.config.gate_fee_pct(kalshi_yes) if kalshi_yes > 0 else 0
-        no_fee_pct = self.config.gate_fee_pct(kalshi_no) if kalshi_no > 0 else 0
+        yes_fee_pct = self._gate_fee_pct(kalshi_yes) if kalshi_yes > 0 else 0
+        no_fee_pct = self._gate_fee_pct(kalshi_no) if kalshi_no > 0 else 0
         yes_edge = adjusted_prob - kalshi_yes * (1 + yes_fee_pct)
         no_edge = (1 - adjusted_prob) - kalshi_no * (1 + no_fee_pct)
 
