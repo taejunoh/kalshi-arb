@@ -31,6 +31,15 @@ class SpreadScannerStrategy:
         # Load persisted traded tickers to survive restarts
         self._load_traded_tickers()
 
+    def _gate_fee_pct(self, price: float) -> float:
+        """④ per-mode gate fee. With REAL_FEE_GATE_MODE='paper', a non-live
+        strategy uses the real Kalshi fee 0.07*(1-p) as the gate; LIVE strategies
+        (and modes 'off'/'all') delegate to config.gate_fee_pct unchanged."""
+        cfg = self.config
+        if cfg.REAL_FEE_GATE_MODE == "paper" and not cfg.is_live_strategy(getattr(self, "STRATEGY_NAME", "")):
+            return 0.0 if price <= 0 or price >= 1 else 0.07 * (1.0 - price)
+        return cfg.gate_fee_pct(price)
+
     def _load_traded_tickers(self):
         try:
             if os.path.exists(self.TRADED_TICKERS_FILE):
@@ -151,11 +160,11 @@ class SpreadScannerStrategy:
         fee = self.config.KALSHI_FEE_PER_CONTRACT
 
         # YES side edge
-        yes_fee_pct = self.config.gate_fee_pct(yes_ask) if yes_ask > 0 else 0
+        yes_fee_pct = self._gate_fee_pct(yes_ask) if yes_ask > 0 else 0
         yes_edge = fair_prob - yes_ask * (1 + yes_fee_pct)
 
         # NO side edge
-        no_fee_pct = self.config.gate_fee_pct(no_ask) if no_ask > 0 else 0
+        no_fee_pct = self._gate_fee_pct(no_ask) if no_ask > 0 else 0
         no_edge = (1.0 - fair_prob) - no_ask * (1 + no_fee_pct)
 
         # Pick better side if above threshold

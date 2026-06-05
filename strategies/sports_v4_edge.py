@@ -98,7 +98,7 @@ class SportsV4EdgeStrategy(SportsTraderStrategy):
                 continue
             if side_prob < self.MIN_SIDE_PROB:
                 continue
-            fee_pct = self.config.gate_fee_pct(price) if price > 0 else 0
+            fee_pct = self._gate_fee_pct(price) if price > 0 else 0
             cost = price * (1 + fee_pct)
             payoff = 1.0 / cost
             if payoff < self.PAYOFF_MIN:
