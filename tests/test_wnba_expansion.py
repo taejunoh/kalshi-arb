@@ -178,8 +178,12 @@ def test_v36_class_attributes():
     assert SportsUnderdogV36Strategy.STRATEGY_NAME == "sports_underdog_v36"
     assert SportsUnderdogV36Strategy.ALLOWED_CELLS == frozenset({("WNBA", "pre")})
     assert SportsUnderdogV36Strategy.PLAYOFF_ONLY is False
-    assert SportsUnderdogV36Strategy.MIN_ENTRY_PRICE == 0.35
-    assert SportsUnderdogV36Strategy.MAX_ENTRY_PRICE == 0.55
+    # Band v3 (2026-05-14): narrowed from launch 0.35-0.55 to the "pure
+    # sweet spot" 0.50-0.60 after full-lifetime per-band first-fire recon
+    # (FAV 0.50-0.55 +65% / 0.55-0.60 +44% vs 0.60-0.65 -3% drag). See
+    # sports_underdog_v36.py band-recon comment.
+    assert SportsUnderdogV36Strategy.MIN_ENTRY_PRICE == 0.50
+    assert SportsUnderdogV36Strategy.MAX_ENTRY_PRICE == 0.60
     assert "WNBA" not in SportsUnderdogV36Strategy.OBSERVATION_ONLY_SPORTS
 
 
@@ -200,11 +204,13 @@ def test_v36_fires_on_favorite_in_band():
 def test_v36_no_fire_outside_band():
     from strategies.sports_underdog_v36 import SportsUnderdogV36Strategy
     strat, _ = _make(SportsUnderdogV36Strategy)
-    # price 0.30 — below 0.35 floor
-    sig = strat.evaluate(0.30, 0.71, 0.55, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
+    # Band v3 is 0.50-0.60 (was 0.35-0.55 at launch). Probe just outside
+    # each edge of the CURRENT band.
+    # price 0.45 — below 0.50 floor (fair > 0.55 so only the floor blocks)
+    sig = strat.evaluate(0.45, 0.56, 0.65, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
     assert sig is None
-    # price 0.60 — above 0.55 cap
-    sig = strat.evaluate(0.60, 0.41, 0.65, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
+    # price 0.62 — above 0.60 cap
+    sig = strat.evaluate(0.62, 0.39, 0.65, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
     assert sig is None
 
 
@@ -258,8 +264,14 @@ def test_v37_fires_on_20_29c_team():
 def test_v37_skips_outside_band():
     from strategies.sports_underdog_v37 import SportsUnderdogV37Strategy
     strat, _ = _make(SportsUnderdogV37Strategy)
-    # 0.30 — above 0.29 cap
-    sig = strat.evaluate(0.30, 0.71, 0.30, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
+    # Band v3 (2026-05-14): widened to 0.15-0.37 with an explicit
+    # ENTRY_PRICE_DEAD_ZONE=(0.23, 0.29) skip (was a flat 0.20-0.29 band).
+    # Probe both the upper cap and the dead-zone hole.
+    # price 0.40 — above 0.37 cap
+    sig = strat.evaluate(0.40, 0.61, 0.40, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
+    assert sig is None
+    # price 0.25 — inside band but in the (0.23, 0.29) dead zone → skipped
+    sig = strat.evaluate(0.25, 0.76, 0.25, ticker="KXWNBAGAME-26MAY14NYWSH-NY")
     assert sig is None
 
 
