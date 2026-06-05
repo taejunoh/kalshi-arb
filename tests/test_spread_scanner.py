@@ -105,5 +105,5 @@ def test_skips_when_disabled():
     strat = _make_strategy()
     strat.config.SPREAD_SCANNER_ENABLED = False
     import asyncio
-    asyncio.get_event_loop().run_until_complete(strat.scan_and_execute())
+    asyncio.run(strat.scan_and_execute())
     strat._scanner.get_active_markets.assert_not_called()
