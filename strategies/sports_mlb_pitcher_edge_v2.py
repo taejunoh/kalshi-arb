@@ -80,6 +80,30 @@ class SportsMlbPitcherEdgeV2Strategy(SportsTraderStrategy):
     MIN_PITCHER_ERA = 1.0
     MAX_PITCHER_ERA = 8.0
 
+    # 2026-06-05 DATA-QUALITY GATE (root-cause fix). The PIT collector computes
+    # ERA from cumulative gameLog with NO minimum-IP floor, so a pitcher with
+    # 1-2 starts (e.g. 6 IP, 1.5 ERA, or 9 IP, 10.6 ERA) produces a garbage ERA
+    # that manufactures a fake >=2.5 "gap". The 6/05 adversarial audit found that
+    # 81% of >=2.5 qualifying games had the worse pitcher at ERA>5.0 and 12/32
+    # had a starter under 40 IP — i.e. the apparent edge leaned heavily on
+    # small-sample ERA blowups (which regress as the season matures) AND this is
+    # the exact source of the v1(season-ERA)-vs-PIT collector disagreement
+    # (16 better-team flips, all in <40-IP games). Require BOTH starters to have
+    # >=MIN_PITCHER_IP innings so the ERA is a stabilized read, not 1-2-outing
+    # noise. NOT tuned to maximize backtest PnL: 20 IP ~= 4 starts is the floor
+    # below which a single outing dominates ERA. Bump toward 40 (ERA-reliability
+    # stabilization point) once mid-season sample allows. See 6/05 MLB-pitcher
+    # LIVE-readiness audit + [[mlb_pitcher_v1_v2_v21_overlap_2026-05-28]].
+    MIN_PITCHER_IP = 20.0
+
+    # 2026-06-05 PAIR-FIRE DEDUP (correctness fix). Probable starters can change
+    # (or the ERA data updates) between a >24h-early fire and game day, flipping
+    # better_team. Without dedup the strategy fires side A on day N-2 and the
+    # opposite side B on game day — an incoherent both-sides bet on one game
+    # (observed: MINCWS 5/28, MIN-YES then CWS-YES). The scan loop's game_key
+    # dedup keeps the first side and blocks the later opposite-side fire.
+    PAIR_FIRE_DEDUP = True
+
     # Kalshi price band
     MIN_KALSHI_PRICE = 0.40
     MAX_KALSHI_PRICE = 0.75
@@ -110,19 +134,21 @@ class SportsMlbPitcherEdgeV2Strategy(SportsTraderStrategy):
                 SELECT ticker_home_yes, ticker_away_yes,
                        era_diff_pit, better_team,
                        away_era_pit, home_era_pit, away_code, home_code,
-                       away_pitcher_name, home_pitcher_name
+                       away_pitcher_name, home_pitcher_name,
+                       away_ip_total, home_ip_total
                 FROM mlb_pitcher_pointtime_observations
                 WHERE era_diff_pit IS NOT NULL
             """)
             cache_h = {}  # by home YES ticker
             cache_a = {}  # by away YES ticker
             for row in cur.fetchall():
-                th, ta, ediff, better, ae, he, ac, hc, an, hn = row
+                th, ta, ediff, better, ae, he, ac, hc, an, hn, aip, hip = row
                 info = {
                     "era_diff": ediff, "better_team": better,
                     "away_era": ae, "home_era": he,
                     "away_code": ac, "home_code": hc,
                     "away_pitcher": an, "home_pitcher": hn,
+                    "away_ip": aip, "home_ip": hip,
                 }
                 if th: cache_h[th] = info
                 if ta: cache_a[ta] = info
@@ -171,6 +197,14 @@ class SportsMlbPitcherEdgeV2Strategy(SportsTraderStrategy):
         if not (self.MIN_PITCHER_ERA <= ae <= self.MAX_PITCHER_ERA):
             return None
         if not (self.MIN_PITCHER_ERA <= he <= self.MAX_PITCHER_ERA):
+            return None
+        # Gate 2.5: both starters must have a stabilized IP sample. Excludes
+        # 1-2-start pitchers whose ERA is noise (manufactures fake gaps and
+        # drives the season-vs-PIT collector disagreement). See MIN_PITCHER_IP.
+        aip, hip = info.get("away_ip"), info.get("home_ip")
+        if aip is None or hip is None:
+            return None
+        if aip < self.MIN_PITCHER_IP or hip < self.MIN_PITCHER_IP:
             return None
         # Gate 3: only fire if OUR team is the better team (per ERA)
         if our_team != info["better_team"]:
