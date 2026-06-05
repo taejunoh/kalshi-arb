@@ -8,6 +8,13 @@ def _make_strategy(bankroll: float = 90.0) -> SportsMidshotStrategy:
     config = MagicMock()
     config.KALSHI_FEE_PER_CONTRACT = 0.07
     config.ODDS_API_KEY = ""
+    # ④ gate-fee flag (commit 37b4f4c): strategy now calls config.gate_fee_pct(price)
+    # instead of the inline min(fee, price, 1-price)/price. With REAL_FEE_GATE OFF
+    # (production/live default) it returns the byte-identical legacy value, so stub it
+    # here to keep these fire/no-fire assertions on the unchanged formula.
+    config.gate_fee_pct = lambda price: (
+        0.0 if price <= 0 or price >= 1 else min(0.07, price, 1.0 - price) / price
+    )
     order_mgr = MagicMock()
     order_mgr.bankroll = bankroll
     client = MagicMock()

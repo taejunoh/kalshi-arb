@@ -14,6 +14,12 @@ def _make(klass):
     config.KALSHI_FEE_PER_CONTRACT = 0.07
     config.ODDS_API_KEY = ""
     config.ODDS_API_REGION = "eu"
+    # ④ REAL_FEE_GATE (commit 37b4f4c): strategies now call config.gate_fee_pct(price)
+    # instead of the inline `min(fee, X, 1-X)/X`. Stub it with the legacy formula
+    # (flag OFF = byte-identical to the old inline gate; fee=0.07).
+    config.gate_fee_pct = lambda price: (
+        0.0 if (price <= 0 or price >= 1) else min(0.07, price, 1.0 - price) / price
+    )
     return klass(config, MagicMock(), MagicMock())
 
 

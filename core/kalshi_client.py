@@ -17,10 +17,22 @@ CRYPTO_SERIES_PREFIXES = {"KXBTC", "KXBTCD", "KXETH", "KXETHD", "KXSOL", "KXXRP"
 # stale window for "current positions" data.
 _PORTFOLIO_CACHE: dict[str, tuple[float, list]] = {}
 _PORTFOLIO_CACHE_TTL = 30.0
+# Per-key TTL overrides. Settlement history is append-only and consumed ONLY
+# by read-only surfaces (dashboard /api/performance + /api/settlement, plus the
+# reconcile/orphan scripts) — the trading loop never calls get_settlements().
+# Paginating the full history is ~17 Kalshi round-trips (3-8s), and the
+# dashboard's 15s perf refresh was repaying that every 30s (cold cache → 8s
+# load). A 10-min stale window is harmless for lifetime aggregates; "today"
+# attribution is sourced from the DB (settled_at), not this API.
+_PORTFOLIO_CACHE_TTL_BY_KEY: dict[str, float] = {"settlements": 600.0}
 
 
 def _portfolio_cache_now() -> float:
     return time.time()
+
+
+def _portfolio_cache_ttl(key: str) -> float:
+    return _PORTFOLIO_CACHE_TTL_BY_KEY.get(key, _PORTFOLIO_CACHE_TTL)
 
 
 def _portfolio_cache_reset() -> None:
@@ -278,11 +290,18 @@ class KalshiClient:
             logger.error(f"Failed to get positions: {e}")
             return []
 
-    def get_settlements(self, limit: int = 200) -> list[dict]:
-        """Fetch settlement history from Kalshi portfolio."""
-        cached = self._portfolio_cache_lookup("settlements")
-        if cached is not None:
-            return cached
+    def get_settlements(self, limit: int = 200, force_refresh: bool = False) -> list[dict]:
+        """Fetch settlement history from Kalshi portfolio.
+
+        force_refresh=True skips the read cache (always re-paginates) but
+        still stores the fresh result. Used by the dashboard pre-warmer to
+        refresh the long-TTL settlements cache off the user request path
+        without evicting it first — concurrent readers keep hitting the warm
+        prior value during the ~3s fetch instead of racing into a cold miss."""
+        if not force_refresh:
+            cached = self._portfolio_cache_lookup("settlements")
+            if cached is not None:
+                return cached
         all_settlements = []
         cursor = None
         try:
@@ -311,7 +330,7 @@ class KalshiClient:
         if hit is None:
             return None
         cached_at, data = hit
-        if _portfolio_cache_now() - cached_at >= _PORTFOLIO_CACHE_TTL:
+        if _portfolio_cache_now() - cached_at >= _portfolio_cache_ttl(key):
             return None
         return copy.deepcopy(data)
 

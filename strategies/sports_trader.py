@@ -1432,8 +1432,8 @@ class SportsTraderStrategy:
             adjusted_prob += line_movement * 0.5
         adjusted_prob = max(0.03, min(0.97, adjusted_prob))
 
-        yes_fee_pct = min(fee, kalshi_yes, 1 - kalshi_yes) / kalshi_yes if kalshi_yes > 0 else 0
-        no_fee_pct = min(fee, kalshi_no, 1 - kalshi_no) / kalshi_no if kalshi_no > 0 else 0
+        yes_fee_pct = self.config.gate_fee_pct(kalshi_yes) if kalshi_yes > 0 else 0
+        no_fee_pct = self.config.gate_fee_pct(kalshi_no) if kalshi_no > 0 else 0
         yes_edge = adjusted_prob - kalshi_yes * (1 + yes_fee_pct)
         no_edge = (1 - adjusted_prob) - kalshi_no * (1 + no_fee_pct)
 

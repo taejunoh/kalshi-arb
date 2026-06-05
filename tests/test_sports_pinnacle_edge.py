@@ -11,6 +11,13 @@ def _make_strategy(yes_depth: float = 100.0, no_depth: float = 100.0,
     config.KALSHI_FEE_PER_CONTRACT = 0.07
     config.ODDS_API_KEY = ""
     config.ODDS_API_REGION = "eu"
+    # ④ REAL_FEE_GATE (flag OFF / live default): gate_fee_pct returns EXACTLY the
+    # legacy inline min(fee, X, 1-X)/X the strategy used before commit 37b4f4c.
+    # Stub it on the mock so evaluate()'s fee math stays byte-identical to prod.
+    config.gate_fee_pct = lambda price: (
+        0.0 if price <= 0 or price >= 1
+        else min(0.07, price, 1.0 - price) / price
+    )
     order_mgr = MagicMock()
     order_mgr.bankroll = bankroll
     client = MagicMock()

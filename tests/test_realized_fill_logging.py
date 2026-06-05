@@ -40,6 +40,17 @@ async def test_paper_order_stores_null_realized(tmp_path):
     config.INITIAL_BANKROLL = 2000.0
     config.LIVE_STRATEGIES = set()
     config.estimate_fee = MagicMock(return_value=0.07)
+    # fee-fix (993a1a8): order_manager now calls config.real_fee (real Kalshi
+    # taker fee 0.07·p·(1-p)) instead of estimate_fee. Stub it with the legacy
+    # flag-OFF formula so balance/pricing arithmetic stays numeric.
+    config.real_fee = MagicMock(
+        side_effect=lambda count, price_cents, maker=False: min(
+            (0.0175 if maker else 0.07) * max(0.0, min(1.0, price_cents / 100.0))
+            * (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+            max(0.0, min(1.0, price_cents / 100.0)) * count,
+            (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+        )
+    )
     config.KALSHI_FEE_PER_CONTRACT = 0.07
     config.MAX_DAILY_LOSS = 200
     config.MAX_DAILY_LOSS_LIVE = 200
@@ -65,6 +76,17 @@ async def test_live_order_extracts_realized_from_kalshi_response(tmp_path):
     config.INITIAL_BANKROLL = 2000.0
     config.LIVE_STRATEGIES = set()
     config.estimate_fee = MagicMock(return_value=0.07)
+    # fee-fix (993a1a8): order_manager now calls config.real_fee (real Kalshi
+    # taker fee 0.07·p·(1-p)) instead of estimate_fee. Stub it with the legacy
+    # flag-OFF formula so balance/pricing arithmetic stays numeric.
+    config.real_fee = MagicMock(
+        side_effect=lambda count, price_cents, maker=False: min(
+            (0.0175 if maker else 0.07) * max(0.0, min(1.0, price_cents / 100.0))
+            * (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+            max(0.0, min(1.0, price_cents / 100.0)) * count,
+            (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+        )
+    )
     config.KALSHI_FEE_PER_CONTRACT = 0.07
     config.MAX_DAILY_LOSS = 200
     config.MAX_DAILY_LOSS_LIVE = 200
@@ -100,6 +122,17 @@ async def test_live_order_fallback_when_fill_fields_missing(tmp_path):
     config.INITIAL_BANKROLL = 2000.0
     config.LIVE_STRATEGIES = set()
     config.estimate_fee = MagicMock(return_value=0.07)
+    # fee-fix (993a1a8): order_manager now calls config.real_fee (real Kalshi
+    # taker fee 0.07·p·(1-p)) instead of estimate_fee. Stub it with the legacy
+    # flag-OFF formula so balance/pricing arithmetic stays numeric.
+    config.real_fee = MagicMock(
+        side_effect=lambda count, price_cents, maker=False: min(
+            (0.0175 if maker else 0.07) * max(0.0, min(1.0, price_cents / 100.0))
+            * (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+            max(0.0, min(1.0, price_cents / 100.0)) * count,
+            (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+        )
+    )
     config.KALSHI_FEE_PER_CONTRACT = 0.07
     config.MAX_DAILY_LOSS = 200
     config.MAX_DAILY_LOSS_LIVE = 200
@@ -132,6 +165,17 @@ async def test_ttl_limit_prices_aggressive_on_yes_side(tmp_path):
     config.INITIAL_BANKROLL = 2000.0
     config.LIVE_STRATEGIES = set()
     config.estimate_fee = MagicMock(return_value=0.07)
+    # fee-fix (993a1a8): order_manager now calls config.real_fee (real Kalshi
+    # taker fee 0.07·p·(1-p)) instead of estimate_fee. Stub it with the legacy
+    # flag-OFF formula so balance/pricing arithmetic stays numeric.
+    config.real_fee = MagicMock(
+        side_effect=lambda count, price_cents, maker=False: min(
+            (0.0175 if maker else 0.07) * max(0.0, min(1.0, price_cents / 100.0))
+            * (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+            max(0.0, min(1.0, price_cents / 100.0)) * count,
+            (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+        )
+    )
     config.KALSHI_FEE_PER_CONTRACT = 0.07
     config.MAX_DAILY_LOSS = 200
     config.MAX_DAILY_LOSS_LIVE = 200
@@ -165,6 +209,17 @@ async def test_ttl_limit_prices_aggressive_on_no_side(tmp_path):
     config.INITIAL_BANKROLL = 2000.0
     config.LIVE_STRATEGIES = set()
     config.estimate_fee = MagicMock(return_value=0.07)
+    # fee-fix (993a1a8): order_manager now calls config.real_fee (real Kalshi
+    # taker fee 0.07·p·(1-p)) instead of estimate_fee. Stub it with the legacy
+    # flag-OFF formula so balance/pricing arithmetic stays numeric.
+    config.real_fee = MagicMock(
+        side_effect=lambda count, price_cents, maker=False: min(
+            (0.0175 if maker else 0.07) * max(0.0, min(1.0, price_cents / 100.0))
+            * (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+            max(0.0, min(1.0, price_cents / 100.0)) * count,
+            (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+        )
+    )
     config.KALSHI_FEE_PER_CONTRACT = 0.07
     config.MAX_DAILY_LOSS = 200
     config.MAX_DAILY_LOSS_LIVE = 200
@@ -197,6 +252,17 @@ async def test_ttl_limit_uses_per_strategy_aggression_override(tmp_path):
     config.INITIAL_BANKROLL = 2000.0
     config.LIVE_STRATEGIES = set()
     config.estimate_fee = MagicMock(return_value=0.07)
+    # fee-fix (993a1a8): order_manager now calls config.real_fee (real Kalshi
+    # taker fee 0.07·p·(1-p)) instead of estimate_fee. Stub it with the legacy
+    # flag-OFF formula so balance/pricing arithmetic stays numeric.
+    config.real_fee = MagicMock(
+        side_effect=lambda count, price_cents, maker=False: min(
+            (0.0175 if maker else 0.07) * max(0.0, min(1.0, price_cents / 100.0))
+            * (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+            max(0.0, min(1.0, price_cents / 100.0)) * count,
+            (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+        )
+    )
     config.KALSHI_FEE_PER_CONTRACT = 0.07
     config.MAX_DAILY_LOSS = 200
     config.MAX_DAILY_LOSS_LIVE = 200
@@ -230,6 +296,17 @@ async def test_ttl_limit_default_aggression_for_non_overridden_strategy(tmp_path
     config.INITIAL_BANKROLL = 2000.0
     config.LIVE_STRATEGIES = set()
     config.estimate_fee = MagicMock(return_value=0.07)
+    # fee-fix (993a1a8): order_manager now calls config.real_fee (real Kalshi
+    # taker fee 0.07·p·(1-p)) instead of estimate_fee. Stub it with the legacy
+    # flag-OFF formula so balance/pricing arithmetic stays numeric.
+    config.real_fee = MagicMock(
+        side_effect=lambda count, price_cents, maker=False: min(
+            (0.0175 if maker else 0.07) * max(0.0, min(1.0, price_cents / 100.0))
+            * (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+            max(0.0, min(1.0, price_cents / 100.0)) * count,
+            (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+        )
+    )
     config.KALSHI_FEE_PER_CONTRACT = 0.07
     config.MAX_DAILY_LOSS = 200
     config.MAX_DAILY_LOSS_LIVE = 200
