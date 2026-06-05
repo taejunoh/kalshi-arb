@@ -33,4 +33,4 @@ class SportsLongshotV35Strategy(SportsLongshotV34Strategy):
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 4→8 on 2026-04-25. Live sample still small (n=4); modest
         # raise for faster data accrual on the (NBA, pre) us cell.
-        return min(8.0, self._order_manager.bankroll * 0.02)
+        return min(8.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)

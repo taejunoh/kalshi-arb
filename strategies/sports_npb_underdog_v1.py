@@ -116,4 +116,4 @@ class SportsNpbUnderdogV1Strategy(SportsUnderdogV31Strategy):
         n_games=15 is below promotion gate. Hold at 8 until paper n>=15
         confirms. Scale to 12 at promotion alongside live ramp.
         """
-        return min(8.0, self._order_manager.bankroll * 0.02)
+        return min(8.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)

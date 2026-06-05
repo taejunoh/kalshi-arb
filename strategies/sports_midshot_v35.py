@@ -35,4 +35,4 @@ class SportsMidshotV35Strategy(SportsMidshotV34Strategy):
 
     def _get_trade_size(self, signal: dict) -> float:
         # Raised 4→8 on 2026-04-25. Live n=6 with +48% ROI; modest raise.
-        return min(8.0, self._order_manager.bankroll * 0.02)
+        return min(8.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)

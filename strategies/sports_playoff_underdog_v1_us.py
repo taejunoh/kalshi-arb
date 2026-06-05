@@ -63,4 +63,4 @@ class SportsPlayoffUnderdogV1USStrategy(SportsUnderdogV31Strategy):
         # halved size lets the strategy participate at reduced risk. Restore
         # on 2026-06-04 if W21-W22 ROI > +30%. See
         # [[sports_cohort_block_2026-05-21]].
-        return min(8.0, self._order_manager.bankroll * 0.02)
+        return min(8.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)

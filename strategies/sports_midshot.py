@@ -66,7 +66,7 @@ class SportsMidshotStrategy(SportsTraderStrategy):
     def _get_trade_size(self, signal: dict) -> float:
         """Small fixed size for portfolio approach — same as longshot.
         Raised 3→4 on 2026-04-20 post dead-zone rollout."""
-        return min(4.0, self._order_manager.bankroll * 0.02)
+        return min(4.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def _get_limit_price(self, signal: dict, fair_prob: float) -> float:
         """Buy at ask price (aggressive fill)."""

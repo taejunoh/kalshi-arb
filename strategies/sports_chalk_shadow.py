@@ -86,7 +86,7 @@ class SportsChalkShadowStrategy(SportsTraderStrategy):
 
     def _get_trade_size(self, signal: dict) -> float:
         """Same base sizing as v31/v34/v4_edge: $4 or 2% of bankroll."""
-        return min(4.0, self._order_manager.bankroll * 0.02)
+        return min(4.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def _get_limit_price(self, signal: dict, fair_prob: float) -> float:
         return signal["price"]

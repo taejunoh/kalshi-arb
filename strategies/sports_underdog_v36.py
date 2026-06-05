@@ -66,7 +66,7 @@ class SportsUnderdogV36Strategy(SportsUnderdogV31Strategy):
         # 2026-05-13: launched at 8, bumped to 12 same-day per user direction.
         # WNBA depth p50 $567 supports 12 USDC peak stake at 0.55 = $6.60
         # → 86× cushion at tier4 depth.
-        return min(12.0, self._order_manager.bankroll * 0.02)
+        return min(12.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float,
                  fair_prob: float, ticker: str = "", **kwargs) -> Optional[dict]:

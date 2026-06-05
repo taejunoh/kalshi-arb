@@ -98,7 +98,7 @@ class SportsSoccerDrawV1Strategy(SportsSoccerUnderdogV1Strategy):
         # same session, pre-first-fire) after MLS re-add: weighted ROI dropped
         # from EPL+LAL-only ~+60% to combined ~+32%, so smaller size matches
         # the thinner per-trade edge. Scale up if n=25 sustains ROI >= +20%.
-        return min(8.0, self._order_manager.bankroll * 0.02)
+        return min(8.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,

@@ -88,7 +88,7 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
         # consistent — alpha is mature and the prior 1.25x bump didn't
         # destabilize anything. Modest extra bump to harvest the larger
         # capital base before bankroll constrains us further.
-        return min(30.0, self._order_manager.bankroll * 0.02)
+        return min(30.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     # 2026-05-13 (WNBA expansion): unblock WNBA, add pair-fire dedup
     OBSERVATION_ONLY_SPORTS = (
