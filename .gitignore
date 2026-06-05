@@ -24,3 +24,6 @@ scripts/research/shutdown_fade_data/candles_*.json
 
 # Local deploy staging directory (EC2-side rsync target)
 _deploy_staging/
+
+# Runtime artifact — weekly slip calibration regenerates this; not source.
+data/slip_calibration.json

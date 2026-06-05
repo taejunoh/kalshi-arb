@@ -46,6 +46,7 @@ async def test_record_entry_clv_calls_db_with_trade_id():
         pinnacle_age_s=120,
         kalshi_yes_bid=None, kalshi_yes_ask=0.45,
         kalshi_yes_depth=12.0, kalshi_no_depth=34.0,
+        is_yes_home=None,  # current signature: _record_entry_clv passes is_yes_home through (defaults None)
     )
 
 
@@ -66,6 +67,7 @@ async def test_record_entry_clv_allows_null_pinnacle():
         pinnacle_age_s=120,
         kalshi_yes_bid=None, kalshi_yes_ask=0.45,
         kalshi_yes_depth=5.0, kalshi_no_depth=5.0,
+        is_yes_home=None,  # current signature: _record_entry_clv passes is_yes_home through (defaults None)
     )
 
 
@@ -87,6 +89,7 @@ async def test_record_entry_clv_uses_get_top_of_book_when_available():
         pinnacle_age_s=120,
         kalshi_yes_bid=0.44, kalshi_yes_ask=0.46,
         kalshi_yes_depth=0.0, kalshi_no_depth=100.0,
+        is_yes_home=None,  # current signature: _record_entry_clv passes is_yes_home through (defaults None)
     )
 
 

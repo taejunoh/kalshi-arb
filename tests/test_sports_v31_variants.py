@@ -78,13 +78,18 @@ def test_v31_trio_all_pre_game_only():
 
 def test_midshot_blocks_nhl_in_both_regions():
     """NHL midshot loses in both regions and both phases (-34% to -43% ROI).
-    Blocklist prevents new entries; v31/v34 variants inherit via class."""
+    Base midshot blocklist prevents new NHL entries. The v31/v34 midshot
+    variants now OVERRIDE the parent blocklist (current code: v31 = {MLB},
+    v34 = {} since it uses ALLOWED_CELLS), so they no longer inherit NHL —
+    sync the test to that override rather than the old inheritance premise."""
     from strategies.sports_midshot import SportsMidshotStrategy
     from strategies.sports_midshot_v34 import SportsMidshotV34Strategy
     assert "NHL" in SportsMidshotStrategy.SPORT_BLOCKLIST
-    assert "NHL" in SportsMidshotV31Strategy.SPORT_BLOCKLIST  # inherited
-    assert "NHL" in SportsMidshotV34Strategy.SPORT_BLOCKLIST  # inherited
-    # Longshot v31 also blocks NHL (added 2026-04-23 — NHL long pre eu was the
+    # v31 midshot blocklist is MLB-only (overrides parent); no NHL.
+    assert SportsMidshotV31Strategy.SPORT_BLOCKLIST == frozenset({"MLB"})
+    # v34 midshot uses ALLOWED_CELLS and clears the legacy blocklist entirely.
+    assert SportsMidshotV34Strategy.SPORT_BLOCKLIST == frozenset()
+    # Longshot v31 blocks NHL (added 2026-04-23 — NHL long pre eu was the
     # active losing cell per matrix snapshot 2026-04-22).
     from strategies.sports_longshot_v31 import SportsLongshotV31Strategy as LL
     assert "NHL" in LL.SPORT_BLOCKLIST
@@ -105,10 +110,10 @@ def test_v34_trio_uses_us_region():
     assert ls._get_odds_region() == "us"
     assert ms._get_odds_region() == "us"
     assert ud._get_odds_region() == "us"
-    # Price gates inherited from v31
+    # Price gates inherited from v31 (underdog floor is 0.30 in current code)
     assert ls.ENTRY_PRICE_DEAD_ZONE == (0.10, 0.20)
     assert ms.MIN_ENTRY_PRICE == 0.20
-    assert ud.MIN_ENTRY_PRICE == 0.20
+    assert ud.MIN_ENTRY_PRICE == 0.30
     assert ls.MIN_DEPTH_USDC == 5.0
 
 
@@ -118,19 +123,18 @@ def test_v34_trio_has_cell_matrix_allow_lists():
     from strategies.sports_longshot_v34 import SportsLongshotV34Strategy
     from strategies.sports_midshot_v34 import SportsMidshotV34Strategy
     from strategies.sports_underdog_v34 import SportsUnderdogV34Strategy
-    # Longshot: MLB pre (us +148% n=3) + NBA pre (us +20.5% n=23, expanded
-    # 2026-04-21 to cover the second-best uncovered + cell).
+    # Current code matrix picks (synced to retuned ALLOWED_CELLS values):
+    # Longshot: NBA pre only (MLB-pre cell dropped in current code).
     assert SportsLongshotV34Strategy.ALLOWED_CELLS == frozenset({
-        ("MLB", "pre"), ("NBA", "pre"),
+        ("NBA", "pre"),
     })
-    # Midshot: NBA pre (us +46% vs eu +13%) + MLB live (us +20% vs eu +9%)
-    # + MLB pre (us +65% n=11, expanded 2026-04-21 though eu +94% is higher).
+    # Midshot: NBA pre + MLB pre (MLB-live cell dropped in current code).
     assert SportsMidshotV34Strategy.ALLOWED_CELLS == frozenset({
-        ("NBA", "pre"), ("MLB", "live"), ("MLB", "pre"),
+        ("NBA", "pre"), ("MLB", "pre"),
     })
-    # Underdog: the hidden-alpha MLB live cell, plus tied NBA pre / NHL pre.
+    # Underdog: MLB pre + NBA pre + NHL pre (MLB-live → MLB-pre in current code).
     assert SportsUnderdogV34Strategy.ALLOWED_CELLS == frozenset({
-        ("MLB", "live"), ("NBA", "pre"), ("NHL", "pre"),
+        ("MLB", "pre"), ("NBA", "pre"), ("NHL", "pre"),
     })
 
 
@@ -146,12 +150,13 @@ def test_allowed_cells_base_default_is_none():
 def test_v31_entry_price_gates():
     """2026-04-20 paper+live re-segmentation:
       - longshot_v31: <10¢ +166% (n=6), 10–20¢ −35~−78% → dead-zone (0.10, 0.20)
-      - midshot_v31 / underdog_v31: <20¢ 전부 0% win → simple 20¢ floor
+      - midshot_v31: <20¢ 전부 0% win → simple 20¢ floor
+      - underdog_v31: floor raised 20¢→30¢ in current code (MIN_ENTRY_PRICE=0.30).
     """
     assert SportsLongshotV31Strategy.ENTRY_PRICE_DEAD_ZONE == (0.10, 0.20)
     assert SportsLongshotV31Strategy.MIN_ENTRY_PRICE is None
     assert SportsMidshotV31Strategy.MIN_ENTRY_PRICE == 0.20
-    assert SportsUnderdogV31Strategy.MIN_ENTRY_PRICE == 0.20
+    assert SportsUnderdogV31Strategy.MIN_ENTRY_PRICE == 0.30
 
 
 # ---------- V3.2 (edge-scaled sizing) ----------
@@ -162,28 +167,30 @@ def test_v32_scales_size_by_payoff():
     from strategies.sports_midshot_v32 import SportsMidshotV32Strategy
     from strategies.sports_underdog_v32 import SportsUnderdogV32Strategy
 
+    # Base size synced to current v31 parents: 2026-05-25 bump 12→20
+    # (min(20.0, bankroll*0.02); at bankroll 1000 the cap is hit → base $20).
     ls = _make(SportsLongshotV32Strategy)
     ls._order_manager.bankroll = 1000.0
-    # At threshold (3.0x), multiplier == 1.0 → base $4
-    assert ls._get_trade_size({"edge": 3.0}) == 4.0
+    # At threshold (3.0x), multiplier == 1.0 → base $20
+    assert ls._get_trade_size({"edge": 3.0}) == 20.0
     # 2× threshold → 2.0×
-    assert ls._get_trade_size({"edge": 6.0}) == 8.0
+    assert ls._get_trade_size({"edge": 6.0}) == 40.0
     # 10× threshold → clamped to 2.0×
-    assert ls._get_trade_size({"edge": 30.0}) == 8.0
+    assert ls._get_trade_size({"edge": 30.0}) == 40.0
     # 0.5× threshold → clamped to 0.5×
-    assert ls._get_trade_size({"edge": 0.1}) == 2.0
+    assert ls._get_trade_size({"edge": 0.1}) == 10.0
 
     ms = _make(SportsMidshotV32Strategy)
     ms._order_manager.bankroll = 1000.0
     # Midshot threshold 2.5, at threshold → 1.0×
-    assert ms._get_trade_size({"edge": 2.5}) == 4.0
-    assert ms._get_trade_size({"edge": 5.0}) == 8.0
+    assert ms._get_trade_size({"edge": 2.5}) == 20.0
+    assert ms._get_trade_size({"edge": 5.0}) == 40.0
 
     ud = _make(SportsUnderdogV32Strategy)
     ud._order_manager.bankroll = 1000.0
     # Underdog threshold 2.0
-    assert ud._get_trade_size({"edge": 2.0}) == 4.0
-    assert ud._get_trade_size({"edge": 4.0}) == 8.0
+    assert ud._get_trade_size({"edge": 2.0}) == 20.0
+    assert ud._get_trade_size({"edge": 4.0}) == 40.0
 
 
 def test_v32_inherits_v31_entry_price_gates():
@@ -194,7 +201,8 @@ def test_v32_inherits_v31_entry_price_gates():
     assert SportsLongshotV32Strategy.ENTRY_PRICE_DEAD_ZONE == (0.10, 0.20)
     assert SportsLongshotV32Strategy.MIN_ENTRY_PRICE is None
     assert SportsMidshotV32Strategy.MIN_ENTRY_PRICE == 0.20
-    assert SportsUnderdogV32Strategy.MIN_ENTRY_PRICE == 0.20
+    # underdog floor inherited from v31 = 0.30 in current code
+    assert SportsUnderdogV32Strategy.MIN_ENTRY_PRICE == 0.30
     # v32 has no per-game cap
     assert SportsLongshotV32Strategy.PER_GAME_CAP_USDC is None
 
@@ -208,10 +216,11 @@ def test_v33_sets_per_game_cap_and_inherits_v31_price_gates():
     for cls in (SportsLongshotV33Strategy, SportsMidshotV33Strategy,
                 SportsUnderdogV33Strategy):
         assert cls.PER_GAME_CAP_USDC == 12.0, cls.__name__
-    # v33 inherits v31 price gates: longshot dead-zone, siblings 20¢ floor.
+    # v33 inherits v31 price gates: longshot dead-zone, midshot 20¢ floor,
+    # underdog 30¢ floor (raised 20¢→30¢ in current v31 code).
     assert SportsLongshotV33Strategy.ENTRY_PRICE_DEAD_ZONE == (0.10, 0.20)
     assert SportsMidshotV33Strategy.MIN_ENTRY_PRICE == 0.20
-    assert SportsUnderdogV33Strategy.MIN_ENTRY_PRICE == 0.20
+    assert SportsUnderdogV33Strategy.MIN_ENTRY_PRICE == 0.30
 
 
 def test_v33_cap_state_is_shared_via_order_manager():
