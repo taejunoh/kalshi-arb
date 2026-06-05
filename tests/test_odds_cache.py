@@ -3,14 +3,27 @@ import pytest
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import strategies.sports_trader as _st
 from strategies.sports_trader import SportsTraderStrategy, _odds_cache_reset
 
 
 @pytest.fixture(autouse=True)
 def clear_cache():
-    _odds_cache_reset()
+    # Reset ALL module-level Odds-API state between tests so intra-file
+    # ordering doesn't pollute. Besides the (region, sport) TTL cache, the
+    # production code now keeps a lazily-built SHARED httpx client and a
+    # fetch semaphore as module globals (2026-05-19 refactor). Without
+    # resetting _ODDS_HTTP_CLIENT, the first test's patched FakeClient
+    # instance leaks into later tests (they reuse the stale client and their
+    # own FakeClient.get — and thus count["n"] — is never invoked).
+    def _reset():
+        _odds_cache_reset()
+        _st._ODDS_HTTP_CLIENT = None
+        _st._ODDS_FETCH_SEM = None
+        _st._ODDS_429_COOLDOWN_UNTIL = 0.0
+    _reset()
     yield
-    _odds_cache_reset()
+    _reset()
 
 
 def _make(region="eu"):

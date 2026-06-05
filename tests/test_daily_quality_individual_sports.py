@@ -36,14 +36,19 @@ def db_with_atp_rows(tmp_path):
             kalshi_volume_24h REAL, kalshi_open_interest REAL
         )"""
     )
-    # 2 ATP rows in last hour
+    # 2 ATP rows in last hour.
+    # Production stores `timestamp` as datetime.now(...).isoformat() (ISO-T format)
+    # and _per_sport_stats filters with strftime('%Y-%m-%dT%H:%M:%S', ...) (T-separated).
+    # The fixture must use the same ISO-T format — a space-separated datetime('now',...)
+    # string-compares as < the T-separated boundary (space 0x20 < 'T' 0x54) and is
+    # silently filtered out. See feedback_sqlite_timestamp_t_space_compare.
     conn.execute(
         """INSERT INTO odds_observations (timestamp, sport, series, kalshi_ticker,
                     is_yes_home, is_yes_draw, n_books_eu, has_pinnacle,
                     kalshi_open_interest, kalshi_volume_24h)
-           VALUES (datetime('now', '-30 minutes'), 'ATP', 'KXATPMATCH',
+           VALUES (strftime('%Y-%m-%dT%H:%M:%S', 'now', '-30 minutes'), 'ATP', 'KXATPMATCH',
                    'KXATPMATCH-26MAY12ALCSIN-ALC', 1, 0, 12, 1, 5000, 200),
-                  (datetime('now', '-30 minutes'), 'ATP', 'KXATPMATCH',
+                  (strftime('%Y-%m-%dT%H:%M:%S', 'now', '-30 minutes'), 'ATP', 'KXATPMATCH',
                    'KXATPMATCH-26MAY12ALCSIN-SIN', 0, 0, 12, 1, 5000, 200)"""
     )
     conn.commit()
