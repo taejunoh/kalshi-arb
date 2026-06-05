@@ -122,7 +122,7 @@ class SportsSoccerWeekendV1Strategy(SportsUnderdogV31Strategy):
         if 0.25 <= kalshi_yes <= 0.30 and fair_prob is not None:
             gap_pp = abs((kalshi_yes - fair_prob) * 100.0)
             if gap_pp < self.PATTERN_A_GAP_MAX_PP:
-                fee_pct = self.config.gate_fee_pct(kalshi_yes)
+                fee_pct = self._gate_fee_pct(kalshi_yes)
                 cost = kalshi_yes * (1 + fee_pct)
                 payoff = 1.0 / cost
                 if payoff >= 2.5:
@@ -141,7 +141,7 @@ class SportsSoccerWeekendV1Strategy(SportsUnderdogV31Strategy):
             implied_yes_from_no = 1.0 - kalshi_no
             gap_pp = abs((implied_yes_from_no - fair_prob) * 100.0)
             if gap_pp < self.PATTERN_B_GAP_MAX_PP:
-                fee_pct = self.config.gate_fee_pct(kalshi_no)
+                fee_pct = self._gate_fee_pct(kalshi_no)
                 cost = kalshi_no * (1 + fee_pct)
                 payoff = 1.0 / cost
                 candidates.append({
