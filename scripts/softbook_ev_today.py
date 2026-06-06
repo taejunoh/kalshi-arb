@@ -94,6 +94,17 @@ def main():
                         stake = min(bankroll * 0.02, bankroll * kelly * 0.25)
                         bets.append((ev, sport, team, label, so[team], fair[team], max(2.0, stake)))
     bets.sort(reverse=True)
+    # DEDUPE: same game/team across books = the SAME bet. Keep only the best-odds
+    # book per (sport, team) so you bet each game ONCE at the best line.
+    seen = set()
+    deduped = []
+    for b in bets:               # already sorted by EV desc -> first seen = best
+        keyteam = (b[1], b[2])   # (sport, team)
+        if keyteam in seen:
+            continue
+        seen.add(keyteam)
+        deduped.append(b)
+    bets = deduped
     want_tg = "--telegram" in sys.argv
     if not bets:
         print("No +EV bets in the 1-8% band right now. Re-run later (lines move).")
