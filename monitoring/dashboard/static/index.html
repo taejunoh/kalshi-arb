@@ -536,9 +536,45 @@
       display: none;
     }
     /* Schedule mode hides ALL live/paper stats from header */
-    body[data-view-mode="schedule"] .status-items .stat {
+    body[data-view-mode="schedule"] .status-items .stat,
+    body[data-view-mode="ev"] .status-items .stat {
       display: none;
     }
+
+    /* ── +EV bets cards ── */
+    .ev-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+    }
+    .ev-card {
+      background: var(--card, #16181d);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-left: 3px solid #4ade80;
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .ev-card-top {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    }
+    .ev-team { font-weight: 600; font-size: 14px; color: var(--text, #e7e7ea); }
+    .ev-badge {
+      font-family: ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 700;
+      color: #4ade80; background: rgba(74,222,128,0.12);
+      padding: 2px 8px; border-radius: 6px; white-space: nowrap;
+    }
+    .ev-sub { font-size: 10.5px; color: var(--text-dim, #8a8a93); margin: 3px 0 9px; }
+    .ev-books { display: flex; flex-direction: column; gap: 5px; }
+    .ev-book-row {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 12px; padding: 4px 8px; border-radius: 6px;
+      background: rgba(255,255,255,0.03);
+    }
+    .ev-book-row.best { background: rgba(74,222,128,0.10); }
+    .ev-book-name { color: var(--text, #e7e7ea); font-weight: 500; }
+    .ev-book-odds { font-family: ui-monospace, Menlo, monospace; color: var(--text-dim, #aaa); }
+    .ev-book-ev { font-family: ui-monospace, Menlo, monospace; color: #4ade80; font-weight: 600; }
+    .ev-empty { color: var(--text-dim, #8a8a93); font-size: 13px; padding: 24px 4px; }
 
     /* ── Health dot indicators ── */
     .health-dot {
@@ -880,6 +916,7 @@
       <button type="button" data-view="live">Live</button>
       <button type="button" data-view="paper">Paper</button>
       <button type="button" data-view="schedule">Schedule</button>
+      <button type="button" data-view="ev">+EV</button>
     </div>
     <span id="refresh-indicator" class="refresh-indicator" title="Auto-refresh status">auto —</span>
     <div class="status-items">
@@ -1041,6 +1078,21 @@
           <div id="schedule-other-list"></div>
         </div>
       </div>
+    </section>
+
+    <!-- ── Sportsbook +EV bets (bet the soft book, NOT Kalshi) ── -->
+    <section id="ev-section" style="display:none;">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:6px;flex-wrap:wrap;">
+        <div class="section-title" style="margin-bottom:0">+EV bets — soft book vs sharp line</div>
+        <span style="color:var(--text-dim);font-size:11px;" id="ev-meta">—</span>
+      </div>
+      <div style="color:var(--text-dim);font-size:11.5px;margin-bottom:12px;line-height:1.5;">
+        Place each at the named <b>sportsbook</b> (FanDuel/DraftKings/BetMGM/BetRivers/Caesars/Fanatics) —
+        <b>not Kalshi</b>. Each card = <b>ONE</b> bet (best book first; pick whichever is still up).
+        Different games = bet all you want. +EV vs the sharp Pinnacle line — long-run edge, bet small.
+        <span id="ev-pending" style="color:var(--text-dim);"></span>
+      </div>
+      <div id="ev-list" class="ev-grid"></div>
     </section>
 
     <!-- ── Regime / scanner state ── -->
@@ -2392,8 +2444,10 @@ function applyViewMode(mode) {
   });
 
   const isSchedule = (mode === 'schedule');
-  const showLive  = !isSchedule && (mode === 'all' || mode === 'live');
-  const showPaper = !isSchedule && (mode === 'all' || mode === 'paper');
+  const isEv = (mode === 'ev');
+  const isSpecial = isSchedule || isEv;   // full-page views with their own section
+  const showLive  = !isSpecial && (mode === 'all' || mode === 'live');
+  const showPaper = !isSpecial && (mode === 'all' || mode === 'paper');
 
   // Section visibility — settlement history & live positions are Kalshi-only.
   document.getElementById('perf-live-section').style.display     = showLive  ? '' : 'none';
@@ -2403,20 +2457,23 @@ function applyViewMode(mode) {
   document.getElementById('settlement-history-section').style.display = showLive ? '' : 'none';
   document.getElementById('positions-section').style.display     = showLive  ? '' : 'none';
 
-  // Schedule mode hides everything else; show the schedule section.
+  // Schedule / +EV modes hide everything else; show only their own section.
   document.getElementById('schedule-section').style.display = isSchedule ? '' : 'none';
+  const evSection = document.getElementById('ev-section');
+  if (evSection) evSection.style.display = isEv ? '' : 'none';
   const snapshotSection = document.getElementById('snapshot-section');
-  if (snapshotSection) snapshotSection.style.display = isSchedule ? 'none' : '';
+  if (snapshotSection) snapshotSection.style.display = isSpecial ? 'none' : '';
   const regimeSection = document.getElementById('regime-section');
-  if (regimeSection) regimeSection.style.display = isSchedule ? 'none' : '';
-  // Hide other large sections in schedule mode (defensive — most are toggled above).
+  if (regimeSection) regimeSection.style.display = isSpecial ? 'none' : '';
+  // Hide other large sections in schedule/+EV mode (defensive — most are toggled above).
   ['trades-section', 'orders-section', 'observer-signals-section', 'crypto-observer-section',
    'strategy-monitor-section', 'gates-section', 'equity-section',
    'pm-gap-section', 'strategy-gates-section', 'clv-trend-section'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.style.display = isSchedule ? 'none' : '';
+    if (el) el.style.display = isSpecial ? 'none' : '';
   });
 
+  if (isEv) { renderEvBets(); return; }
   if (isSchedule) {
     renderSchedule();
     return;
@@ -2603,6 +2660,48 @@ async function renderSnapshot() {
 // ─────────────────────────────────────────────
 //  Schedule view rendering
 // ─────────────────────────────────────────────
+//  +EV bets — soft book vs sharp line (bet the sportsbook, not Kalshi)
+// ─────────────────────────────────────────────
+async function renderEvBets() {
+  const list = document.getElementById('ev-list');
+  const meta = document.getElementById('ev-meta');
+  try {
+    const r = await fetch('/api/ev-bets');
+    const d = await r.json();
+    const bets = d.bets || [];
+    const gen = d.generated_at ? new Date(d.generated_at) : null;
+    meta.textContent = bets.length + ' bet' + (bets.length === 1 ? '' : 's') +
+      (gen ? ' · updated ' + gen.toLocaleTimeString() : '');
+    if (!bets.length) {
+      list.innerHTML = '<div class="ev-empty">No +EV bets in the 1–8% band right now (lines move). ' +
+        'Refreshes every ~20 min — more appear during US game hours.</div>';
+      return;
+    }
+    list.innerHTML = bets.map(b => {
+      const start = b.commence_time ? new Date(b.commence_time) : null;
+      const when = start ? start.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
+      const books = (b.books || []).map((bk, i) => `
+        <div class="ev-book-row ${i === 0 ? 'best' : ''}">
+          <span class="ev-book-name">${bk.book}${i === 0 ? ' ★' : ''}</span>
+          <span><span class="ev-book-odds">${Number(bk.odds).toFixed(2)}</span>
+            &nbsp; <span class="ev-book-ev">${bk.ev * 100 >= 0 ? '+' : ''}${(bk.ev * 100).toFixed(1)}%</span></span>
+        </div>`).join('');
+      return `
+        <div class="ev-card">
+          <div class="ev-card-top">
+            <span class="ev-team">${b.team}</span>
+            <span class="ev-badge">$${Number(b.stake).toFixed(0)}</span>
+          </div>
+          <div class="ev-sub">${b.sport} · fair ${(b.fair_prob * 100).toFixed(0)}%${when ? ' · ' + when : ''} · bet ONE book</div>
+          <div class="ev-books">${books}</div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div class="ev-empty">Failed to load +EV bets.</div>';
+  }
+}
+
+// ─────────────────────────────────────────────
 async function renderSchedule() {
   const sportsList = document.getElementById('schedule-sports-list');
   const cryptoList = document.getElementById('schedule-crypto-list');
@@ -2780,6 +2879,7 @@ async function slowRefresh() {
   await Promise.allSettled([
     renderPmGap(),      // 10 Kalshi /markets calls per fire
     renderClvTrend(),   // DB-heavy CLV join
+    (viewMode === 'ev') ? renderEvBets() : Promise.resolve(),  // keep +EV tab fresh
   ]);
   markRefresh('slow');
 }

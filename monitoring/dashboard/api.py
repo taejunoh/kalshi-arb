@@ -2169,6 +2169,21 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "by_category": by_category,
         }
 
+    @app.get("/api/ev-bets")
+    async def get_ev_bets():
+        """Soft-book +EV betting opportunities vs the sharp Pinnacle line.
+        Written by scripts/softbook_ev_today.py --json on a frequent timer.
+        These are bets to place at the named sportsbook (FanDuel/DK/etc.),
+        NOT on Kalshi. Each row is ONE bet (books listed best-first)."""
+        import json
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        p = os.path.join(repo_root, "data", "ev_bets_latest.json")
+        try:
+            with open(p) as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            return {"generated_at": None, "bets": [], "error": str(e)}
+
     # Serve static frontend files if they exist
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     if os.path.isdir(static_dir):
