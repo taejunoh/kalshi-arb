@@ -32,6 +32,25 @@ def get(sport, key):
         f"?apiKey={key}&regions=us,eu&markets=h2h&oddsFormat=decimal", timeout=25).read())
 
 
+def send_telegram(text):
+    """Push the bet list to the user's phone (uses the bot's existing creds)."""
+    import urllib.parse
+    tok = cho = None
+    try:
+        for line in open(os.getenv("ENV_PATH", "/home/ubuntu/kalshi-arb/.env")):
+            if line.startswith("TELEGRAM_BOT_TOKEN="): tok = line.split("=", 1)[1].strip().strip('"')
+            if line.startswith("TELEGRAM_CHAT_ID="): cho = line.split("=", 1)[1].strip().strip('"')
+    except Exception:
+        return
+    if not (tok and cho):
+        return
+    try:
+        data = urllib.parse.urlencode({"chat_id": cho, "text": text}).encode()
+        urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/sendMessage", data=data, timeout=10).read()
+    except Exception:
+        pass
+
+
 def main():
     bankroll = float(sys.argv[1]) if len(sys.argv) > 1 else 240.0
     key = _key()
@@ -74,15 +93,24 @@ def main():
                         stake = min(bankroll * 0.02, bankroll * kelly * 0.25)
                         bets.append((ev, sport, team, label, so[team], fair[team], max(2.0, stake)))
     bets.sort(reverse=True)
+    want_tg = "--telegram" in sys.argv
     if not bets:
         print("No +EV bets in the 1-8% band right now. Re-run later (lines move).")
         return
-    print(f"\n=== ACTIONABLE +EV BETS (bankroll ${bankroll:.0f}, sharp ref = Pinnacle no-vig) ===")
+    header = f"=== +EV BETS (bankroll ${bankroll:.0f}, ref=Pinnacle no-vig) ==="
+    print("\n" + header)
     print(f"{'EV':>5} | {'BET ON (book)':<12} | {'TEAM':<22} | {'odds':>5} | {'fair%':>5} | stake")
+    lines = []
     for ev, sport, team, book, odds, fair, stake in bets:
-        print(f"{ev*100:+4.1f}% | {book:<12} | {team[:22]:<22} | {odds:>5.2f} | {fair*100:4.0f}% | ${stake:.0f}")
-    print(f"\n{len(bets)} bets. Place each at the named book. These are +EV (better than the sharp line);")
+        row = f"{ev*100:+4.1f}% | {book:<12} | {team[:22]:<22} | {odds:>5.2f} | {fair*100:4.0f}% | ${stake:.0f}"
+        print(row)
+        lines.append(f"{ev*100:+.1f}% {book}: {team[:24]} @{odds:.2f} (fair {fair*100:.0f}%) bet ${stake:.0f}")
+    print(f"\n{len(bets)} bets. Place each at the named book. +EV = better than the sharp line;")
     print("you won't win every one — it's a long-run edge. Bet small, track results.")
+    if want_tg:
+        msg = "🎯 +EV bets (bet the named book):\n\n" + "\n".join(lines) + \
+              "\n\n+EV vs the sharp Pinnacle line. Long-run edge — bet small, won't win every one."
+        send_telegram(msg)
 
 
 if __name__ == "__main__":
