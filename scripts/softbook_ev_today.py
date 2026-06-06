@@ -93,35 +93,36 @@ def main():
                         kelly = edge / (so[team] - 1) if so[team] > 1 else 0
                         stake = min(bankroll * 0.02, bankroll * kelly * 0.25)
                         bets.append((ev, sport, team, label, so[team], fair[team], max(2.0, stake)))
-    bets.sort(reverse=True)
-    # DEDUPE: same game/team across books = the SAME bet. Keep only the best-odds
-    # book per (sport, team) so you bet each game ONCE at the best line.
-    seen = set()
-    deduped = []
-    for b in bets:               # already sorted by EV desc -> first seen = best
-        keyteam = (b[1], b[2])   # (sport, team)
-        if keyteam in seen:
-            continue
-        seen.add(keyteam)
-        deduped.append(b)
-    bets = deduped
+    # GROUP by game: same game across books = ONE bet. Show ALL +EV books per
+    # game (best first) so you can line-shop at bet time, but BET ONLY ONE.
+    from collections import defaultdict
+    games = defaultdict(list)
+    stakes = {}
+    for ev, sport, team, book, odds, fair, stake in bets:
+        games[(sport, team)].append((ev, book, odds))
+        stakes[(sport, team)] = (fair, stake)
+    ordered = sorted(games.items(), key=lambda kv: -max(o[0] for o in kv[1]))
     want_tg = "--telegram" in sys.argv
-    if not bets:
+    if not ordered:
         print("No +EV bets in the 1-8% band right now. Re-run later (lines move).")
         return
-    header = f"=== +EV BETS (bankroll ${bankroll:.0f}, ref=Pinnacle no-vig) ==="
-    print("\n" + header)
-    print(f"{'EV':>5} | {'BET ON (book)':<12} | {'TEAM':<22} | {'odds':>5} | {'fair%':>5} | stake")
+    print(f"\n=== +EV BETS ({len(ordered)} games, bankroll ${bankroll:.0f}, ref=Pinnacle no-vig) ===")
+    print("Each game = ONE bet. Books listed best-first; take whichever is best when you bet.\n")
     lines = []
-    for ev, sport, team, book, odds, fair, stake in bets:
-        row = f"{ev*100:+4.1f}% | {book:<12} | {team[:22]:<22} | {odds:>5.2f} | {fair*100:4.0f}% | ${stake:.0f}"
+    for (sport, team), offers in ordered:
+        offers.sort(reverse=True)
+        fair, stake = stakes[(sport, team)]
+        opts = "  ".join(f"{bk} {od:.2f}({ev*100:+.1f}%)" for ev, bk, od in offers)
+        row = f"• {team[:24]:<24} fair {fair*100:.0f}% | ${stake:.0f} | {opts}"
         print(row)
-        lines.append(f"{ev*100:+.1f}% {book}: {team[:24]} @{odds:.2f} (fair {fair*100:.0f}%) bet ${stake:.0f}")
-    print(f"\n{len(bets)} bets. Place each at the named book. +EV = better than the sharp line;")
-    print("you won't win every one — it's a long-run edge. Bet small, track results.")
+        lines.append(f"• {team[:24]} (fair {fair*100:.0f}%, ${stake:.0f}) — bet ONE:\n   " +
+                     " / ".join(f"{bk} {od:.2f} {ev*100:+.1f}%" for ev, bk, od in offers))
+    print("\nBet each GAME once (pick the best book that's still up). Different games = bet all you want.")
+    print("Long-run edge — you won't win every one. Bet small.")
     if want_tg:
-        msg = "🎯 +EV bets (bet the named book):\n\n" + "\n".join(lines) + \
-              "\n\n+EV vs the sharp Pinnacle line. Long-run edge — bet small, won't win every one."
+        msg = ("🎯 +EV bets — each game = ONE bet (pick best book still up):\n\n" +
+               "\n".join(lines) +
+               "\n\nDifferent games = bet all. Same game = pick one. +EV vs sharp line, bet small.")
         send_telegram(msg)
 
 
