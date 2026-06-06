@@ -82,7 +82,14 @@ def send_telegram(text):
 
 
 def main():
-    bankroll = float(sys.argv[1]) if len(sys.argv) > 1 else 240.0
+    # bankroll = first numeric arg (so `--json PATH` / `--telegram` work with or
+    # without a leading bankroll; non-numeric args like flags/paths are skipped)
+    bankroll = 240.0
+    for a in sys.argv[1:]:
+        try:
+            bankroll = float(a); break
+        except ValueError:
+            continue
     key = _key()
     bets = []
     commence = {}
