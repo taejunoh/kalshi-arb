@@ -21,7 +21,8 @@ actual bets later.
 import os, json, urllib.request, sqlite3, sys
 from datetime import datetime, timezone
 
-DB = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
+SRC_DB = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
+PAPER_DB = os.getenv("SOFTBOOK_PAPER_DB", "/home/ubuntu/kalshi-arb/data/softbook_paper.db")
 BANKROLL = float(os.getenv("SOFTBOOK_BANKROLL", "240"))
 ODDS_MIN, ODDS_MAX = 1.50, 4.00
 EV_MIN, EV_MAX = 0.01, 0.08
@@ -93,16 +94,16 @@ def candidates(db):
     return out
 
 
-def place(db):
+def place(paper, src):
     n = 0
-    for c in candidates(db):
-        cur = db.execute(
+    for c in candidates(src):
+        cur = paper.execute(
             """INSERT OR IGNORE INTO paper_bet
                (event_id, sport, team, opponent, commence_time, book, odds, ev,
                 stake, placed_at)
                VALUES (?,?,?,?,?,?,?,?,?,?)""", c)
         n += cur.rowcount
-    db.commit()
+    paper.commit()
     return n
 
 
@@ -198,17 +199,18 @@ def report(db):
 
 
 def main():
-    db = sqlite3.connect(DB)
-    init_db(db)
+    src = sqlite3.connect(f"file:{SRC_DB}?mode=ro", uri=True)
+    paper = sqlite3.connect(PAPER_DB)
+    init_db(paper)
     if "--report" not in sys.argv:
         key = _key()
         if not key:
-            print("no ODDS_API_KEY");
+            print("no ODDS_API_KEY")
         else:
-            placed = place(db)
-            done = settle(db, key)
+            placed = place(paper, src)
+            done = settle(paper, key)
             print(f"[paper-pnl] placed {placed} new bets, settled {done}.")
-    report(db)
+    report(paper)
 
 
 if __name__ == "__main__":
