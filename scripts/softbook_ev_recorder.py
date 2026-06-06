@@ -112,6 +112,10 @@ def main():
                         ev = fair[team] * so[team] - 1
                         if ev > best_ev:
                             best_ev, best_b, best_p = ev, bkey, so[team]
+                # Record the WIDE odds range on purpose (NO 1.50-4.00 betting cut
+                # here): the bet list cuts extreme odds, but recording them lets
+                # the CLV verdict prove, BY BAND, whether heavy-fav/longshot
+                # signals are real edge or stale noise. Don't blind the evidence.
                 if best_b and best_ev > 0.005:   # record only the bettable +EV side
                     try:
                         db.execute("INSERT OR IGNORE INTO softbook_ev VALUES (?,?,?,?,?,?,?,?,?,?,?)",
