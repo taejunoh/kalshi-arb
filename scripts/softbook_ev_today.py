@@ -15,9 +15,17 @@ import os, json, urllib.request, sys
 # PointsBet's former NY license -> included.
 NY_LEGAL = {"fanduel": "FanDuel", "draftkings": "DraftKings", "betmgm": "BetMGM",
             "caesars": "Caesars", "betrivers": "BetRivers", "fanatics": "Fanatics"}
-SPORTS = ["baseball_mlb", "baseball_npb", "basketball_wnba", "baseball_kbo",
-          "soccer_usa_mls", "icehockey_nhl", "soccer_uefa_champs_league"]
 EV_MIN, EV_MAX = 0.01, 0.08   # bettable band; >8% is usually a stale/limited line
+
+
+def active_sports(key):
+    """Every in-season h2h sport on the Odds API right now (auto-adapts to seasons)."""
+    try:
+        d = json.loads(urllib.request.urlopen(
+            f"https://api.the-odds-api.com/v4/sports/?apiKey={key}", timeout=20).read())
+        return [s["key"] for s in d if s.get("active") and not s.get("has_outrights")]
+    except Exception:
+        return ["baseball_mlb", "baseball_npb", "baseball_kbo", "basketball_wnba"]
 
 
 def _key():
@@ -56,7 +64,7 @@ def main():
     bankroll = float(sys.argv[1]) if len(sys.argv) > 1 else 240.0
     key = _key()
     bets = []
-    for sport in SPORTS:
+    for sport in active_sports(key):
         try:
             games = get(sport, key)
         except Exception:
