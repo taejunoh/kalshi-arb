@@ -46,6 +46,18 @@ def get(sport, key):
     return json.loads(urllib.request.urlopen(url, timeout=25).read())
 
 
+def soon(commence_time, max_hours=72):
+    """Only near-term games — far-future lines (NFL months out) aren't sharp."""
+    if not commence_time:
+        return False
+    try:
+        gt = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
+        hrs = (gt - datetime.now(timezone.utc)).total_seconds() / 3600
+        return -6 <= hrs <= max_hours
+    except Exception:
+        return True
+
+
 def init_db():
     c = sqlite3.connect(OUT)
     c.execute("""CREATE TABLE IF NOT EXISTS softbook_ev(
@@ -70,6 +82,8 @@ def main():
         except Exception as e:
             print(f"{sport}: {e}"); continue
         for g in games:
+            if not soon(g.get("commence_time")):
+                continue
             bk = {b["key"]: b for b in g.get("bookmakers", [])}
             pin = bk.get("pinnacle")
             if not pin:

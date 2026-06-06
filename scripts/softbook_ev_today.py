@@ -9,6 +9,22 @@ realistic 1-6% EV band, with suggested stake). Pinnacle is the REFERENCE only
 Usage: venv/bin/python scripts/softbook_ev_today.py [bankroll]
 """
 import os, json, urllib.request, sys
+from datetime import datetime, timezone
+
+MAX_HOURS = 72   # only near-term games — the sharp line is only "true" close to start.
+
+
+def soon(commence_time):
+    """True if the game starts within the next MAX_HOURS (and isn't long over).
+    Far-future lines (e.g. NFL games months out) aren't sharp -> not real +EV."""
+    if not commence_time:
+        return False
+    try:
+        gt = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
+        hrs = (gt - datetime.now(timezone.utc)).total_seconds() / 3600
+        return -6 <= hrs <= MAX_HOURS
+    except Exception:
+        return True
 
 # NY-legal soft books you can actually bet at (verified: NY's licensed mobile
 # operators). ESPN BET / Penn is NOT licensed in NY -> excluded. Fanatics holds
@@ -70,6 +86,8 @@ def main():
         except Exception:
             continue
         for g in games:
+            if not soon(g.get("commence_time")):
+                continue
             bk = {b["key"]: b for b in g.get("bookmakers", [])}
             pin = bk.get("pinnacle")
             if not pin:
