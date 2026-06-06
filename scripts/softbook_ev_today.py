@@ -15,14 +15,17 @@ MAX_HOURS = 72   # only near-term games — the sharp line is only "true" close 
 
 
 def soon(commence_time):
-    """True if the game starts within the next MAX_HOURS (and isn't long over).
-    Far-future lines (e.g. NFL games months out) aren't sharp -> not real +EV."""
+    """True if the game starts in the FUTURE but within MAX_HOURS.
+    PRE-GAME ONLY: once a game starts the soft book closes the pregame market (the
+    bet is unplaceable) and the Pinnacle pregame reference line is gone, so an
+    already-started game is a stale 'ghost' +EV -> exclude (hrs > 0). Far-future
+    lines (e.g. NFL months out) aren't sharp either -> capped at MAX_HOURS."""
     if not commence_time:
         return False
     try:
         gt = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
         hrs = (gt - datetime.now(timezone.utc)).total_seconds() / 3600
-        return -6 <= hrs <= MAX_HOURS
+        return 0 < hrs <= MAX_HOURS
     except Exception:
         return True
 

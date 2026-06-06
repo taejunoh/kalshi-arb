@@ -47,13 +47,14 @@ def get(sport, key):
 
 
 def soon(commence_time, max_hours=72):
-    """Only near-term games — far-future lines (NFL months out) aren't sharp."""
+    """Pre-game only, near-term: exclude already-started games (their snapshot is a
+    live/stale line that would corrupt the CLV 'close') and far-future lines."""
     if not commence_time:
         return False
     try:
         gt = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
         hrs = (gt - datetime.now(timezone.utc)).total_seconds() / 3600
-        return -6 <= hrs <= max_hours
+        return 0 < hrs <= max_hours
     except Exception:
         return True
 
