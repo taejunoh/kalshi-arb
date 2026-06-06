@@ -53,6 +53,24 @@ def _num(x):
             return None
 
 
+def send_telegram(text):
+    import urllib.parse
+    tok = cho = None
+    try:
+        for line in open(os.getenv("ENV_PATH", "/home/ubuntu/kalshi-arb/.env")):
+            if line.startswith("TELEGRAM_BOT_TOKEN="): tok = line.split("=", 1)[1].strip().strip('"')
+            if line.startswith("TELEGRAM_CHAT_ID="): cho = line.split("=", 1)[1].strip().strip('"')
+    except Exception:
+        return
+    if not (tok and cho):
+        return
+    try:
+        data = urllib.parse.urlencode({"chat_id": cho, "text": text}).encode()
+        urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/sendMessage", data=data, timeout=10).read()
+    except Exception:
+        pass
+
+
 def init_db(db):
     db.execute("""CREATE TABLE IF NOT EXISTS paper_bet(
         event_id TEXT PRIMARY KEY, sport TEXT, team TEXT, opponent TEXT,
@@ -151,7 +169,7 @@ def settle(db, key):
     return settled
 
 
-def report(db):
+def report(db, tg=False):
     rows = db.execute("""SELECT sport, team, opponent, odds, ev, stake, commence_time,
         completed, won, result_winner, pnl FROM paper_bet ORDER BY commence_time""").fetchall()
     if not rows:
@@ -196,6 +214,17 @@ def report(db):
               ", ".join(f"{r[1][:14]}({r[6][5:10]})" for r in pending[:12]))
     print("\n   NOTE: PAPER = the strategy's modeled bets, not your real wagers. Realized")
     print("   edge needs ~1-2 weeks (n>=~30) + positive CLV to be trustworthy.")
+    if tg:
+        if graded:
+            msg = ("📊 소프트북 +EV 페이퍼 PnL (누적)\n"
+                   f"전적 {wins}-{len(graded)-wins} (승률 {100*wins/len(graded):.0f}%)\n"
+                   f"스테이크 ${staked:.2f} | 순익 ${net:+.2f} | ROI {roi:+.1f}%\n"
+                   f"정산 {len(graded)} · 대기 {len(pending)}\n"
+                   f"⚠️ n={len(graded)} — 1~2주 더 쌓여야 신뢰 가능 (PAPER)")
+        else:
+            msg = (f"📊 소프트북 +EV 페이퍼 PnL\n아직 정산된 베팅 없음 "
+                   f"(대기 {len(pending)}). 파이프라인 정상.")
+        send_telegram(msg)
 
 
 def main():
@@ -210,7 +239,7 @@ def main():
             placed = place(paper, src)
             done = settle(paper, key)
             print(f"[paper-pnl] placed {placed} new bets, settled {done}.")
-    report(paper)
+    report(paper, tg=("--telegram" in sys.argv))
 
 
 if __name__ == "__main__":
