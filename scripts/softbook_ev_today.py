@@ -10,10 +10,11 @@ Usage: venv/bin/python scripts/softbook_ev_today.py [bankroll]
 """
 import os, json, urllib.request, sys
 
-# US-legal (NY) soft books you can actually bet at:
+# NY-legal soft books you can actually bet at (verified: NY's licensed mobile
+# operators). ESPN BET / Penn is NOT licensed in NY -> excluded. Fanatics holds
+# PointsBet's former NY license -> included.
 NY_LEGAL = {"fanduel": "FanDuel", "draftkings": "DraftKings", "betmgm": "BetMGM",
-            "caesars": "Caesars", "betrivers": "BetRivers", "espnbet": "ESPN BET",
-            "fanatics": "Fanatics"}
+            "caesars": "Caesars", "betrivers": "BetRivers", "fanatics": "Fanatics"}
 SPORTS = ["baseball_mlb", "baseball_npb", "basketball_wnba", "baseball_kbo",
           "soccer_usa_mls", "icehockey_nhl", "soccer_uefa_champs_league"]
 EV_MIN, EV_MAX = 0.01, 0.08   # bettable band; >8% is usually a stale/limited line
