@@ -28,6 +28,7 @@ def main():
         g[(ev_id, team)].append((ts, fair, ev, bk, px))
     clvs = []
     detail = []
+    px_clv = []
     for (ev_id, team), track in g.items():
         if len(track) < 2:
             continue
@@ -36,6 +37,7 @@ def main():
         close_fair = track[-1][1]                         # latest sharp fair prob = ~closing
         clv = close_fair - open_fair       # >0 = sharp moved toward our side after we bet = beat close
         clvs.append(clv)
+        px_clv.append((px, clv))
         detail.append((ev_id[:8], team[:14], open_ev, clv, bk))
     print(f"# {len(g)} unique +EV opportunities recorded; {len(clvs)} with >=2 snapshots (CLV-measurable)")
     if len(clvs) < 15:
@@ -52,6 +54,20 @@ def main():
     boots.sort()
     lo, hi = boots[int(0.025*len(boots))], boots[int(0.975*len(boots))]
     print(f"  bootstrap CI95 [{lo*100:+.2f}, {hi*100:+.2f}]pp  {'<<< REAL edge (CLV>0)' if lo>0 else 'spans 0 / stale-noise'}")
+    # CLV by odds band — validates the 1.50-4.00 betting cut. If the heavy-fav
+    # (<1.50) and longshot (>4.00) bands show ~0/negative CLV while the bet band
+    # (1.50-4.00) is positive, cutting the extremes was the right call.
+    def _band(px):
+        if px < 1.50: return "a) <1.50 (heavy fav)"
+        if px <= 4.00: return "b) 1.50-4.00 (BET band)"
+        return "c) >4.00 (longshot)"
+    bands = defaultdict(list)
+    for px, clv in px_clv:
+        bands[_band(px)].append(clv)
+    print("\nCLV by odds band (validates the 1.50-4.00 bet cut):")
+    for b in sorted(bands):
+        v = bands[b]
+        print(f"  {b:<22} n={len(v):<3} mean CLV {statistics.mean(v)*100:+.2f}pp")
     print("\nVERDICT: positive mean CLV with CI>0 = the soft-book +EV edge is REAL & capturable")
     print("(diligent +EV bets beat the closing sharp line). ~0 CLV = divergences were stale noise.")
 

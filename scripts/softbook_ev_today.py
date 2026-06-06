@@ -3,7 +3,7 @@
 
 Fetches current odds, computes each soft book's edge vs the sharp Pinnacle
 no-vig line, and prints a clean 'place these bets' list (NY-legal books only,
-realistic 1-6% EV band, with suggested stake). Pinnacle is the REFERENCE only
+realistic 1-8% EV band at mid-range odds 1.50-4.00, with suggested stake). Pinnacle is the REFERENCE only
 (US-unavailable) — you BET the listed soft book.
 
 Usage: venv/bin/python scripts/softbook_ev_today.py [bankroll]
@@ -32,6 +32,11 @@ def soon(commence_time):
 NY_LEGAL = {"fanduel": "FanDuel", "draftkings": "DraftKings", "betmgm": "BetMGM",
             "caesars": "Caesars", "betrivers": "BetRivers", "fanatics": "Fanatics"}
 EV_MIN, EV_MAX = 0.01, 0.08   # bettable band; >8% is usually a stale/limited line
+# Odds band: trust the soft-book +EV signal only at mid-range odds. Below 1.50
+# (heavy favorites) the edge is tiny, capital-inefficient, and within de-vig
+# noise; above 4.00 (big longshots) the "EV" is mostly de-vig/stale noise +
+# longshot bias. Both extremes are where realized ROI leaks -> cut them.
+ODDS_MIN, ODDS_MAX = 1.50, 4.00
 
 
 def active_sports(key):
@@ -113,6 +118,8 @@ def main():
                         continue
                     if team not in so:
                         continue
+                    if not (ODDS_MIN <= so[team] <= ODDS_MAX):
+                        continue
                     ev = fair[team] * so[team] - 1
                     if EV_MIN <= ev <= EV_MAX:
                         # quarter-Kelly stake (conservative), capped at 2% bankroll
@@ -156,7 +163,7 @@ def main():
 
     want_tg = "--telegram" in sys.argv
     if not ordered:
-        print("No +EV bets in the 1-8% band right now. Re-run later (lines move).")
+        print("No +EV bets in the 1-8% band at 1.50-4.00 odds right now. Re-run later (lines move).")
         return
     print(f"\n=== +EV BETS ({len(ordered)} games, bankroll ${bankroll:.0f}, ref=Pinnacle no-vig) ===")
     print("Each game = ONE bet. Books listed best-first; take whichever is best when you bet.\n")
