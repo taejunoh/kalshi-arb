@@ -80,6 +80,7 @@ def main():
     bankroll = float(sys.argv[1]) if len(sys.argv) > 1 else 240.0
     key = _key()
     bets = []
+    commence = {}
     for sport in active_sports(key):
         try:
             games = get(sport, key)
@@ -119,6 +120,7 @@ def main():
                         kelly = edge / (so[team] - 1) if so[team] > 1 else 0
                         stake = min(bankroll * 0.02, bankroll * kelly * 0.25)
                         bets.append((ev, sport, team, label, so[team], fair[team], max(2.0, stake)))
+                        commence[(sport, team)] = g.get("commence_time")
     # GROUP by game: same game across books = ONE bet. Show ALL +EV books per
     # game (best first) so you can line-shop at bet time, but BET ONLY ONE.
     from collections import defaultdict
@@ -128,6 +130,30 @@ def main():
         games[(sport, team)].append((ev, book, odds))
         stakes[(sport, team)] = (fair, stake)
     ordered = sorted(games.items(), key=lambda kv: -max(o[0] for o in kv[1]))
+
+    # --json PATH : write the bet list for the dashboard (writes even if empty)
+    if "--json" in sys.argv:
+        i = sys.argv.index("--json")
+        path = sys.argv[i + 1] if i + 1 < len(sys.argv) else "data/ev_bets_latest.json"
+        out = {"generated_at": datetime.now(timezone.utc).isoformat(),
+               "bankroll": bankroll, "bets": []}
+        for (sport, team), offers in ordered:
+            offers.sort(reverse=True)
+            fair, stake = stakes[(sport, team)]
+            out["bets"].append({
+                "team": team, "sport": sport.replace("_", " ").upper(),
+                "commence_time": commence.get((sport, team)),
+                "fair_prob": round(fair, 4), "stake": round(stake, 2),
+                "best_ev": offers[0][0],
+                "books": [{"book": bk, "odds": od, "ev": ev} for ev, bk, od in offers],
+            })
+        try:
+            with open(path, "w") as f:
+                json.dump(out, f)
+            print(f"wrote {len(out['bets'])} bets -> {path}")
+        except Exception as e:
+            print("json write err:", e)
+
     want_tg = "--telegram" in sys.argv
     if not ordered:
         print("No +EV bets in the 1-8% band right now. Re-run later (lines move).")
