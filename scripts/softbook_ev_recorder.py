@@ -21,8 +21,16 @@ from datetime import datetime, timezone
 
 OUT = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
 SOFT = {"fanduel", "draftkings", "betmgm", "betrivers", "espnbet", "fanatics", "caesars", "bovada"}
-SPORTS = ["baseball_mlb", "baseball_npb", "basketball_wnba", "baseball_kbo",
-          "soccer_usa_mls", "icehockey_nhl"]
+
+
+def active_sports(key):
+    """Every in-season h2h sport on the Odds API right now (auto-adapts to seasons)."""
+    try:
+        d = json.loads(urllib.request.urlopen(
+            f"https://api.the-odds-api.com/v4/sports/?apiKey={key}", timeout=20).read())
+        return [s["key"] for s in d if s.get("active") and not s.get("has_outrights")]
+    except Exception:
+        return ["baseball_mlb", "baseball_npb", "baseball_kbo", "basketball_wnba"]
 
 
 def _key():
@@ -56,7 +64,7 @@ def main():
     now = datetime.now(timezone.utc).isoformat()
     db = init_db()
     n = 0
-    for sport in SPORTS:
+    for sport in active_sports(key):
         try:
             games = get(sport, key)
         except Exception as e:
