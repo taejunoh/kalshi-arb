@@ -92,6 +92,8 @@ def main():
                 "commence_time": b["commence_time"],
                 "fair_prob": round(b["fair"], 4), "stake": b["stake"],
                 "best_ev": b["ev"],
+                "n_books": b["n_books"], "n_ev": b["n_ev"],
+                "conf": b["conf"], "tier": b["tier"],
                 "books": [{"book": b["book"], "odds": b["odds"], "ev": b["ev"]}],
             })
         try:
@@ -129,7 +131,8 @@ def main():
         for (away, home), gb in sorted(tg.items(), key=lambda kv: -max(b["ev"] for b in kv[1])):
             gb.sort(key=lambda b: -b["ev"])
             lines.append(f"• {away[:16]} @ {home[:16]}\n" + "\n".join(
-                f"   {b['label']} — {b['book']} {b['odds']:.2f} ({b['ev']*100:+.1f}%) ${b['stake']:.0f}" for b in gb))
+                f"   [{b['tier'][0]}] {b['label']} — {b['book']} {b['odds']:.2f} "
+                f"({b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk) ${b['stake']:.0f}" for b in gb))
         more = len(bets) - len(top)
         msg = ("🎯 +EV bets (top by EV — ML/spread/total/props), one per market:\n\n"
                + "\n\n".join(lines)
