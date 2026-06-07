@@ -2677,7 +2677,7 @@ async function renderEvBets() {
         'Refreshes every ~20 min — more appear during US game hours.</div>';
       return;
     }
-    list.innerHTML = bets.map(b => {
+    const card = (b) => {
       const start = b.commence_time ? new Date(b.commence_time) : null;
       const when = start ? start.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
       const books = (b.books || []).map((bk, i) => `
@@ -2686,7 +2686,6 @@ async function renderEvBets() {
           <span><span class="ev-book-odds">${Number(bk.odds).toFixed(2)}</span>
             &nbsp; <span class="ev-book-ev">${bk.ev * 100 >= 0 ? '+' : ''}${(bk.ev * 100).toFixed(1)}%</span></span>
         </div>`).join('');
-      const mkt = ({h2h:'MONEYLINE', spread:'SPREAD', total:'TOTAL'})[b.market] || 'PROP';
       return `
         <div class="ev-card">
           <div class="ev-card-top">
@@ -2694,10 +2693,23 @@ async function renderEvBets() {
             <span class="ev-badge">$${Number(b.stake).toFixed(0)}</span>
           </div>
           ${b.matchup ? `<div class="ev-matchup" style="font-size:13px;color:#9aa;font-weight:600;margin:2px 0 4px">${b.matchup}</div>` : ''}
-          <div class="ev-sub">${mkt ? mkt + ' · ' : ''}${b.sport} · fair ${(b.fair_prob * 100).toFixed(0)}%${when ? ' · ' + when : ''} · bet ONE book</div>
+          <div class="ev-sub">${b.sport} · fair ${(b.fair_prob * 100).toFixed(0)}%${when ? ' · ' + when : ''} · bet ONE book</div>
           <div class="ev-books">${books}</div>
         </div>`;
-    }).join('');
+    };
+    const CATS = [
+      ['Moneyline',    m => m === 'h2h'],
+      ['Spread',       m => m === 'spread'],
+      ['Over / Under', m => m === 'total'],
+      ['Props',        m => !['h2h','spread','total'].includes(m)],
+    ];
+    const hdr = (t, n) => `<div class="ev-section" style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#cbd5e1;margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid #2a3548">${t} <span style="opacity:.55;font-weight:600">(${n})</span></div>`;
+    let html = '';
+    for (const [name, test] of CATS) {
+      const cb = bets.filter(b => test(b.market));
+      if (cb.length) html += hdr(name, cb.length) + cb.map(card).join('');
+    }
+    list.innerHTML = html;
   } catch (e) {
     list.innerHTML = '<div class="ev-empty">Failed to load +EV bets.</div>';
   }
