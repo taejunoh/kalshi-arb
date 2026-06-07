@@ -18,13 +18,14 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS softbook_ev(
     home TEXT, away TEXT, market TEXT, side TEXT, point REAL, player TEXT,
     pinnacle_fair_prob REAL, pinnacle_price REAL,
     best_soft_book TEXT, best_soft_price REAL, snapshot_ev REAL,
+    n_books INTEGER, n_ev INTEGER, conf REAL, tier TEXT,
     UNIQUE(recorded_at, event_id, market, side, point, player))"""
 
 
 def init_db():
     c = sqlite3.connect(OUT)
     cols = [r[1] for r in c.execute("PRAGMA table_info(softbook_ev)")]
-    if cols and "player" not in cols:        # one-time migrate (adds player for props)
+    if cols and "tier" not in cols:          # one-time migrate (adds consensus/confidence)
         c.execute("DROP TABLE softbook_ev")
     c.execute(SCHEMA)
     c.commit()
@@ -46,10 +47,11 @@ def main():
         credits += c
         for b in bets:
             try:
-                db.execute("INSERT OR IGNORE INTO softbook_ev VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                db.execute("INSERT OR IGNORE INTO softbook_ev VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (now, b["sport"], b["event_id"], b["commence_time"], b["home"], b["away"],
                      b["market"], b["side"], b["point"], b.get("player") or "",
-                     b["fair"], b["pin_price"], b["book"], b["odds"], b["ev"]))
+                     b["fair"], b["pin_price"], b["book"], b["odds"], b["ev"],
+                     b["n_books"], b["n_ev"], b["conf"], b["tier"]))
                 n += 1
             except Exception:
                 pass

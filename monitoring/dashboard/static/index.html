@@ -558,6 +558,18 @@
       font-size: 12.5px; font-weight: 600; color: var(--text, #cbd5e1);
       margin: 13px 0 7px;
     }
+    .ev-conf { display: flex; gap: 7px; align-items: center; margin: 4px 0 2px; }
+    .ev-tier {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+      padding: 1px 6px; border-radius: 4px; background: rgba(148,163,184,.15); color: #94a3b8;
+    }
+    .ev-tier[data-tier="High"] { background: rgba(74,222,128,.18); color: #4ade80; }
+    .ev-tier[data-tier="Med"]  { background: rgba(250,204,21,.16); color: #facc15; }
+    .ev-consensus { font-size: 11px; color: var(--text-dim, #8a8a93); }
+    .ev-card[data-tier="Med"] { border-left-color: #facc15; }
+    .ev-card[data-tier="Low"] { border-left-color: #94a3b8; }
+    .ev-sort-link { color: var(--text-dim, #8a8a93); text-decoration: none; }
+    .ev-sort-link.active { color: var(--text, #e7e7ea); font-weight: 600; }
     .ev-card {
       background: var(--card, #16181d);
       border: 1px solid rgba(255,255,255,0.07);
@@ -1096,6 +1108,10 @@
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:6px;flex-wrap:wrap;">
         <div class="section-title" style="margin-bottom:0">+EV bets — soft book vs sharp line</div>
         <span style="color:var(--text-dim);font-size:11px;" id="ev-meta">—</span>
+        <span id="ev-sort" style="font-size:11px;color:var(--text-dim);margin-left:auto;">
+          sort: <a href="#" data-sort="ev" class="ev-sort-link active">EV</a> ·
+          <a href="#" data-sort="conf" class="ev-sort-link">Confidence</a>
+        </span>
       </div>
       <div style="color:var(--text-dim);font-size:11.5px;margin-bottom:12px;line-height:1.5;">
         Place each at the named <b>sportsbook</b> (FanDuel/DraftKings/BetMGM/BetRivers/Caesars/Fanatics) —
@@ -2673,6 +2689,7 @@ async function renderSnapshot() {
 // ─────────────────────────────────────────────
 //  +EV bets — soft book vs sharp line (bet the sportsbook, not Kalshi)
 // ─────────────────────────────────────────────
+let evSort = 'ev';   // +EV tab sort: 'ev' | 'conf'
 async function renderEvBets() {
   const list = document.getElementById('ev-list');
   const meta = document.getElementById('ev-meta');
@@ -2697,11 +2714,16 @@ async function renderEvBets() {
           <span><span class="ev-book-odds">${Number(bk.odds).toFixed(2)}</span>
             &nbsp; <span class="ev-book-ev">${bk.ev * 100 >= 0 ? '+' : ''}${(bk.ev * 100).toFixed(1)}%</span></span>
         </div>`).join('');
+      const tier = b.tier || '';
       return `
-        <div class="ev-card">
+        <div class="ev-card" data-tier="${tier}">
           <div class="ev-card-top">
             <span class="ev-team">${b.team}</span>
             <span class="ev-badge">$${Number(b.stake).toFixed(0)}</span>
+          </div>
+          <div class="ev-conf">
+            <span class="ev-tier" data-tier="${tier}">${tier || '—'}</span>
+            <span class="ev-consensus">${b.n_ev ?? '?'}/${b.n_books ?? '?'} books +EV</span>
           </div>
           ${showMatchup && b.matchup ? `<div class="ev-matchup" style="font-size:13px;color:#9aa;font-weight:600;margin:2px 0 4px">${b.matchup}</div>` : ''}
           <div class="ev-sub">${b.sport} · fair ${(b.fair_prob * 100).toFixed(0)}%${when ? ' · ' + when : ''} · bet ONE book</div>
@@ -2711,22 +2733,25 @@ async function renderEvBets() {
     const section = (t, n) => `<div class="ev-section">${t}<span class="ev-count">(${n})</span></div>`;
     const grid = (arr, showMatchup) => `<div class="ev-grid">${arr.map(b => card(b, showMatchup)).join('')}</div>`;
     const isProp = b => !['h2h', 'spread', 'total'].includes(b.market);
+    const sk = b => evSort === 'conf' ? (b.conf || 0) : (b.best_ev || 0);   // sort key
+    const cmp = (a, c) => sk(c) - sk(a) || (c.best_ev || 0) - (a.best_ev || 0);
+    bets.sort(cmp);
     let html = '';
     // game markets: flat grid, matchup on each card
     for (const [name, mk] of [['Moneyline', 'h2h'], ['Spread', 'spread'], ['Over / Under', 'total']]) {
       const cb = bets.filter(b => b.market === mk);
       if (cb.length) html += section(name, cb.length) + grid(cb, true);
     }
-    // props: grouped by game (matchup once per group; games ordered by best EV)
+    // props: grouped by game (matchup once; games ordered by best of the sort key)
     const props = bets.filter(isProp);
     if (props.length) {
       html += section('Props', props.length);
       const byGame = {};
       for (const b of props) (byGame[b.matchup] = byGame[b.matchup] || []).push(b);
       const games = Object.entries(byGame).sort((a, c) =>
-        Math.max(...c[1].map(x => x.best_ev)) - Math.max(...a[1].map(x => x.best_ev)));
+        Math.max(...c[1].map(sk)) - Math.max(...a[1].map(sk)));
       for (const [matchup, gb] of games) {
-        gb.sort((a, c) => c.best_ev - a.best_ev);
+        gb.sort(cmp);
         html += `<div class="ev-subhead">${matchup}<span style="opacity:.55"> · ${gb[0].sport || ''}</span>`
               + `<span class="ev-count">(${gb.length})</span></div>` + grid(gb, false);
       }
@@ -2942,6 +2967,14 @@ slowRefresh();
 setInterval(refreshStatus, 5_000);
 setInterval(fullRefresh,   15_000);
 setInterval(slowRefresh,   60_000);
+
+document.querySelectorAll('.ev-sort-link').forEach(a => a.addEventListener('click', e => {
+  e.preventDefault();
+  if (evSort === a.dataset.sort) return;
+  evSort = a.dataset.sort;
+  document.querySelectorAll('.ev-sort-link').forEach(x => x.classList.toggle('active', x.dataset.sort === evSort));
+  renderEvBets();
+}));
 </script>
 </body>
 </html>

@@ -153,6 +153,28 @@ def label(market, side, point, player=None):
     return f"{player} {PROP_SHORT.get(market, market)} {side} {point:g}"   # prop
 
 
+def _confidence(market, odds, ev_val, n_books, n_ev, ct):
+    """0-100 reliability score + High/Med/Low tier. CONSENSUS dominates (how many
+    soft books independently beat the sharp fair = real lag vs lone stale outlier);
+    game markets > props; closer to start + sweet-spot odds/EV add. Thresholds are
+    provisional — re-tune once CLV-by-tier data lands (~2wk)."""
+    # CONSENSUS by ABSOLUTE count of books beating fair, minus a dissent penalty.
+    # (n_ev/n_books fraction is misleading: 1/1 is "unconfirmable", not "unanimous".)
+    consensus = max(0, 12 * min(n_ev, 4) - 4 * min(n_books - n_ev, 4))  # 0-48
+    score = consensus
+    score += 12 if market in ("h2h", "spread", "total") else 0        # game > prop
+    h = hrs_to(ct)
+    h = 99 if h is None else h
+    score += 15 if h <= 3 else 10 if h <= 12 else 5 if h <= 24 else 0  # imminence
+    if 2.0 <= odds <= 3.0:
+        score += 8                                                    # sweet odds
+    if 0.02 <= ev_val <= 0.04:
+        score += 7                                                    # sweet EV
+    score = round(score, 1)
+    tier = "High" if score >= 55 else "Med" if score >= 33 else "Low"
+    return score, tier
+
+
 def event_ev_bets(ev, sport):
     home, away = ev.get("home_team"), ev.get("away_team")
     bk = {b["key"]: b for b in ev.get("bookmakers", [])}
@@ -160,7 +182,8 @@ def event_ev_bets(ev, sport):
     if not pin:
         return []
     idx = _pin_index(pin)
-    out = []
+    # gather EVERY NY soft-book quote, grouped by line (for multi-book consensus)
+    lines = {}
     for bkey, blabel in NY_LEGAL.items():
         b = bk.get(bkey)
         if not b:
@@ -170,26 +193,33 @@ def event_ev_bets(ev, sport):
             if not market:
                 continue
             for o in m["outcomes"]:
-                price = o["price"]
-                if not (ODDS_MIN <= price <= ODDS_MAX):
-                    continue
                 player = o.get("description")
                 point = None if market == "h2h" else round(o.get("point", 0.0), 1)
-                fair = _fair(idx, market, player, o["name"], point, home, away)
-                if fair is None:
-                    continue
-                ev_val = fair * price - 1
-                if EV_MIN <= ev_val <= EV_MAX:
-                    out.append({
-                        "event_id": ev.get("id"), "sport": sport,
-                        "commence_time": ev.get("commence_time"),
-                        "home": home, "away": away,
-                        "market": market, "side": o["name"], "point": point,
-                        "player": player,
-                        "label": label(market, o["name"], point, player),
-                        "book": blabel, "odds": price, "fair": fair, "ev": ev_val,
-                        "pin_price": idx.get((market, player, o["name"], point)),
-                    })
+                lines.setdefault((market, o["name"], point, player), []).append((blabel, o["price"]))
+    out = []
+    for (market, side, point, player), quotes in lines.items():
+        fair = _fair(idx, market, player, side, point, home, away)
+        if fair is None:
+            continue
+        evs = [(bl, px, fair * px - 1) for bl, px in quotes]
+        n_books = len(evs)                                   # NY books quoting this line
+        n_ev = sum(1 for _, _, e in evs if e > 0)            # ...that beat the sharp fair
+        cand = [(bl, px, e) for bl, px, e in evs
+                if ODDS_MIN <= px <= ODDS_MAX and EV_MIN <= e <= EV_MAX]
+        if not cand:
+            continue
+        bl, px, ev_val = max(cand, key=lambda x: x[2])       # best bettable book
+        score, tier = _confidence(market, px, ev_val, n_books, n_ev, ev.get("commence_time"))
+        out.append({
+            "event_id": ev.get("id"), "sport": sport,
+            "commence_time": ev.get("commence_time"),
+            "home": home, "away": away,
+            "market": market, "side": side, "point": point, "player": player,
+            "label": label(market, side, point, player),
+            "book": bl, "odds": px, "fair": fair, "ev": ev_val,
+            "pin_price": idx.get((market, player, side, point)),
+            "n_books": n_books, "n_ev": n_ev, "conf": score, "tier": tier,
+        })
     return out
 
 
@@ -254,8 +284,8 @@ if __name__ == "__main__":
     sport = sys.argv[1] if len(sys.argv) > 1 else "baseball_mlb"
     bets, credits, nev = scan_sport(sport, k)
     print(f"{sport}: {nev} events, {credits} credits, {len(bets)} +EV bets:\n")
-    for b in bets:
-        print(f"  {b['market']:<18} {b['label']:<28} {b['book']:<11} {b['odds']:.2f}  "
-              f"fair {b['fair']*100:4.1f}%  EV {b['ev']*100:+.2f}%")
+    for b in sorted(bets, key=lambda x: -x["conf"]):
+        print(f"  {b['tier']:<4} conf{b['conf']:>5}  {b['n_ev']}/{b['n_books']}bk  "
+              f"{b['label']:<26} {b['book']:<11} {b['odds']:.2f}  EV {b['ev']*100:+.2f}%")
     if not bets:
         print("  (none in band right now)")
