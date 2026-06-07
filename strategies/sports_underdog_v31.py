@@ -88,7 +88,19 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
         # consistent — alpha is mature and the prior 1.25x bump didn't
         # destabilize anything. Modest extra bump to harvest the larger
         # capital base before bankroll constrains us further.
-        return min(30.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
+        #
+        # 2026-06-07 W23 SIZE FREEZE (de-risk, user-approved). WNBA underdog
+        # margin is razor-thin (lifetime WR 38.7% vs ~36.4% post-fee breakeven,
+        # +2.3pp) and declining (weekly WR 57→50→33→0%, W21-22 pooled 21.4% =
+        # −15pp below BE), mirroring the v31 MLB early-season-closes arc. Kept
+        # LIVE for one more week (W23) as a confirmation test but the cap is
+        # frozen 30→5 so a bankroll recovery cannot scale exposure back up
+        # while the edge is under suspicion. Current effective size is already
+        # ~$2-3 (bankroll*0.02 off the re-synced ~$274 balance), so this does
+        # NOT shrink live fires — it only blocks re-expansion. The W23 tripwire
+        # (scripts/underdog_v31_w23_tripwire.py, fires ~6/15) decides
+        # demote-to-paper vs lift-freeze. See [[v31_live_book_diagnosis_2026-06-07]].
+        return min(5.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
     # 2026-05-13 (WNBA expansion): unblock WNBA, add pair-fire dedup
     OBSERVATION_ONLY_SPORTS = (
