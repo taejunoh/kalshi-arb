@@ -24,14 +24,14 @@ def _band(px):
 def main():
     db = sqlite3.connect(DB)
     try:
-        rows = db.execute("""SELECT event_id, market, side, point, recorded_at,
+        rows = db.execute("""SELECT event_id, market, side, point, player, recorded_at,
             pinnacle_fair_prob, best_soft_price FROM softbook_ev
-            ORDER BY event_id, market, side, point, recorded_at""").fetchall()
+            ORDER BY event_id, market, side, point, player, recorded_at""").fetchall()
     except Exception as e:
         print("read err (schema?):", e); return
     g = defaultdict(list)
-    for eid, market, side, point, ts, fair, px in rows:
-        g[(eid, market, side, point)].append((ts, fair, px))
+    for eid, market, side, point, player, ts, fair, px in rows:
+        g[(eid, market, side, point, player)].append((ts, fair, px))
     clvs, px_clv, mkt = [], [], defaultdict(list)
     for k, track in g.items():
         if len(track) < 2:

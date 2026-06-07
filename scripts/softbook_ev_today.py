@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from collections import defaultdict
 from softbook_ev_core import read_key, active_sports, scan_sport
 
+JSON_CAP, TG_CAP = 40, 12   # dashboard / Telegram show top-N by EV (props can be many)
+
 
 def stake_for(ev, odds, bankroll):
     kelly = ev / (odds - 1) if odds > 1 else 0
@@ -65,11 +67,12 @@ def main():
         path = sys.argv[i + 1] if i + 1 < len(sys.argv) else "data/ev_bets_latest.json"
         out = {"generated_at": datetime.now(timezone.utc).isoformat(),
                "bankroll": bankroll, "api_credits": credits, "bets": []}
-        for b in bets:
+        for b in bets[:JSON_CAP]:
             out["bets"].append({
                 "team": b["label"], "matchup": f"{b['away']} @ {b['home']}",
                 "sport": b["sport"].replace("_", " ").upper(),
                 "market": b["market"], "side": b["side"], "point": b["point"],
+                "player": b.get("player"),
                 "commence_time": b["commence_time"],
                 "fair_prob": round(b["fair"], 4), "stake": b["stake"],
                 "best_ev": b["ev"],
@@ -93,21 +96,29 @@ def main():
     print(f"\n=== +EV BETS — {len(bets)} across {len(games)} games "
           f"(bankroll ${bankroll:.0f}, ref=Pinnacle, {credits} credits) ===")
     print("ML/spread/total. Each line = one bet (best book). Same market = pick one.\n")
-    tg_lines = []
     for (away, home, ct), gb in sorted(games.items(), key=lambda kv: -max(b["ev"] for b in kv[1])):
         gb.sort(key=lambda b: -b["ev"])
         print(f"• {away} @ {home}")
         for b in gb:
-            print(f"    {b['market']:<6} {b['label']:<20} {b['book']:<11} "
+            print(f"    {b['market']:<8} {b['label']:<26} {b['book']:<11} "
                   f"{b['odds']:.2f}  (fair {b['fair']*100:.0f}%, EV {b['ev']*100:+.1f}%)  ${b['stake']:.0f}")
-        tg_lines.append(f"• {away[:16]} @ {home[:16]}\n" + "\n".join(
-            f"   {b['label']} — {b['book']} {b['odds']:.2f} ({b['ev']*100:+.1f}%) ${b['stake']:.0f}" for b in gb))
     print("\nLong-run edge — bet small, one per market. Different games/markets = diversify.")
 
     if "--telegram" in sys.argv:
-        msg = ("🎯 +EV bets (ML/spread/total) — bet best book, one per market:\n\n"
-               + "\n\n".join(tg_lines)
-               + "\n\n+EV vs sharp Pinnacle line. Bet small, pre-game only.")
+        top = bets[:TG_CAP]
+        tg = defaultdict(list)
+        for b in top:
+            tg[(b["away"], b["home"])].append(b)
+        lines = []
+        for (away, home), gb in sorted(tg.items(), key=lambda kv: -max(b["ev"] for b in kv[1])):
+            gb.sort(key=lambda b: -b["ev"])
+            lines.append(f"• {away[:16]} @ {home[:16]}\n" + "\n".join(
+                f"   {b['label']} — {b['book']} {b['odds']:.2f} ({b['ev']*100:+.1f}%) ${b['stake']:.0f}" for b in gb))
+        more = len(bets) - len(top)
+        msg = ("🎯 +EV bets (top by EV — ML/spread/total/props), one per market:\n\n"
+               + "\n\n".join(lines)
+               + (f"\n\n…+{more} more on dashboard." if more > 0 else "")
+               + "\n\n+EV vs sharp Pinnacle. Bet small, pre-game only.")
         send_telegram(msg)
 
 

@@ -2686,7 +2686,7 @@ async function renderEvBets() {
           <span><span class="ev-book-odds">${Number(bk.odds).toFixed(2)}</span>
             &nbsp; <span class="ev-book-ev">${bk.ev * 100 >= 0 ? '+' : ''}${(bk.ev * 100).toFixed(1)}%</span></span>
         </div>`).join('');
-      const mkt = ({h2h:'MONEYLINE', spread:'SPREAD', total:'TOTAL'})[b.market] || (b.market || '').toUpperCase();
+      const mkt = ({h2h:'MONEYLINE', spread:'SPREAD', total:'TOTAL'})[b.market] || 'PROP';
       return `
         <div class="ev-card">
           <div class="ev-card-top">

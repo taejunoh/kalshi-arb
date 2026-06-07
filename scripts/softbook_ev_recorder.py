@@ -15,16 +15,16 @@ OUT = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS softbook_ev(
     recorded_at TEXT, sport TEXT, event_id TEXT, commence_time TEXT,
-    home TEXT, away TEXT, market TEXT, side TEXT, point REAL,
+    home TEXT, away TEXT, market TEXT, side TEXT, point REAL, player TEXT,
     pinnacle_fair_prob REAL, pinnacle_price REAL,
     best_soft_book TEXT, best_soft_price REAL, snapshot_ev REAL,
-    UNIQUE(recorded_at, event_id, market, side, point))"""
+    UNIQUE(recorded_at, event_id, market, side, point, player))"""
 
 
 def init_db():
     c = sqlite3.connect(OUT)
     cols = [r[1] for r in c.execute("PRAGMA table_info(softbook_ev)")]
-    if cols and "market" not in cols:        # one-time migrate from old h2h-only schema
+    if cols and "player" not in cols:        # one-time migrate (adds player for props)
         c.execute("DROP TABLE softbook_ev")
     c.execute(SCHEMA)
     c.commit()
@@ -46,10 +46,10 @@ def main():
         credits += c
         for b in bets:
             try:
-                db.execute("INSERT OR IGNORE INTO softbook_ev VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                db.execute("INSERT OR IGNORE INTO softbook_ev VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (now, b["sport"], b["event_id"], b["commence_time"], b["home"], b["away"],
-                     b["market"], b["side"], b["point"], b["fair"], b["pin_price"],
-                     b["book"], b["odds"], b["ev"]))
+                     b["market"], b["side"], b["point"], b.get("player") or "",
+                     b["fair"], b["pin_price"], b["book"], b["odds"], b["ev"]))
                 n += 1
             except Exception:
                 pass
