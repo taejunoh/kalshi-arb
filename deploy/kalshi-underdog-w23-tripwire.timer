@@ -1,0 +1,15 @@
+[Unit]
+Description=W23 tripwire for underdog_v31 — fires after W23 (2026-06-08..14) WNBA games settle
+Requires=kalshi-underdog-w23-tripwire.service
+
+[Timer]
+# Two shots for robustness: Mon 6/15 (after weekend games settle) + Tue 6/16
+# backup. Script is read-only and idempotent — running twice just re-reports.
+# Disable after 6/16 (no further OnCalendar entries match).
+OnCalendar=2026-06-15 14:00:00 UTC
+OnCalendar=2026-06-16 14:00:00 UTC
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
