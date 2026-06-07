@@ -547,6 +547,13 @@
       grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
       gap: 12px;
     }
+    .ev-section {
+      font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--text, #e7e7ea); margin: 22px 0 10px; padding-bottom: 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+    }
+    .ev-section:first-child { margin-top: 2px; }
+    .ev-count { opacity: .5; font-weight: 600; margin-left: 5px; }
     .ev-card {
       background: var(--card, #16181d);
       border: 1px solid rgba(255,255,255,0.07);
@@ -1092,7 +1099,7 @@
         Different games = bet all you want. +EV vs the sharp Pinnacle line — long-run edge, bet small.
         <span id="ev-pending" style="color:var(--text-dim);"></span>
       </div>
-      <div id="ev-list" class="ev-grid"></div>
+      <div id="ev-list"></div>
     </section>
 
     <!-- ── Regime / scanner state ── -->
@@ -2703,11 +2710,12 @@ async function renderEvBets() {
       ['Over / Under', m => m === 'total'],
       ['Props',        m => !['h2h','spread','total'].includes(m)],
     ];
-    const hdr = (t, n) => `<div class="ev-section" style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#cbd5e1;margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid #2a3548">${t} <span style="opacity:.55;font-weight:600">(${n})</span></div>`;
     let html = '';
     for (const [name, test] of CATS) {
       const cb = bets.filter(b => test(b.market));
-      if (cb.length) html += hdr(name, cb.length) + cb.map(card).join('');
+      if (!cb.length) continue;
+      html += `<div class="ev-section">${name}<span class="ev-count">(${cb.length})</span></div>`
+            + `<div class="ev-grid">` + cb.map(card).join('') + `</div>`;
     }
     list.innerHTML = html;
   } catch (e) {
