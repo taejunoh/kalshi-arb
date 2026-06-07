@@ -1,0 +1,90 @@
+name: atm_hold_v1 monitor
+
+on:
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check dashboard & send Telegram
+        shell: bash
+        env:
+          BOT_TOKEN: "TELEGRAM_BOT_TOKEN_REDACTED"
+          CHAT_ID: "8578917235"
+        run: |
+          set -euo pipefail
+
+          SINCE="2026-05-19T00:00:00"
+          NOW_UTC=$(date -u '+%Y-%m-%dT%H:%M UTC')
+
+          # ── 1. Call dashboard ──────────────────────────────────────────
+          HTTP_CODE=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            --max-time 15 \
+            "http://3.146.180.145:8080/api/strategy-monitor/atm_hold_v1?since=${SINCE}" \
+            || echo "000")
+
+          if [[ "$HTTP_CODE" == "000" || "$HTTP_CODE" == "5"* ]]; then
+            MSG="⚠️ atm_hold_v1 6h monitor (${NOW_UTC}): dashboard endpoint 응답 없음 (HTTP ${HTTP_CODE}). EC2 점검 필요."
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${CHAT_ID}" \
+              --data-urlencode "text=${MSG}" \
+              | tee /tmp/tg_resp.json
+            echo "Telegram ok: $(jq -r '.ok' /tmp/tg_resp.json)"
+            exit 0
+          fi
+
+          # ── 3. Parse JSON ──────────────────────────────────────────────
+          ROLLBACK=$(jq -r '.rollback_triggers.any_rollback_signal // false' /tmp/resp.json)
+          N=$(jq -r       '.live.n          // "0"' /tmp/resp.json)
+          WR=$(jq -r      '.live.wr_pct     // "null"' /tmp/resp.json)
+          NET=$(jq -r     '.live.sum_pnl    // "null"' /tmp/resp.json)
+          WIPE=$(jq -r    '.live.wipe_zero_pct // "null"' /tmp/resp.json)
+          WORST=$(jq -r   '.live.worst_pnl  // "null"' /tmp/resp.json)
+          FILL=$(jq -r    '.fill_rate_pct   // "null"' /tmp/resp.json)
+          RATIO=$(jq -r   '.live_vs_paper_ratio // "null"' /tmp/resp.json)
+          UNSETTLED=$(jq -r '.unsettled_count // "-"' /tmp/resp.json)
+          CANCELLED=$(jq -r '.cancelled_count // "-"' /tmp/resp.json)
+
+          fmt() { [[ "$1" == "null" ]] && echo "—" || echo "$1"; }
+          WR_F=$(fmt $WR); NET_F=$(fmt $NET); WIPE_F=$(fmt $WIPE)
+          FILL_F=$(fmt $FILL); RATIO_F=$(fmt $RATIO); WORST_F=$(fmt $WORST)
+
+          if [[ "$ROLLBACK" == "true" ]]; then
+            TRIGGERS=$(jq -r '.rollback_triggers | to_entries[] | select(.value == true and .key != "any_rollback_signal") | .key' /tmp/resp.json | tr '\n' ', ' | sed 's/,$//')
+            TOP_LOSSES=$(jq -r '.top_losses[:3][] | "  \(.ticker // "?") $\(.pnl // 0)"' /tmp/resp.json 2>/dev/null || true)
+            MSG="⚠️ atm_hold_v1 ROLLBACK 트리거 발동 ${NOW_UTC}
+
+트리거: ${TRIGGERS}
+LIVE: n=${N}, WR ${WR_F}%, NET \$${NET_F}
+Wipe: ${WIPE_F}%
+Worst: \$${WORST_F}
+Fill: ${FILL_F}%, Paper ratio: ${RATIO_F}
+${TOP_LOSSES}
+
+즉시 권고:
+ssh ubuntu@3.146.180.145
+cd /home/ubuntu/kalshi-arb
+sed -i \"s/,atm_hold_v1//; s/atm_hold_v1,//\" .env
+sudo systemctl restart kalshi-bot"
+          else
+            if [[ "$N" == "0" ]]; then
+              LIVE_LINE="LIVE n=0 (settle 대기), unsettled ${UNSETTLED}, cancelled ${CANCELLED}"
+            else
+              LIVE_LINE="LIVE n=${N}, WR ${WR_F}%, NET \$${NET_F}"
+            fi
+            MSG="✅ atm_hold_v1 6h monitor ${NOW_UTC}
+${LIVE_LINE}
+Wipe ${WIPE_F}%, Fill ${FILL_F}%, Paper ratio ${RATIO_F}
+다음 체크 +6h."
+          fi
+
+          # ── 5. Send Telegram ───────────────────────────────────────────
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${CHAT_ID}" \
+            -d "parse_mode=HTML" \
+            --data-urlencode "text=${MSG}" \
+            | tee /tmp/tg_resp.json
+
+          echo "Telegram ok: $(jq -r '.ok' /tmp/tg_resp.json)"
+          cat /tmp/resp.json
