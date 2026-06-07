@@ -1,42 +1,32 @@
 #!/usr/bin/env python3
-"""Paper PnL for the soft-book +EV strategy — 'what if I'd bet every recommendation'.
+"""Paper PnL for the soft-book +EV strategy — FULL markets (ML / spread / total).
 
-Builds a PAPER bet ledger from the recorded +EV opportunities (softbook_ev.db),
-applying the SAME rules the live bet list uses, so it measures the real strategy:
-  - pre-game only        (commence_time strictly AFTER the snapshot time)
-  - odds band            1.50 <= price <= 4.00
-  - EV band              0.01 <= snapshot_ev <= 0.08
-  - one bet per game     = the EARLIEST qualifying snapshot (the side you'd see
-                           first; look-ahead-free, even if the line later flips)
-  - stake                = the strategy's quarter-Kelly (capped 2% bankroll, min $2)
-
-Each paper bet is locked into the `paper_bet` table (INSERT OR IGNORE, so a bet
-never changes once placed), then settled against the Odds API /scores result.
-Reports realized PnL / ROI / win-rate. PAPER = no real money; compare to your
-actual bets later.
+Builds a PAPER bet ledger from recorded +EV opps (softbook_ev.db) applying the
+live rules — pre-game, one bet per (game, MARKET) = earliest qualifying snapshot,
+quarter-Kelly stake — then settles each vs the Odds API /scores final score
+(moneyline = winner, spread = margin, total = run/point sum; see core.grade).
+Reports realized PnL / ROI / win-rate by market and odds band. PAPER only.
 
   python scripts/softbook_ev_paper_pnl.py            # place + settle + report
-  python scripts/softbook_ev_paper_pnl.py --report   # report only (no API calls)
+  python scripts/softbook_ev_paper_pnl.py --report   # report only (no API)
+  python scripts/softbook_ev_paper_pnl.py --telegram # also push a digest
 """
-import os, json, urllib.request, sqlite3, sys
+import os, json, urllib.request, urllib.parse, sqlite3, sys
 from datetime import datetime, timezone
+import softbook_ev_core as core
 
 SRC_DB = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
 PAPER_DB = os.getenv("SOFTBOOK_PAPER_DB", "/home/ubuntu/kalshi-arb/data/softbook_paper.db")
 BANKROLL = float(os.getenv("SOFTBOOK_BANKROLL", "240"))
-ODDS_MIN, ODDS_MAX = 1.50, 4.00
-EV_MIN, EV_MAX = 0.01, 0.08
 
-
-def _key():
-    for line in open(os.getenv("ENV_PATH", "/home/ubuntu/kalshi-arb/.env")):
-        if line.startswith("ODDS_API_KEY="):
-            return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return os.getenv("ODDS_API_KEY")
+SCHEMA = """CREATE TABLE IF NOT EXISTS paper_bet(
+    event_id TEXT, sport TEXT, home TEXT, away TEXT, market TEXT, side TEXT,
+    point REAL, label TEXT, commence_time TEXT, book TEXT, odds REAL, ev REAL,
+    stake REAL, placed_at TEXT, completed INTEGER DEFAULT 0, won INTEGER,
+    result TEXT, pnl REAL, settled_at TEXT, PRIMARY KEY (event_id, market))"""
 
 
 def _dt(s):
-    """Parse an ISO timestamp (handles both 'Z' and '+00:00'); None on failure."""
     try:
         return datetime.fromisoformat(s.replace("Z", "+00:00"))
     except Exception:
@@ -54,7 +44,6 @@ def _num(x):
 
 
 def send_telegram(text):
-    import urllib.parse
     tok = cho = None
     try:
         for line in open(os.getenv("ENV_PATH", "/home/ubuntu/kalshi-arb/.env")):
@@ -72,12 +61,10 @@ def send_telegram(text):
 
 
 def init_db(db):
-    db.execute("""CREATE TABLE IF NOT EXISTS paper_bet(
-        event_id TEXT PRIMARY KEY, sport TEXT, team TEXT, opponent TEXT,
-        commence_time TEXT, book TEXT, odds REAL, ev REAL, stake REAL,
-        placed_at TEXT,
-        completed INTEGER DEFAULT 0, won INTEGER, result_winner TEXT,
-        pnl REAL, settled_at TEXT)""")
+    cols = [r[1] for r in db.execute("PRAGMA table_info(paper_bet)")]
+    if cols and "market" not in cols:           # one-time migrate from old h2h-only schema
+        db.execute("DROP TABLE paper_bet")
+    db.execute(SCHEMA)
     db.commit()
 
 
@@ -89,26 +76,27 @@ def _band(odds):
     return "c) 3.00-4.00"
 
 
-def candidates(db):
-    """One bet per game = earliest qualifying (pre-game, in-band) snapshot."""
-    rows = db.execute("""SELECT event_id, sport, team, opponent, commence_time,
-        recorded_at, best_soft_book, best_soft_price, snapshot_ev
-        FROM softbook_ev ORDER BY event_id, recorded_at""").fetchall()
+def candidates(src):
+    """One bet per (game, market) = earliest qualifying (pre-game) snapshot."""
+    try:
+        rows = src.execute("""SELECT event_id, sport, home, away, market, side, point,
+            commence_time, recorded_at, best_soft_book, best_soft_price, snapshot_ev
+            FROM softbook_ev ORDER BY event_id, market, recorded_at""").fetchall()
+    except Exception:
+        return []
     seen, out = set(), []
-    for ev_id, sport, team, opp, ct, rec, book, px, ev in rows:
-        if ev_id in seen:
+    for (eid, sport, home, away, market, side, point, ct, rec, book, odds, ev) in rows:
+        k = (eid, market)
+        if k in seen:
             continue
         cdt, rdt = _dt(ct), _dt(rec)
-        if not (cdt and rdt and cdt > rdt):        # pre-game at record time only
+        if not (cdt and rdt and cdt > rdt):        # pre-game at record time
             continue
-        if not (ODDS_MIN <= px <= ODDS_MAX):
-            continue
-        if not (EV_MIN <= ev <= EV_MAX):
-            continue
-        seen.add(ev_id)
-        kelly = ev / (px - 1) if px > 1 else 0
-        stake = max(2.0, min(BANKROLL * 0.02, BANKROLL * kelly * 0.25))
-        out.append((ev_id, sport, team, opp, ct, book, px, ev, round(stake, 2), rec))
+        seen.add(k)
+        kelly = ev / (odds - 1) if odds > 1 else 0
+        stake = round(max(2.0, min(BANKROLL * 0.02, BANKROLL * kelly * 0.25)), 2)
+        out.append((eid, sport, home, away, market, side, point,
+                    core.label(market, side, point), ct, book, odds, ev, stake, rec))
     return out
 
 
@@ -117,112 +105,98 @@ def place(paper, src):
     for c in candidates(src):
         cur = paper.execute(
             """INSERT OR IGNORE INTO paper_bet
-               (event_id, sport, team, opponent, commence_time, book, odds, ev,
-                stake, placed_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""", c)
+               (event_id, sport, home, away, market, side, point, label,
+                commence_time, book, odds, ev, stake, placed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", c)
         n += cur.rowcount
     paper.commit()
     return n
 
 
-def settle(db, key):
-    sports = [r[0] for r in db.execute(
+def settle(paper, key):
+    sports = [r[0] for r in paper.execute(
         "SELECT DISTINCT sport FROM paper_bet WHERE completed=0").fetchall()]
-    settled = 0
+    done = 0
     for sport in sports:
         try:
-            url = (f"https://api.the-odds-api.com/v4/sports/{sport}/scores/"
-                   f"?apiKey={key}&daysFrom=3")
-            games = json.loads(urllib.request.urlopen(url, timeout=25).read())
+            games = json.loads(urllib.request.urlopen(
+                f"{core.B}/{sport}/scores/?apiKey={key}&daysFrom=3", timeout=25).read())
         except Exception as e:
-            print(f"  scores {sport}: {e}")
-            continue
-        results = {}
+            print(f"  scores {sport}: {e}"); continue
+        scores = {}
         for g in games:
             if not g.get("completed"):
                 continue
             sc = {s["name"]: _num(s["score"]) for s in (g.get("scores") or [])}
-            if len(sc) < 2 or any(v is None for v in sc.values()):
+            if len(sc) >= 2 and all(v is not None for v in sc.values()):
+                scores[g["id"]] = sc
+        for (eid, market, side, point, home, away, odds, stake) in paper.execute(
+                """SELECT event_id, market, side, point, home, away, odds, stake
+                   FROM paper_bet WHERE completed=0 AND sport=?""", (sport,)).fetchall():
+            sc = scores.get(eid)
+            if not sc:
                 continue
-            hi = max(sc.values())
-            winners = [nm for nm, v in sc.items() if v == hi]
-            results[g["id"]] = winners[0] if len(winners) == 1 else None  # None = tie/void
-        for ev_id, team, odds, stake in db.execute(
-                "SELECT event_id, team, odds, stake FROM paper_bet "
-                "WHERE completed=0 AND sport=?", (sport,)).fetchall():
-            if ev_id not in results:
+            res = core.grade(market, side, point, home, away, sc)
+            if res is None:
                 continue
-            winner = results[ev_id]
-            if winner is None:                       # tie -> void (stake back)
-                db.execute("UPDATE paper_bet SET completed=1, won=NULL, "
-                           "result_winner=NULL, pnl=0, settled_at=? WHERE event_id=?",
-                           (datetime.now(timezone.utc).isoformat(), ev_id))
-            else:
-                won = int(winner == team)
-                pnl = stake * (odds - 1) if won else -stake
-                db.execute("UPDATE paper_bet SET completed=1, won=?, result_winner=?, "
-                           "pnl=?, settled_at=? WHERE event_id=?",
-                           (won, winner, round(pnl, 2),
-                            datetime.now(timezone.utc).isoformat(), ev_id))
-            settled += 1
-    db.commit()
-    return settled
+            won = 1 if res == "win" else (0 if res == "lose" else None)
+            pnl = stake * (odds - 1) if res == "win" else (-stake if res == "lose" else 0)
+            paper.execute("""UPDATE paper_bet SET completed=1, won=?, result=?, pnl=?,
+                settled_at=? WHERE event_id=? AND market=?""",
+                (won, res, round(pnl, 2), datetime.now(timezone.utc).isoformat(), eid, market))
+            done += 1
+    paper.commit()
+    return done
 
 
 def report(db, tg=False):
-    rows = db.execute("""SELECT sport, team, opponent, odds, ev, stake, commence_time,
-        completed, won, result_winner, pnl FROM paper_bet ORDER BY commence_time""").fetchall()
+    rows = db.execute("""SELECT sport, market, label, odds, stake, commence_time,
+        completed, won, result, pnl FROM paper_bet ORDER BY commence_time""").fetchall()
     if not rows:
-        print("No paper bets yet (no qualifying pre-game / in-band recommendations recorded).")
+        print("No paper bets yet (no qualifying pre-game +EV recommendations recorded).")
         return
-    settled = [r for r in rows if r[7]]
-    pending = [r for r in rows if not r[7]]
-    print(f"\n=== SOFT-BOOK +EV  PAPER PnL  (bankroll ${BANKROLL:.0f}, PAPER — no real money) ===")
-    print("Rule: pre-game, odds 1.50-4.00, EV 1-8%, one bet/game (earliest side), 1/4-Kelly stake.\n")
-    if settled:
-        print("  settled bets:")
-        for sp, team, opp, odds, ev, stake, ct, comp, won, win, pnl in settled:
-            mark = "void" if won is None else ("WON " if won else "lost")
-            print(f"   {ct[:10]} {team[:20]:<20} {odds:>5.2f} ${stake:>5.2f}  {mark}  "
-                  f"PnL {pnl:+6.2f}   ({sp.replace('_',' ')})")
-    staked = sum(r[5] for r in settled if r[8] is not None)   # exclude voids from staked
-    net = sum(r[10] for r in settled)
-    graded = [r for r in settled if r[8] is not None]
-    wins = sum(r[8] for r in graded)
+    settled = [r for r in rows if r[6]]
+    pending = [r for r in rows if not r[6]]
+    graded = [r for r in settled if r[7] is not None]          # exclude pushes
+    wins = sum(r[7] for r in graded)
+    staked = sum(r[4] for r in graded)
+    net = sum(r[9] for r in settled)
     roi = (net / staked * 100) if staked else 0.0
+    print(f"\n=== SOFT-BOOK +EV  PAPER PnL  (ML/spread/total, bankroll ${BANKROLL:.0f}, PAPER) ===")
+    print("Rule: pre-game, odds 1.50-4.00, EV 1-8%, one bet per game+market, 1/4-Kelly.\n")
+    for sp, mk, lbl, odds, stake, ct, comp, won, res, pnl in settled:
+        mark = {"win": "WON ", "lose": "lost", "push": "push"}.get(res, res or "?")
+        print(f"  {ct[:10]} {mk}  {lbl:<22} {odds:>5.2f} ${stake:>5.2f}  PnL {pnl:+6.2f}  ({mk})")
     print("\n  ----- TOTALS -----")
-    print(f"   paper bets:   {len(rows)}   (settled {len(settled)}, pending {len(pending)}, "
-          f"void {len(settled)-len(graded)})")
+    print(f"   paper bets:  {len(rows)}  (settled {len(settled)}, pending {len(pending)}, "
+          f"push {len(settled)-len(graded)})")
     if graded:
-        print(f"   record:       {wins}-{len(graded)-wins}   (win rate {100*wins/len(graded):.0f}%)")
-        print(f"   staked:       ${staked:.2f}")
-        print(f"   net PnL:      ${net:+.2f}")
-        print(f"   ROI:          {roi:+.1f}%   <<< (PAPER, n={len(graded)} — far too small to trust)")
-        # by odds band
-        print("\n   by odds band:")
-        bands = {}
-        for r in graded:
-            b = _band(r[3]); bands.setdefault(b, [0, 0.0, 0])
-            bands[b][0] += 1; bands[b][1] += r[10]; bands[b][2] += r[8]
-        for b in sorted(bands):
-            n, p, w = bands[b]
-            print(f"     {b:<22} n={n:<3} {w}-{n-w}  PnL ${p:+.2f}")
+        print(f"   record:      {wins}-{len(graded)-wins}  (win rate {100*wins/len(graded):.0f}%)")
+        print(f"   staked:      ${staked:.2f}    net PnL: ${net:+.2f}    ROI: {roi:+.1f}%   "
+              f"<<< PAPER, n={len(graded)}")
+        for grp, ix in (("market", 1), ("odds band", 3)):
+            agg = {}
+            for r in graded:
+                kk = r[1] if ix == 1 else _band(r[3])
+                a = agg.setdefault(kk, [0, 0.0, 0]); a[0] += 1; a[1] += r[9]; a[2] += r[7]
+            print(f"   by {grp}:")
+            for kk in sorted(agg):
+                nn, pp, ww = agg[kk]
+                print(f"     {kk:<22} n={nn:<3} {ww}-{nn-ww}  PnL ${pp:+.2f}")
     else:
         print("   no graded results yet — games not completed / not in /scores window.")
     if pending:
-        print(f"\n   pending ({len(pending)}): " +
-              ", ".join(f"{r[1][:14]}({r[6][5:10]})" for r in pending[:12]))
-    print("\n   NOTE: PAPER = the strategy's modeled bets, not your real wagers. Realized")
-    print("   edge needs ~1-2 weeks (n>=~30) + positive CLV to be trustworthy.")
+        print(f"\n   pending ({len(pending)}): " + ", ".join(f"{r[2]}" for r in pending[:10]))
+    print("\n   NOTE: PAPER = modeled bets, not real wagers. Trust needs ~1-2wk (n>=~30) + CLV.")
     if tg:
         if graded:
-            msg = ("📊 소프트북 +EV 페이퍼 PnL (누적)\n"
+            msg = ("📊 소프트북 +EV 페이퍼 PnL (ML/스프레드/토탈)\n"
                    f"전적 {wins}-{len(graded)-wins} (승률 {100*wins/len(graded):.0f}%)\n"
                    f"스테이크 ${staked:.2f} | 순익 ${net:+.2f} | ROI {roi:+.1f}%\n"
                    f"정산 {len(graded)} · 대기 {len(pending)}\n"
                    f"⚠️ n={len(graded)} — 1~2주 더 쌓여야 신뢰 가능 (PAPER)")
         else:
-            msg = (f"📊 소프트북 +EV 페이퍼 PnL\n아직 정산된 베팅 없음 "
+            msg = (f"📊 소프트북 +EV 페이퍼 PnL\n정산된 베팅 아직 없음 "
                    f"(대기 {len(pending)}). 파이프라인 정상.")
         send_telegram(msg)
 
@@ -232,7 +206,7 @@ def main():
     paper = sqlite3.connect(PAPER_DB)
     init_db(paper)
     if "--report" not in sys.argv:
-        key = _key()
+        key = core.read_key()
         if not key:
             print("no ODDS_API_KEY")
         else:
