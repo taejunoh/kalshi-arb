@@ -2686,13 +2686,15 @@ async function renderEvBets() {
           <span><span class="ev-book-odds">${Number(bk.odds).toFixed(2)}</span>
             &nbsp; <span class="ev-book-ev">${bk.ev * 100 >= 0 ? '+' : ''}${(bk.ev * 100).toFixed(1)}%</span></span>
         </div>`).join('');
+      const mkt = ({h2h:'MONEYLINE', spread:'SPREAD', total:'TOTAL'})[b.market] || (b.market || '').toUpperCase();
       return `
         <div class="ev-card">
           <div class="ev-card-top">
             <span class="ev-team">${b.team}</span>
             <span class="ev-badge">$${Number(b.stake).toFixed(0)}</span>
           </div>
-          <div class="ev-sub">${b.sport} · fair ${(b.fair_prob * 100).toFixed(0)}%${when ? ' · ' + when : ''} · bet ONE book</div>
+          ${b.matchup ? `<div class="ev-matchup" style="font-size:13px;color:#9aa;font-weight:600;margin:2px 0 4px">${b.matchup}</div>` : ''}
+          <div class="ev-sub">${mkt ? mkt + ' · ' : ''}${b.sport} · fair ${(b.fair_prob * 100).toFixed(0)}%${when ? ' · ' + when : ''} · bet ONE book</div>
           <div class="ev-books">${books}</div>
         </div>`;
     }).join('');
