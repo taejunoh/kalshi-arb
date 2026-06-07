@@ -14,6 +14,7 @@ Reports realized PnL / ROI / win-rate by market and odds band. PAPER only.
 import os, json, urllib.request, urllib.parse, sqlite3, sys
 from datetime import datetime, timezone
 import softbook_ev_core as core
+import softbook_ev_stats as stats
 
 SRC_DB = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
 PAPER_DB = os.getenv("SOFTBOOK_PAPER_DB", "/home/ubuntu/kalshi-arb/data/softbook_paper.db")
@@ -21,9 +22,9 @@ BANKROLL = float(os.getenv("SOFTBOOK_BANKROLL", "240"))
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS paper_bet(
     event_id TEXT, sport TEXT, home TEXT, away TEXT, market TEXT, side TEXT,
-    point REAL, label TEXT, commence_time TEXT, book TEXT, odds REAL, ev REAL,
-    stake REAL, placed_at TEXT, completed INTEGER DEFAULT 0, won INTEGER,
-    result TEXT, pnl REAL, settled_at TEXT, PRIMARY KEY (event_id, market))"""
+    point REAL, player TEXT, label TEXT, commence_time TEXT, book TEXT, odds REAL,
+    ev REAL, stake REAL, placed_at TEXT, completed INTEGER DEFAULT 0, won INTEGER,
+    result TEXT, pnl REAL, settled_at TEXT, PRIMARY KEY (event_id, market, player))"""
 
 
 def _dt(s):
@@ -62,7 +63,7 @@ def send_telegram(text):
 
 def init_db(db):
     cols = [r[1] for r in db.execute("PRAGMA table_info(paper_bet)")]
-    if cols and "market" not in cols:           # one-time migrate from old h2h-only schema
+    if cols and "player" not in cols:           # one-time migrate (adds player for props)
         db.execute("DROP TABLE paper_bet")
     db.execute(SCHEMA)
     db.commit()
@@ -80,13 +81,13 @@ def candidates(src):
     """One bet per (game, market) = earliest qualifying (pre-game) snapshot."""
     try:
         rows = src.execute("""SELECT event_id, sport, home, away, market, side, point,
-            commence_time, recorded_at, best_soft_book, best_soft_price, snapshot_ev
-            FROM softbook_ev ORDER BY event_id, market, recorded_at""").fetchall()
+            player, commence_time, recorded_at, best_soft_book, best_soft_price, snapshot_ev
+            FROM softbook_ev ORDER BY event_id, market, player, recorded_at""").fetchall()
     except Exception:
         return []
     seen, out = set(), []
-    for (eid, sport, home, away, market, side, point, ct, rec, book, odds, ev) in rows:
-        k = (eid, market)
+    for (eid, sport, home, away, market, side, point, player, ct, rec, book, odds, ev) in rows:
+        k = (eid, market, player)
         if k in seen:
             continue
         cdt, rdt = _dt(ct), _dt(rec)
@@ -95,8 +96,8 @@ def candidates(src):
         seen.add(k)
         kelly = ev / (odds - 1) if odds > 1 else 0
         stake = round(max(2.0, min(BANKROLL * 0.02, BANKROLL * kelly * 0.25)), 2)
-        out.append((eid, sport, home, away, market, side, point,
-                    core.label(market, side, point), ct, book, odds, ev, stake, rec))
+        out.append((eid, sport, home, away, market, side, point, player or "",
+                    core.label(market, side, point, player), ct, book, odds, ev, stake, rec))
     return out
 
 
@@ -105,9 +106,9 @@ def place(paper, src):
     for c in candidates(src):
         cur = paper.execute(
             """INSERT OR IGNORE INTO paper_bet
-               (event_id, sport, home, away, market, side, point, label,
+               (event_id, sport, home, away, market, side, point, player, label,
                 commence_time, book, odds, ev, stake, placed_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", c)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", c)
         n += cur.rowcount
     paper.commit()
     return n
@@ -118,32 +119,37 @@ def settle(paper, key):
         "SELECT DISTINCT sport FROM paper_bet WHERE completed=0").fetchall()]
     done = 0
     for sport in sports:
+        # team scores for GAME markets via Odds API (props settle from a stats source)
+        scores = {}
         try:
             games = json.loads(urllib.request.urlopen(
                 f"{core.B}/{sport}/scores/?apiKey={key}&daysFrom=3", timeout=25).read())
+            for g in games:
+                if not g.get("completed"):
+                    continue
+                sc = {s["name"]: _num(s["score"]) for s in (g.get("scores") or [])}
+                if len(sc) >= 2 and all(v is not None for v in sc.values()):
+                    scores[g["id"]] = sc
         except Exception as e:
-            print(f"  scores {sport}: {e}"); continue
-        scores = {}
-        for g in games:
-            if not g.get("completed"):
-                continue
-            sc = {s["name"]: _num(s["score"]) for s in (g.get("scores") or [])}
-            if len(sc) >= 2 and all(v is not None for v in sc.values()):
-                scores[g["id"]] = sc
-        for (eid, market, side, point, home, away, odds, stake) in paper.execute(
-                """SELECT event_id, market, side, point, home, away, odds, stake
+            print(f"  scores {sport}: {e}")
+        for (eid, market, side, point, player, home, away, ct, odds, stake) in paper.execute(
+                """SELECT event_id, market, side, point, player, home, away,
+                          commence_time, odds, stake
                    FROM paper_bet WHERE completed=0 AND sport=?""", (sport,)).fetchall():
-            sc = scores.get(eid)
-            if not sc:
-                continue
-            res = core.grade(market, side, point, home, away, sc)
+            if market in core.ALL_PROPS:                      # PROP -> player stat
+                stat = stats.player_stat(sport, away, home, ct, market, player)
+                res = core.grade_prop(side, point, stat)
+            else:                                             # game market -> team score
+                sc = scores.get(eid)
+                res = core.grade(market, side, point, home, away, sc) if sc else None
             if res is None:
                 continue
             won = 1 if res == "win" else (0 if res == "lose" else None)
             pnl = stake * (odds - 1) if res == "win" else (-stake if res == "lose" else 0)
             paper.execute("""UPDATE paper_bet SET completed=1, won=?, result=?, pnl=?,
-                settled_at=? WHERE event_id=? AND market=?""",
-                (won, res, round(pnl, 2), datetime.now(timezone.utc).isoformat(), eid, market))
+                settled_at=? WHERE event_id=? AND market=? AND player=?""",
+                (won, res, round(pnl, 2), datetime.now(timezone.utc).isoformat(),
+                 eid, market, player))
             done += 1
     paper.commit()
     return done

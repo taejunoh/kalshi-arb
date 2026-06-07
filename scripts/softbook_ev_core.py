@@ -1,33 +1,45 @@
 #!/usr/bin/env python3
-"""Shared +EV core — soft-book vs sharp Pinnacle across H2H / SPREAD / TOTAL.
+"""Shared +EV core — soft-book vs sharp Pinnacle across H2H / SPREAD / TOTAL / PROPS.
 
-The "full version": for each soft-book offer (moneyline, OR a spread at line P,
-OR a total at line T), we look up Pinnacle's price AT THE SAME LINE — using
-Pinnacle's full alternate-line ladder — and de-vig the two complementary sides
-to get the sharp fair probability there. EV = fair * soft_price - 1. No line
-interpolation (only compute where Pinnacle actually quotes that exact line), so
-key-numbers (3/7 in football, the 1.5 run line, etc.) are never guessed.
+The "full version": for each soft-book offer (moneyline, spread@P, total@T, or a
+PLAYER PROP like pitcher strikeouts / batter total bases / home runs at line L),
+we look up Pinnacle's price AT THE SAME LINE — via Pinnacle's alternate ladder
+for game markets — and de-vig the two complementary sides for the sharp fair
+probability. EV = fair * soft_price - 1. No line interpolation (only where
+Pinnacle quotes the exact line) so key numbers are never guessed.
 
-Pairing (verified on live data):
-  H2H    : (team)            de-vig vs (other team)
-  SPREAD : (team, +P)        de-vig vs (other team, -P)
-  TOTAL  : (Over/Under, T)   de-vig vs (Under/Over, T)
+De-vig pairing (verified live):
+  H2H    : (team)              vs (other team)
+  SPREAD : (team, +P)          vs (other team, -P)
+  TOTAL  : (Over/Under, T)     vs (Under/Over, T)
+  PROP   : (Over/Under, T, player) vs (Under/Over, T, same player)
 
-One per-event call to /events/{id}/odds fetches every market+line for every book.
-Used by softbook_ev_today.py (bet list), _recorder.py (CLV), _paper_pnl.py (settle).
+Props settle on PLAYER stats (Odds API gives only team scores) -> see
+softbook_ev_stats.py. CLV needs no stats; realized PnL does.
 """
 import os, json, urllib.request
 from datetime import datetime, timezone
 
 NY_LEGAL = {"fanduel": "FanDuel", "draftkings": "DraftKings", "betmgm": "BetMGM",
             "caesars": "Caesars", "betrivers": "BetRivers", "fanatics": "Fanatics"}
-ODDS_MIN, ODDS_MAX = 1.50, 4.00      # bettable price band (cuts noise extremes)
-EV_MIN, EV_MAX = 0.01, 0.08          # bettable EV band (>8% = stale/limited)
-MAX_HOURS = 72                       # pre-game, near-term only
-# alternates SUPERSET the main line, but request mains too in case a soft book
-# offers no alternates -> we still capture its main spread/total.
-MARKETS = "h2h,spreads,totals,alternate_spreads,alternate_totals"
+ODDS_MIN, ODDS_MAX = 1.50, 4.00
+EV_MIN, EV_MAX = 0.01, 0.08
+MAX_HOURS = 72
 B = "https://api.the-odds-api.com/v4/sports"
+
+GAME_MARKETS = "h2h,spreads,totals,alternate_spreads,alternate_totals"
+# Player-prop markets to scan, per sport — ONLY ones Pinnacle reliably quotes
+# (so we have a sharp reference). Short labels for display + the stat to settle on.
+PROP_MARKETS = {
+    "baseball_mlb": ["pitcher_strikeouts", "batter_total_bases", "batter_home_runs"],
+}
+PROP_SHORT = {"pitcher_strikeouts": "K", "batter_total_bases": "TB", "batter_home_runs": "HR"}
+ALL_PROPS = {m for v in PROP_MARKETS.values() for m in v}
+
+
+def markets_for(sport):
+    props = PROP_MARKETS.get(sport, [])
+    return GAME_MARKETS + (("," + ",".join(props)) if props else "")
 
 
 def read_key():
@@ -52,15 +64,13 @@ def soon(ct):
 
 def active_sports(key):
     try:
-        d = json.loads(urllib.request.urlopen(
-            f"{B}/?apiKey={key}", timeout=20).read())
+        d = json.loads(urllib.request.urlopen(f"{B}/?apiKey={key}", timeout=20).read())
         return [s["key"] for s in d if s.get("active") and not s.get("has_outrights")]
     except Exception:
         return ["baseball_mlb", "basketball_wnba"]
 
 
 def list_events(sport, key):
-    """Near-term (pre-game, <=72h) events for a sport. Cheap bulk h2h call."""
     try:
         games = json.loads(urllib.request.urlopen(
             f"{B}/{sport}/odds/?apiKey={key}&regions=us&markets=h2h&oddsFormat=decimal",
@@ -70,11 +80,9 @@ def list_events(sport, key):
     return [g for g in games if soon(g.get("commence_time"))]
 
 
-def event_odds(sport, eid, key):
-    """Full per-event odds (all books, h2h+spreads+totals+alternates). Returns
-    (data, credits_used) — credits from the x-requests-last response header."""
+def event_odds(sport, eid, key, markets=GAME_MARKETS):
     url = (f"{B}/{sport}/events/{eid}/odds/?apiKey={key}&regions=us,eu"
-           f"&markets={MARKETS}&oddsFormat=decimal")
+           f"&markets={markets}&oddsFormat=decimal")
     r = urllib.request.urlopen(url, timeout=30)
     data = json.loads(r.read())
     try:
@@ -84,56 +92,68 @@ def event_odds(sport, eid, key):
     return data, credits
 
 
+def _canon(market_key):
+    """Normalize an Odds API market key to our canonical market, or None to skip."""
+    if market_key == "h2h":
+        return "h2h"
+    if "spreads" in market_key:
+        return "spread"
+    if "totals" in market_key:
+        return "total"
+    if market_key in ALL_PROPS:
+        return market_key          # props keep their own key
+    return None
+
+
+def _is_ou(market):
+    return market == "total" or market in ALL_PROPS
+
+
 def _devig(pa, pb):
     ia, ib = 1.0 / pa, 1.0 / pb
     return ia / (ia + ib)
 
 
 def _pin_index(pin_book):
-    """Flat price lookup from Pinnacle's markets: (kind, name, point) -> price.
-    kind in {'h2h','spread','total'}; point is None for h2h, else round(pt,1)."""
+    """(market, player, side, point) -> Pinnacle price. player=None for game markets."""
     idx = {}
     for m in pin_book.get("markets", []):
-        k = m["key"]
-        kind = ("h2h" if k == "h2h" else
-                "spread" if "spreads" in k else
-                "total" if "totals" in k else None)
-        if not kind:
+        cm = _canon(m["key"])
+        if not cm:
             continue
         for o in m["outcomes"]:
-            pt = None if kind == "h2h" else round(o.get("point", 0.0), 1)
-            idx[(kind, o["name"], pt)] = o["price"]   # last wins (main==alt anyway)
+            player = o.get("description")              # set for props, None otherwise
+            pt = None if cm == "h2h" else round(o.get("point", 0.0), 1)
+            idx[(cm, player, o["name"], pt)] = o["price"]
     return idx
 
 
-def _fair(idx, kind, name, point, home, away):
-    """Pinnacle de-vigged fair prob for the bet (kind,name,point), or None if the
-    complementary sharp price isn't quoted at that exact line."""
-    pa = idx.get((kind, name, point))
+def _fair(idx, market, player, side, point, home, away):
+    pa = idx.get((market, player, side, point))
     if pa is None:
         return None
-    if kind == "total":
-        opp = "Under" if name == "Over" else "Over"
-        pb = idx.get((kind, opp, point))
-    else:  # h2h or spread: complement is the OTHER team (spread: at -point)
-        other = away if name == home else home
-        pb = idx.get((kind, other, None if kind == "h2h" else round(-point, 1)))
+    if _is_ou(market):                                 # Over/Under complement, same player+line
+        opp = "Under" if side == "Over" else "Over"
+        pb = idx.get((market, player, opp, point))
+    else:                                              # h2h / spread: other team
+        other = away if side == home else home
+        pb = idx.get((market, None, other, None if market == "h2h" else round(-point, 1)))
     if pb is None:
         return None
     return _devig(pa, pb)
 
 
-def label(market, side, point):
+def label(market, side, point, player=None):
     if market == "h2h":
         return f"{side} ML"
     if market == "spread":
         return f"{side} {point:+g}"
-    return f"{side} {point:g}"            # total: "Over 8.5"
+    if market == "total":
+        return f"{side} {point:g}"
+    return f"{player} {PROP_SHORT.get(market, market)} {side} {point:g}"   # prop
 
 
 def event_ev_bets(ev, sport):
-    """All qualifying +EV soft-book bets for one event (across h2h/spread/total).
-    Returns a list of dicts; caller dedups (e.g. best per market)."""
     home, away = ev.get("home_team"), ev.get("away_team")
     bk = {b["key"]: b for b in ev.get("bookmakers", [])}
     pin = bk.get("pinnacle")
@@ -146,18 +166,16 @@ def event_ev_bets(ev, sport):
         if not b:
             continue
         for m in b.get("markets", []):
-            k = m["key"]
-            market = ("h2h" if k == "h2h" else
-                      "spread" if "spreads" in k else
-                      "total" if "totals" in k else None)
+            market = _canon(m["key"])
             if not market:
                 continue
             for o in m["outcomes"]:
                 price = o["price"]
                 if not (ODDS_MIN <= price <= ODDS_MAX):
                     continue
+                player = o.get("description")
                 point = None if market == "h2h" else round(o.get("point", 0.0), 1)
-                fair = _fair(idx, market, o["name"], point, home, away)
+                fair = _fair(idx, market, player, o["name"], point, home, away)
                 if fair is None:
                     continue
                 ev_val = fair * price - 1
@@ -167,33 +185,33 @@ def event_ev_bets(ev, sport):
                         "commence_time": ev.get("commence_time"),
                         "home": home, "away": away,
                         "market": market, "side": o["name"], "point": point,
-                        "label": label(market, o["name"], point),
+                        "player": player,
+                        "label": label(market, o["name"], point, player),
                         "book": blabel, "odds": price, "fair": fair, "ev": ev_val,
-                        "pin_price": idx.get((market, o["name"], point)),
+                        "pin_price": idx.get((market, player, o["name"], point)),
                     })
     return out
 
 
 def best_per_market(bets):
-    """Dedup to the single best-EV bet per (event, market) — so a game yields at
-    most one moneyline + one spread + one total (never both sides of a market)."""
+    """Best-EV bet per (event, market, player) — one ML + one spread + one total +
+    one bet per (player, prop). Never both sides of the same market."""
     best = {}
     for b in bets:
-        k = (b["event_id"], b["market"])
+        k = (b["event_id"], b["market"], b.get("player"))
         if k not in best or b["ev"] > best[k]["ev"]:
             best[k] = b
     return sorted(best.values(), key=lambda b: -b["ev"])
 
 
 def grade(market, side, point, home, away, scores):
-    """Settle a bet given final scores {team: int}. Returns 'win'/'lose'/'push'/None."""
+    """Settle a GAME-market bet given final team scores {team: int}."""
     try:
         if market == "total":
             tot = scores[home] + scores[away]
             if tot == point:
                 return "push"
-            over = tot > point
-            return "win" if (over == (side == "Over")) else "lose"
+            return "win" if ((tot > point) == (side == "Over")) else "lose"
         other = away if side == home else home
         margin = scores[side] - scores[other]
         if market == "spread":
@@ -205,16 +223,24 @@ def grade(market, side, point, home, away, scores):
         return None
 
 
+def grade_prop(side, point, stat):
+    """Settle a PROP bet given the player's final stat value (from softbook_ev_stats)."""
+    if stat is None:
+        return None
+    if stat == point:
+        return "push"
+    return "win" if ((stat > point) == (side == "Over")) else "lose"
+
+
 def scan_sport(sport, key, per_event_budget=None):
-    """Live: list near-term events, fetch each, collect best +EV per market.
-    Returns (bets, credits_used, n_events)."""
     evs = list_events(sport, key)
+    mk = markets_for(sport)
     bets, credits = [], 0
     for g in evs:
         if per_event_budget is not None and credits >= per_event_budget:
             break
         try:
-            data, c = event_odds(sport, g["id"], key)
+            data, c = event_odds(sport, g["id"], key, mk)
             credits += c
             bets += event_ev_bets(data, sport)
         except Exception:
@@ -227,11 +253,9 @@ if __name__ == "__main__":
     k = read_key()
     sport = sys.argv[1] if len(sys.argv) > 1 else "baseball_mlb"
     bets, credits, nev = scan_sport(sport, k)
-    print(f"{sport}: {nev} near-term events, {credits} API credits used, "
-          f"{len(bets)} +EV bets (best per market):\n")
+    print(f"{sport}: {nev} events, {credits} credits, {len(bets)} +EV bets:\n")
     for b in bets:
-        print(f"  {b['away'][:14]:<14}@{b['home'][:14]:<14} | {b['market']:<6} "
-              f"{b['label']:<18} {b['book']:<11} {b['odds']:.2f}  fair {b['fair']*100:4.1f}%  "
-              f"EV {b['ev']*100:+.2f}%")
+        print(f"  {b['market']:<18} {b['label']:<28} {b['book']:<11} {b['odds']:.2f}  "
+              f"fair {b['fair']*100:4.1f}%  EV {b['ev']*100:+.2f}%")
     if not bets:
         print("  (none in band right now)")
