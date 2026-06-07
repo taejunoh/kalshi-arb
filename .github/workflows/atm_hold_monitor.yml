@@ -7,11 +7,17 @@ jobs:
     steps:
       - name: Check dashboard and send Telegram
         run: |
+          set +e
           NOW_UTC=$(date -u '+%Y-%m-%dT%H:%M UTC')
-          HTTP_CODE=$(curl -s -o /tmp/resp.json -w "%{http_code}" --max-time 15 "http://3.146.180.145:8080/api/strategy-monitor/atm_hold_v1?since=2026-05-19T00:00:00" || echo "000")
-          if [[ "$HTTP_CODE" == "000" || "$HTTP_CODE" == 5* ]]; then
-            MSG="atm_hold_v1 6h monitor (${NOW_UTC}): dashboard endpoint no response (HTTP ${HTTP_CODE}). EC2 check needed."
-            curl -s -X POST "https://api.telegram.org/bot8628167598:AAEl4f-QpO3Gx1t15rEEnpGemmyIrslKIh0/sendMessage" -d "chat_id=8578917235" --data-urlencode "text=${MSG}"
+          curl -s -o /tmp/resp.json --max-time 15 "http://3.146.180.145:8080/api/strategy-monitor/atm_hold_v1?since=2026-05-19T00:00:00"
+          CURL_EXIT=$?
+          set -e
+          if [[ $CURL_EXIT -ne 0 ]] || [[ ! -s /tmp/resp.json ]]; then
+            MSG="atm_hold_v1 6h monitor (${NOW_UTC}): dashboard endpoint no response (curl_exit=${CURL_EXIT}). EC2 check needed."
+            curl -s -X POST "https://api.telegram.org/bot8628167598:AAEl4f-QpO3Gx1t15rEEnpGemmyIrslKIh0/sendMessage" \
+              -d "chat_id=8578917235" \
+              --data-urlencode "text=${MSG}"
+            echo "Telegram sent (endpoint down alert)"
             exit 0
           fi
           ROLLBACK=$(jq -r '.rollback_triggers.any_rollback_signal // false' /tmp/resp.json)
@@ -33,6 +39,8 @@ jobs:
               MSG="atm_hold_v1 OK ${NOW_UTC} | LIVE n=${N} WR=${WR}% NET=${NET} | Wipe=${WIPE}% Fill=${FILL}% Ratio=${RATIO} | next check +6h"
             fi
           fi
-          RESP=$(curl -s -X POST "https://api.telegram.org/bot8628167598:AAEl4f-QpO3Gx1t15rEEnpGemmyIrslKIh0/sendMessage" -d "chat_id=8578917235" --data-urlencode "text=${MSG}")
+          RESP=$(curl -s -X POST "https://api.telegram.org/bot8628167598:AAEl4f-QpO3Gx1t15rEEnpGemmyIrslKIh0/sendMessage" \
+            -d "chat_id=8578917235" \
+            --data-urlencode "text=${MSG}")
           echo "Telegram: $RESP"
           cat /tmp/resp.json
