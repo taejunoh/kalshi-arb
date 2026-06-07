@@ -1,73 +1,27 @@
 #!/usr/bin/env python3
 """ACTIONABLE +EV bet list — what to bet RIGHT NOW on US-legal soft books.
 
-Fetches current odds, computes each soft book's edge vs the sharp Pinnacle
-no-vig line, and prints a clean 'place these bets' list (NY-legal books only,
-realistic 1-8% EV band at mid-range odds 1.50-4.00, with suggested stake). Pinnacle is the REFERENCE only
+FULL version: scans MONEYLINE, SPREAD and TOTAL (Over/Under) across every active
+in-season sport, comparing each soft-book line to Pinnacle's sharp price AT THE
+SAME LINE (via Pinnacle's alternate-line ladder; see softbook_ev_core.py). Prints
+a clean 'place these bets' list — NY-legal books only, pre-game (<=72h), odds
+1.50-4.00, EV 1-8%, one bet per (game, market). Pinnacle is the REFERENCE only
 (US-unavailable) — you BET the listed soft book.
 
-Usage: venv/bin/python scripts/softbook_ev_today.py [bankroll]
+Usage: venv/bin/python scripts/softbook_ev_today.py [bankroll] [--json PATH] [--telegram]
 """
-import os, json, urllib.request, sys
+import os, json, sys, urllib.request, urllib.parse
 from datetime import datetime, timezone
-
-MAX_HOURS = 72   # only near-term games — the sharp line is only "true" close to start.
-
-
-def soon(commence_time):
-    """True if the game starts in the FUTURE but within MAX_HOURS.
-    PRE-GAME ONLY: once a game starts the soft book closes the pregame market (the
-    bet is unplaceable) and the Pinnacle pregame reference line is gone, so an
-    already-started game is a stale 'ghost' +EV -> exclude (hrs > 0). Far-future
-    lines (e.g. NFL months out) aren't sharp either -> capped at MAX_HOURS."""
-    if not commence_time:
-        return False
-    try:
-        gt = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
-        hrs = (gt - datetime.now(timezone.utc)).total_seconds() / 3600
-        return 0 < hrs <= MAX_HOURS
-    except Exception:
-        return True
-
-# NY-legal soft books you can actually bet at (verified: NY's licensed mobile
-# operators). ESPN BET / Penn is NOT licensed in NY -> excluded. Fanatics holds
-# PointsBet's former NY license -> included.
-NY_LEGAL = {"fanduel": "FanDuel", "draftkings": "DraftKings", "betmgm": "BetMGM",
-            "caesars": "Caesars", "betrivers": "BetRivers", "fanatics": "Fanatics"}
-EV_MIN, EV_MAX = 0.01, 0.08   # bettable band; >8% is usually a stale/limited line
-# Odds band: trust the soft-book +EV signal only at mid-range odds. Below 1.50
-# (heavy favorites) the edge is tiny, capital-inefficient, and within de-vig
-# noise; above 4.00 (big longshots) the "EV" is mostly de-vig/stale noise +
-# longshot bias. Both extremes are where realized ROI leaks -> cut them.
-ODDS_MIN, ODDS_MAX = 1.50, 4.00
+from collections import defaultdict
+from softbook_ev_core import read_key, active_sports, scan_sport
 
 
-def active_sports(key):
-    """Every in-season h2h sport on the Odds API right now (auto-adapts to seasons)."""
-    try:
-        d = json.loads(urllib.request.urlopen(
-            f"https://api.the-odds-api.com/v4/sports/?apiKey={key}", timeout=20).read())
-        return [s["key"] for s in d if s.get("active") and not s.get("has_outrights")]
-    except Exception:
-        return ["baseball_mlb", "baseball_npb", "baseball_kbo", "basketball_wnba"]
-
-
-def _key():
-    for line in open(os.getenv("ENV_PATH", "/home/ubuntu/kalshi-arb/.env")):
-        if line.startswith("ODDS_API_KEY="):
-            return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return os.getenv("ODDS_API_KEY")
-
-
-def get(sport, key):
-    return json.loads(urllib.request.urlopen(
-        f"https://api.the-odds-api.com/v4/sports/{sport}/odds/"
-        f"?apiKey={key}&regions=us,eu&markets=h2h&oddsFormat=decimal", timeout=25).read())
+def stake_for(ev, odds, bankroll):
+    kelly = ev / (odds - 1) if odds > 1 else 0
+    return round(max(2.0, min(bankroll * 0.02, bankroll * kelly * 0.25)), 2)
 
 
 def send_telegram(text):
-    """Push the bet list to the user's phone (uses the bot's existing creds)."""
-    import urllib.parse
     tok = cho = None
     try:
         for line in open(os.getenv("ENV_PATH", "/home/ubuntu/kalshi-arb/.env")):
@@ -85,113 +39,75 @@ def send_telegram(text):
 
 
 def main():
-    # bankroll = first numeric arg (so `--json PATH` / `--telegram` work with or
-    # without a leading bankroll; non-numeric args like flags/paths are skipped)
     bankroll = 240.0
     for a in sys.argv[1:]:
         try:
             bankroll = float(a); break
         except ValueError:
             continue
-    key = _key()
-    bets = []
-    commence = {}
+    key = read_key()
+
+    bets, credits = [], 0
     for sport in active_sports(key):
         try:
-            games = get(sport, key)
+            sb, c, _ = scan_sport(sport, key)
         except Exception:
             continue
-        for g in games:
-            if not soon(g.get("commence_time")):
-                continue
-            bk = {b["key"]: b for b in g.get("bookmakers", [])}
-            pin = bk.get("pinnacle")
-            if not pin:
-                continue
-            try:
-                po = {o["name"]: o["price"] for o in pin["markets"][0]["outcomes"]}
-            except Exception:
-                continue
-            if len(po) != 2:
-                continue
-            inv = {k: 1.0 / v for k, v in po.items()}
-            tot = sum(inv.values())
-            fair = {k: inv[k] / tot for k in inv}
-            for team in fair:
-                for bkey, label in NY_LEGAL.items():
-                    b = bk.get(bkey)
-                    if not b:
-                        continue
-                    try:
-                        so = {o["name"]: o["price"] for o in b["markets"][0]["outcomes"]}
-                    except Exception:
-                        continue
-                    if team not in so:
-                        continue
-                    if not (ODDS_MIN <= so[team] <= ODDS_MAX):
-                        continue
-                    ev = fair[team] * so[team] - 1
-                    if EV_MIN <= ev <= EV_MAX:
-                        # quarter-Kelly stake (conservative), capped at 2% bankroll
-                        edge = ev
-                        kelly = edge / (so[team] - 1) if so[team] > 1 else 0
-                        stake = min(bankroll * 0.02, bankroll * kelly * 0.25)
-                        bets.append((ev, sport, team, label, so[team], fair[team], max(2.0, stake)))
-                        commence[(sport, team)] = g.get("commence_time")
-    # GROUP by game: same game across books = ONE bet. Show ALL +EV books per
-    # game (best first) so you can line-shop at bet time, but BET ONLY ONE.
-    from collections import defaultdict
-    games = defaultdict(list)
-    stakes = {}
-    for ev, sport, team, book, odds, fair, stake in bets:
-        games[(sport, team)].append((ev, book, odds))
-        stakes[(sport, team)] = (fair, stake)
-    ordered = sorted(games.items(), key=lambda kv: -max(o[0] for o in kv[1]))
+        credits += c
+        bets += sb
+    bets.sort(key=lambda b: -b["ev"])
+    for b in bets:
+        b["stake"] = stake_for(b["ev"], b["odds"], bankroll)
 
-    # --json PATH : write the bet list for the dashboard (writes even if empty)
+    # --json : dashboard feed (one entry per +EV market bet; keeps legacy fields)
     if "--json" in sys.argv:
         i = sys.argv.index("--json")
         path = sys.argv[i + 1] if i + 1 < len(sys.argv) else "data/ev_bets_latest.json"
         out = {"generated_at": datetime.now(timezone.utc).isoformat(),
-               "bankroll": bankroll, "bets": []}
-        for (sport, team), offers in ordered:
-            offers.sort(reverse=True)
-            fair, stake = stakes[(sport, team)]
+               "bankroll": bankroll, "api_credits": credits, "bets": []}
+        for b in bets:
             out["bets"].append({
-                "team": team, "sport": sport.replace("_", " ").upper(),
-                "commence_time": commence.get((sport, team)),
-                "fair_prob": round(fair, 4), "stake": round(stake, 2),
-                "best_ev": offers[0][0],
-                "books": [{"book": bk, "odds": od, "ev": ev} for ev, bk, od in offers],
+                "team": b["label"], "matchup": f"{b['away']} @ {b['home']}",
+                "sport": b["sport"].replace("_", " ").upper(),
+                "market": b["market"], "side": b["side"], "point": b["point"],
+                "commence_time": b["commence_time"],
+                "fair_prob": round(b["fair"], 4), "stake": b["stake"],
+                "best_ev": b["ev"],
+                "books": [{"book": b["book"], "odds": b["odds"], "ev": b["ev"]}],
             })
         try:
             with open(path, "w") as f:
                 json.dump(out, f)
-            print(f"wrote {len(out['bets'])} bets -> {path}")
+            print(f"wrote {len(out['bets'])} bets -> {path} ({credits} credits)")
         except Exception as e:
             print("json write err:", e)
 
-    want_tg = "--telegram" in sys.argv
-    if not ordered:
-        print("No +EV bets in the 1-8% band at 1.50-4.00 odds right now. Re-run later (lines move).")
+    if not bets:
+        print(f"No +EV bets (pre-game, 1.50-4.00, 1-8%) right now. ({credits} credits) Re-run later.")
         return
-    print(f"\n=== +EV BETS ({len(ordered)} games, bankroll ${bankroll:.0f}, ref=Pinnacle no-vig) ===")
-    print("Each game = ONE bet. Books listed best-first; take whichever is best when you bet.\n")
-    lines = []
-    for (sport, team), offers in ordered:
-        offers.sort(reverse=True)
-        fair, stake = stakes[(sport, team)]
-        opts = "  ".join(f"{bk} {od:.2f}({ev*100:+.1f}%)" for ev, bk, od in offers)
-        row = f"• {team[:24]:<24} fair {fair*100:.0f}% | ${stake:.0f} | {opts}"
-        print(row)
-        lines.append(f"• {team[:24]} (fair {fair*100:.0f}%, ${stake:.0f}) — bet ONE:\n   " +
-                     " / ".join(f"{bk} {od:.2f} {ev*100:+.1f}%" for ev, bk, od in offers))
-    print("\nBet each GAME once (pick the best book that's still up). Different games = bet all you want.")
-    print("Long-run edge — you won't win every one. Bet small.")
-    if want_tg:
-        msg = ("🎯 +EV bets — each game = ONE bet (pick best book still up):\n\n" +
-               "\n".join(lines) +
-               "\n\nDifferent games = bet all. Same game = pick one. +EV vs sharp line, bet small.")
+
+    # group by game for readable display
+    games = defaultdict(list)
+    for b in bets:
+        games[(b["away"], b["home"], b["commence_time"])].append(b)
+    print(f"\n=== +EV BETS — {len(bets)} across {len(games)} games "
+          f"(bankroll ${bankroll:.0f}, ref=Pinnacle, {credits} credits) ===")
+    print("ML/spread/total. Each line = one bet (best book). Same market = pick one.\n")
+    tg_lines = []
+    for (away, home, ct), gb in sorted(games.items(), key=lambda kv: -max(b["ev"] for b in kv[1])):
+        gb.sort(key=lambda b: -b["ev"])
+        print(f"• {away} @ {home}")
+        for b in gb:
+            print(f"    {b['market']:<6} {b['label']:<20} {b['book']:<11} "
+                  f"{b['odds']:.2f}  (fair {b['fair']*100:.0f}%, EV {b['ev']*100:+.1f}%)  ${b['stake']:.0f}")
+        tg_lines.append(f"• {away[:16]} @ {home[:16]}\n" + "\n".join(
+            f"   {b['label']} — {b['book']} {b['odds']:.2f} ({b['ev']*100:+.1f}%) ${b['stake']:.0f}" for b in gb))
+    print("\nLong-run edge — bet small, one per market. Different games/markets = diversify.")
+
+    if "--telegram" in sys.argv:
+        msg = ("🎯 +EV bets (ML/spread/total) — bet best book, one per market:\n\n"
+               + "\n\n".join(tg_lines)
+               + "\n\n+EV vs sharp Pinnacle line. Bet small, pre-game only.")
         send_telegram(msg)
 
 
