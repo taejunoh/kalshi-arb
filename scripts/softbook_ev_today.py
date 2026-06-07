@@ -16,6 +16,21 @@ from collections import defaultdict
 from softbook_ev_core import read_key, active_sports, scan_sport
 
 JSON_CAP, TG_CAP = 40, 12   # dashboard / Telegram show top-N by EV (props can be many)
+PROP_PER_GAME = 3           # cap props per game (correlated — don't stack a slate)
+
+
+def cap_props_per_game(bets, n=PROP_PER_GAME):
+    """Keep all game-market bets but only the top-n props per game (props in one
+    game are correlated — a slugfest makes the Overs hit/miss together)."""
+    seen, out = defaultdict(int), []
+    for b in bets:                       # bets are pre-sorted by -ev
+        if b["market"] in ("h2h", "spread", "total"):
+            out.append(b)
+        else:
+            g = (b["away"], b["home"])
+            if seen[g] < n:
+                out.append(b); seen[g] += 1
+    return out
 
 
 def stake_for(ev, odds, bankroll):
@@ -58,6 +73,7 @@ def main():
         credits += c
         bets += sb
     bets.sort(key=lambda b: -b["ev"])
+    bets = cap_props_per_game(bets)
     for b in bets:
         b["stake"] = stake_for(b["ev"], b["odds"], bankroll)
 

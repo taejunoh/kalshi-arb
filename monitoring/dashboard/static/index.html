@@ -554,6 +554,10 @@
     }
     .ev-section:first-child { margin-top: 2px; }
     .ev-count { opacity: .5; font-weight: 600; margin-left: 5px; }
+    .ev-subhead {
+      font-size: 12.5px; font-weight: 600; color: var(--text, #cbd5e1);
+      margin: 13px 0 7px;
+    }
     .ev-card {
       background: var(--card, #16181d);
       border: 1px solid rgba(255,255,255,0.07);
@@ -2684,7 +2688,7 @@ async function renderEvBets() {
         'Refreshes every ~20 min — more appear during US game hours.</div>';
       return;
     }
-    const card = (b) => {
+    const card = (b, showMatchup) => {
       const start = b.commence_time ? new Date(b.commence_time) : null;
       const when = start ? start.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
       const books = (b.books || []).map((bk, i) => `
@@ -2699,25 +2703,35 @@ async function renderEvBets() {
             <span class="ev-team">${b.team}</span>
             <span class="ev-badge">$${Number(b.stake).toFixed(0)}</span>
           </div>
-          ${b.matchup ? `<div class="ev-matchup" style="font-size:13px;color:#9aa;font-weight:600;margin:2px 0 4px">${b.matchup}</div>` : ''}
+          ${showMatchup && b.matchup ? `<div class="ev-matchup" style="font-size:13px;color:#9aa;font-weight:600;margin:2px 0 4px">${b.matchup}</div>` : ''}
           <div class="ev-sub">${b.sport} · fair ${(b.fair_prob * 100).toFixed(0)}%${when ? ' · ' + when : ''} · bet ONE book</div>
           <div class="ev-books">${books}</div>
         </div>`;
     };
-    const CATS = [
-      ['Moneyline',    m => m === 'h2h'],
-      ['Spread',       m => m === 'spread'],
-      ['Over / Under', m => m === 'total'],
-      ['Props',        m => !['h2h','spread','total'].includes(m)],
-    ];
+    const section = (t, n) => `<div class="ev-section">${t}<span class="ev-count">(${n})</span></div>`;
+    const grid = (arr, showMatchup) => `<div class="ev-grid">${arr.map(b => card(b, showMatchup)).join('')}</div>`;
+    const isProp = b => !['h2h', 'spread', 'total'].includes(b.market);
     let html = '';
-    for (const [name, test] of CATS) {
-      const cb = bets.filter(b => test(b.market));
-      if (!cb.length) continue;
-      html += `<div class="ev-section">${name}<span class="ev-count">(${cb.length})</span></div>`
-            + `<div class="ev-grid">` + cb.map(card).join('') + `</div>`;
+    // game markets: flat grid, matchup on each card
+    for (const [name, mk] of [['Moneyline', 'h2h'], ['Spread', 'spread'], ['Over / Under', 'total']]) {
+      const cb = bets.filter(b => b.market === mk);
+      if (cb.length) html += section(name, cb.length) + grid(cb, true);
     }
-    list.innerHTML = html;
+    // props: grouped by game (matchup once per group; games ordered by best EV)
+    const props = bets.filter(isProp);
+    if (props.length) {
+      html += section('Props', props.length);
+      const byGame = {};
+      for (const b of props) (byGame[b.matchup] = byGame[b.matchup] || []).push(b);
+      const games = Object.entries(byGame).sort((a, c) =>
+        Math.max(...c[1].map(x => x.best_ev)) - Math.max(...a[1].map(x => x.best_ev)));
+      for (const [matchup, gb] of games) {
+        gb.sort((a, c) => c.best_ev - a.best_ev);
+        html += `<div class="ev-subhead">${matchup}<span style="opacity:.55"> · ${gb[0].sport || ''}</span>`
+              + `<span class="ev-count">(${gb.length})</span></div>` + grid(gb, false);
+      }
+    }
+    list.innerHTML = html || '<div class="ev-empty">No +EV bets right now.</div>';
   } catch (e) {
     list.innerHTML = '<div class="ev-empty">Failed to load +EV bets.</div>';
   }
