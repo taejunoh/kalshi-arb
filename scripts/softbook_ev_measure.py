@@ -69,7 +69,12 @@ def main():
     for b in sorted(bands):
         v = bands[b]
         print(f"  {b:<24} n={len(v):<3} mean CLV {statistics.mean(v)*100:+.2f}pp")
-    print("\nVERDICT: positive mean CLV with CI>0 = the soft-book +EV edge is REAL & capturable.")
+    if lo > 0:
+        print("\nVERDICT: CI95 lower bound > 0 — soft-book +EV edge is REAL & capturable (we beat the close).")
+    elif hi < 0:
+        print("\nVERDICT: CI95 entirely < 0 — recorded bets LOSE to the close (stale-line / -EV); not capturable as-is.")
+    else:
+        print("\nVERDICT: CI95 spans 0 — no detectable CLV edge yet (stale-line noise). Keep recording.")
 
 
 if __name__ == "__main__":
