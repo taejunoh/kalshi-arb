@@ -23,7 +23,8 @@ BANKROLL = float(os.getenv("SOFTBOOK_BANKROLL", "240"))
 SCHEMA = """CREATE TABLE IF NOT EXISTS paper_bet(
     event_id TEXT, sport TEXT, home TEXT, away TEXT, market TEXT, side TEXT,
     point REAL, player TEXT, label TEXT, commence_time TEXT, book TEXT, odds REAL,
-    ev REAL, stake REAL, placed_at TEXT, completed INTEGER DEFAULT 0, won INTEGER,
+    ev REAL, stake REAL, placed_at TEXT, tier TEXT, conf REAL,
+    completed INTEGER DEFAULT 0, won INTEGER,
     result TEXT, pnl REAL, settled_at TEXT, PRIMARY KEY (event_id, market, player))"""
 
 
@@ -66,7 +67,29 @@ def init_db(db):
     if cols and "player" not in cols:           # one-time migrate (adds player for props)
         db.execute("DROP TABLE paper_bet")
     db.execute(SCHEMA)
+    cols = [r[1] for r in db.execute("PRAGMA table_info(paper_bet)")]
+    for col, typ in (("tier", "TEXT"), ("conf", "REAL")):   # additive migrate (track confidence)
+        if col not in cols:
+            db.execute(f"ALTER TABLE paper_bet ADD COLUMN {col} {typ}")
     db.commit()
+
+
+def backfill_tiers(paper, src):
+    """Fill tier/conf on bets placed before the ledger tracked them — from the
+    earliest recorded snapshot of each (event, market, player)."""
+    tmap = {}
+    for eid, market, player, tier, conf in src.execute(
+            """SELECT event_id, market, COALESCE(player, ''), tier, conf FROM softbook_ev
+               ORDER BY event_id, market, COALESCE(player, ''), recorded_at"""):
+        tmap.setdefault((eid, market, player), (tier, conf))     # first = earliest
+    n = 0
+    for (eid, market, player), (tier, conf) in tmap.items():
+        n += paper.execute(
+            """UPDATE paper_bet SET tier=?, conf=? WHERE event_id=? AND market=?
+               AND COALESCE(player, '')=? AND tier IS NULL""",
+            (tier, conf, eid, market, player)).rowcount
+    paper.commit()
+    return n
 
 
 def _band(odds):
@@ -81,12 +104,14 @@ def candidates(src):
     """One bet per (game, market) = earliest qualifying (pre-game) snapshot."""
     try:
         rows = src.execute("""SELECT event_id, sport, home, away, market, side, point,
-            player, commence_time, recorded_at, best_soft_book, best_soft_price, snapshot_ev
+            player, commence_time, recorded_at, best_soft_book, best_soft_price, snapshot_ev,
+            tier, conf
             FROM softbook_ev ORDER BY event_id, market, player, recorded_at""").fetchall()
     except Exception:
         return []
     seen, out = set(), []
-    for (eid, sport, home, away, market, side, point, player, ct, rec, book, odds, ev) in rows:
+    for (eid, sport, home, away, market, side, point, player, ct, rec, book, odds, ev,
+         tier, conf) in rows:
         k = (eid, market, player)
         if k in seen:
             continue
@@ -97,7 +122,8 @@ def candidates(src):
         kelly = ev / (odds - 1) if odds > 1 else 0
         stake = round(max(2.0, min(BANKROLL * 0.02, BANKROLL * kelly * 0.25)), 2)
         out.append((eid, sport, home, away, market, side, point, player or "",
-                    core.label(market, side, point, player), ct, book, odds, ev, stake, rec))
+                    core.label(market, side, point, player), ct, book, odds, ev, stake, rec,
+                    tier, conf))
     return out
 
 
@@ -107,8 +133,8 @@ def place(paper, src):
         cur = paper.execute(
             """INSERT OR IGNORE INTO paper_bet
                (event_id, sport, home, away, market, side, point, player, label,
-                commence_time, book, odds, ev, stake, placed_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", c)
+                commence_time, book, odds, ev, stake, placed_at, tier, conf)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", c)
         n += cur.rowcount
     paper.commit()
     return n
@@ -157,7 +183,7 @@ def settle(paper, key):
 
 def report(db, tg=False):
     rows = db.execute("""SELECT sport, market, label, odds, stake, commence_time,
-        completed, won, result, pnl FROM paper_bet ORDER BY commence_time""").fetchall()
+        completed, won, result, pnl, tier FROM paper_bet ORDER BY commence_time""").fetchall()
     if not rows:
         print("No paper bets yet (no qualifying pre-game +EV recommendations recorded).")
         return
@@ -170,7 +196,7 @@ def report(db, tg=False):
     roi = (net / staked * 100) if staked else 0.0
     print(f"\n=== SOFT-BOOK +EV  PAPER PnL  (ML/spread/total, bankroll ${BANKROLL:.0f}, PAPER) ===")
     print("Rule: pre-game, odds 1.50-4.00, EV 1-8%, one bet per game+market, 1/4-Kelly.\n")
-    for sp, mk, lbl, odds, stake, ct, comp, won, res, pnl in settled:
+    for sp, mk, lbl, odds, stake, ct, comp, won, res, pnl, tier in settled:
         mark = {"win": "WON ", "lose": "lost", "push": "push"}.get(res, res or "?")
         print(f"  {ct[:10]} {mk}  {lbl:<22} {odds:>5.2f} ${stake:>5.2f}  PnL {pnl:+6.2f}  ({mk})")
     print("\n  ----- TOTALS -----")
@@ -180,15 +206,20 @@ def report(db, tg=False):
         print(f"   record:      {wins}-{len(graded)-wins}  (win rate {100*wins/len(graded):.0f}%)")
         print(f"   staked:      ${staked:.2f}    net PnL: ${net:+.2f}    ROI: {roi:+.1f}%   "
               f"<<< PAPER, n={len(graded)}")
-        for grp, ix in (("market", 1), ("odds band", 3)):
+        tord = {"High": 0, "Med": 1, "Low": 2}
+        for grp, keyfn in (("confidence tier", lambda r: r[10] or "?"),
+                           ("market", lambda r: r[1]),
+                           ("odds band", lambda r: _band(r[3]))):
             agg = {}
             for r in graded:
-                kk = r[1] if ix == 1 else _band(r[3])
-                a = agg.setdefault(kk, [0, 0.0, 0]); a[0] += 1; a[1] += r[9]; a[2] += r[7]
+                a = agg.setdefault(keyfn(r), [0, 0.0, 0.0, 0])
+                a[0] += 1; a[1] += r[9]; a[2] += r[4]; a[3] += r[7]      # n, pnl, staked, wins
+            order = sorted(agg, key=lambda x: tord.get(x, 9)) if grp == "confidence tier" else sorted(agg)
             print(f"   by {grp}:")
-            for kk in sorted(agg):
-                nn, pp, ww = agg[kk]
-                print(f"     {kk:<22} n={nn:<3} {ww}-{nn-ww}  PnL ${pp:+.2f}")
+            for kk in order:
+                nn, pp, st, ww = agg[kk]
+                roi = (pp / st * 100) if st else 0.0
+                print(f"     {kk:<22} n={nn:<3} {ww}-{nn-ww}  PnL ${pp:+.2f}  ROI {roi:+.1f}%")
     else:
         print("   no graded results yet — games not completed / not in /scores window.")
     if pending:
@@ -196,10 +227,16 @@ def report(db, tg=False):
     print("\n   NOTE: PAPER = modeled bets, not real wagers. Trust needs ~1-2wk (n>=~30) + CLV.")
     if tg:
         if graded:
+            tp = {}
+            for r in graded:
+                a = tp.setdefault(r[10] or "?", [0, 0.0]); a[0] += 1; a[1] += r[9]
+            tline = " · ".join(f"{t} {tp[t][0]}건 ${tp[t][1]:+.0f}"
+                               for t in ("High", "Med", "Low") if t in tp)
             msg = ("📊 소프트북 +EV 페이퍼 PnL (ML/스프레드/토탈)\n"
                    f"전적 {wins}-{len(graded)-wins} (승률 {100*wins/len(graded):.0f}%)\n"
                    f"스테이크 ${staked:.2f} | 순익 ${net:+.2f} | ROI {roi:+.1f}%\n"
-                   f"정산 {len(graded)} · 대기 {len(pending)}\n"
+                   + (f"tier: {tline}\n" if tline else "")
+                   + f"정산 {len(graded)} · 대기 {len(pending)}\n"
                    f"⚠️ n={len(graded)} — 1~2주 더 쌓여야 신뢰 가능 (PAPER)")
         else:
             msg = (f"📊 소프트북 +EV 페이퍼 PnL\n정산된 베팅 아직 없음 "
@@ -211,6 +248,7 @@ def main():
     src = sqlite3.connect(f"file:{SRC_DB}?mode=ro", uri=True)
     paper = sqlite3.connect(PAPER_DB)
     init_db(paper)
+    filled = backfill_tiers(paper, src)        # label pre-tracking bets (idempotent)
     if "--report" not in sys.argv:
         key = core.read_key()
         if not key:
@@ -218,7 +256,8 @@ def main():
         else:
             placed = place(paper, src)
             done = settle(paper, key)
-            print(f"[paper-pnl] placed {placed} new bets, settled {done}.")
+            print(f"[paper-pnl] placed {placed} new bets, settled {done}, "
+                  f"backfilled tier on {filled}.")
     report(paper, tg=("--telegram" in sys.argv))
 
 
