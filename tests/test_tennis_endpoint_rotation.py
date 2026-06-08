@@ -5,6 +5,8 @@ import pytest
 from scripts.tennis_endpoint_rotation import (
     fetch_active_endpoints,
     detect_stale_endpoints,
+    mapped_tennis_slugs,
+    unmapped_active_tennis,
 )
 
 
@@ -65,6 +67,40 @@ def test_detect_stale_endpoints_ignores_non_tennis_series():
     new_state, stale = detect_stale_endpoints(state, current_counts, sport_map, threshold=2)
     assert "KXMLBGAME" not in stale
     assert "baseball_mlb" not in new_state
+
+
+def test_mapped_tennis_slugs_collects_only_tennis_series():
+    sport_map = {
+        "KXATPMATCH": (),  # empty mid-rotation (2026-06-08 clay→grass)
+        "KXWTAMATCH": ("tennis_wta_queens_club_champ",),
+        "KXMLBGAME": "baseball_mlb",  # non-tennis — must be ignored
+    }
+    assert mapped_tennis_slugs(sport_map) == {"tennis_wta_queens_club_champ"}
+
+
+def test_unmapped_active_tennis_flags_new_endpoint():
+    """An active Odds API tennis endpoint not present in SPORT_MAP is surfaced
+    so it can be wired up (the empty-ATP / clay→grass re-discovery path).
+    Inactive endpoints, already-mapped slugs, and non-tennis sports are all
+    excluded."""
+    active = [
+        {"key": "tennis_wta_queens_club_champ", "active": True, "title": "WTA Queen's"},
+        {"key": "tennis_atp_halle", "active": True, "title": "ATP Halle"},
+        {"key": "tennis_atp_french_open", "active": False, "title": "ATP French Open"},
+        {"key": "soccer_epl", "active": True, "title": "EPL"},
+    ]
+    sport_map = {
+        "KXWTAMATCH": ("tennis_wta_queens_club_champ",),
+        "KXATPMATCH": (),
+    }
+    out = unmapped_active_tennis(active, sport_map)
+    assert [e["key"] for e in out] == ["tennis_atp_halle"]
+
+
+def test_unmapped_active_tennis_empty_when_all_active_mapped():
+    active = [{"key": "tennis_wta_queens_club_champ", "active": True, "title": "Q"}]
+    sport_map = {"KXWTAMATCH": ("tennis_wta_queens_club_champ",), "KXATPMATCH": ()}
+    assert unmapped_active_tennis(active, sport_map) == []
 
 
 def test_fetch_active_endpoints_calls_odds_api():

@@ -5,11 +5,15 @@ from strategies.sports_scan_observer import SPORT_MAP, SPORT_SHORT
 
 
 def test_kxatpmatch_maps_to_tennis_atp_endpoints():
-    # Tennis values are tuples of concurrent tournament slugs. Each slug must
-    # follow the tennis_atp_* pattern.
+    # Tennis values are tuples of concurrent tournament slugs. The tuple may
+    # legitimately be EMPTY between seasons / mid-rotation — e.g. 2026-06-08,
+    # when clay ended but the Odds API had not yet published any ATP grass
+    # endpoint (no queens/halle/'s-hertogenbosch slug existed). When non-empty,
+    # every slug must follow the tennis_atp_* pattern. The unmapped-active
+    # rotation alert (tennis_endpoint_rotation.py) covers the empty window.
     slugs = SPORT_MAP.get("KXATPMATCH")
-    assert slugs is not None, "KXATPMATCH must be mapped to Odds API slugs"
-    assert isinstance(slugs, tuple) and len(slugs) >= 1
+    assert slugs is not None, "KXATPMATCH must be present in SPORT_MAP"
+    assert isinstance(slugs, tuple)
     for slug in slugs:
         assert slug.startswith("tennis_atp_"), (
             f"Expected tennis_atp_* slug, got {slug!r}"
