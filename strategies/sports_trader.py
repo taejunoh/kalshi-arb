@@ -290,17 +290,25 @@ SPORT_SHORT_BY_TOKEN = {
 INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
 
 # Tennis fans out across concurrent tournaments. Each Kalshi series can have
-# several active Odds API endpoints running in parallel (e.g., French Open +
-# Hamburg Open in May/June). Update via tennis_endpoint_rotation cron alerts
-# — currently-active slugs are surfaced by /v4/sports?all=true filter on
-# active=True. UFC stays single-endpoint (mma_mixed_martial_arts, year-round).
+# several active Odds API endpoints running in parallel (e.g., Queen's +
+# Halle + 's-Hertogenbosch during grass season). Update via the
+# tennis_endpoint_rotation cron, which alerts BOTH when a mapped slug goes
+# stale AND when an Odds API tennis endpoint becomes active but is not yet
+# mapped here (both surfaced by /v4/sports?all=true, active=True). UFC stays
+# single-endpoint (mma_mixed_martial_arts, year-round).
+#
+# 2026-06-08 clay→grass rotation: French Open + Hamburg + Strasbourg ended
+# (now inactive in the Odds API). As of 6/08 the Odds API has published
+# exactly ONE grass endpoint — WTA Queen's Club; it carries NO ATP grass
+# endpoint yet (no queens/halle/'s-hertogenbosch slug exists in the full
+# /v4/sports?all=true list). ATP is therefore intentionally empty this week
+# — the rotation cron's unmapped-active alert will surface the ATP grass
+# slugs to wire the moment the Odds API publishes them.
 TENNIS_ATP_SLUGS: tuple[str, ...] = (
-    "tennis_atp_french_open",     # 5/25 – 6/8 (Roland Garros)
-    "tennis_atp_hamburg_open",    # ATP 500 clay, late May
+    # (empty — no ATP grass endpoint live in the Odds API as of 2026-06-08)
 )
 TENNIS_WTA_SLUGS: tuple[str, ...] = (
-    "tennis_wta_french_open",     # 5/25 – 6/8 (Roland Garros)
-    "tennis_wta_strasbourg",      # WTA 250 clay, week before RG
+    "tennis_wta_queens_club_champ",  # WTA 500 grass, Queen's Club (~6/9–6/15)
 )
 
 # Single source of truth for Kalshi series → Odds API sport key(s). Tennis
@@ -406,6 +414,8 @@ TENNIS_SLUG_META = {
     "tennis_wta_dubai":               {"tier": "WTA500",  "surface": "hard",  "format": "BO3"},
     "tennis_wta_qatar_open":          {"tier": "WTA500",  "surface": "hard",  "format": "BO3"},
     "tennis_wta_strasbourg":          {"tier": "WTA250",  "surface": "clay",  "format": "BO3"},
+    # Grass warm-ups (added 2026-06-08 clay→grass rotation)
+    "tennis_wta_queens_club_champ":   {"tier": "WTA500",  "surface": "grass", "format": "BO3"},
 }
 
 # Regex for extracting round from a Kalshi tennis market title.

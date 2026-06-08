@@ -69,6 +69,36 @@ def _iter_slugs(value) -> tuple[str, ...]:
     return tuple(value)
 
 
+def mapped_tennis_slugs(sport_map: dict) -> set[str]:
+    """Every Odds API slug currently mapped under any tennis series."""
+    out: set[str] = set()
+    for series, value in sport_map.items():
+        if series in TENNIS_SERIES:
+            out.update(_iter_slugs(value))
+    return out
+
+
+def unmapped_active_tennis(active_endpoints: list[dict], sport_map: dict) -> list[dict]:
+    """Active Odds API tennis endpoints that are NOT yet wired into SPORT_MAP.
+
+    This is the other half of rotation: detect_stale_endpoints catches mapped
+    slugs that went dead; this catches NEW tournaments the Odds API turned on
+    that we haven't mapped (e.g. ATP grass appearing after the clay→grass
+    handoff, when KXATPMATCH is temporarily empty). Returns the raw endpoint
+    dicts (key/title/active), sorted by key.
+    """
+    mapped = mapped_tennis_slugs(sport_map)
+    return sorted(
+        (
+            e for e in active_endpoints
+            if e.get("key", "").startswith("tennis_")
+            and e.get("active")
+            and e.get("key") not in mapped
+        ),
+        key=lambda e: e.get("key", ""),
+    )
+
+
 def detect_stale_endpoints(
     state: dict[str, int],
     current_counts: dict[str, int],
@@ -152,30 +182,42 @@ def main():
     new_state, stale = detect_stale_endpoints(state, current_counts, SPORT_MAP)
     _save_state(new_state)
 
-    if not stale:
-        logger.info("No stale tennis endpoints.")
-        return
-
-    # Fetch active alternatives for the alert
-    active = fetch_active_endpoints(api_key)
+    # Always pull the live endpoint list (free, quota-exempt) — it drives both
+    # the stale-slug suggestions AND unmapped-active discovery.
+    try:
+        active = fetch_active_endpoints(api_key)
+    except Exception as e:
+        logger.warning(f"fetch_active_endpoints failed: {e}")
+        active = []
     active_tennis = [e for e in active
                      if e.get("key", "").startswith("tennis_") and e.get("active")]
+    unmapped = unmapped_active_tennis(active, SPORT_MAP)
+
+    if not stale and not unmapped:
+        logger.info("No stale tennis endpoints; no unmapped-active endpoints.")
+        return
+
     suggestions = "\n".join(
         f"  • {e['key']}  ({e.get('title','')})" for e in active_tennis[:10]
     ) or "  (none active right now)"
 
-    lines = [
-        "🎾 <b>Tennis endpoint rotation needed</b>",
-        "",
-        "Stale (0 events for 2+ days):",
-    ]
-    for series in stale:
-        slugs = _iter_slugs(SPORT_MAP[series])
-        zero_slugs = [s for s in slugs if current_counts.get(s, 0) == 0]
-        lines.append(f"  • {series} → " + ", ".join(zero_slugs or list(slugs)))
-    lines += ["", "Currently active tennis endpoints:", suggestions]
-    lines += ["", "<i>Action: edit strategies/sports_scan_observer.py SPORT_MAP, "
-              "deploy, restart kalshi-bot.</i>"]
+    lines = ["🎾 <b>Tennis endpoint rotation needed</b>", ""]
+    if stale:
+        lines.append("Stale (0 events for 2+ days):")
+        for series in stale:
+            slugs = _iter_slugs(SPORT_MAP[series])
+            zero_slugs = [s for s in slugs if current_counts.get(s, 0) == 0]
+            lines.append(f"  • {series} → " + ", ".join(zero_slugs or list(slugs)))
+        lines.append("")
+    if unmapped:
+        lines.append("🆕 Active but NOT mapped (wire these into SPORT_MAP):")
+        for e in unmapped:
+            lines.append(f"  • {e['key']}  ({e.get('title','')})")
+        lines.append("")
+    lines += ["Currently active tennis endpoints:", suggestions]
+    lines += ["", "<i>Action: edit TENNIS_ATP_SLUGS / TENNIS_WTA_SLUGS in "
+              "strategies/sports_trader.py (SPORT_ODDS_KEYS), deploy, "
+              "restart kalshi-bot.</i>"]
     text = "\n".join(lines)
 
     if args.dry_run:
