@@ -136,6 +136,9 @@ def _fair(idx, market, player, side, point, home, away):
         opp = "Under" if side == "Over" else "Over"
         pb = idx.get((market, player, opp, point))
     else:                                              # h2h / spread: other team
+        if market == "h2h" and (market, None, "Draw", None) in idx:
+            return None        # 3-way (soccer): a 2-way de-vig drops the Draw leg and
+                               # over-states each side -> fake +EV. Skip until 3-way handled.
         other = away if side == home else home
         pb = idx.get((market, None, other, None if market == "h2h" else round(-point, 1)))
     if pb is None:
