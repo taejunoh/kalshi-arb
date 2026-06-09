@@ -1,0 +1,16 @@
+[Unit]
+Description=Hourly soft-book +EV paper place+settle (dashboard History freshness)
+Requires=kalshi-ev-place.service
+
+[Timer]
+# :35 avoids the recorder (:10/:30/:50), refresh (:00/:20/:40) and the daily
+# 13:00 digest. place() is idempotent (earliest-snapshot from ev.db), so running
+# hourly changes NOTHING about the measured ledger — only how fast new picks and
+# settlements show up on the dashboard History tab. The 13:00 UTC kalshi-ev-paper
+# run stays the only one that pushes a Telegram digest.
+OnCalendar=*-*-* *:35:00 UTC
+Persistent=true
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target
