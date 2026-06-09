@@ -2948,6 +2948,7 @@ async function renderEvHistory() {
     <td class="evh-dim">${fmtDate(b.commence_time)}</td>
     <td><span class="ev-tier" data-tier="${b._tier}">${b._tier === '?' ? '—' : b._tier}</span></td>
     <td class="evh-dim">${sport(b.sport)}</td>
+    <td class="evh-dim">${b.away && b.home ? b.away + ' @ ' + b.home : ''}</td>
     <td>${b.label || ''}</td>
     <td class="evh-dim">${b.book || ''}</td>
     <td class="evh-mono">${b.odds ? Number(b.odds).toFixed(2) : ''}</td>
@@ -2965,7 +2966,7 @@ async function renderEvHistory() {
     <div class="evh-tablewrap"><table class="evh-table"><thead><tr>
       <th data-sk="date" class="sortable">Date${arrow('date')}</th>
       <th data-sk="tier" class="sortable">Tier${arrow('tier')}</th>
-      <th>Sport</th><th>Bet</th><th>Book</th>
+      <th>Sport</th><th>Matchup</th><th>Bet</th><th>Book</th>
       <th data-sk="odds" class="sortable">Odds${arrow('odds')}</th>
       <th data-sk="ev" class="sortable">EV${arrow('ev')}</th>
       <th data-sk="stake" class="sortable">Stake${arrow('stake')}</th>

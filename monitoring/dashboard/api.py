@@ -2193,7 +2193,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         p = os.path.join(repo_root, "data", "softbook_paper.db")
         cols = ["commence_time", "placed_at", "settled_at", "sport", "market", "label",
-                "book", "odds", "ev", "stake", "tier", "conf",
+                "home", "away", "book", "odds", "ev", "stake", "tier", "conf",
                 "completed", "won", "result", "pnl"]
         try:
             db = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
