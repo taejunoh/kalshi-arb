@@ -15,6 +15,8 @@ MLB_STAT = {"pitcher_strikeouts": ("pitching", "strikeOuts"),
             "batter_total_bases": ("batting", "totalBases"),
             "batter_home_runs": ("batting", "homeRuns")}
 
+DNP = "DNP"   # game FINAL but player never appeared (scratch/bench) -> void per book rules
+
 _sched = {}   # date_str -> {(away_norm, home_norm): (gamePk, final_bool)}
 _box = {}     # gamePk -> {player_key: {(group,field): value}} | None
 
@@ -92,7 +94,8 @@ def _et_dates(commence_iso):
 
 
 def player_stat(sport, away, home, commence_iso, market, player):
-    """Final stat value for the prop's player, or None if not findable / not final."""
+    """Final stat value for the prop's player; DNP if the game is final but the
+    player never appeared (-> void); None if not findable / not final yet."""
     if sport != "baseball_mlb":
         return None
     gp = MLB_STAT.get(market)
@@ -110,9 +113,12 @@ def player_stat(sport, away, home, commence_iso, market, player):
             return None
         pdata = box.get(_np(player))
         if pdata is None:
-            return None
+            return DNP                       # final + not in box -> scratched / not rostered
+        v = pdata.get(gp)
+        if v is None:
+            return DNP                       # rostered but no appearance in this stat group
         try:
-            return float(pdata.get(gp))
+            return float(v)
         except Exception:
             return None
     return None
