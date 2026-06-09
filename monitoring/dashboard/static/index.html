@@ -2696,7 +2696,11 @@ async function renderEvBets() {
   try {
     const r = await fetch('/api/ev-bets', { cache: 'no-store' });
     const d = await r.json();
-    const bets = d.bets || [];
+    // Drop games that have already started: the feed refreshes every ~20min, so a
+    // bet that was pre-game at scan time can tip off before the next refresh. Edge is
+    // defined vs the PRE-GAME line, so never show an in-progress game (re-checks live now).
+    const _now = new Date();
+    const bets = (d.bets || []).filter(b => !b.commence_time || new Date(b.commence_time) > _now);
     const gen = d.generated_at ? new Date(d.generated_at) : null;
     meta.textContent = bets.length + ' bet' + (bets.length === 1 ? '' : 's') +
       (gen ? ' · updated ' + gen.toLocaleTimeString() : '');
