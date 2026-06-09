@@ -164,7 +164,7 @@ def settle(paper, key):
                    FROM paper_bet WHERE completed=0 AND sport=?""", (sport,)).fetchall():
             if market in core.ALL_PROPS:                      # PROP -> player stat
                 stat = stats.player_stat(sport, away, home, ct, market, player)
-                res = core.grade_prop(side, point, stat)
+                res = "void" if stat == stats.DNP else core.grade_prop(side, point, stat)
             else:                                             # game market -> team score
                 sc = scores.get(eid)
                 res = core.grade(market, side, point, home, away, sc) if sc else None
@@ -179,6 +179,21 @@ def settle(paper, key):
             done += 1
     paper.commit()
     return done
+
+
+STALE_DAYS = float(os.getenv("SOFTBOOK_STALE_DAYS", "4"))
+
+
+def void_stale(paper):
+    """Void bets whose game started STALE_DAYS+ ago but still can't be settled
+    (Odds API has no scores feed for NPB/KBO/NCAA/WTA etc.). won=NULL keeps them
+    out of the graded record; manual settlement inside the window beats this."""
+    cur = paper.execute(
+        """UPDATE paper_bet SET completed=1, won=NULL, result='stale-void', pnl=0, settled_at=?
+           WHERE completed=0 AND datetime(commence_time) < datetime('now', ?)""",
+        (datetime.now(timezone.utc).isoformat(), f"-{int(STALE_DAYS * 24)} hours"))
+    paper.commit()
+    return cur.rowcount
 
 
 def report(db, tg=False):
@@ -201,7 +216,7 @@ def report(db, tg=False):
         print(f"  {ct[:10]} {mk}  {lbl:<22} {odds:>5.2f} ${stake:>5.2f}  PnL {pnl:+6.2f}  ({mk})")
     print("\n  ----- TOTALS -----")
     print(f"   paper bets:  {len(rows)}  (settled {len(settled)}, pending {len(pending)}, "
-          f"push {len(settled)-len(graded)})")
+          f"push/void {len(settled)-len(graded)})")
     if graded:
         print(f"   record:      {wins}-{len(graded)-wins}  (win rate {100*wins/len(graded):.0f}%)")
         print(f"   staked:      ${staked:.2f}    net PnL: ${net:+.2f}    ROI: {roi:+.1f}%   "
@@ -256,8 +271,9 @@ def main():
         else:
             placed = place(paper, src)
             done = settle(paper, key)
+            stale = void_stale(paper)
             print(f"[paper-pnl] placed {placed} new bets, settled {done}, "
-                  f"backfilled tier on {filled}.")
+                  f"backfilled tier on {filled}, stale-voided {stale}.")
     report(paper, tg=("--telegram" in sys.argv))
 
 
