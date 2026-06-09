@@ -563,11 +563,22 @@
       font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
       padding: 1px 6px; border-radius: 4px; background: rgba(148,163,184,.15); color: #94a3b8;
     }
-    .ev-tier[data-tier="High"] { background: rgba(74,222,128,.18); color: #4ade80; }
-    .ev-tier[data-tier="Med"]  { background: rgba(250,204,21,.16); color: #facc15; }
+    /* HIGH = solid filled + glow + ★ so it pops out of the ambient green */
+    .ev-tier[data-tier="High"] {
+      background: #22c55e; color: #042310; font-weight: 800;
+      box-shadow: 0 0 0 1px rgba(134,239,172,.55), 0 0 9px rgba(74,222,128,.55);
+    }
+    .ev-tier[data-tier="High"]::after { content: " \2605"; }   /* ★ */
+    .ev-tier[data-tier="Med"]  { background: rgba(250,204,21,.20); color: #fde047; }
     .ev-consensus { font-size: 11px; color: var(--text-dim, #8a8a93); }
+    /* HIGH card: thick glowing border + faint tint = lifts off the grid */
+    .ev-card[data-tier="High"] {
+      border-left: 5px solid #22c55e;
+      box-shadow: 0 0 0 1px rgba(74,222,128,.30), 0 0 18px rgba(74,222,128,.16);
+      background: linear-gradient(0deg, rgba(74,222,128,.06), rgba(74,222,128,.06)), var(--card, #16181d);
+    }
     .ev-card[data-tier="Med"] { border-left-color: #facc15; }
-    .ev-card[data-tier="Low"] { border-left-color: #94a3b8; }
+    .ev-card[data-tier="Low"] { border-left-color: #475569; opacity: .6; }   /* recede so High stands out */
     .ev-sort-link { color: var(--text-dim, #8a8a93); text-decoration: none; }
     .ev-sort-link.active { color: var(--text, #e7e7ea); font-weight: 600; }
     .ev-card {
