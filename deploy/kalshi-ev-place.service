@@ -1,0 +1,9 @@
+[Unit]
+Description=Soft-book +EV PAPER hourly place + settle (no digest) — keeps History tab fresh
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/softbook_ev_paper_pnl.py
+TimeoutStartSec=300
