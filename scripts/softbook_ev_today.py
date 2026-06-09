@@ -73,9 +73,24 @@ def main():
         credits += c
         bets += sb
     bets.sort(key=lambda b: -b["ev"])
+    bets_all = list(bets)              # uncapped: the CLV research set
     bets = cap_props_per_game(bets)
     for b in bets:
         b["stake"] = stake_for(b["ev"], b["odds"], bankroll)
+
+    # Persist THIS scan as the canonical record: the dashboard json, the ev.db CLV
+    # snapshots and the instant High alerts all come from the SAME scan, so what
+    # the +EV tab shows is exactly what gets recorded/alerted (no two-scan drift —
+    # tier flickers at the Med/High boundary made tab and ledger disagree before).
+    try:
+        import softbook_ev_recorder as rec
+        now_iso = datetime.now(timezone.utc).isoformat()
+        rdb = rec.init_db()
+        rn = rec.record(rdb, bets_all, now_iso)
+        ra = rec.alert_new_high(rdb, bets_all, now_iso)
+        print(f"[record] {rn} snapshot rows, {ra} new High alerts")
+    except Exception as e:
+        print("record err:", e)
 
     # --json : dashboard feed (one entry per +EV market bet; keeps legacy fields)
     if "--json" in sys.argv:
