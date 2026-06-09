@@ -2184,6 +2184,29 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         except (OSError, json.JSONDecodeError) as e:
             return {"generated_at": None, "bets": [], "error": str(e)}
 
+    @app.get("/api/ev-history")
+    async def get_ev_history():
+        """Every soft-book +EV PAPER bet ever placed (data/softbook_paper.db) —
+        settled + pending — for the +EV History tab (split/filterable by tier).
+        PAPER ledger built by scripts/softbook_ev_paper_pnl.py. Modeled, not real."""
+        import sqlite3
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        p = os.path.join(repo_root, "data", "softbook_paper.db")
+        cols = ["commence_time", "placed_at", "settled_at", "sport", "market", "label",
+                "book", "odds", "ev", "stake", "tier", "conf",
+                "completed", "won", "result", "pnl"]
+        try:
+            db = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
+            try:
+                rows = db.execute(
+                    "SELECT " + ", ".join(cols) + " FROM paper_bet ORDER BY commence_time DESC"
+                ).fetchall()
+            finally:
+                db.close()
+        except sqlite3.Error as e:
+            return {"bets": [], "count": 0, "error": str(e)}
+        return {"bets": [dict(zip(cols, r)) for r in rows], "count": len(rows)}
+
     # Serve static frontend files if they exist
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     if os.path.isdir(static_dir):
