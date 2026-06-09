@@ -27,6 +27,18 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS paper_bet(
     completed INTEGER DEFAULT 0, won INTEGER,
     result TEXT, pnl REAL, settled_at TEXT, PRIMARY KEY (event_id, market, player))"""
 
+# Strategy-B twin: "bet every NEW High pick the moment it first turns High" — the
+# user's actual behavior. One bet per EXACT line (side+point in the key), so a
+# moved line / the other side after a sharp move enters as its own bet (these are
+# correlated within a game — fine for signal measurement, not independent samples).
+HIGH_SCHEMA = """CREATE TABLE IF NOT EXISTS paper_bet_high(
+    event_id TEXT, sport TEXT, home TEXT, away TEXT, market TEXT, side TEXT,
+    point REAL, player TEXT, label TEXT, commence_time TEXT, book TEXT, odds REAL,
+    ev REAL, stake REAL, placed_at TEXT, tier TEXT, conf REAL,
+    completed INTEGER DEFAULT 0, won INTEGER,
+    result TEXT, pnl REAL, settled_at TEXT,
+    PRIMARY KEY (event_id, market, side, point, player))"""
+
 
 def _dt(s):
     try:
@@ -71,6 +83,7 @@ def init_db(db):
     for col, typ in (("tier", "TEXT"), ("conf", "REAL")):   # additive migrate (track confidence)
         if col not in cols:
             db.execute(f"ALTER TABLE paper_bet ADD COLUMN {col} {typ}")
+    db.execute(HIGH_SCHEMA)
     db.commit()
 
 
@@ -140,9 +153,57 @@ def place(paper, src):
     return n
 
 
+def candidates_high(src):
+    """Strategy-B candidates: each exact line (event, market, side, point, player)
+    entered at the FIRST pre-game snapshot where tier=='High', at THAT snapshot's
+    book/odds — i.e. what you'd get betting each new High alert as it fires."""
+    try:
+        rows = src.execute("""SELECT event_id, sport, home, away, market, side, point,
+            player, commence_time, recorded_at, best_soft_book, best_soft_price,
+            snapshot_ev, tier, conf FROM softbook_ev WHERE tier='High'
+            ORDER BY event_id, market, side, point, player, recorded_at""").fetchall()
+    except Exception:
+        return []
+    seen, out = set(), []
+    for (eid, sport, home, away, market, side, point, player, ct, rec, book, odds, ev,
+         tier, conf) in rows:
+        k = (eid, market, side, point if point is not None else 0, player or "")
+        if k in seen:
+            continue
+        cdt, rdt = _dt(ct), _dt(rec)
+        if not (cdt and rdt and cdt > rdt):        # pre-game at the High trigger
+            continue
+        seen.add(k)
+        kelly = ev / (odds - 1) if odds > 1 else 0
+        stake = round(max(2.0, min(BANKROLL * 0.02, BANKROLL * kelly * 0.25)), 2)
+        out.append((eid, sport, home, away, market, side,
+                    point if point is not None else 0, player or "",
+                    core.label(market, side, point, player), ct, book, odds, ev, stake,
+                    rec, tier, conf))
+    return out
+
+
+def place_high(paper, src):
+    n = 0
+    for c in candidates_high(src):
+        cur = paper.execute(
+            """INSERT OR IGNORE INTO paper_bet_high
+               (event_id, sport, home, away, market, side, point, player, label,
+                commence_time, book, odds, ev, stake, placed_at, tier, conf)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", c)
+        n += cur.rowcount
+    paper.commit()
+    return n
+
+
+LEDGERS = ("paper_bet", "paper_bet_high")
+
+
 def settle(paper, key):
-    sports = [r[0] for r in paper.execute(
-        "SELECT DISTINCT sport FROM paper_bet WHERE completed=0").fetchall()]
+    sports = set()
+    for t in LEDGERS:
+        sports |= {r[0] for r in paper.execute(
+            f"SELECT DISTINCT sport FROM {t} WHERE completed=0").fetchall()}
     done = 0
     for sport in sports:
         # team scores for GAME markets via Odds API (props settle from a stats source)
@@ -158,25 +219,27 @@ def settle(paper, key):
                     scores[g["id"]] = sc
         except Exception as e:
             print(f"  scores {sport}: {e}")
-        for (eid, market, side, point, player, home, away, ct, odds, stake) in paper.execute(
-                """SELECT event_id, market, side, point, player, home, away,
-                          commence_time, odds, stake
-                   FROM paper_bet WHERE completed=0 AND sport=?""", (sport,)).fetchall():
-            if market in core.ALL_PROPS:                      # PROP -> player stat
-                stat = stats.player_stat(sport, away, home, ct, market, player)
-                res = "void" if stat == stats.DNP else core.grade_prop(side, point, stat)
-            else:                                             # game market -> team score
-                sc = scores.get(eid)
-                res = core.grade(market, side, point, home, away, sc) if sc else None
-            if res is None:
-                continue
-            won = 1 if res == "win" else (0 if res == "lose" else None)
-            pnl = stake * (odds - 1) if res == "win" else (-stake if res == "lose" else 0)
-            paper.execute("""UPDATE paper_bet SET completed=1, won=?, result=?, pnl=?,
-                settled_at=? WHERE event_id=? AND market=? AND player=?""",
-                (won, res, round(pnl, 2), datetime.now(timezone.utc).isoformat(),
-                 eid, market, player))
-            done += 1
+        for t in LEDGERS:
+            for (eid, market, side, point, player, home, away, ct, odds, stake) in paper.execute(
+                    f"""SELECT event_id, market, side, point, player, home, away,
+                              commence_time, odds, stake
+                       FROM {t} WHERE completed=0 AND sport=?""", (sport,)).fetchall():
+                if market in core.ALL_PROPS:                      # PROP -> player stat
+                    stat = stats.player_stat(sport, away, home, ct, market, player)
+                    res = "void" if stat == stats.DNP else core.grade_prop(side, point, stat)
+                else:                                             # game market -> team score
+                    sc = scores.get(eid)
+                    res = core.grade(market, side, point, home, away, sc) if sc else None
+                if res is None:
+                    continue
+                won = 1 if res == "win" else (0 if res == "lose" else None)
+                pnl = stake * (odds - 1) if res == "win" else (-stake if res == "lose" else 0)
+                paper.execute(f"""UPDATE {t} SET completed=1, won=?, result=?, pnl=?,
+                    settled_at=? WHERE event_id=? AND market=? AND side=?
+                    AND COALESCE(point,0)=COALESCE(?,0) AND COALESCE(player,'')=COALESCE(?,'')""",
+                    (won, res, round(pnl, 2), datetime.now(timezone.utc).isoformat(),
+                     eid, market, side, point, player))
+                done += 1
     paper.commit()
     return done
 
@@ -188,15 +251,49 @@ def void_stale(paper):
     """Void bets whose game started STALE_DAYS+ ago but still can't be settled
     (Odds API has no scores feed for NPB/KBO/NCAA/WTA etc.). won=NULL keeps them
     out of the graded record; manual settlement inside the window beats this."""
-    cur = paper.execute(
-        """UPDATE paper_bet SET completed=1, won=NULL, result='stale-void', pnl=0, settled_at=?
-           WHERE completed=0 AND datetime(commence_time) < datetime('now', ?)""",
-        (datetime.now(timezone.utc).isoformat(), f"-{int(STALE_DAYS * 24)} hours"))
+    n = 0
+    for t in LEDGERS:
+        cur = paper.execute(
+            f"""UPDATE {t} SET completed=1, won=NULL, result='stale-void', pnl=0, settled_at=?
+               WHERE completed=0 AND datetime(commence_time) < datetime('now', ?)""",
+            (datetime.now(timezone.utc).isoformat(), f"-{int(STALE_DAYS * 24)} hours"))
+        n += cur.rowcount
     paper.commit()
-    return cur.rowcount
+    return n
 
 
-def report(db, tg=False):
+def report_high(db):
+    """Strategy-B scoreboard: ROI of 'bet each NEW High pick when it first fires'
+    (the user's actual strategy). Returns (graded_n, wins, net, roi) or None."""
+    try:
+        rows = db.execute("""SELECT market, odds, stake, completed, won, pnl
+            FROM paper_bet_high""").fetchall()
+    except Exception:
+        return None
+    if not rows:
+        return None
+    graded = [r for r in rows if r[3] and r[4] is not None]
+    pend = sum(1 for r in rows if not r[3])
+    wins = sum(r[4] for r in graded)
+    staked = sum(r[2] for r in graded)
+    net = sum(r[5] for r in graded)
+    roi = (net / staked * 100) if staked else 0.0
+    print(f"\n=== HIGH-TRIGGER strategy (bet each NEW High pick at its first High snapshot) ===")
+    print(f"   {len(rows)} bets (graded {len(graded)}, pending {pend}, "
+          f"void/push {len(rows)-len(graded)-pend})")
+    if graded:
+        print(f"   record: {wins}-{len(graded)-wins}  staked ${staked:.2f}  "
+              f"PnL ${net:+.2f}  ROI {roi:+.1f}%   <<< measures the 'bet Highs' strategy")
+        agg = {}
+        for mk, odds, stake, comp, won, pnl in graded:
+            a = agg.setdefault(mk, [0, 0, 0.0]); a[0] += 1; a[1] += won; a[2] += pnl
+        for mk in sorted(agg):
+            nn, ww, pp = agg[mk]
+            print(f"     {mk:<22} n={nn:<3} {ww}-{nn-ww}  PnL ${pp:+.2f}")
+    return (len(graded), wins, net, roi)
+
+
+def report(db, tg=False, high=None):
     rows = db.execute("""SELECT sport, market, label, odds, stake, commence_time,
         completed, won, result, pnl, tier FROM paper_bet ORDER BY commence_time""").fetchall()
     if not rows:
@@ -247,10 +344,13 @@ def report(db, tg=False):
                 a = tp.setdefault(r[10] or "?", [0, 0.0]); a[0] += 1; a[1] += r[9]
             tline = " · ".join(f"{t} {tp[t][0]}건 ${tp[t][1]:+.0f}"
                                for t in ("High", "Med", "Low") if t in tp)
+            hline = (f"🟣 HIGH-트리거 전략: {high[1]}-{high[0]-high[1]} | "
+                     f"순익 ${high[2]:+.2f} | ROI {high[3]:+.1f}% (n={high[0]})\n"
+                     if high and high[0] else "")
             msg = ("📊 소프트북 +EV 페이퍼 PnL (ML/스프레드/토탈)\n"
                    f"전적 {wins}-{len(graded)-wins} (승률 {100*wins/len(graded):.0f}%)\n"
                    f"스테이크 ${staked:.2f} | 순익 ${net:+.2f} | ROI {roi:+.1f}%\n"
-                   + (f"tier: {tline}\n" if tline else "")
+                   + (f"tier: {tline}\n" if tline else "") + hline
                    + f"정산 {len(graded)} · 대기 {len(pending)}\n"
                    f"⚠️ n={len(graded)} — 1~2주 더 쌓여야 신뢰 가능 (PAPER)")
         else:
@@ -270,11 +370,13 @@ def main():
             print("no ODDS_API_KEY")
         else:
             placed = place(paper, src)
+            placed_hi = place_high(paper, src)
             done = settle(paper, key)
             stale = void_stale(paper)
-            print(f"[paper-pnl] placed {placed} new bets, settled {done}, "
-                  f"backfilled tier on {filled}, stale-voided {stale}.")
-    report(paper, tg=("--telegram" in sys.argv))
+            print(f"[paper-pnl] placed {placed} new bets (+{placed_hi} High-trigger), "
+                  f"settled {done}, backfilled tier on {filled}, stale-voided {stale}.")
+    hi = report_high(paper)
+    report(paper, tg=("--telegram" in sys.argv), high=hi)
 
 
 if __name__ == "__main__":
