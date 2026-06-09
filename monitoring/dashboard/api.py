@@ -2185,13 +2185,16 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             return {"generated_at": None, "bets": [], "error": str(e)}
 
     @app.get("/api/ev-history")
-    async def get_ev_history():
+    async def get_ev_history(strategy: str = "first"):
         """Every soft-book +EV PAPER bet ever placed (data/softbook_paper.db) —
         settled + pending — for the +EV History tab (split/filterable by tier).
-        PAPER ledger built by scripts/softbook_ev_paper_pnl.py. Modeled, not real."""
+        strategy=first: one bet per game+market at the EARLIEST +EV snapshot.
+        strategy=high: one bet per exact line at its first High-tier snapshot
+        (the 'bet each new High pick' strategy). Modeled, not real."""
         import sqlite3
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         p = os.path.join(repo_root, "data", "softbook_paper.db")
+        table = "paper_bet_high" if strategy == "high" else "paper_bet"
         cols = ["commence_time", "placed_at", "settled_at", "sport", "market", "label",
                 "home", "away", "book", "odds", "ev", "stake", "tier", "conf",
                 "completed", "won", "result", "pnl"]
@@ -2199,7 +2202,7 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             db = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
             try:
                 rows = db.execute(
-                    "SELECT " + ", ".join(cols) + " FROM paper_bet ORDER BY commence_time DESC"
+                    "SELECT " + ", ".join(cols) + f" FROM {table} ORDER BY commence_time DESC"
                 ).fetchall()
             finally:
                 db.close()
