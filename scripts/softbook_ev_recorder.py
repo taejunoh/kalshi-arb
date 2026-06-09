@@ -85,6 +85,23 @@ def init_db():
     return c
 
 
+def record(db, bets, now):
+    """Persist one scan's +EV bets as CLV snapshots. Idempotent per (now, bet)."""
+    n = 0
+    for b in bets:
+        try:
+            db.execute("INSERT OR IGNORE INTO softbook_ev VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (now, b["sport"], b["event_id"], b["commence_time"], b["home"], b["away"],
+                 b["market"], b["side"], b["point"], b.get("player") or "",
+                 b["fair"], b["pin_price"], b["book"], b["odds"], b["ev"],
+                 b["n_books"], b["n_ev"], b["conf"], b["tier"]))
+            n += 1
+        except Exception:
+            pass
+    db.commit()
+    return n
+
+
 def main():
     key = core.read_key()
     if not key:
@@ -100,17 +117,7 @@ def main():
             print(f"{sport}: {e}"); continue
         credits += c
         all_bets += bets
-        for b in bets:
-            try:
-                db.execute("INSERT OR IGNORE INTO softbook_ev VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (now, b["sport"], b["event_id"], b["commence_time"], b["home"], b["away"],
-                     b["market"], b["side"], b["point"], b.get("player") or "",
-                     b["fair"], b["pin_price"], b["book"], b["odds"], b["ev"],
-                     b["n_books"], b["n_ev"], b["conf"], b["tier"]))
-                n += 1
-            except Exception:
-                pass
-        db.commit()
+        n += record(db, bets, now)
     alerted = alert_new_high(db, all_bets, now)
     print(f"[softbook-ev] {now}: recorded {n} +EV bets (ML/spread/total), "
           f"alerted {alerted} new High, {credits} credits -> {OUT}")
