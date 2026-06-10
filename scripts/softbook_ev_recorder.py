@@ -13,6 +13,13 @@ import softbook_ev_core as core
 
 OUT = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
 QUIET_UTC = range(2, 9)            # 22:00-05:00 NYC: no pushes while user sleeps
+BANKROLL = float(os.getenv("SOFTBOOK_BANKROLL", "240"))
+
+
+def _stake(ev, odds):
+    """Quarter-Kelly, $2 floor, 2% cap — same sizing as the paper ledgers."""
+    kelly = ev / (odds - 1) if odds > 1 else 0
+    return max(2.0, min(BANKROLL * 0.02, BANKROLL * kelly * 0.25))
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS softbook_ev(
     recorded_at TEXT, sport TEXT, event_id TEXT, commence_time TEXT,
@@ -67,8 +74,9 @@ def alert_new_high(db, bets, now):
         return 0
     new.sort(key=lambda b: -b["ev"])
     lines = [f"• {b['away'][:16]} @ {b['home'][:16]}\n"
-             f"   {b['label']} — {b['book']} {b['odds']:.2f} "
-             f"({b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk)" for b in new[:8]]
+             f"   {b['label']}\n"
+             f"   📍 {b['book']} @ {b['odds']:.2f} · 💵 ${_stake(b['ev'], b['odds']):.0f}\n"
+             f"   (EV {b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk)" for b in new[:8]]
     send_telegram("🟣 NEW High-tier +EV (즉시 알림):\n\n" + "\n\n".join(lines)
                   + (f"\n\n…+{len(new)-8} more" if len(new) > 8 else "")
                   + "\n\npre-game only · bet small · 대쉬보드 +EV 탭 확인")
