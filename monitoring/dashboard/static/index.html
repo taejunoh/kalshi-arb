@@ -2853,7 +2853,12 @@ function _evhWire() {                              // delegated listener, attach
     const ft = e.target.closest('[data-evh-tier]');
     const fs = e.target.closest('[data-evh-status]');
     const th = e.target.closest('th[data-sk]');
-    if (fg) evhFilter.strategy = fg.dataset.evhStrategy;
+    if (fg) {
+      evhFilter.strategy = fg.dataset.evhStrategy;
+      // First-entry ledger spans all tiers, but only High is actionable — default
+      // the tier filter to High on entry (user can still widen to All).
+      evhFilter.tier = evhFilter.strategy === 'first' ? 'High' : 'all';
+    }
     else if (ft) evhFilter.tier = ft.dataset.evhTier;
     else if (fs) evhFilter.status = fs.dataset.evhStatus;
     else if (th) {
