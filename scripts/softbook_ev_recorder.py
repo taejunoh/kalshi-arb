@@ -51,6 +51,35 @@ def send_telegram(text):
         pass
 
 
+def _dup_note(db, b):
+    """If this game+market(+player) was already High-alerted at a different
+    side/point, return a warning line: it's the SAME bet exposure (1/game/market),
+    plus whether the new line is better or worse than the alerted one. A moved
+    line re-alerts as a new bet, so without this the alert looks like a fresh
+    opportunity when it's really a re-quote of one you may already hold."""
+    row = db.execute(
+        "SELECT side, point FROM high_alerted WHERE event_id=? AND market=? AND player=?"
+        " AND NOT (side=? AND point=?) ORDER BY alerted_at DESC LIMIT 1",
+        (b["event_id"], b["market"], b.get("player") or "",
+         b["side"], b["point"] or 0)).fetchone()
+    if not row:
+        return ""
+    old_side, old_point = row
+    old = core.label(b["market"], old_side, old_point or None, b.get("player"))
+    if old_side != b["side"]:
+        return f"\n   ⚠️ 중복: 기존 알림 [{old}]과 방향 반대 — 이미 베팅했다면 스킵"
+    new_point = b["point"] or 0
+    if b["side"] == "Under":
+        better = new_point > old_point
+    elif b["side"] == "Over":
+        better = new_point < old_point
+    else:                                   # spread: more cushion = better
+        better = new_point > old_point
+    verdict = "더 좋은 라인" if better else "더 나쁜 라인"
+    return (f"\n   ⚠️ 중복: 기존 알림 [{old}]의 라인 이동 ({verdict})"
+            f" — 이미 베팅했다면 스킵 (같은 경기·마켓 1베팅)")
+
+
 def alert_new_high(db, bets, now):
     """Push NEW High-tier bets to Telegram as they appear (the 4x/day digest's
     fixed times miss them — High clusters near game start). Dedup per exact bet
@@ -76,7 +105,8 @@ def alert_new_high(db, bets, now):
     lines = [f"• {b['away'][:16]} @ {b['home'][:16]}\n"
              f"   {b['label']}\n"
              f"   📍 {b['book']} @ {b['odds']:.2f} · 💵 ${_stake(b['ev'], b['odds']):.0f}\n"
-             f"   (EV {b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk)" for b in new[:8]]
+             f"   (EV {b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk)"
+             + _dup_note(db, b) for b in new[:8]]
     send_telegram("🟣 NEW High-tier +EV (즉시 알림):\n\n" + "\n\n".join(lines)
                   + (f"\n\n…+{len(new)-8} more" if len(new) > 8 else "")
                   + "\n\npre-game only · bet small · 대쉬보드 +EV 탭 확인")
