@@ -622,8 +622,10 @@
     .evh-sum-n small { font-size:11px; }
     .evh-sum-rec { font-family: ui-monospace,Menlo,monospace; color: var(--text,#cbd5e1); }
     .evh-sum-roi, .evh-sum-pnl { font-family: ui-monospace,Menlo,monospace; font-weight:700; }
-    .evh-table .pos, .evh-sum-roi.pos, .evh-sum-pnl.pos { color:#4ade80; }
-    .evh-table .neg, .evh-sum-roi.neg, .evh-sum-pnl.neg { color:#f87171; }
+    .evh-sum-wr { font-family: ui-monospace,Menlo,monospace; font-size:11.5px; color:var(--text-dim,#8a8a93); }
+    .evh-sum-mk { font-size:10px; font-weight:400; opacity:.8; }
+    .evh-table .pos, .evh-sum-roi.pos, .evh-sum-pnl.pos, .evh-count .pos { color:#4ade80; }
+    .evh-table .neg, .evh-sum-roi.neg, .evh-sum-pnl.neg, .evh-count .neg { color:#f87171; }
     .evh-filters { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-bottom:10px; }
     .evh-flabel { font-size:11px; color:var(--text-dim,#8a8a93); text-transform:uppercase; letter-spacing:.04em; margin-right:3px; }
     .evh-fbtn {
@@ -2893,6 +2895,23 @@ async function renderEvHistory() {
   }
   bets.forEach(b => { b._tier = b.tier || '?'; });
 
+  // filter
+  // bet-type buckets: market col is 'h2h' / 'spread' / 'total', anything else = player prop
+  const betType = b => b.market === 'h2h' ? 'ml'
+    : b.market === 'spread' ? 'spread'
+    : b.market === 'total' ? 'ou' : 'props';
+  let rows = bets.slice();
+  if (evhFilter.market !== 'all') rows = rows.filter(b => betType(b) === evhFilter.market);
+  // summary cards reflect the Bet filter (per-tier WR/ROI of the selected bet type);
+  // status/tier narrowing applies to the table only — won/lost would degenerate WR to 100/0%
+  const sumBets = rows.slice();
+  if (evhFilter.tier !== 'all') rows = rows.filter(b => b._tier === evhFilter.tier);
+  const st = evhFilter.status;
+  if (st === 'settled') rows = rows.filter(b => b.completed);
+  else if (st === 'pending') rows = rows.filter(b => !b.completed);
+  else if (st === 'won') rows = rows.filter(b => b.won === 1);
+  else if (st === 'lost') rows = rows.filter(b => b.won === 0);
+
   // per-tier summary (graded = settled & won != null; excludes pushes/pending)
   const agg = {};
   const bump = (k, b) => {
@@ -2902,35 +2921,24 @@ async function renderEvHistory() {
       if (b.won === 1) a.w++; else if (b.won === 0) a.l++;
     } else if (!b.completed) a.pend++;
   };
-  bets.forEach(b => { bump(b._tier, b); bump('ALL', b); });
+  sumBets.forEach(b => { bump(b._tier, b); bump('ALL', b); });
   const keys = Object.keys(agg).filter(k => k !== 'ALL')
     .sort((a, c) => (_EVH_ORDER[a] ?? 9) - (_EVH_ORDER[c] ?? 9));
   keys.push('ALL');
+  const mkLabel = { ml: 'ML', spread: 'Spread', ou: 'O/U', props: 'Props' }[evhFilter.market];
   sumEl.innerHTML = keys.map(k => {
     const a = agg[k], roi = a.staked ? a.pnl / a.staked * 100 : 0;
+    const wr = (a.w + a.l) ? a.w / (a.w + a.l) * 100 : null;
     const label = k === '?' ? 'Untracked' : k;
     return `<div class="evh-sum${k === 'ALL' ? ' all' : ''}">
-      <span class="ev-tier evh-sum-badge" data-tier="${k}">${label}</span>
+      <span class="ev-tier evh-sum-badge" data-tier="${k}">${label}${mkLabel ? '<small class="evh-sum-mk"> · ' + mkLabel + '</small>' : ''}</span>
       <span class="evh-sum-n">${a.n}<small> bet${a.n === 1 ? '' : 's'}${a.pend ? ' · ' + a.pend + ' pend' : ''}</small></span>
       <span class="evh-sum-rec">${a.w}-${a.l}</span>
+      <span class="evh-sum-wr">${wr != null ? 'WR ' + wr.toFixed(1) + '%' : ''}</span>
       <span class="evh-sum-roi ${roi >= 0 ? 'pos' : 'neg'}">${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%</span>
       <span class="evh-sum-pnl ${a.pnl >= 0 ? 'pos' : 'neg'}">${a.pnl >= 0 ? '+' : '−'}$${Math.abs(a.pnl).toFixed(2)}</span>
     </div>`;
   }).join('');
-
-  // filter
-  // bet-type buckets: market col is 'h2h' / 'spread' / 'total', anything else = player prop
-  const betType = b => b.market === 'h2h' ? 'ml'
-    : b.market === 'spread' ? 'spread'
-    : b.market === 'total' ? 'ou' : 'props';
-  let rows = bets.slice();
-  if (evhFilter.tier !== 'all') rows = rows.filter(b => b._tier === evhFilter.tier);
-  if (evhFilter.market !== 'all') rows = rows.filter(b => betType(b) === evhFilter.market);
-  const st = evhFilter.status;
-  if (st === 'settled') rows = rows.filter(b => b.completed);
-  else if (st === 'pending') rows = rows.filter(b => !b.completed);
-  else if (st === 'won') rows = rows.filter(b => b.won === 1);
-  else if (st === 'lost') rows = rows.filter(b => b.won === 0);
 
   // sort
   const sk = b => {
@@ -2994,7 +3002,21 @@ async function renderEvHistory() {
       <th>Result</th>
       <th data-sk="pnl" class="sortable">PnL${arrow('pnl')}</th>
     </tr></thead><tbody>${body}</tbody></table></div>
-    <div class="evh-count">${rows.length} of ${bets.length} bets</div>`;
+    <div class="evh-count">${rows.length} of ${bets.length} bets${(() => {
+      // graded rows under ALL active filters (tier+bet+status)
+      let w = 0, l = 0, staked = 0, pnl = 0;
+      rows.forEach(b => {
+        if (b.completed && (b.won === 1 || b.won === 0)) {
+          staked += b.stake || 0; pnl += b.pnl || 0;
+          if (b.won === 1) w++; else l++;
+        }
+      });
+      if (!(w + l)) return '';
+      const wr = w / (w + l) * 100, roi = staked ? pnl / staked * 100 : 0;
+      return ` · filtered: ${w}-${l} · WR ${wr.toFixed(1)}%` +
+        ` · ROI <span class="${roi >= 0 ? 'pos' : 'neg'}">${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%</span>` +
+        ` · <span class="${pnl >= 0 ? 'pos' : 'neg'}">${pnl >= 0 ? '+' : '−'}$${Math.abs(pnl).toFixed(2)}</span>`;
+    })()}</div>`;
 }
 
 // ─────────────────────────────────────────────
