@@ -2840,7 +2840,7 @@ async function renderEvBets() {
 }
 
 // ── +EV History tab: every PAPER bet, split + filterable by confidence tier ──
-let evhFilter = { tier: 'all', status: 'all', strategy: 'high' };   // High-trigger = the user's strategy, default view
+let evhFilter = { tier: 'all', status: 'all', strategy: 'high', market: 'all' };   // High-trigger = the user's strategy, default view
 let evhSort = { key: 'date', dir: -1 };          // dir -1 = descending
 const _EVH_ORDER = { High: 0, Med: 1, Low: 2, '?': 3 };
 
@@ -2852,6 +2852,7 @@ function _evhWire() {                              // delegated listener, attach
     const fg = e.target.closest('[data-evh-strategy]');
     const ft = e.target.closest('[data-evh-tier]');
     const fs = e.target.closest('[data-evh-status]');
+    const fm = e.target.closest('[data-evh-market]');
     const th = e.target.closest('th[data-sk]');
     if (fg) {
       evhFilter.strategy = fg.dataset.evhStrategy;
@@ -2861,6 +2862,7 @@ function _evhWire() {                              // delegated listener, attach
     }
     else if (ft) evhFilter.tier = ft.dataset.evhTier;
     else if (fs) evhFilter.status = fs.dataset.evhStatus;
+    else if (fm) evhFilter.market = fm.dataset.evhMarket;
     else if (th) {
       const k = th.dataset.sk;
       if (evhSort.key === k) evhSort.dir *= -1; else { evhSort.key = k; evhSort.dir = -1; }
@@ -2917,8 +2919,13 @@ async function renderEvHistory() {
   }).join('');
 
   // filter
+  // bet-type buckets: market col is 'h2h' / 'spread' / 'total', anything else = player prop
+  const betType = b => b.market === 'h2h' ? 'ml'
+    : b.market === 'spread' ? 'spread'
+    : b.market === 'total' ? 'ou' : 'props';
   let rows = bets.slice();
   if (evhFilter.tier !== 'all') rows = rows.filter(b => b._tier === evhFilter.tier);
+  if (evhFilter.market !== 'all') rows = rows.filter(b => betType(b) === evhFilter.market);
   const st = evhFilter.status;
   if (st === 'settled') rows = rows.filter(b => b.completed);
   else if (st === 'pending') rows = rows.filter(b => !b.completed);
@@ -2945,6 +2952,8 @@ async function renderEvHistory() {
     .map(([v, t]) => `<button class="evh-fbtn${evhFilter.tier === v ? ' active' : ''}" data-evh-tier="${v}">${t}</button>`).join('');
   const statusBtns = [['all', 'All'], ['settled', 'Settled'], ['pending', 'Pending'], ['won', 'Won'], ['lost', 'Lost']]
     .map(([v, t]) => `<button class="evh-fbtn${evhFilter.status === v ? ' active' : ''}" data-evh-status="${v}">${t}</button>`).join('');
+  const marketBtns = [['all', 'All'], ['ml', 'ML'], ['spread', 'Spread'], ['ou', 'O/U'], ['props', 'Props']]
+    .map(([v, t]) => `<button class="evh-fbtn${evhFilter.market === v ? ' active' : ''}" data-evh-market="${v}">${t}</button>`).join('');
   const arrow = k => evhSort.key === k ? (evhSort.dir < 0 ? ' ▾' : ' ▴') : '';
 
   // table
@@ -2972,6 +2981,7 @@ async function renderEvHistory() {
     <div class="evh-filters">
       <span class="evh-flabel">Ledger</span>${stratBtns}
       <span class="evh-flabel" style="margin-left:14px;">Tier</span>${tierBtns}
+      <span class="evh-flabel" style="margin-left:14px;">Bet</span>${marketBtns}
       <span class="evh-flabel" style="margin-left:14px;">Status</span>${statusBtns}
     </div>
     <div class="evh-tablewrap"><table class="evh-table"><thead><tr>
