@@ -15,6 +15,7 @@ import os, json, urllib.request, urllib.parse, sqlite3, sys
 from datetime import datetime, timezone
 import softbook_ev_core as core
 import softbook_ev_stats as stats
+import softbook_ev_npb as npb
 
 SRC_DB = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
 PAPER_DB = os.getenv("SOFTBOOK_PAPER_DB", "/home/ubuntu/kalshi-arb/data/softbook_paper.db")
@@ -229,6 +230,8 @@ def settle(paper, key):
                     res = "void" if stat == stats.DNP else core.grade_prop(side, point, stat)
                 else:                                             # game market -> team score
                     sc = scores.get(eid)
+                    if sc is None and sport == "baseball_npb":    # Odds API: no NPB scores
+                        sc = npb.scores_for(away, home, ct)       # npb.jp official, final-only
                     res = core.grade(market, side, point, home, away, sc) if sc else None
                 if res is None:
                     continue
