@@ -52,31 +52,39 @@ def send_telegram(text):
 
 
 def _dup_note(db, b):
-    """If this game+market(+player) was already High-alerted at a different
-    side/point, return a warning line: it's the SAME bet exposure (1/game/market),
-    plus whether the new line is better or worse than the alerted one. A moved
-    line re-alerts as a new bet, so without this the alert looks like a fresh
-    opportunity when it's really a re-quote of one you may already hold."""
-    row = db.execute(
+    """If this game+market(+player) was already High-alerted at other side/points,
+    return a warning line: it's the SAME bet exposure (1/game/market), with the
+    FULL chain of previously alerted lines in order (so line movement is visible
+    at a glance) plus whether the new line beats the FIRST alert (the one most
+    likely bet). A moved line re-alerts as a new bet, so without this the alert
+    looks like a fresh opportunity when it's really a re-quote of one you may hold."""
+    prior = db.execute(
         "SELECT side, point FROM high_alerted WHERE event_id=? AND market=? AND player=?"
-        " AND NOT (side=? AND point=?) ORDER BY alerted_at DESC LIMIT 1",
+        " AND NOT (side=? AND point=?) ORDER BY alerted_at",
         (b["event_id"], b["market"], b.get("player") or "",
-         b["side"], b["point"] or 0)).fetchone()
-    if not row:
+         b["side"], b["point"] or 0)).fetchall()
+    if not prior:
         return ""
-    old_side, old_point = row
-    old = core.label(b["market"], old_side, old_point or None, b.get("player"))
-    if old_side != b["side"]:
-        return f"\n   ⚠️ 중복: 기존 알림 [{old}]과 방향 반대 — 이미 베팅했다면 스킵"
+    first_side, first_point = prior[0]
+    same_side = all(s == b["side"] for s, _ in prior)
+    if same_side and b["market"] != "h2h":     # compact chain: side once, points only
+        chain = (f"{core.label(b['market'], b['side'], prior[0][1], b.get('player'))} → "
+                 + " → ".join(f"{p:+g}" if b["market"] == "spread" else f"{p:g}"
+                              for _, p in prior[1:] + [(None, b["point"] or 0)]))
+    else:                                       # mixed sides (or ML): full labels
+        chain = " → ".join(core.label(b["market"], s, p or None, b.get("player"))
+                           for s, p in prior + [(b["side"], b["point"] or 0)])
+    if first_side != b["side"]:
+        return f"\n   ⚠️ 중복 {len(prior)+1}번째: {chain} — 처음 알림과 방향 반대, 이미 베팅했다면 스킵"
     new_point = b["point"] or 0
     if b["side"] == "Under":
-        better = new_point > old_point
+        better = new_point > first_point
     elif b["side"] == "Over":
-        better = new_point < old_point
-    else:                                   # spread: more cushion = better
-        better = new_point > old_point
+        better = new_point < first_point
+    else:                                       # spread: more cushion = better
+        better = new_point > first_point
     verdict = "더 좋은 라인" if better else "더 나쁜 라인"
-    return (f"\n   ⚠️ 중복: 기존 알림 [{old}]의 라인 이동 ({verdict})"
+    return (f"\n   ⚠️ 중복 {len(prior)+1}번째: {chain} (처음보다 {verdict})"
             f" — 이미 베팅했다면 스킵 (같은 경기·마켓 1베팅)")
 
 
