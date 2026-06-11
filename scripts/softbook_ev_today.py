@@ -117,7 +117,10 @@ def main():
                 "best_ev": b["ev"],
                 "n_books": b["n_books"], "n_ev": b["n_ev"],
                 "conf": b["conf"], "tier": b["tier"],
-                "books": [{"book": b["book"], "odds": b["odds"], "ev": b["ev"]}],
+                # best BETTABLE book first (the ★ row), then every other NY book
+                # quoting this line — odds move fast, so show the alternatives
+                "books": ([{"book": b["book"], "odds": b["odds"], "ev": b["ev"]}]
+                          + [q for q in b.get("books_all", []) if q["book"] != b["book"]]),
             })
         try:
             with open(path, "w") as f:
