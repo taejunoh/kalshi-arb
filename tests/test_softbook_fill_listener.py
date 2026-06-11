@@ -106,6 +106,10 @@ def test_parse_book_first_and_at_sign():
     assert fl.parse_reply("fd @1.98") == {"odds": 1.98, "book": "FanDuel", "stake": None}
 
 
+def test_parse_fullname_book_american():
+    assert fl.parse_reply("Fanduel +106") == {"odds": 2.06, "book": "FanDuel", "stake": None}
+
+
 def test_parse_skip_words():
     for w in ("skip", "SKIP", "스킵", "패스", "x"):
         assert fl.parse_reply(w) == {"skip": True}
@@ -187,6 +191,14 @@ def test_unparseable_reply_gets_help():
 def test_plain_chat_message_ignored():
     adb, fdb = seeded_alerts(), fill_db()
     assert fl.handle_update(_upd("hello", reply_to=None), adb, fdb, NOW) is None
+
+
+def test_plain_fill_message_gets_reply_guidance():
+    """Fill-looking message WITHOUT replying — guide, don't silently drop."""
+    adb, fdb = seeded_alerts(), fill_db()
+    ack = fl.handle_update(_upd("Fanduel +106", reply_to=None), adb, fdb, NOW)
+    assert ack and "답장" in ack
+    assert fdb.execute("SELECT count(*) FROM real_fill").fetchone() == (0,)
 
 
 def test_edited_reply_corrects_fill():
