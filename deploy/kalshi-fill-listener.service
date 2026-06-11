@@ -1,0 +1,17 @@
+[Unit]
+Description=Soft-book +EV fill listener — Telegram replies log real fills/skips (slippage + no-fill rate)
+# MUST be the ONLY getUpdates consumer for this bot token (Telegram allows one).
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/softbook_fill_listener.py
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=5
+MemoryMax=120M
+
+[Install]
+WantedBy=multi-user.target
