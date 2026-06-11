@@ -138,7 +138,14 @@ def main():
     print("\nLong-run edge — bet small, one per market. Different games/markets = diversify.")
 
     if "--telegram" in sys.argv:
-        top = bets[:TG_CAP]
+        # High-tier only — Low/Med live on the dashboard; the user only bets High
+        # (ledger B). No High right now = no message (instant 🟣 alerts cover new
+        # Highs between digests anyway).
+        high = [b for b in bets if b["tier"] == "High"]
+        if not high:
+            print("telegram: 0 High-tier bets — digest skipped (Low/Med on dashboard)")
+            return
+        top = high[:TG_CAP]
         tg = defaultdict(list)
         for b in top:
             tg[(b["away"], b["home"])].append(b)
@@ -146,13 +153,13 @@ def main():
         for (away, home), gb in sorted(tg.items(), key=lambda kv: -max(b["ev"] for b in kv[1])):
             gb.sort(key=lambda b: -b["ev"])
             lines.append(f"• {away[:16]} @ {home[:16]}\n" + "\n".join(
-                f"   [{b['tier'][0]}] {b['label']} — {b['book']} {b['odds']:.2f} "
+                f"   {b['label']} — {b['book']} {b['odds']:.2f} "
                 f"({b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk) ${b['stake']:.0f}" for b in gb))
-        more = len(bets) - len(top)
-        msg = ("🎯 +EV bets (top by EV — ML/spread/total/props), one per market:\n\n"
+        more = len(high) - len(top)
+        msg = ("🎯 High-tier +EV live now (ML/spread/total/props), one per market:\n\n"
                + "\n\n".join(lines)
-               + (f"\n\n…+{more} more on dashboard." if more > 0 else "")
-               + "\n\n+EV vs sharp Pinnacle. Bet small, pre-game only.")
+               + (f"\n\n…+{more} more High on dashboard." if more > 0 else "")
+               + "\n\n+EV vs sharp Pinnacle. Bet small, pre-game only. Low/Med: dashboard.")
         send_telegram(msg)
 
 
