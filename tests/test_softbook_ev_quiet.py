@@ -1,8 +1,8 @@
 """Quiet-hours alignment for the softbook +EV pipeline — added 2026-06-11.
 
-① ledger B (paper_bet_high) enters at the first NON-quiet pre-game High snapshot
-   (alerts are suppressed 02-09 UTC, so a quiet-hour trigger price is unplaceable);
-   a line whose only High snapshots are quiet never enters.
+① ledger B (paper_bet_high) enters at the FIRST pre-game High snapshot at ANY
+   hour — quiet-hour triggers count (user bets at night too; alerts now fire 24/7,
+   2026-06-11 his call).
 ② wakeup_requote: one push after the quiet window re-quoting overnight Highs at
    current odds — in-band lines get marked in high_alerted, dead lines stay
    unmarked so a later return to High re-alerts.
@@ -19,7 +19,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import softbook_ev_core as core                                # noqa: E402
 import softbook_ev_paper_pnl as pnl                            # noqa: E402
 import softbook_ev_recorder as rec                             # noqa: E402
-import softbook_ev_quiet_requote_migration as mig              # noqa: E402
 
 CT = "2026-06-12T01:10:00Z"        # WNBA-style evening start
 
@@ -38,24 +37,23 @@ def snap(db, rec_at, tier="High", eid="E1", market="spread", side="Dallas Wings"
                 61.0, tier))
 
 
-# ---------- ① candidates_high quiet filter ----------
+# ---------- ① candidates_high: first High snapshot wins, ANY hour ----------
 
-def test_candidates_high_skips_quiet_enters_first_awake():
+def test_candidates_high_quiet_trigger_enters_at_trigger():
     db = src_db()
-    snap(db, "2026-06-11T04:20:22+00:00", book="BetRivers", odds=1.91)   # quiet
+    snap(db, "2026-06-11T04:20:22+00:00", book="BetRivers", odds=1.91)   # overnight
     snap(db, "2026-06-11T11:00:22+00:00", book="FanDuel", odds=1.82, ev=0.012)
     out = pnl.candidates_high(db)
     assert len(out) == 1
     c = out[0]
-    assert c[10] == "FanDuel" and c[11] == 1.82
-    assert c[14].startswith("2026-06-11T11:00")
+    assert c[10] == "BetRivers" and c[11] == 1.91     # trigger price, not wake-up price
+    assert c[14].startswith("2026-06-11T04:20")
 
 
-def test_candidates_high_drops_quiet_only_line():
+def test_candidates_high_quiet_only_line_enters():
     db = src_db()
     snap(db, "2026-06-11T04:20:22+00:00")
-    snap(db, "2026-06-11T08:40:22+00:00")          # still quiet (08 in range(2,9))
-    assert pnl.candidates_high(db) == []
+    assert len(pnl.candidates_high(db)) == 1
 
 
 def test_candidates_high_awake_trigger_unchanged():
@@ -108,7 +106,9 @@ def wake_db():
 
 def run_wake(db, monkeypatch, data, now="2026-06-11T09:00:12+00:00"):
     sent = []
-    monkeypatch.setattr(rec, "send_telegram", lambda t: sent.append(t))
+    # must return a message_id: a None send is treated as failed -> row deleted
+    monkeypatch.setattr(rec, "send_telegram", lambda t: sent.append(t) or len(sent))
+    monkeypatch.setattr(rec.time, "sleep", lambda s: None)
     monkeypatch.setattr(core, "event_odds", lambda *a, **k: (data, 0))
     n = rec.wakeup_requote(db, "key", now)
     return n, sent
@@ -126,7 +126,9 @@ def test_wakeup_still_in_band_marks_alerted(monkeypatch):
     snap(db, "2026-06-11T04:20:22+00:00")
     n, sent = run_wake(db, monkeypatch, payload(fd_price=2.10))   # EV +5% in band
     assert n == 1 and len(sent) == 1
-    assert "아직 유효" in sent[0] and "FanDuel 2.10" in sent[0]
+    # valid line now goes out as its own per-bet alert (fill replies map to it)
+    assert "아직 유효" in sent[0] and "FanDuel @ 2.10" in sent[0]
+    assert "✂️" in sent[0] and "답장" in sent[0]
     assert db.execute("SELECT COUNT(*) FROM high_alerted").fetchone()[0] == 1
     # second call same day: once-per-day guard
     n2, sent2 = run_wake(db, monkeypatch, payload(fd_price=2.10))
@@ -164,49 +166,3 @@ def test_wakeup_started_game_listed_as_missed(monkeypatch):
     n = rec.wakeup_requote(db, "key", "2026-06-11T09:00:12+00:00")
     assert n == 1 and "경기 시작돼 패스" in sent[0]
     assert db.execute("SELECT COUNT(*) FROM high_alerted").fetchone()[0] == 0
-
-
-# ---------- ③ migration ----------
-
-def paper_db():
-    db = sqlite3.connect(":memory:")
-    db.execute(pnl.HIGH_SCHEMA)
-    return db
-
-
-def bet_row(db, eid, placed, book="BetRivers", odds=1.91, stake=3.0,
-            completed=0, result=None, pnl_val=None, won=None):
-    db.execute("""INSERT INTO paper_bet_high (event_id, sport, home, away, market,
-        side, point, player, label, commence_time, book, odds, ev, stake, placed_at,
-        tier, conf, completed, won, result, pnl)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (eid, "basketball_wnba", "Dallas Wings", "Phoenix Mercury", "spread",
-         "Dallas Wings", -5.5, "", "Dallas Wings -5.5", CT, book, odds, 0.045,
-         stake, placed, "High", 61.0, completed, won, result, pnl_val))
-
-
-def test_migration_reprices_and_deletes():
-    src = src_db()
-    # E_rep: quiet High then awake High -> reprice (settled: pnl recomputed)
-    snap(src, "2026-06-11T04:20:22+00:00", eid="E_rep", odds=1.91)
-    snap(src, "2026-06-11T11:00:22+00:00", eid="E_rep", book="FanDuel",
-         odds=1.82, ev=0.012)
-    # E_del: quiet-only High -> delete
-    snap(src, "2026-06-11T04:40:22+00:00", eid="E_del")
-    # E_keep: awake trigger -> untouched
-    snap(src, "2026-06-11T14:00:22+00:00", eid="E_keep")
-    paper = paper_db()
-    bet_row(paper, "E_rep", "2026-06-11T04:20:22+00:00",
-            completed=1, result="win", won=1, pnl_val=2.73, stake=3.0)
-    bet_row(paper, "E_del", "2026-06-11T04:40:22+00:00")
-    bet_row(paper, "E_keep", "2026-06-11T14:00:22+00:00")
-    nrep, ndel = mig.migrate(paper, src, apply=True)
-    assert (nrep, ndel) == (1, 1)
-    rows = {r[0]: r for r in paper.execute(
-        "SELECT event_id, book, odds, stake, pnl, placed_at FROM paper_bet_high")}
-    assert set(rows) == {"E_rep", "E_keep"}
-    eid, book, odds, stake, pnl_val, placed = rows["E_rep"]
-    assert book == "FanDuel" and odds == 1.82
-    assert placed.startswith("2026-06-11T11:00")
-    assert pnl_val == pytest.approx(round(stake * 0.82, 2))   # win pnl recomputed
-    assert rows["E_keep"][1] == "BetRivers"                   # untouched

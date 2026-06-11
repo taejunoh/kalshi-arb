@@ -13,7 +13,7 @@ Usage: venv/bin/python scripts/softbook_ev_today.py [bankroll] [--json PATH] [--
 import os, json, sys, urllib.request, urllib.parse
 from datetime import datetime, timezone
 from collections import defaultdict
-from softbook_ev_core import read_key, active_sports, scan_sport
+from softbook_ev_core import read_key, active_sports, scan_sport, EV_MIN
 
 JSON_CAP, TG_CAP = 40, 12   # dashboard / Telegram show top-N by EV (props can be many)
 PROP_PER_GAME = 3           # cap props per game (correlated — don't stack a slate)
@@ -162,7 +162,9 @@ def main():
             gb.sort(key=lambda b: -b["ev"])
             lines.append(f"• {away[:16]} @ {home[:16]}\n" + "\n".join(
                 f"   {b['label']} — {b['book']} {b['odds']:.2f} "
-                f"({b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk) ${b['stake']:.0f}" for b in gb))
+                f"({b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk) ${b['stake']:.0f}"
+                # floor odds for ANY book: below this the bet is < +1% EV — skip
+                f" ✂️{(1 + EV_MIN) * b['odds'] / (1 + b['ev']):.2f}" for b in gb))
         more = len(high) - len(top)
         msg = ("🎯 High-tier +EV live now (ML/spread/total/props), one per market:\n\n"
                + "\n\n".join(lines)
