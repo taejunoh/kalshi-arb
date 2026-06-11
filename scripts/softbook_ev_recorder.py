@@ -7,7 +7,7 @@ sharp price — see softbook_ev_core.py) so softbook_ev_measure.py can later ver
 CLOSING-LINE VALUE (did these +EV bets beat the Pinnacle close?). NO BETTING —
 record only. Run via kalshi-softbook-ev.timer.
 """
-import os, sqlite3, urllib.request, urllib.parse
+import json, os, sqlite3, time, urllib.request, urllib.parse
 from datetime import datetime, timezone
 import softbook_ev_core as core
 
@@ -37,20 +37,81 @@ WAKEUP_SCHEMA = "CREATE TABLE IF NOT EXISTS wakeup_sent(day TEXT PRIMARY KEY)"
 
 
 def send_telegram(text):
+    """Send; returns the Telegram message_id (int) or None. The fill listener
+    (softbook_fill_listener.py) maps user replies back to bets via this id."""
     tok = cho = None
     try:
         for line in open(os.getenv("ENV_PATH", "/home/ubuntu/kalshi-arb/.env")):
             if line.startswith("TELEGRAM_BOT_TOKEN="): tok = line.split("=", 1)[1].strip().strip('"')
             if line.startswith("TELEGRAM_CHAT_ID="): cho = line.split("=", 1)[1].strip().strip('"')
     except Exception:
-        return
+        return None
     if not (tok and cho):
-        return
+        return None
     try:
         data = urllib.parse.urlencode({"chat_id": cho, "text": text}).encode()
-        urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/sendMessage", data=data, timeout=10).read()
+        resp = urllib.request.urlopen(
+            f"https://api.telegram.org/bot{tok}/sendMessage", data=data, timeout=10).read()
+        return json.loads(resp)["result"]["message_id"]
     except Exception:
-        pass
+        return None
+
+
+def _ensure_alert_cols(db):
+    """One-time migrate: book/odds at alert time (slippage baseline) + the
+    Telegram message_id so the fill listener can resolve replies to exact bets.
+    'duplicate column' is swallowed: refresh + digest units both run this and
+    can race the first post-deploy ALTER."""
+    db.execute(ALERT_SCHEMA)
+    cols = {r[1] for r in db.execute("PRAGMA table_info(high_alerted)")}
+    for col, typ in (("book", "TEXT"), ("odds", "REAL"), ("message_id", "INTEGER")):
+        if col not in cols:
+            try:
+                db.execute(f"ALTER TABLE high_alerted ADD COLUMN {col} {typ}")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e):
+                    raise
+
+
+def _min_odds_line(ev, odds):
+    """Floor odds for taking this bet at ANY book: EV scales ~1:1 with the odds,
+    so below min the user's ROI>=1% bar is gone even though the alert said +EV."""
+    fair = (1 + ev) / odds
+    return (f"   ✂️ 최소 {(1 + core.EV_MIN) / fair:.2f} · 본전 {1 / fair:.2f}"
+            " (어느 북이든 최소 위면 OK)")
+
+
+REPLY_HINT = '↩️ 답장: 체결배당 [북] (예: 1.98 fd) · 안 했으면 "skip"'
+
+
+def _send_bet_alert(db, b, prefix, extra=""):
+    """One Telegram message per bet (NOT batched: a reply must identify exactly
+    one bet) and stamp book/odds/message_id onto its high_alerted row.
+    On a failed send the dedup row is DELETED so the next 20-min scan retries —
+    otherwise one transient Telegram error would silence that bet forever AND
+    leave message_id NULL (untrackable fill). Commits per bet: the write txn
+    must not span the next send's HTTP round-trip (refresh + digest units can
+    overlap on this root-owned db at digest hours)."""
+    pk = (b["event_id"], b["market"], b["side"], b["point"] or 0, b.get("player") or "")
+    text = (f"{prefix}\n\n"
+            f"• {b['away'][:16]} @ {b['home'][:16]}\n"
+            f"   {b['label']}\n"
+            f"   📍 {b['book']} @ {b['odds']:.2f} · 💵 ${_stake(b['ev'], b['odds']):.0f}\n"
+            f"   (EV {b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk)\n"
+            + _min_odds_line(b["ev"], b["odds"])
+            + extra + _dup_note(db, b)
+            + f"\n\n{REPLY_HINT}")
+    mid = send_telegram(text)
+    if mid is None:
+        db.execute("DELETE FROM high_alerted WHERE event_id=? AND market=?"
+                   " AND side=? AND point=? AND player=?", pk)
+    else:
+        db.execute("UPDATE high_alerted SET book=?, odds=?, message_id=?"
+                   " WHERE event_id=? AND market=? AND side=? AND point=? AND player=?",
+                   (b["book"], b["odds"], mid, *pk))
+    db.commit()
+    time.sleep(1.05)                     # Telegram per-chat rate: ~1 msg/s
+    return mid
 
 
 def _dup_note(db, b):
@@ -94,32 +155,30 @@ def alert_new_high(db, bets, now):
     """Push NEW High-tier bets to Telegram as they appear (the 4x/day digest's
     fixed times miss them — High clusters near game start). Dedup per exact bet
     (event+market+side+point+player) so each line alerts once; a moved line is a
-    new bet and re-alerts. Silent during NYC sleep hours (no mark, so it alerts
-    after wake-up if still High and pre-game)."""
-    if datetime.now(timezone.utc).hour in QUIET_UTC:
-        return 0
-    db.execute(ALERT_SCHEMA)
+    new bet and re-alerts. Fires 24/7 — NO sleep window: the user would rather
+    be woken than miss a bet (2026-06-11, his call; ledger B books the trigger
+    price, so the alert must fire at the trigger too)."""
+    _ensure_alert_cols(db)
     new = []
     for b in bets:
         if b["tier"] != "High":
             continue
-        cur = db.execute("INSERT OR IGNORE INTO high_alerted VALUES (?,?,?,?,?,?)",
-                         (b["event_id"], b["market"], b["side"], b["point"] or 0,
-                          b.get("player") or "", now))
+        cur = db.execute(
+            "INSERT OR IGNORE INTO high_alerted(event_id,market,side,point,player,alerted_at)"
+            " VALUES (?,?,?,?,?,?)",
+            (b["event_id"], b["market"], b["side"], b["point"] or 0,
+             b.get("player") or "", now))
         if cur.rowcount:
             new.append(b)
     db.commit()
     if not new:
         return 0
     new.sort(key=lambda b: -b["ev"])
-    lines = [f"• {b['away'][:16]} @ {b['home'][:16]}\n"
-             f"   {b['label']}\n"
-             f"   📍 {b['book']} @ {b['odds']:.2f} · 💵 ${_stake(b['ev'], b['odds']):.0f}\n"
-             f"   (EV {b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk)"
-             + _dup_note(db, b) for b in new[:8]]
-    send_telegram("🟣 NEW High-tier +EV (즉시 알림):\n\n" + "\n\n".join(lines)
-                  + (f"\n\n…+{len(new)-8} more" if len(new) > 8 else "")
-                  + "\n\npre-game only · bet small · 대쉬보드 +EV 탭 확인")
+    for b in new[:8]:
+        _send_bet_alert(db, b, "🟣 High +EV 즉시 알림 (pre-game · bet small)")
+    if len(new) > 8:
+        send_telegram(f"…+{len(new)-8} more new High — 대쉬보드 +EV 탭 확인")
+    db.commit()
     return len(new)
 
 
@@ -146,7 +205,7 @@ def wakeup_requote(db, key, now):
     if now_dt.hour in QUIET_UTC:
         return 0
     db.execute(WAKEUP_SCHEMA)
-    db.execute(ALERT_SCHEMA)
+    _ensure_alert_cols(db)
     day = now[:10]
     if db.execute("SELECT 1 FROM wakeup_sent WHERE day=?", (day,)).fetchone():
         return 0
@@ -165,7 +224,7 @@ def wakeup_requote(db, key, now):
         db.commit()
         return 0
     cand.sort(key=lambda kr: -kr[1][12])               # by trigger EV, like alerts
-    odds_cache, lines, missed = {}, [], []
+    odds_cache, lines, missed, valid = {}, [], [], 0
     for k, (eid, sport, home, away, market, side, point, player, ct, rec_at,
             tbook, todds, tev) in cand:
         lbl = core.label(market, side, None if market == "h2h" else point, player or None)
@@ -195,9 +254,22 @@ def wakeup_requote(db, key, now):
         bbook, bpx = max(quotes, key=lambda q: q[1])
         evv = fair * bpx - 1
         if core.ODDS_MIN <= bpx <= core.ODDS_MAX and core.EV_MIN <= evv <= core.EV_MAX:
-            db.execute("INSERT OR IGNORE INTO high_alerted VALUES (?,?,?,?,?,?)", (*k, now))
-            lines.append(head + f"\n   ✅ 아직 유효: {bbook} {bpx:.2f} (EV {evv*100:+.1f}%)"
-                                f" · 💵 ${_stake(evv, bpx):.0f}")
+            db.execute(
+                "INSERT OR IGNORE INTO high_alerted(event_id,market,side,point,player,alerted_at)"
+                " VALUES (?,?,?,?,?,?)", (*k, now))
+            if valid < 8:        # per-bet cap, like alert_new_high (flood guard)
+                # actionable → own message so a fill reply maps to exactly this bet
+                _send_bet_alert(db, {
+                    "event_id": eid, "market": market, "side": side, "point": point,
+                    "player": player, "home": home, "away": away, "label": lbl,
+                    "book": bbook, "odds": bpx, "ev": evv, "n_books": len(quotes),
+                    "n_ev": sum(1 for _, px in quotes if fair * px - 1 >= core.EV_MIN)},
+                    "🌅 기상 재호가 — 밤사이 High, 아직 유효",
+                    extra=f"\n   🌙 밤 {_et(rec_at)} 트리거: {tbook} {todds:.2f} (EV {tev*100:+.1f}%)")
+            else:                # overflow: batch line (no fill tracking)
+                lines.append(head + f"\n   ✅ 아직 유효: {bbook} {bpx:.2f}"
+                                    f" (EV {evv*100:+.1f}%) · 💵 ${_stake(evv, bpx):.0f}")
+            valid += 1
         elif evv > core.EV_MAX:
             lines.append(head + f"\n   ⚠️ 현재 {bbook} {bpx:.2f} EV {evv*100:+.1f}% > 8% 상한"
                                 " — 라인 급변/의심 호가, 직접 확인")
@@ -205,16 +277,18 @@ def wakeup_requote(db, key, now):
             lines.append(head + f"\n   ⛔ 엣지 소멸: 현재 최선 {bbook} {bpx:.2f}"
                                 f" (EV {evv*100:+.1f}%) → 스킵 (밴드 재진입시 재알림)")
     body = lines[:10] + ([f"…+{len(lines)-10} more"] if len(lines) > 10 else []) + missed[:5]
-    send_telegram(f"🌅 기상 재호가 — 밤사이 신규 High {len(cand)}건:\n\n"
-                  + "\n\n".join(body)
-                  + "\n\npre-game only · bet small · 대쉬보드 +EV 탭 확인")
+    if body:
+        send_telegram(f"🌅 기상 재호가 — 밤사이 신규 High {len(cand)}건"
+                      + (f" (유효 {valid}건은 개별 알림으로)" if valid else "") + ":\n\n"
+                      + "\n\n".join(body)
+                      + "\n\npre-game only · bet small · 대쉬보드 +EV 탭 확인")
     db.execute("INSERT OR IGNORE INTO wakeup_sent VALUES (?)", (day,))
     db.commit()
     return len(cand)
 
 
 def init_db():
-    c = sqlite3.connect(OUT)
+    c = sqlite3.connect(OUT, timeout=15)
     cols = [r[1] for r in c.execute("PRAGMA table_info(softbook_ev)")]
     if cols and "tier" not in cols:          # one-time migrate (adds consensus/confidence)
         c.execute("DROP TABLE softbook_ev")

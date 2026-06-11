@@ -156,11 +156,11 @@ def place(paper, src):
 
 def candidates_high(src):
     """Strategy-B candidates: each exact line (event, market, side, point, player)
-    entered at the FIRST pre-game snapshot where tier=='High' AND the snapshot is
-    outside QUIET_UTC — i.e. the scan where the Telegram alert actually fires
-    (alert_new_high suppresses pushes 02-09 UTC, so a quiet-hour trigger price is
-    one the user can never act on). A line whose only High snapshots are quiet
-    never alerts -> never enters ledger B (signal-level record stays in ledger A)."""
+    entered at the FIRST pre-game snapshot where tier=='High', at THAT snapshot's
+    book/odds — i.e. what you'd get betting each new High pick as it appears.
+    Quiet-hour (02-09 UTC) triggers COUNT: the user watches the dashboard and bets
+    at night too (2026-06-11, his call — do NOT re-add a quiet filter here); the
+    alerted-vs-obtained price gap is measured separately via real_fill replies."""
     try:
         rows = src.execute("""SELECT event_id, sport, home, away, market, side, point,
             player, commence_time, recorded_at, best_soft_book, best_soft_price,
@@ -177,8 +177,6 @@ def candidates_high(src):
         cdt, rdt = _dt(ct), _dt(rec)
         if not (cdt and rdt and cdt > rdt):        # pre-game at the High trigger
             continue
-        if rdt.hour in core.QUIET_UTC:             # alert can't fire while user sleeps
-            continue                               # -> wait for first non-quiet High
         seen.add(k)
         kelly = ev / (odds - 1) if odds > 1 else 0
         stake = round(max(2.0, min(BANKROLL * 0.02, BANKROLL * kelly * 0.25)), 2)
@@ -355,10 +353,24 @@ def report(db, tg=False, high=None):
             hline = (f"🟣 HIGH-트리거 전략: {high[1]}-{high[0]-high[1]} | "
                      f"순익 ${high[2]:+.2f} | ROI {high[3]:+.1f}% (n={high[0]})\n"
                      if high and high[0] else "")
+            fline = ""
+            try:        # real fills logged by softbook_fill_listener replies
+                f_, s_, sl = db.execute(
+                    """SELECT sum(skipped=0), sum(skipped=1),
+                       avg(CASE WHEN skipped=0 AND alert_odds>0
+                           THEN 100.0*(fill_odds/alert_odds-1) END)
+                       FROM real_fill""").fetchone()
+                if (f_ or 0) + (s_ or 0):
+                    fline = (f"🎯 실체결 {f_ or 0}건"
+                             + (f" 슬리피지 {sl:+.1f}%" if sl is not None else "")
+                             + f" · skip {s_ or 0}"
+                             f" (노필 {100*(s_ or 0)/((f_ or 0)+(s_ or 0)):.0f}%)\n")
+            except Exception:
+                pass
             msg = ("📊 소프트북 +EV 페이퍼 PnL (ML/스프레드/토탈)\n"
                    f"전적 {wins}-{len(graded)-wins} (승률 {100*wins/len(graded):.0f}%)\n"
                    f"스테이크 ${staked:.2f} | 순익 ${net:+.2f} | ROI {roi:+.1f}%\n"
-                   + (f"tier: {tline}\n" if tline else "") + hline
+                   + (f"tier: {tline}\n" if tline else "") + hline + fline
                    + f"정산 {len(graded)} · 대기 {len(pending)}\n"
                    f"⚠️ n={len(graded)} — 1~2주 더 쌓여야 신뢰 가능 (PAPER)")
         else:
