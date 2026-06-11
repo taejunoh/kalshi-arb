@@ -167,6 +167,12 @@ def handle_update(upd, adb, fdb, now):
         return stats_text(fdb)
     reply = msg.get("reply_to_message") or {}
     if not reply.get("message_id"):
+        # a fill-looking PLAIN message must not be silently ignored (real user
+        # confusion 6/11: sent "Fanduel +106" without replying — unmappable)
+        if parse_reply(text):
+            return ("↩️ 어느 베팅인지 알 수 없어 기록 못 했어요 — 해당 High 알림"
+                    " 메시지에 답장(Reply)으로 보내주세요"
+                    " (메시지를 스와이프하거나 길게 눌러 Reply).")
         return None                                     # plain chat — not ours
     alert = lookup_alert(adb, reply["message_id"])
     if not alert:
