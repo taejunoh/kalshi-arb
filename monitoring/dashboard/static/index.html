@@ -609,6 +609,17 @@
     .ev-book-name { color: var(--text, #e7e7ea); font-weight: 500; }
     .ev-book-odds { font-family: ui-monospace, Menlo, monospace; color: var(--text-dim, #aaa); }
     .ev-book-ev { font-family: ui-monospace, Menlo, monospace; color: #4ade80; font-weight: 600; }
+    .ev-book-ev.neg { color: #f87171; }
+    .ev-books-more { margin-top: 2px; }
+    .ev-books-more summary {
+      cursor: pointer; list-style: none; user-select: none;
+      font-size: 11px; color: var(--text-dim, #8a8a93); padding: 3px 8px;
+    }
+    .ev-books-more summary::-webkit-details-marker { display: none; }
+    .ev-books-more summary::before { content: '▸ '; font-size: 10px; }
+    .ev-books-more[open] summary::before { content: '▾ '; }
+    .ev-books-more summary:hover { color: var(--text, #e7e7ea); }
+    .ev-books-more .ev-book-row { margin-top: 5px; }
     /* ── +EV History tab ── */
     .evh-summary { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
     .evh-sum {
@@ -2765,6 +2776,7 @@ async function renderSnapshot() {
 //  +EV bets — soft book vs sharp line (bet the sportsbook, not Kalshi)
 // ─────────────────────────────────────────────
 let evSort = 'ev';   // +EV tab sort: 'ev' | 'conf'
+const evBooksOpen = new Set();   // expanded "other books" dropdowns survive the ~20min re-render
 async function renderEvBets() {
   const list = document.getElementById('ev-list');
   const meta = document.getElementById('ev-meta');
@@ -2787,12 +2799,23 @@ async function renderEvBets() {
     const card = (b, showMatchup) => {
       const start = b.commence_time ? new Date(b.commence_time) : null;
       const when = start ? start.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
-      const books = (b.books || []).map((bk, i) => `
-        <div class="ev-book-row ${i === 0 ? 'best' : ''}">
-          <span class="ev-book-name">${bk.book}${i === 0 ? ' ★' : ''}</span>
+      const bookRow = (bk, best) => `
+        <div class="ev-book-row ${best ? 'best' : ''}">
+          <span class="ev-book-name">${bk.book}${best ? ' ★' : ''}</span>
           <span><span class="ev-book-odds">${Number(bk.odds).toFixed(2)}</span>
-            &nbsp; <span class="ev-book-ev">${bk.ev * 100 >= 0 ? '+' : ''}${(bk.ev * 100).toFixed(1)}%</span></span>
-        </div>`).join('');
+            &nbsp; <span class="ev-book-ev ${bk.ev < 0 ? 'neg' : ''}">${bk.ev * 100 >= 0 ? '+' : ''}${(bk.ev * 100).toFixed(1)}%</span></span>
+        </div>`;
+      const allBooks = b.books || [];
+      const rest = allBooks.slice(1);
+      // odds move between 20-min refreshes — the dropdown shows every other NY
+      // book quoting this line so a stale ★ quote isn't a dead end
+      const bkey = [b.matchup, b.market, b.team, b.player || ''].join('|');
+      const books = (allBooks.length ? bookRow(allBooks[0], true) : '') + (rest.length ? `
+        <details class="ev-books-more" ${evBooksOpen.has(bkey) ? 'open' : ''}
+                 ontoggle="this.open ? evBooksOpen.add('${bkey.replace(/'/g, "\\'")}') : evBooksOpen.delete('${bkey.replace(/'/g, "\\'")}')">
+          <summary>${rest.length} other book${rest.length === 1 ? '' : 's'}</summary>
+          ${rest.map(bk => bookRow(bk, false)).join('')}
+        </details>` : '');
       const tier = b.tier || '';
       return `
         <div class="ev-card" data-tier="${tier}">

@@ -260,6 +260,10 @@ def event_ev_bets(ev, sport):
             "book": bl, "odds": px, "fair": fair, "ev": ev_val,
             "pin_price": idx.get((market, player, side, point)),
             "n_books": n_books, "n_ev": n_ev, "conf": score, "tier": tier,
+            # every NY book quoting THIS line, best-EV first (odds move fast —
+            # the dashboard shows these so a stale best-book quote isn't a dead end)
+            "books_all": [{"book": b2, "odds": p2, "ev": round(e2, 4)}
+                          for b2, p2, e2 in sorted(evs, key=lambda x: -x[2])],
         })
     return out
 
