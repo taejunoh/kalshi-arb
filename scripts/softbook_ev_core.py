@@ -22,10 +22,16 @@ from datetime import datetime, timezone
 
 NY_LEGAL = {"fanduel": "FanDuel", "draftkings": "DraftKings", "betmgm": "BetMGM",
             "williamhill_us": "Caesars",  # Odds API legacy key (William Hill US)
-            "betrivers": "BetRivers", "fanatics": "Fanatics"}
+            "betrivers": "BetRivers", "fanatics": "Fanatics",
+            "espnbet": "theScore",        # us2 region; ex-ESPN BET, rebranded 2025-12
+            "ballybet": "BallyBet"}       # us2 region; no props quotes
+# Explicit bookmakers= beats regions=us,eu: pulls the us2 NY books AND bills as
+# 1 region (<=10 keys) instead of 2 — half the credits per event call.
+BOOKMAKERS = ",".join(["pinnacle"] + list(NY_LEGAL))
 ODDS_MIN, ODDS_MAX = 1.50, 4.00
 EV_MIN, EV_MAX = 0.01, 0.08
 MAX_HOURS = 72
+QUIET_UTC = range(2, 9)     # 22:00-05:00 NYC sleep — no Telegram pushes in this window
 B = "https://api.the-odds-api.com/v4/sports"
 
 GAME_MARKETS = "h2h,spreads,totals,alternate_spreads,alternate_totals"
@@ -74,7 +80,7 @@ def active_sports(key):
 def list_events(sport, key):
     try:
         games = json.loads(urllib.request.urlopen(
-            f"{B}/{sport}/odds/?apiKey={key}&regions=us&markets=h2h&oddsFormat=decimal",
+            f"{B}/{sport}/odds/?apiKey={key}&bookmakers={BOOKMAKERS}&markets=h2h&oddsFormat=decimal",
             timeout=25).read())
     except Exception:
         return []
@@ -82,7 +88,7 @@ def list_events(sport, key):
 
 
 def event_odds(sport, eid, key, markets=GAME_MARKETS):
-    url = (f"{B}/{sport}/events/{eid}/odds/?apiKey={key}&regions=us,eu"
+    url = (f"{B}/{sport}/events/{eid}/odds/?apiKey={key}&bookmakers={BOOKMAKERS}"
            f"&markets={markets}&oddsFormat=decimal")
     r = urllib.request.urlopen(url, timeout=30)
     data = json.loads(r.read())
@@ -145,6 +151,37 @@ def _fair(idx, market, player, side, point, home, away):
     if pb is None:
         return None
     return _devig(pa, pb)
+
+
+def line_quotes(ev_data, market, side, point, player=None):
+    """Fresh NY-book quotes + sharp fair for ONE exact line, from an event-odds
+    payload (use point=None for h2h). Each book contributes its best price across
+    main+alternate markets. Returns (fair_or_None, [(book_label, price), ...])."""
+    home, away = ev_data.get("home_team"), ev_data.get("away_team")
+    bk = {b["key"]: b for b in ev_data.get("bookmakers", [])}
+    pin = bk.get("pinnacle")
+    fair = _fair(_pin_index(pin), market, player, side, point, home, away) if pin else None
+    target = None if market == "h2h" else round(point or 0.0, 1)
+    quotes = []
+    for bkey, blabel in NY_LEGAL.items():
+        b = bk.get(bkey)
+        if not b:
+            continue
+        best = None
+        for m in b.get("markets", []):
+            if _canon(m["key"]) != market:
+                continue
+            for o in m["outcomes"]:
+                if o["name"] != side or (o.get("description") or None) != (player or None):
+                    continue
+                pt = None if market == "h2h" else round(o.get("point", 0.0), 1)
+                if pt != target:
+                    continue
+                if best is None or o["price"] > best:
+                    best = o["price"]
+        if best is not None:
+            quotes.append((blabel, best))
+    return fair, quotes
 
 
 def label(market, side, point, player=None):

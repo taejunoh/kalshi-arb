@@ -87,8 +87,11 @@ def main():
         now_iso = datetime.now(timezone.utc).isoformat()
         rdb = rec.init_db()
         rn = rec.record(rdb, bets_all, now_iso)
+        # wake-up requote BEFORE alert_new_high: still-in-band overnight lines get
+        # marked alerted by the requote push, suppressing a same-scan duplicate.
+        rw = rec.wakeup_requote(rdb, key, now_iso)
         ra = rec.alert_new_high(rdb, bets_all, now_iso)
-        print(f"[record] {rn} snapshot rows, {ra} new High alerts")
+        print(f"[record] {rn} snapshot rows, {ra} new High alerts, {rw} wake-up requotes")
     except Exception as e:
         print("record err:", e)
 
