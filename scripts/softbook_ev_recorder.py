@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 import softbook_ev_core as core
 
 OUT = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
-QUIET_UTC = range(2, 9)            # 22:00-05:00 NYC: no pushes while user sleeps
+QUIET_UTC = core.QUIET_UTC         # 22:00-05:00 NYC: no pushes while user sleeps
 BANKROLL = float(os.getenv("SOFTBOOK_BANKROLL", "240"))
 
 
@@ -32,6 +32,8 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS softbook_ev(
 ALERT_SCHEMA = """CREATE TABLE IF NOT EXISTS high_alerted(
     event_id TEXT, market TEXT, side TEXT, point REAL, player TEXT, alerted_at TEXT,
     PRIMARY KEY (event_id, market, side, point, player))"""
+
+WAKEUP_SCHEMA = "CREATE TABLE IF NOT EXISTS wakeup_sent(day TEXT PRIMARY KEY)"
 
 
 def send_telegram(text):
@@ -121,6 +123,96 @@ def alert_new_high(db, bets, now):
     return len(new)
 
 
+def _et(iso):
+    """HH:MM New-York time for display (falls back to UTC if tzdata missing)."""
+    try:
+        from zoneinfo import ZoneInfo
+        return (datetime.fromisoformat(iso.replace("Z", "+00:00"))
+                .astimezone(ZoneInfo("America/New_York")).strftime("%H:%M ET"))
+    except Exception:
+        return iso[11:16] + " UTC"
+
+
+def wakeup_requote(db, key, now):
+    """One push at the first scan after the quiet window: lines whose FIRST-ever
+    High snapshot fell inside today's quiet hours never got an instant alert
+    (sleep suppression) and the ledger/dashboard still shows the stale trigger
+    quote — so re-quote each still-pre-game line at CURRENT best book/odds and
+    let the user act on a live price. Lines still in band are marked in
+    high_alerted (this push IS their alert — suppresses the same-scan dup from
+    alert_new_high); dead lines stay unmarked so a later return to High
+    re-alerts normally. Runs once per UTC day (wakeup_sent guard)."""
+    now_dt = datetime.fromisoformat(now)
+    if now_dt.hour in QUIET_UTC:
+        return 0
+    db.execute(WAKEUP_SCHEMA)
+    db.execute(ALERT_SCHEMA)
+    day = now[:10]
+    if db.execute("SELECT 1 FROM wakeup_sent WHERE day=?", (day,)).fetchone():
+        return 0
+    w0, w1 = f"{day}T{min(QUIET_UTC):02d}:00:00", f"{day}T{max(QUIET_UTC)+1:02d}:00:00"
+    firsts = {}                      # exact line -> its FIRST-ever High snapshot
+    for r in db.execute("""SELECT event_id, sport, home, away, market, side,
+            COALESCE(point, 0), COALESCE(player, ''), commence_time, recorded_at,
+            best_soft_book, best_soft_price, snapshot_ev
+            FROM softbook_ev WHERE tier='High' ORDER BY recorded_at"""):
+        firsts.setdefault((r[0], r[4], r[5], r[6], r[7]), r)
+    cand = [(k, r) for k, r in firsts.items() if w0 <= r[9] < w1 and not db.execute(
+        "SELECT 1 FROM high_alerted WHERE event_id=? AND market=? AND side=?"
+        " AND point=? AND player=?", k).fetchone()]
+    if not cand:
+        db.execute("INSERT OR IGNORE INTO wakeup_sent VALUES (?)", (day,))
+        db.commit()
+        return 0
+    cand.sort(key=lambda kr: -kr[1][12])               # by trigger EV, like alerts
+    odds_cache, lines, missed = {}, [], []
+    for k, (eid, sport, home, away, market, side, point, player, ct, rec_at,
+            tbook, todds, tev) in cand:
+        lbl = core.label(market, side, None if market == "h2h" else point, player or None)
+        head = (f"• {away[:16]} @ {home[:16]}\n   {lbl}\n"
+                f"   밤 {_et(rec_at)} High: {tbook} {todds:.2f} (EV {tev*100:+.1f}%)")
+        try:
+            started = datetime.fromisoformat(ct.replace("Z", "+00:00")) <= now_dt
+        except Exception:
+            started = True
+        if started:
+            missed.append(f"• 경기 시작돼 패스: {away[:16]} @ {home[:16]} — {lbl}"
+                          f" (밤 {_et(rec_at)} High {tbook} {todds:.2f})")
+            continue
+        ck = (sport, eid)
+        if ck not in odds_cache:
+            try:
+                odds_cache[ck] = core.event_odds(sport, eid, key, core.markets_for(sport))[0]
+            except Exception:
+                odds_cache[ck] = None
+        data = odds_cache[ck]
+        fair, quotes = (core.line_quotes(data, market, side,
+                                         None if market == "h2h" else point,
+                                         player or None) if data else (None, []))
+        if fair is None or not quotes:
+            lines.append(head + "\n   ⛔ 현재 호가/기준가 없음 → 스킵")
+            continue
+        bbook, bpx = max(quotes, key=lambda q: q[1])
+        evv = fair * bpx - 1
+        if core.ODDS_MIN <= bpx <= core.ODDS_MAX and core.EV_MIN <= evv <= core.EV_MAX:
+            db.execute("INSERT OR IGNORE INTO high_alerted VALUES (?,?,?,?,?,?)", (*k, now))
+            lines.append(head + f"\n   ✅ 아직 유효: {bbook} {bpx:.2f} (EV {evv*100:+.1f}%)"
+                                f" · 💵 ${_stake(evv, bpx):.0f}")
+        elif evv > core.EV_MAX:
+            lines.append(head + f"\n   ⚠️ 현재 {bbook} {bpx:.2f} EV {evv*100:+.1f}% > 8% 상한"
+                                " — 라인 급변/의심 호가, 직접 확인")
+        else:
+            lines.append(head + f"\n   ⛔ 엣지 소멸: 현재 최선 {bbook} {bpx:.2f}"
+                                f" (EV {evv*100:+.1f}%) → 스킵 (밴드 재진입시 재알림)")
+    body = lines[:10] + ([f"…+{len(lines)-10} more"] if len(lines) > 10 else []) + missed[:5]
+    send_telegram(f"🌅 기상 재호가 — 밤사이 신규 High {len(cand)}건:\n\n"
+                  + "\n\n".join(body)
+                  + "\n\npre-game only · bet small · 대쉬보드 +EV 탭 확인")
+    db.execute("INSERT OR IGNORE INTO wakeup_sent VALUES (?)", (day,))
+    db.commit()
+    return len(cand)
+
+
 def init_db():
     c = sqlite3.connect(OUT)
     cols = [r[1] for r in c.execute("PRAGMA table_info(softbook_ev)")]
@@ -164,9 +256,11 @@ def main():
         credits += c
         all_bets += bets
         n += record(db, bets, now)
+    requoted = wakeup_requote(db, key, now)
     alerted = alert_new_high(db, all_bets, now)
     print(f"[softbook-ev] {now}: recorded {n} +EV bets (ML/spread/total), "
-          f"alerted {alerted} new High, {credits} credits -> {OUT}")
+          f"alerted {alerted} new High, {requoted} wake-up requotes, "
+          f"{credits} credits -> {OUT}")
 
 
 if __name__ == "__main__":

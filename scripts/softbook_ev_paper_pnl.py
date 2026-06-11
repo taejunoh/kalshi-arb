@@ -156,8 +156,11 @@ def place(paper, src):
 
 def candidates_high(src):
     """Strategy-B candidates: each exact line (event, market, side, point, player)
-    entered at the FIRST pre-game snapshot where tier=='High', at THAT snapshot's
-    book/odds — i.e. what you'd get betting each new High alert as it fires."""
+    entered at the FIRST pre-game snapshot where tier=='High' AND the snapshot is
+    outside QUIET_UTC — i.e. the scan where the Telegram alert actually fires
+    (alert_new_high suppresses pushes 02-09 UTC, so a quiet-hour trigger price is
+    one the user can never act on). A line whose only High snapshots are quiet
+    never alerts -> never enters ledger B (signal-level record stays in ledger A)."""
     try:
         rows = src.execute("""SELECT event_id, sport, home, away, market, side, point,
             player, commence_time, recorded_at, best_soft_book, best_soft_price,
@@ -174,6 +177,8 @@ def candidates_high(src):
         cdt, rdt = _dt(ct), _dt(rec)
         if not (cdt and rdt and cdt > rdt):        # pre-game at the High trigger
             continue
+        if rdt.hour in core.QUIET_UTC:             # alert can't fire while user sleeps
+            continue                               # -> wait for first non-quiet High
         seen.add(k)
         kelly = ev / (odds - 1) if odds > 1 else 0
         stake = round(max(2.0, min(BANKROLL * 0.02, BANKROLL * kelly * 0.25)), 2)
