@@ -256,7 +256,11 @@ def main():
         credits += c
         all_bets += bets
         n += record(db, bets, now)
-    requoted = wakeup_requote(db, key, now)
+    requoted = 0
+    try:
+        requoted = wakeup_requote(db, key, now)
+    except Exception as e:
+        print("wakeup err:", e)
     alerted = alert_new_high(db, all_bets, now)
     print(f"[softbook-ev] {now}: recorded {n} +EV bets (ML/spread/total), "
           f"alerted {alerted} new High, {requoted} wake-up requotes, "

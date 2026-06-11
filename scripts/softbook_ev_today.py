@@ -89,7 +89,12 @@ def main():
         rn = rec.record(rdb, bets_all, now_iso)
         # wake-up requote BEFORE alert_new_high: still-in-band overnight lines get
         # marked alerted by the requote push, suppressing a same-scan duplicate.
-        rw = rec.wakeup_requote(rdb, key, now_iso)
+        # Own try: a requote failure must never cost the scan its High alerts.
+        rw = 0
+        try:
+            rw = rec.wakeup_requote(rdb, key, now_iso)
+        except Exception as e:
+            print("wakeup err:", e)
         ra = rec.alert_new_high(rdb, bets_all, now_iso)
         print(f"[record] {rn} snapshot rows, {ra} new High alerts, {rw} wake-up requotes")
     except Exception as e:
