@@ -21,7 +21,8 @@ import os, json, urllib.request
 from datetime import datetime, timezone
 
 NY_LEGAL = {"fanduel": "FanDuel", "draftkings": "DraftKings", "betmgm": "BetMGM",
-            "caesars": "Caesars", "betrivers": "BetRivers", "fanatics": "Fanatics"}
+            "williamhill_us": "Caesars",  # Odds API legacy key (William Hill US)
+            "betrivers": "BetRivers", "fanatics": "Fanatics"}
 ODDS_MIN, ODDS_MAX = 1.50, 4.00
 EV_MIN, EV_MAX = 0.01, 0.08
 MAX_HOURS = 72
