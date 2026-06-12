@@ -87,7 +87,11 @@ def list_events(sport, key):
             timeout=25).read())
     except Exception:
         return []
-    return [g for g in games if soon(g.get("commence_time"))]
+    # Pinnacle is the fair source — without it event_ev_bets returns [] no matter
+    # what, so don't spend a per-event odds call (MMA/boxing/tennis list many
+    # events Pinnacle never quotes; the h2h list response already shows the books).
+    return [g for g in games if soon(g.get("commence_time"))
+            and any(b.get("key") == "pinnacle" for b in g.get("bookmakers", []))]
 
 
 def event_odds(sport, eid, key, markets=GAME_MARKETS):
