@@ -120,6 +120,24 @@ def test_parse_garbage_is_none():
     assert fl.parse_reply("") is None
 
 
+def test_parse_cashout_variants():
+    for t in ("cashout 1.50", "cash out 1.50", "cashed out $1.50",
+              "CASHOUT 1.50", "캐시아웃 1.50", "co 1.50"):
+        assert fl.parse_reply(t) == {"cashout": True, "amount": 1.5}, t
+
+
+def test_parse_cashout_without_amount():
+    assert fl.parse_reply("cashed out") == {"cashout": True, "amount": None}
+    assert fl.parse_reply("cashout") == {"cashout": True, "amount": None}
+
+
+def test_parse_cashout_number_not_mistaken_for_odds():
+    # the 6/12 bug this feature closes: "cashed out 1.50" must never be
+    # recorded as a fill @ 1.50
+    p = fl.parse_reply("cashed out 1.50")
+    assert "odds" not in p
+
+
 # ---------- ② listener: reply handling ----------
 
 def fill_db():
@@ -211,6 +229,68 @@ def test_edited_reply_corrects_fill():
     ack = fl.handle_update(edited, adb, fdb, NOW)
     assert "1.98" in ack
     assert fdb.execute("SELECT fill_odds FROM real_fill").fetchall() == [(1.98,)]
+
+
+def test_cashout_after_fill_keeps_fill_data():
+    """Bet first ("2.05 5"), opposite side alerts later, user cashes out —
+    fill odds/stake must survive and the row stays a fill (skipped=0)."""
+    adb, fdb = seeded_alerts(), fill_db()
+    fl.handle_update(_upd("2.05 5"), adb, fdb, NOW)
+    ack = fl.handle_update(_upd("cashout 4.20"), adb, fdb, NOW)
+    assert "캐시아웃" in ack and "$4.20" in ack and "-0.80" in ack  # 4.20-5.00
+    row = fdb.execute("SELECT fill_odds, fill_stake, skipped, cashed_out,"
+                      " cashout_amount FROM real_fill").fetchone()
+    assert row == (2.05, 5.0, 0, 1, 4.2)
+
+
+def test_cashout_without_prior_fill_counts_as_filled():
+    adb, fdb = seeded_alerts(), fill_db()
+    ack = fl.handle_update(_upd("cash out"), adb, fdb, NOW)
+    assert "캐시아웃" in ack and "회수 금액" in ack       # nudges for the amount
+    row = fdb.execute("SELECT skipped, cashed_out, cashout_amount, fill_odds"
+                      " FROM real_fill").fetchone()
+    assert row == (0, 1, None, None)
+
+
+def test_cashout_amount_added_by_second_reply():
+    adb, fdb = seeded_alerts(), fill_db()
+    fl.handle_update(_upd("cashout"), adb, fdb, NOW)
+    fl.handle_update(_upd("cashout 1.50"), adb, fdb, NOW)
+    rows = fdb.execute("SELECT cashed_out, cashout_amount FROM real_fill").fetchall()
+    assert rows == [(1, 1.5)]
+
+
+def test_odds_correction_after_cashout_keeps_cashout():
+    adb, fdb = seeded_alerts(), fill_db()
+    fl.handle_update(_upd("1.89"), adb, fdb, NOW)
+    fl.handle_update(_upd("cashout 1.50"), adb, fdb, NOW)
+    fl.handle_update(_upd("1.98"), adb, fdb, NOW)       # typo fix on the fill
+    row = fdb.execute("SELECT fill_odds, cashed_out, cashout_amount"
+                      " FROM real_fill").fetchone()
+    assert row == (1.98, 1, 1.5)
+
+
+def test_migrate_adds_cashout_cols_to_legacy_db():
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE real_fill(
+        message_id INTEGER PRIMARY KEY,
+        event_id TEXT, market TEXT, side TEXT, point REAL, player TEXT,
+        alert_book TEXT, alert_odds REAL,
+        fill_book TEXT, fill_odds REAL, fill_stake REAL,
+        skipped INTEGER DEFAULT 0, raw_reply TEXT, replied_at TEXT)""")
+    db.execute("INSERT INTO real_fill(message_id, skipped) VALUES (1, 0)")
+    fl._migrate(db)
+    fl._migrate(db)                                     # idempotent
+    assert db.execute("SELECT cashed_out, cashout_amount FROM real_fill"
+                      ).fetchone() == (0, None)
+
+
+def test_stats_include_cashouts():
+    adb, fdb = seeded_alerts(), fill_db()
+    fl.handle_update(_upd("2.05 5"), adb, fdb, NOW)
+    fl.handle_update(_upd("cashout 4.20"), adb, fdb, NOW)
+    out = fl.handle_update(_upd("fills", reply_to=None), adb, fdb, NOW)
+    assert "캐시아웃 1건" in out and "$-0.80" in out
 
 
 def test_stats_command():
