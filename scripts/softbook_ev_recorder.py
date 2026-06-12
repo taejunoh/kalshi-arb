@@ -95,7 +95,7 @@ def _other_books_line(b):
     return "\n   📚 " + " · ".join(f"{q['book']} {q['odds']:.2f}" for q in others)
 
 
-def _send_bet_alert(db, b, prefix, extra=""):
+def _send_bet_alert(db, b, prefix, extra="", batch=()):
     """One Telegram message per bet (NOT batched: a reply must identify exactly
     one bet) and stamp book/odds/message_id onto its high_alerted row.
     On a failed send the dedup row is DELETED so the next 20-min scan retries —
@@ -111,7 +111,7 @@ def _send_bet_alert(db, b, prefix, extra=""):
             f"   (EV {b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk)"
             + _other_books_line(b) + "\n"
             + _min_odds_line(b["ev"], b["odds"])
-            + extra + _dup_note(db, b)
+            + extra + _dup_note(db, b) + _opposite_note(db, b, batch)
             + f"\n\n{REPLY_HINT}")
     mid = send_telegram(text)
     if mid is None:
@@ -150,7 +150,19 @@ def _dup_note(db, b):
         chain = " → ".join(core.label(b["market"], s, p or None, b.get("player"))
                            for s, p in prior + [(b["side"], b["point"] or 0)])
     if first_side != b["side"]:
-        return f"\n   ⚠️ 중복 {len(prior)+1}번째: {chain} — 처음 알림과 방향 반대, 이미 베팅했다면 스킵"
+        evf = db.execute(
+            "SELECT snapshot_ev FROM softbook_ev WHERE event_id=? AND market=?"
+            " AND side=? AND COALESCE(point,0)=? AND COALESCE(player,'')=?"
+            " AND tier='High' ORDER BY recorded_at LIMIT 1",
+            (b["event_id"], b["market"], first_side, first_point,
+             b.get("player") or "")).fetchone()
+        pick = ""
+        if evf:
+            pick = (f", 아니면 EV 높은 쪽만: 이번 {b['ev']*100:+.1f}%"
+                    f" vs 처음 {evf[0]*100:+.1f}%"
+                    f" → {'이번' if b['ev'] >= evf[0] else '처음'} 쪽")
+        return (f"\n   ⚠️ 중복 {len(prior)+1}번째: {chain} — 처음 알림과 방향 반대"
+                f" (동시적중 불가, 사이 구간이면 둘 다 패) — 이미 베팅했다면 스킵{pick}")
     new_point = b["point"] or 0
     if b["side"] == "Under":
         better = new_point > first_point
@@ -161,6 +173,75 @@ def _dup_note(db, b):
     verdict = "더 좋은 라인" if better else "더 나쁜 라인"
     return (f"\n   ⚠️ 중복 {len(prior)+1}번째: {chain} (처음보다 {verdict})"
             f" — 이미 베팅했다면 스킵 (같은 경기·마켓 1베팅)")
+
+
+def _axis_dir(b):
+    """Bet -> (axis, dir, thr): wins iff stat > thr (dir=+1) / stat < thr (-1).
+    Margin axis: stat = home score − away score (h2h = spread at 0); O/U axis:
+    stat = the total, keyed per market+player so props don't cross-match."""
+    m, s = b["market"], b["side"]
+    p = b.get("point") or 0.0
+    if s in ("Over", "Under"):
+        return ("ou", m, b.get("player") or ""), (1 if s == "Over" else -1), p
+    if s == b["home"]:
+        return ("margin",), 1, -p if m == "spread" else 0.0
+    if s == b["away"]:
+        return ("margin",), -1, p if m == "spread" else 0.0
+    return None                                    # 3-way Draw etc — no axis
+
+
+def _no_both_win(a, b):
+    """True iff two bets on the SAME game can never both win — a reverse middle:
+    win zones disjoint, with a both-lose gap between them (e.g. home -5.5 +
+    away ML both lose on a 1-5pt home win)."""
+    ax_a, ax_b = _axis_dir(a), _axis_dir(b)
+    if not ax_a or not ax_b or ax_a[0] != ax_b[0] or ax_a[1] == ax_b[1]:
+        return False
+    gt_thr = ax_a[2] if ax_a[1] > 0 else ax_b[2]   # the "stat >" bet's threshold
+    lt_thr = ax_b[2] if ax_a[1] > 0 else ax_a[2]   # the "stat <" bet's threshold
+    return gt_thr >= lt_thr
+
+
+def _opposite_note(db, b, batch=()):
+    """Same-game opposite-direction High at a DIFFERENT market (h2h vs spread —
+    best_per_market already keeps one side per market, and same-market opposites
+    are _dup_note's job): both are individually +EV vs Pinnacle so this is no
+    contradiction, but they can never both win and a close game kills both.
+    Flag the pair and recommend keeping only the higher-EV side (user's rule,
+    2026-06-12). Sources: this scan's batch (has live EV) + previously alerted
+    lines for the event (EV looked up from their latest High snapshot)."""
+    others = {}
+    for m, s, p, pl, bk_, od in db.execute(
+            "SELECT market, side, COALESCE(point,0), player, book, odds"
+            " FROM high_alerted WHERE event_id=? AND market != ?",
+            (b["event_id"], b["market"])):
+        ev_row = db.execute(
+            "SELECT snapshot_ev FROM softbook_ev WHERE event_id=? AND market=?"
+            " AND side=? AND COALESCE(point,0)=? AND COALESCE(player,'')=?"
+            " AND tier='High' ORDER BY recorded_at DESC LIMIT 1",
+            (b["event_id"], m, s, p, pl)).fetchone()
+        others[(m, s, p, pl)] = (bk_, od, ev_row[0] if ev_row else None)
+    for o in batch:
+        if o["event_id"] == b["event_id"] and o["market"] != b["market"]:
+            others[(o["market"], o["side"], o["point"] or 0,
+                    o.get("player") or "")] = (o["book"], o["odds"], o["ev"])
+    notes = []
+    for (m, s, p, pl), (bk_, od, ev_o) in others.items():
+        other = {"market": m, "side": s, "point": p, "player": pl,
+                 "home": b["home"], "away": b["away"]}
+        if not _no_both_win(b, other):
+            continue
+        lbl = core.label(m, s, None if m == "h2h" else p, pl or None)
+        quote = f" {bk_} {od:.2f}" if od else ""
+        if ev_o is None:
+            notes.append(f"\n   ⚖️ 같은 경기 반대방향 High: {lbl}{quote}"
+                         " — 동시적중 불가(접전이면 둘 다 패), 둘 중 하나만 권장")
+        else:
+            pick = "이쪽" if b["ev"] >= ev_o else "반대쪽"
+            notes.append(f"\n   ⚖️ 같은 경기 반대방향 High: {lbl}{quote}"
+                         f" (EV {ev_o*100:+.1f}%) — 동시적중 불가(접전이면 둘 다 패),"
+                         f" EV 높은 쪽만: {pick}")
+    return "".join(notes[:2])
 
 
 def alert_new_high(db, bets, now):
@@ -187,7 +268,7 @@ def alert_new_high(db, bets, now):
         return 0
     new.sort(key=lambda b: -b["ev"])
     for b in new[:8]:
-        _send_bet_alert(db, b, "🟣 High +EV 즉시 알림 (pre-game · bet small)")
+        _send_bet_alert(db, b, "🟣 High +EV 즉시 알림 (pre-game · bet small)", batch=new)
     if len(new) > 8:
         send_telegram(f"…+{len(new)-8} more new High — 대쉬보드 +EV 탭 확인")
     db.commit()
