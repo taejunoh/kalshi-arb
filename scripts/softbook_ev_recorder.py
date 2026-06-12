@@ -84,6 +84,17 @@ def _min_odds_line(ev, odds):
 REPLY_HINT = '↩️ 답장: 체결배당 [북] (예: 1.98 fd) · 안 했으면 "skip"'
 
 
+def _other_books_line(b):
+    """Top other-book quotes by odds. The ★ book is best BETTABLE (EV<=cap), so a
+    book can beat it on raw price yet be hidden by the stale-line EV cap — the
+    user shops books live, so show those prices instead of burying them."""
+    others = sorted((q for q in b.get("books_all", []) if q["book"] != b["book"]),
+                    key=lambda q: -q["odds"])[:3]
+    if not others:
+        return ""
+    return "\n   📚 " + " · ".join(f"{q['book']} {q['odds']:.2f}" for q in others)
+
+
 def _send_bet_alert(db, b, prefix, extra=""):
     """One Telegram message per bet (NOT batched: a reply must identify exactly
     one bet) and stamp book/odds/message_id onto its high_alerted row.
@@ -97,7 +108,8 @@ def _send_bet_alert(db, b, prefix, extra=""):
             f"• {b['away'][:16]} @ {b['home'][:16]}\n"
             f"   {b['label']}\n"
             f"   📍 {b['book']} @ {b['odds']:.2f} · 💵 ${_stake(b['ev'], b['odds']):.0f}\n"
-            f"   (EV {b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk)\n"
+            f"   (EV {b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk)"
+            + _other_books_line(b) + "\n"
             + _min_odds_line(b["ev"], b["odds"])
             + extra + _dup_note(db, b)
             + f"\n\n{REPLY_HINT}")
@@ -263,7 +275,8 @@ def wakeup_requote(db, key, now):
                     "event_id": eid, "market": market, "side": side, "point": point,
                     "player": player, "home": home, "away": away, "label": lbl,
                     "book": bbook, "odds": bpx, "ev": evv, "n_books": len(quotes),
-                    "n_ev": sum(1 for _, px in quotes if fair * px - 1 >= core.EV_MIN)},
+                    "n_ev": sum(1 for _, px in quotes if fair * px - 1 >= core.EV_MIN),
+                    "books_all": [{"book": bl, "odds": px} for bl, px in quotes]},
                     "🌅 기상 재호가 — 밤사이 High, 아직 유효",
                     extra=f"\n   🌙 밤 {_et(rec_at)} 트리거: {tbook} {todds:.2f} (EV {tev*100:+.1f}%)")
             else:                # overflow: batch line (no fill tracking)

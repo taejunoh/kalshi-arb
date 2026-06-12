@@ -45,7 +45,10 @@ ALL_PROPS = {m for v in PROP_MARKETS.values() for m in v}
 
 
 def markets_for(sport):
-    props = PROP_MARKETS.get(sport, [])
+    # FanDuel/DraftKings/BetMGM list props ONLY under the _alternate key (verified
+    # live 2026-06-12: batter_home_runs had no FD/DK/MGM rows, _alternate did) —
+    # fetch both and _canon folds them back onto the base market.
+    props = [k for m in PROP_MARKETS.get(sport, []) for k in (m, m + "_alternate")]
     return GAME_MARKETS + (("," + ",".join(props)) if props else "")
 
 
@@ -109,6 +112,8 @@ def _canon(market_key):
         return "total"
     if market_key in ALL_PROPS:
         return market_key          # props keep their own key
+    if market_key.endswith("_alternate") and market_key[:-10] in ALL_PROPS:
+        return market_key[:-10]    # FD/DK/MGM quote props only on the alt ladder
     return None
 
 
@@ -236,9 +241,15 @@ def event_ev_bets(ev, sport):
             for o in m["outcomes"]:
                 player = o.get("description")
                 point = None if market == "h2h" else round(o.get("point", 0.0), 1)
-                lines.setdefault((market, o["name"], point, player), []).append((blabel, o["price"]))
+                # best price per BOOK per line: books repeat an outcome across
+                # main+alt markets (and Caesars even within one) — counting the
+                # dupes inflated n_books/n_ev (e.g. "5/5bk" that was really 4/4)
+                by_book = lines.setdefault((market, o["name"], point, player), {})
+                if o["price"] > by_book.get(blabel, 0.0):
+                    by_book[blabel] = o["price"]
     out = []
-    for (market, side, point, player), quotes in lines.items():
+    for (market, side, point, player), by_book in lines.items():
+        quotes = list(by_book.items())
         fair = _fair(idx, market, player, side, point, home, away)
         if fair is None:
             continue
