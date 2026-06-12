@@ -11,6 +11,11 @@ that overstates capturable edge. So the user replies to each per-bet High alert:
     1.98 fd       -> filled at FanDuel @ 1.98
     +105 dk 5     -> filled at DraftKings @ +105 (american), $5 stake
     skip          -> could not / chose not to bet (no-fill)
+    cashout 1.50  -> cashed the bet out early for $1.50 back (e.g. the opposite
+                     side later alerted as +EV). Marks the fill so settle-at-close
+                     PnL is known to diverge from realized; never touches the
+                     ledger row. Sent on top of an earlier odds reply it keeps
+                     that fill data (UPDATE, not replace).
 
 A reply maps to its bet via reply_to_message_id == high_alerted.message_id
 (stamped by softbook_ev_recorder._send_bet_alert). Re-replying to the same
@@ -32,10 +37,16 @@ FILL_SCHEMA = """CREATE TABLE IF NOT EXISTS real_fill(
     event_id TEXT, market TEXT, side TEXT, point REAL, player TEXT,
     alert_book TEXT, alert_odds REAL,
     fill_book TEXT, fill_odds REAL, fill_stake REAL,
-    skipped INTEGER DEFAULT 0, raw_reply TEXT, replied_at TEXT)"""
+    skipped INTEGER DEFAULT 0, raw_reply TEXT, replied_at TEXT,
+    cashed_out INTEGER DEFAULT 0, cashout_amount REAL)"""
 STATE_SCHEMA = "CREATE TABLE IF NOT EXISTS tg_state(k TEXT PRIMARY KEY, v TEXT)"
 
+FILL_COLS = ("message_id, event_id, market, side, point, player, alert_book,"
+             " alert_odds, fill_book, fill_odds, fill_stake, skipped, raw_reply,"
+             " replied_at")
+
 SKIP_WORDS = {"skip", "s", "pass", "x", "스킵", "패스", "안함", "노"}
+CASHOUT_WORDS = {"cashout", "cashedout", "co", "캐시아웃", "캐쉬아웃"}
 BOOK_ALIASES = {
     "fd": "FanDuel", "fanduel": "FanDuel",
     "dk": "DraftKings", "draftkings": "DraftKings",
@@ -65,14 +76,37 @@ def _to_decimal(tok):
     return v if 1.0 < v < 100 else None
 
 
+def _cashout_toks(toks):
+    """Strip a leading cashout marker ('cashout' / 'cash out' / 'cashed out' /
+    'co' / 캐시아웃); -> remaining tokens, or None if not a cashout reply."""
+    first = toks[0].lower().rstrip(".,")
+    if first in CASHOUT_WORDS:
+        return toks[1:]
+    if first in ("cash", "cashed") and len(toks) > 1 and \
+            toks[1].lower().rstrip(".,") == "out":
+        return toks[2:]
+    return None
+
+
 def parse_reply(text):
-    """-> {'skip': True} | {'odds': float, 'book': str|None, 'stake': float|None}
+    """-> {'skip': True} | {'cashout': True, 'amount': float|None}
+    | {'odds': float, 'book': str|None, 'stake': float|None}
     | None when unparseable. First number = odds, second = stake, word = book."""
     toks = text.replace("$", " ").replace("@", " ").split()
     if not toks:
         return None
     if toks[0].lower() in SKIP_WORDS:
         return {"skip": True}
+    rest = _cashout_toks(toks)
+    if rest is not None:
+        amount = None
+        for t in rest:
+            try:
+                amount = float(t.rstrip(".,"))
+                break
+            except ValueError:
+                pass
+        return {"cashout": True, "amount": amount}
     odds = stake = book = None
     for t in toks:
         low = t.lower().rstrip(".,")
@@ -92,6 +126,15 @@ def parse_reply(text):
     return {"odds": odds, "book": book, "stake": stake}
 
 
+def _migrate(fdb):
+    """Pre-2026-06-12 real_fill lacks the cashout columns."""
+    for col in ("cashed_out INTEGER DEFAULT 0", "cashout_amount REAL"):
+        try:
+            fdb.execute(f"ALTER TABLE real_fill ADD COLUMN {col}")
+        except sqlite3.OperationalError:        # already there
+            pass
+
+
 def lookup_alert(adb, message_id):
     try:
         return adb.execute(
@@ -105,7 +148,8 @@ def record_fill(fdb, message_id, alert, parsed, raw, now):
     """Upsert one reply; returns the ack text sent back to the user."""
     eid, market, side, point, player, abook, aodds = alert
     if parsed.get("skip"):
-        fdb.execute("INSERT OR REPLACE INTO real_fill VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        fdb.execute(f"INSERT OR REPLACE INTO real_fill({FILL_COLS})"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (message_id, eid, market, side, point, player, abook, aodds,
                      None, None, None, 1, raw, now))
         fdb.commit()
@@ -113,10 +157,42 @@ def record_fill(fdb, message_id, alert, parsed, raw, now):
             "SELECT sum(skipped=1), sum(skipped=0) FROM real_fill").fetchone()
         return (f"✅ skip 기록 (노필) · 누적 skip {skips or 0} / 체결 {fills or 0}"
                 f" → 노필률 {100 * (skips or 0) / ((skips or 0) + (fills or 0)):.0f}%")
+    if parsed.get("cashout"):
+        amount = parsed.get("amount")
+        # UPDATE first so an earlier odds reply's fill data survives; a bet had
+        # to exist to be cashed out, so a fresh row counts as filled (skipped=0)
+        cur = fdb.execute(
+            "UPDATE real_fill SET cashed_out=1, cashout_amount=?, skipped=0,"
+            " raw_reply=?, replied_at=? WHERE message_id=?",
+            (amount, raw, now, message_id))
+        if cur.rowcount == 0:
+            fdb.execute(f"INSERT INTO real_fill({FILL_COLS}, cashed_out, cashout_amount)"
+                        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)",
+                        (message_id, eid, market, side, point, player, abook, aodds,
+                         None, None, None, 0, raw, now, amount))
+        fdb.commit()
+        stake = fdb.execute("SELECT fill_stake FROM real_fill WHERE message_id=?",
+                            (message_id,)).fetchone()[0]
+        ack = "✅ 캐시아웃 기록"
+        if amount is not None:
+            ack += f": ${amount:.2f} 회수"
+            if stake:
+                ack += f" (스테이크 ${stake:.2f} → 손익 ${amount - stake:+.2f})"
+        else:
+            ack += ' — 회수 금액도 알려주면 좋아요. 예) "cashout 1.50"'
+        n = fdb.execute("SELECT count(*) FROM real_fill WHERE cashed_out=1").fetchone()[0]
+        return ack + f" · 누적 캐시아웃 {n}"
     book = parsed["book"] or abook
-    fdb.execute("INSERT OR REPLACE INTO real_fill VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (message_id, eid, market, side, point, player, abook, aodds,
-                 book, parsed["odds"], parsed.get("stake"), 0, raw, now))
+    # UPDATE-first keeps cashed_out/cashout_amount when correcting odds later
+    cur = fdb.execute(
+        "UPDATE real_fill SET fill_book=?, fill_odds=?, fill_stake=?, skipped=0,"
+        " raw_reply=?, replied_at=? WHERE message_id=?",
+        (book, parsed["odds"], parsed.get("stake"), raw, now, message_id))
+    if cur.rowcount == 0:
+        fdb.execute(f"INSERT INTO real_fill({FILL_COLS})"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (message_id, eid, market, side, point, player, abook, aodds,
+                     book, parsed["odds"], parsed.get("stake"), 0, raw, now))
     fdb.commit()
     ack = f"✅ 기록: {book} @ {parsed['odds']:.2f}"
     if aodds:
@@ -127,16 +203,24 @@ def record_fill(fdb, message_id, alert, parsed, raw, now):
 
 
 def stats_text(fdb):
-    fills, skips, slip = fdb.execute(
+    fills, skips, slip, couts, conet = fdb.execute(
         """SELECT sum(skipped=0), sum(skipped=1),
            avg(CASE WHEN skipped=0 AND alert_odds>0
-               THEN 100.0*(fill_odds/alert_odds-1) END) FROM real_fill""").fetchone()
+               THEN 100.0*(fill_odds/alert_odds-1) END),
+           sum(cashed_out=1),
+           sum(CASE WHEN cashed_out=1 AND cashout_amount IS NOT NULL
+               AND fill_stake IS NOT NULL THEN cashout_amount-fill_stake END)
+           FROM real_fill""").fetchone()
     fills, skips = fills or 0, skips or 0
     if not fills and not skips:
         return "기록된 체결/스킵 없음 — High 알림에 답장하면 쌓입니다."
     out = f"🎯 실체결 {fills} · skip {skips} (노필률 {100*skips/(fills+skips):.0f}%)"
     if slip is not None:
         out += f"\n평균 슬리피지 {slip:+.2f}% (알림 배당 대비)"
+    if couts:
+        out += f"\n캐시아웃 {couts}건"
+        if conet is not None:
+            out += f" (확정 손익 ${conet:+.2f})"
     return out
 
 
@@ -179,7 +263,8 @@ def handle_update(upd, adb, fdb, now):
         return "↩️ 이 메시지는 체결 추적 대상이 아니에요 — 베팅별 High 알림에 답장해주세요."
     parsed = parse_reply(text)
     if not parsed:
-        return ('형식을 못 읽었어요. 예) "1.98" · "1.98 fd" · "+105 dk 5" · "skip"')
+        return ('형식을 못 읽었어요. 예) "1.98" · "1.98 fd" · "+105 dk 5" · "skip"'
+                ' · "cashout 1.50"')
     return record_fill(fdb, reply["message_id"], alert, parsed, text, now)
 
 
@@ -202,7 +287,8 @@ def main():
     if not (tok and cho):
         print("no TELEGRAM_BOT_TOKEN/CHAT_ID"); sys.exit(1)
     fdb = sqlite3.connect(FILLS_DB, timeout=60)
-    fdb.execute(FILL_SCHEMA); fdb.execute(STATE_SCHEMA); fdb.commit()
+    fdb.execute(FILL_SCHEMA); fdb.execute(STATE_SCHEMA)
+    _migrate(fdb); fdb.commit()
     row = fdb.execute("SELECT v FROM tg_state WHERE k='offset'").fetchone()
     offset = int(row[0]) if row else None
     while offset is None:               # first boot: drain FULL backlog (paged

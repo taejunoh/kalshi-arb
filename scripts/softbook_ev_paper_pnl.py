@@ -361,10 +361,17 @@ def report(db, tg=False, high=None):
                            THEN 100.0*(fill_odds/alert_odds-1) END)
                        FROM real_fill""").fetchone()
                 if (f_ or 0) + (s_ or 0):
+                    co = 0
+                    try:    # column exists post fill-listener 6/12 migration
+                        co = db.execute("SELECT sum(cashed_out=1) FROM real_fill"
+                                        ).fetchone()[0] or 0
+                    except Exception:
+                        pass
                     fline = (f"🎯 실체결 {f_ or 0}건"
                              + (f" 슬리피지 {sl:+.1f}%" if sl is not None else "")
                              + f" · skip {s_ or 0}"
-                             f" (노필 {100*(s_ or 0)/((f_ or 0)+(s_ or 0)):.0f}%)\n")
+                             f" (노필 {100*(s_ or 0)/((f_ or 0)+(s_ or 0)):.0f}%)"
+                             + (f" · 캐시아웃 {co}" if co else "") + "\n")
             except Exception:
                 pass
             msg = ("📊 소프트북 +EV 페이퍼 PnL (ML/스프레드/토탈)\n"
