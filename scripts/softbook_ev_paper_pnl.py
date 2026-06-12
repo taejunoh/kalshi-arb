@@ -231,6 +231,11 @@ def settle(paper, key):
                 if market in core.ALL_PROPS:                      # PROP -> player stat
                     stat = stats.player_stat(sport, away, home, ct, market, player)
                     res = "void" if stat == stats.DNP else core.grade_prop(side, point, stat)
+                elif market == "team_total":                      # player col holds the team
+                    sc = scores.get(eid)
+                    if sc is None and sport == "baseball_npb":
+                        sc = npb.scores_for(away, home, ct)
+                    res = core.grade_prop(side, point, sc.get(player)) if sc else None
                 else:                                             # game market -> team score
                     sc = scores.get(eid)
                     if sc is None and sport == "baseball_npb":    # Odds API: no NPB scores

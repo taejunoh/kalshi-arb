@@ -34,13 +34,25 @@ MAX_HOURS = 72
 QUIET_UTC = range(2, 9)     # 22:00-05:00 NYC sleep — no Telegram pushes in this window
 B = "https://api.the-odds-api.com/v4/sports"
 
-GAME_MARKETS = "h2h,spreads,totals,alternate_spreads,alternate_totals"
+GAME_MARKETS = ("h2h,spreads,totals,alternate_spreads,alternate_totals,"
+                "team_totals,alternate_team_totals")
 # Player-prop markets to scan, per sport — ONLY ones Pinnacle reliably quotes
 # (so we have a sharp reference). Short labels for display + the stat to settle on.
 PROP_MARKETS = {
-    "baseball_mlb": ["pitcher_strikeouts", "batter_total_bases", "batter_home_runs"],
+    "baseball_mlb": ["pitcher_strikeouts", "batter_total_bases", "batter_home_runs",
+                     "pitcher_outs", "pitcher_earned_runs", "pitcher_hits_allowed"],
+    "basketball_nba": ["player_points", "player_rebounds", "player_assists"],
 }
-PROP_SHORT = {"pitcher_strikeouts": "K", "batter_total_bases": "TB", "batter_home_runs": "HR"}
+# Props with a REAL <key>_alternate variant on the Odds API. Request alternates
+# only from this set: an unrecognized market key 422s the WHOLE event call, and
+# e.g. pitcher_outs has no alternate (verified via /events/{id}/markets 6/12).
+PROP_ALTS = {"pitcher_strikeouts", "batter_total_bases", "batter_home_runs",
+             "player_points", "player_rebounds", "player_assists"}
+PROP_SHORT = {"pitcher_strikeouts": "K", "batter_total_bases": "TB",
+              "batter_home_runs": "HR", "pitcher_outs": "OUT",
+              "pitcher_earned_runs": "ER", "pitcher_hits_allowed": "HA",
+              "player_points": "PTS", "player_rebounds": "REB",
+              "player_assists": "AST", "team_total": "TT"}
 ALL_PROPS = {m for v in PROP_MARKETS.values() for m in v}
 
 
@@ -48,7 +60,8 @@ def markets_for(sport):
     # FanDuel/DraftKings/BetMGM list props ONLY under the _alternate key (verified
     # live 2026-06-12: batter_home_runs had no FD/DK/MGM rows, _alternate did) —
     # fetch both and _canon folds them back onto the base market.
-    props = [k for m in PROP_MARKETS.get(sport, []) for k in (m, m + "_alternate")]
+    props = [k for m in PROP_MARKETS.get(sport, [])
+             for k in ((m, m + "_alternate") if m in PROP_ALTS else (m,))]
     return GAME_MARKETS + (("," + ",".join(props)) if props else "")
 
 
@@ -110,6 +123,8 @@ def _canon(market_key):
     """Normalize an Odds API market key to our canonical market, or None to skip."""
     if market_key == "h2h":
         return "h2h"
+    if "team_totals" in market_key:    # MUST precede the 'totals' substring check
+        return "team_total"
     if "spreads" in market_key:
         return "spread"
     if "totals" in market_key:
@@ -122,7 +137,7 @@ def _canon(market_key):
 
 
 def _is_ou(market):
-    return market == "total" or market in ALL_PROPS
+    return market in ("total", "team_total") or market in ALL_PROPS
 
 
 def _devig(pa, pb):
