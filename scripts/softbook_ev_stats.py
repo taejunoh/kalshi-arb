@@ -13,7 +13,15 @@ from datetime import datetime, timedelta
 # prop market -> (boxscore stat group, field)
 MLB_STAT = {"pitcher_strikeouts": ("pitching", "strikeOuts"),
             "batter_total_bases": ("batting", "totalBases"),
-            "batter_home_runs": ("batting", "homeRuns")}
+            "batter_home_runs": ("batting", "homeRuns"),
+            "pitcher_outs": ("pitching", "outs"),
+            "pitcher_earned_runs": ("pitching", "earnedRuns"),
+            "pitcher_hits_allowed": ("pitching", "hits")}
+
+# NBA props settle from ESPN box scores (statsapi-style feed is MLB-only).
+# market -> stat label in ESPN's summary boxscore 'labels' array.
+NBA_STAT = {"player_points": "PTS", "player_rebounds": "REB",
+            "player_assists": "AST"}
 
 DNP = "DNP"   # game FINAL but player never appeared (scratch/bench) -> void per book rules
 
@@ -82,6 +90,82 @@ def _boxscore(pk):
     return res
 
 
+_nba_sched = {}   # date_str -> {(away_norm, home_norm): (event_id, final_bool)}
+_nba_box = {}     # event_id -> {player_key: {label: value}} | None
+
+
+def _nba_schedule(date_str):
+    if date_str in _nba_sched:
+        return _nba_sched[date_str]
+    out = {}
+    try:
+        d = _get("https://site.api.espn.com/apis/site/v2/sports/basketball/nba/"
+                 f"scoreboard?dates={date_str.replace('-', '')}")
+        for e in d.get("events", []):
+            comp = (e.get("competitions") or [{}])[0]
+            home = away = ""
+            for c in comp.get("competitors", []):
+                nm = (c.get("team") or {}).get("displayName", "")
+                if c.get("homeAway") == "home":
+                    home = nm
+                else:
+                    away = nm
+            final = ((e.get("status") or {}).get("type") or {}).get("completed", False)
+            out[(_nt(away), _nt(home))] = (e.get("id"), final)
+    except Exception:
+        pass
+    _nba_sched[date_str] = out
+    return out
+
+
+def _nba_boxscore(eid):
+    if eid in _nba_box:
+        return _nba_box[eid]
+    res = {}
+    try:
+        d = _get("https://site.api.espn.com/apis/site/v2/sports/basketball/nba/"
+                 f"summary?event={eid}")
+        for team in (d.get("boxscore") or {}).get("players", []):
+            for grp in team.get("statistics", []):
+                labels = grp.get("labels") or grp.get("names") or []
+                for a in grp.get("athletes", []):
+                    nm = _np((a.get("athlete") or {}).get("displayName"))
+                    if not nm:
+                        continue
+                    if a.get("didNotPlay") or not a.get("stats"):
+                        res.setdefault(nm, {})   # appeared in box but DNP
+                        continue
+                    res[nm] = dict(zip(labels, a["stats"]))
+    except Exception:
+        res = None
+    _nba_box[eid] = res
+    return res
+
+
+def _nba_stat(away, home, commence_iso, market, player):
+    label = NBA_STAT.get(market)
+    if not label:
+        return None
+    for date_str in _et_dates(commence_iso):
+        hit = _nba_schedule(date_str).get((_nt(away), _nt(home)))
+        if not hit:
+            continue
+        eid, final = hit
+        if not final:
+            return None
+        box = _nba_boxscore(eid)
+        if not box:
+            return None
+        pdata = box.get(_np(player))
+        if pdata is None or label not in pdata:
+            return DNP                   # final + absent/empty line -> void
+        try:
+            return float(pdata[label])
+        except Exception:
+            return None
+    return None
+
+
 def _et_dates(commence_iso):
     try:
         dt = datetime.fromisoformat(commence_iso.replace("Z", "+00:00"))
@@ -96,6 +180,8 @@ def _et_dates(commence_iso):
 def player_stat(sport, away, home, commence_iso, market, player):
     """Final stat value for the prop's player; DNP if the game is final but the
     player never appeared (-> void); None if not findable / not final yet."""
+    if sport == "basketball_nba":
+        return _nba_stat(away, home, commence_iso, market, player)
     if sport != "baseball_mlb":
         return None
     gp = MLB_STAT.get(market)
