@@ -1,9 +1,9 @@
 // app/src/screens/PicksScreen.tsx
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { api } from "../api/client";
-import type { Pick, PicksResponse, SortKey } from "../api/types";
+import type { Pick, PicksResponse, Settings, SortKey } from "../api/types";
 import { PickCard } from "../components/PickCard";
 import { MIN_EV_STEPS } from "../config";
 
@@ -12,8 +12,7 @@ export function PicksScreen() {
   const [data, setData] = useState<PicksResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [minEv, setMinEv] = useState(0);
-  const [sort, setSort] = useState<SortKey>("ev");
+  const [prefs, setPrefs] = useState<Settings>({ min_ev: 0, sports: null, muted_books: null, sort: "ev" });
   const [showCooled, setShowCooled] = useState(false);
 
   const load = useCallback(async () => {
@@ -28,22 +27,34 @@ export function PicksScreen() {
     }
   }, []);
 
+  useEffect(() => {
+    void (async () => {
+      try {
+        setPrefs(await api.getSettings());
+      } catch {
+        /* no creds yet — keep defaults */
+      }
+    })();
+  }, []);
+
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   const applyFilters = useCallback(
     async (next: { min_ev?: number; sort?: SortKey }) => {
-      const min_ev = next.min_ev ?? minEv;
-      const nextSort = next.sort ?? sort;
-      setMinEv(min_ev);
-      setSort(nextSort);
+      const updated: Settings = {
+        ...prefs,
+        min_ev: next.min_ev ?? prefs.min_ev,
+        sort: next.sort ?? prefs.sort,
+      };
+      setPrefs(updated);
       try {
-        await api.putSettings({ min_ev, sports: null, muted_books: null, sort: nextSort });
+        await api.putSettings(updated);
       } catch {
         /* settings sync best-effort; UI already updated */
       }
       void load();
     },
-    [minEv, sort, load],
+    [prefs, load],
   );
 
   const dismiss = useCallback(async (p: Pick) => {
@@ -69,12 +80,12 @@ export function PicksScreen() {
       <View style={s.filterBar}>
         <Text style={s.filterLabel}>최소 EV</Text>
         {MIN_EV_STEPS.map((v) => (
-          <Pressable key={v} onPress={() => void applyFilters({ min_ev: v })} style={[s.chip, minEv === v && s.chipOn]}>
+          <Pressable key={v} onPress={() => void applyFilters({ min_ev: v })} style={[s.chip, prefs.min_ev === v && s.chipOn]}>
             <Text style={s.chipText}>{v === 0 ? "전체" : `${(v * 100).toFixed(0)}%`}</Text>
           </Pressable>
         ))}
         {(["ev", "time", "n_books"] as SortKey[]).map((k) => (
-          <Pressable key={k} onPress={() => void applyFilters({ sort: k })} style={[s.chip, sort === k && s.chipOn]}>
+          <Pressable key={k} onPress={() => void applyFilters({ sort: k })} style={[s.chip, prefs.sort === k && s.chipOn]}>
             <Text style={s.chipText}>{k === "ev" ? "EV순" : k === "time" ? "시간순" : "북수순"}</Text>
           </Pressable>
         ))}
