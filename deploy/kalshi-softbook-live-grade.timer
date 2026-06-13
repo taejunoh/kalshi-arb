@@ -2,7 +2,7 @@
 Description=Run live bet grading every minute
 
 [Timer]
-OnCalendar=*:*:0/60
+OnCalendar=*:*:00
 Persistent=false
 
 [Install]
