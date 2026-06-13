@@ -2,7 +2,7 @@
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
-import { ACTION_BET, ACTION_DISMISS, CATEGORY_HIGH } from "./config";
+import { ACTION_BET, ACTION_DISMISS, CATEGORY_HIGH, CATEGORY_PRICE_MOVE } from "./config";
 
 export type NotifTarget =
   | { kind: "capture"; pickId: string }
@@ -31,6 +31,7 @@ export async function registerCategories(): Promise<void> {
     { identifier: ACTION_BET, buttonTitle: "베팅함", options: { opensAppToForeground: true } },
     { identifier: ACTION_DISMISS, buttonTitle: "관심없음", options: { opensAppToForeground: false, isDestructive: true } },
   ]);
+  await Notifications.setNotificationCategoryAsync(CATEGORY_PRICE_MOVE, []);
 }
 
 /** iOS permission flow + Expo push token. Returns null on simulator / denied / no projectId. */
