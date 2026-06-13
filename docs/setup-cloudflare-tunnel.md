@@ -62,11 +62,14 @@ sudo cp deploy/kalshi-softbook-push.service /etc/systemd/system/
 sudo cp deploy/kalshi-softbook-push.timer /etc/systemd/system/
 sudo cp deploy/kalshi-softbook-live-grade.service /etc/systemd/system/
 sudo cp deploy/kalshi-softbook-live-grade.timer /etc/systemd/system/
+sudo cp deploy/kalshi-softbook-app-settle.service /etc/systemd/system/
+sudo cp deploy/kalshi-softbook-app-settle.timer /etc/systemd/system/
 venv/bin/python -m pip install -r requirements.txt        # picks up PyJWT
 sudo systemctl daemon-reload
 sudo systemctl enable --now kalshi-softbook-api.service
 sudo systemctl enable --now kalshi-softbook-push.timer
 sudo systemctl enable --now kalshi-softbook-live-grade.timer
+sudo systemctl enable --now kalshi-softbook-app-settle.timer   # settles app_bet -> calendar PnL + settle push
 ```
 
 ## 8. Smoke test (from your laptop)
