@@ -2,6 +2,7 @@
 import { getCredentials } from "../storage";
 import type {
   BetIn,
+  MuteRule,
   MyBets,
   Pick,
   PicksResponse,
@@ -58,4 +59,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ image_base64, media_type }),
     }),
+  getRules: () => request<{ rules: MuteRule[] }>("/rules"),
+  addRule: (field: MuteRule["field"], value: string) =>
+    request<{ id: number }>("/rules", { method: "POST", body: JSON.stringify({ field, value }) }),
+  deleteRule: (id: number) =>
+    request<{ ok: boolean }>(`/rules/${id}`, { method: "DELETE" }),
 };

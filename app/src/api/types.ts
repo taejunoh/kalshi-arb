@@ -131,3 +131,11 @@ export interface ScanDraft {
   matched: boolean;
   notes: string;
 }
+
+// ===== Triage / mute rules =====
+export interface MuteRule {
+  id: number;
+  field: "player" | "market" | "sport" | "event";
+  value: string;
+  created_at: string;
+}
