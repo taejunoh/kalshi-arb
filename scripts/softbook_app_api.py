@@ -258,3 +258,87 @@ def dismiss_pick(pick_id: str, _=Depends(require_auth)):
     finally:
         pdb.close()
     return {"ok": True}
+
+
+class SettingsIn(BaseModel):
+    min_ev: float = 0.0
+    sports: list[str] | None = None
+    muted_books: list[str] | None = None
+    sort: str = "ev"
+
+
+class TokenIn(BaseModel):
+    token: str
+
+
+@app.get("/mybets")
+def get_mybets(_=Depends(require_auth)):
+    pdb = adb.connect()
+    try:
+        cal = {}
+        for day, pnl in pdb.execute(
+                "SELECT substr(settled_at,1,10) d, COALESCE(sum(pnl),0)"
+                " FROM app_bet WHERE settled=1 AND settled_at IS NOT NULL"
+                " GROUP BY d"):
+            cal[day] = round(pnl, 2)
+        cols = ("id, event_id, sport, home, away, commence_time, market, side,"
+                " point, player, label, book, fill_odds, stake, live_status,"
+                " live_progress")
+        open_rows = [dict(zip(cols.replace(" ", "").split(","), r)) for r in
+                     pdb.execute(f"SELECT {cols} FROM app_bet WHERE settled=0"
+                                 " ORDER BY commence_time")]
+        for o in open_rows:
+            if o.get("live_progress"):
+                try:
+                    o["live_progress"] = json.loads(o["live_progress"])
+                except Exception:
+                    pass
+    finally:
+        pdb.close()
+    return {"calendar": cal, "open": open_rows}
+
+
+@app.get("/settings")
+def get_settings(_=Depends(require_auth)):
+    pdb = adb.connect()
+    try:
+        p = _prefs(pdb)
+    finally:
+        pdb.close()
+    if not p:
+        return {"min_ev": 0.0, "sports": None, "muted_books": None, "sort": "ev"}
+    return {"min_ev": p["min_ev"],
+            "sports": json.loads(p["sports_json"]) if p["sports_json"] else None,
+            "muted_books": json.loads(p["muted_books_json"]) if p["muted_books_json"] else None,
+            "sort": p["sort"]}
+
+
+@app.put("/settings")
+def put_settings(s: SettingsIn, _=Depends(require_auth)):
+    pdb = adb.connect()
+    try:
+        pdb.execute(
+            "INSERT INTO filter_prefs(id,min_ev,sports_json,muted_books_json,sort)"
+            " VALUES (1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET"
+            " min_ev=excluded.min_ev, sports_json=excluded.sports_json,"
+            " muted_books_json=excluded.muted_books_json, sort=excluded.sort",
+            (s.min_ev, json.dumps(s.sports) if s.sports else None,
+             json.dumps(s.muted_books) if s.muted_books else None, s.sort))
+        pdb.commit()
+    finally:
+        pdb.close()
+    return {"ok": True}
+
+
+@app.post("/push/register")
+def push_register(t: TokenIn, _=Depends(require_auth)):
+    pdb = adb.connect()
+    try:
+        pdb.execute(
+            "INSERT INTO push_token(token,updated_at,active) VALUES (?,?,1)"
+            " ON CONFLICT(token) DO UPDATE SET updated_at=excluded.updated_at,"
+            " active=1", (t.token, _now()))
+        pdb.commit()
+    finally:
+        pdb.close()
+    return {"ok": True}

@@ -111,3 +111,43 @@ def test_dismiss_marks_pick_dismissed(client):
     assert r.status_code == 200
     feed_r = client.get("/picks", headers={"Authorization": "Bearer secret"})
     assert feed_r.json()["counts"].get("dismissed") == 1
+
+
+def test_mybets_groups_open_and_calendar(client):
+    # place a bet, then settle one manually in the DB
+    body = {"event_id": "E1", "sport": "baseball_mlb", "market": "batter_total_bases",
+            "side": "Over", "point": 1.5, "player": "Brandon Nimmo",
+            "label": "x", "book": "theScore", "fill_odds": 2.2, "stake": 2.0}
+    client.post("/bets", json=body, headers={"Authorization": "Bearer secret"})
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=2.4,"
+                " settled_at='2026-06-12T22:00:00+00:00'")
+    pdb.commit(); pdb.close()
+    r = client.get("/mybets", headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["calendar"]["2026-06-12"] == 2.4
+    assert isinstance(body["open"], list)
+
+
+def test_settings_roundtrip(client):
+    put = client.put("/settings", json={"min_ev": 0.03, "sports": ["baseball_mlb"],
+                                        "muted_books": ["BallyBet"], "sort": "time"},
+                     headers={"Authorization": "Bearer secret"})
+    assert put.status_code == 200
+    got = client.get("/settings", headers={"Authorization": "Bearer secret"}).json()
+    assert got["min_ev"] == 0.03 and got["sort"] == "time"
+    assert got["muted_books"] == ["BallyBet"]
+
+
+def test_push_register_upserts_token(client):
+    for _ in range(2):
+        r = client.post("/push/register", json={"token": "ExponentPushToken[abc]"},
+                        headers={"Authorization": "Bearer secret"})
+        assert r.status_code == 200
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    n = pdb.execute("SELECT count(*) FROM push_token").fetchone()[0]
+    pdb.close()
+    assert n == 1
