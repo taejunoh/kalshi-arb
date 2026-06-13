@@ -55,7 +55,10 @@ def init_schema(db):
 
 
 def connect():
-    db = sqlite3.connect(PAPER_DB, timeout=60)
+    # Resolve the path at call time (not the import-time PAPER_DB constant) so the
+    # path tracks SOFTBOOK_PAPER_DB even when this module is imported once and the
+    # env is set later — required for per-test isolation and env reloads.
+    db = sqlite3.connect(os.getenv("SOFTBOOK_PAPER_DB", PAPER_DB), timeout=60)
     init_schema(db)
     return db
 
