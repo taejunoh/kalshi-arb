@@ -1,0 +1,13 @@
+[Unit]
+Description=Soft-book +EV companion app_bet settlement (calendar PnL + settle-push source)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/softbook_app_settle.py
+TimeoutStartSec=180
+MemoryMax=150M
