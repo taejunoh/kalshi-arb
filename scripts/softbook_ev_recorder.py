@@ -95,6 +95,37 @@ def _other_books_line(b):
     return "\n   📚 " + " · ".join(f"{q['book']} {q['odds']:.2f}" for q in others)
 
 
+def _first_entry_note(db, b):
+    """Tag the alert FIRST-ENTRY vs LATE-CROSSER.
+
+    First-entry = this opportunity (event, market, player) was ALREADY High at its
+    earliest recorded snapshot — a standing soft-book mispricing you grab on sight.
+    The dashboard's First-entry High ledger (paper_bet, tier=High) settled +16.6%
+    ROI on that subset. A late-crosser only drifted into High after the line moved
+    (earliest snapshot was Med/Low); every High-trigger pick that is NOT first-entry
+    settled ~breakeven (−0.9%) — pure dilution — so it is flagged 권장 스킵.
+
+    Keyed on (event, market, player) to match that ledger; record() persists this
+    scan's snapshot before alert_new_high, so a pick High on its first appearance
+    reads as first-entry here. Side/point movement is _dup_note's job, not this.
+
+    Non-critical: on any lookup error (table not yet migrated, transient lock) or a
+    pick with no snapshot row, return "" — the alert must still fire untagged, and
+    mislabeling a real first-entry as SKIP would cost a +EV bet."""
+    try:
+        row = db.execute(
+            "SELECT tier FROM softbook_ev WHERE event_id=? AND market=?"
+            " AND COALESCE(player,'')=? ORDER BY recorded_at LIMIT 1",
+            (b["event_id"], b["market"], b.get("player") or "")).fetchone()
+    except sqlite3.Error:
+        return ""
+    if not row:
+        return ""
+    if row[0] == "High":
+        return "🟣 BET · first-entry (첫 등장부터 High)"
+    return "⚪ SKIP · late-crosser (라인 이동 후 High 진입 · ROI≈0)"
+
+
 def _send_bet_alert(db, b, prefix, extra="", batch=()):
     """One Telegram message per bet (NOT batched: a reply must identify exactly
     one bet) and stamp book/odds/message_id onto its high_alerted row.
@@ -104,7 +135,8 @@ def _send_bet_alert(db, b, prefix, extra="", batch=()):
     must not span the next send's HTTP round-trip (refresh + digest units can
     overlap on this root-owned db at digest hours)."""
     pk = (b["event_id"], b["market"], b["side"], b["point"] or 0, b.get("player") or "")
-    text = (f"{prefix}\n\n"
+    fe = _first_entry_note(db, b)
+    text = (f"{prefix}\n{fe}\n\n" if fe else f"{prefix}\n\n") + (
             f"• {b['away'][:16]} @ {b['home'][:16]}\n"
             f"   {b['label']}\n"
             f"   📍 {b['book']} @ {b['odds']:.2f} · 💵 ${_stake(b['ev'], b['odds']):.0f}\n"
