@@ -145,7 +145,7 @@ def get_picks(_=Depends(require_auth)):
     pdb = adb.connect()
     try:
         picks = feed.compose(_latest_high_rows(), adb.pick_states(pdb),
-                             _prefs(pdb), now)
+                             _prefs(pdb), now, adb.active_mute_rules(pdb))
     finally:
         pdb.close()
     _enrich_first_entry(picks)
@@ -335,6 +335,45 @@ class SettingsIn(BaseModel):
 
 class TokenIn(BaseModel):
     token: str
+
+
+class RuleIn(BaseModel):
+    field: str
+    value: str
+
+
+_RULE_FIELDS = ("player", "market", "sport", "event")
+
+
+@app.get("/rules")
+def get_rules(_=Depends(require_auth)):
+    pdb = adb.connect()
+    try:
+        return {"rules": adb.list_mute_rules(pdb)}
+    finally:
+        pdb.close()
+
+
+@app.post("/rules")
+def add_rule(body: RuleIn, _=Depends(require_auth)):
+    if body.field not in _RULE_FIELDS:
+        raise HTTPException(400, f"field must be one of {_RULE_FIELDS}")
+    pdb = adb.connect()
+    try:
+        rid = adb.add_mute_rule(pdb, body.field, body.value, _now())
+    finally:
+        pdb.close()
+    return {"id": rid}
+
+
+@app.delete("/rules/{rule_id}")
+def delete_rule(rule_id: int, _=Depends(require_auth)):
+    pdb = adb.connect()
+    try:
+        adb.delete_mute_rule(pdb, rule_id)
+    finally:
+        pdb.close()
+    return {"ok": True}
 
 
 @app.get("/mybets")

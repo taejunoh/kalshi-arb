@@ -33,9 +33,27 @@ def _expired(ct, now):
     return ct_dt <= now_dt
 
 
-def compose(rows, states, prefs, now):
+_MUTE_COL = {"player": "player", "market": "market", "sport": "sport", "event": "event_id"}
+
+
+def _is_muted_row(row, rules):
+    """True if the pick row matches any (field, value) mute rule (case-insensitive)."""
+    for field, value in rules:
+        col = _MUTE_COL.get(field)
+        v = (value or "").strip().lower()
+        if not col or not v:
+            continue
+        rv = row.get(col)
+        if isinstance(rv, str) and rv.strip().lower() == v:
+            return True
+    return False
+
+
+def compose(rows, states, prefs, now, mute_rules=()):
     """rows: High-tier softbook_ev snapshots (any scans). states: {key->state}.
     prefs: filter_prefs row dict or None. Returns picks with a 'status' field."""
+    if mute_rules:
+        rows = [r for r in rows if not _is_muted_row(r, mute_rules)]
     if not rows:
         return []
     latest = max(r["recorded_at"] for r in rows)
