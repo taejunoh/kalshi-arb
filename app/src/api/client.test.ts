@@ -61,3 +61,31 @@ test("missing credentials throws before fetch", async () => {
   await expect(api.getPicks()).rejects.toBeInstanceOf(ApiError);
   expect((f as jest.Mock).mock.calls).toHaveLength(0);
 });
+
+test("scanBet posts the image and parses a ScanDraft", async () => {
+  const draft = {
+    bet: {
+      event_id: "EVT123", sport: "baseball_mlb", home: "COL", away: "CHC",
+      commence_time: null, market: "batter_total_bases", side: "Over", point: 1.5,
+      player: "Nico Hoerner", label: "Nico Hoerner TB Over 1.5", book: "FanDuel",
+      rec_odds: null, fill_odds: 2.0, stake: 2.0, source: "scan",
+    },
+    matched: true, notes: "single leg",
+  };
+  const fetchMock = jest.fn(
+    async (..._args: Parameters<typeof fetch>) => ({ ok: true, status: 200, json: async () => draft }),
+  );
+  (global as unknown as { fetch: typeof fetch }).fetch = fetchMock as never;
+
+  const { api } = require("./client");
+  const out = await api.scanBet("QkFTRTY0", "image/png");
+  expect(out.matched).toBe(true);
+  expect(out.bet.event_id).toBe("EVT123");
+  const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(String(url)).toContain("/bets/scan");
+  expect(init.method).toBe("POST");
+  expect(JSON.parse(init.body as string)).toEqual({
+    image_base64: "QkFTRTY0",
+    media_type: "image/png",
+  });
+});

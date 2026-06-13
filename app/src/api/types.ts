@@ -106,3 +106,28 @@ export interface Settings {
   muted_books: string[] | null;
   sort: SortKey;
 }
+
+// ===== Screenshot-AI scan =====
+export interface BetInDraft {
+  event_id: string | null;
+  sport: string | null;
+  home: string | null;
+  away: string | null;
+  commence_time: string | null;
+  market: string | null;
+  side: string | null;
+  point: number | null;
+  player: string | null;
+  label: string | null;
+  book: string | null;
+  rec_odds: number | null;
+  fill_odds: number | null;
+  stake: number | null;
+  source: string;
+}
+
+export interface ScanDraft {
+  bet: BetInDraft;
+  matched: boolean;
+  notes: string;
+}
