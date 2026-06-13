@@ -2982,7 +2982,7 @@ async function renderEvHistory() {
     high: 'bet each NEW High pick the moment it first turns High (your strategy) = first-entry + late-crosser',
     late: 'High-trigger picks that only crossed High AFTER the line moved (NOT first-entry) — ~breakeven dilution, 권장 스킵',
   };
-  const stratBtns = [['first', 'First-entry'], ['high', 'High-trigger'], ['late', 'late-crosser']]
+  const stratBtns = [['first', 'First-entry'], ['late', 'late-crosser'], ['high', 'High-trigger']]
     .map(([v, t]) => `<button class="evh-fbtn${evhFilter.strategy === v ? ' active' : ''}" data-evh-strategy="${v}" title="${stratTitle[v]}">${t}</button>`).join('');
   const tierBtns = [['all', 'All'], ['High', 'High'], ['Med', 'Med'], ['Low', 'Low'], ['?', 'Untracked']]
     .map(([v, t]) => `<button class="evh-fbtn${evhFilter.tier === v ? ' active' : ''}" data-evh-tier="${v}">${t}</button>`).join('');
