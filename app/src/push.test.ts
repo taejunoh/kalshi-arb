@@ -11,7 +11,7 @@ jest.mock("expo-constants", () => ({ expoConfig: { extra: { eas: { projectId: "u
 
 import * as Notifications from "expo-notifications";
 import { registerForPush, registerCategories, notifTarget } from "./push";
-import { ACTION_BET, ACTION_DISMISS } from "./config";
+import { ACTION_BET, ACTION_DISMISS, CATEGORY_PRICE_MOVE } from "./config";
 
 afterEach(() => jest.clearAllMocks());
 
@@ -63,4 +63,22 @@ test("notifTarget maps a settle notification to mybets", () => {
 
 test("notifTarget returns null for an unrecognized payload", () => {
   expect(notifTarget(resp({}, Notifications.DEFAULT_ACTION_IDENTIFIER))).toBeNull();
+});
+
+test("a price_move push routes to MyBets via app_bet_id", () => {
+  const resp = {
+    actionIdentifier: "default",
+    notification: { request: { content: {
+      categoryIdentifier: CATEGORY_PRICE_MOVE,
+      data: { app_bet_id: 7 },
+    } } },
+  };
+  expect(notifTarget(resp as never)).toEqual({ kind: "mybets", appBetId: 7 });
+});
+
+test("registerCategories includes price_move (no action buttons)", async () => {
+  await registerCategories();
+  const Notifications = require("expo-notifications");
+  const ids = (Notifications.setNotificationCategoryAsync as jest.Mock).mock.calls.map((c) => c[0]);
+  expect(ids).toContain(CATEGORY_PRICE_MOVE);
 });
