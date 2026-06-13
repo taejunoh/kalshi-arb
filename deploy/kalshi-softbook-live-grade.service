@@ -1,0 +1,13 @@
+[Unit]
+Description=Soft-book +EV companion live in-game bet grading (MLB StatsAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/softbook_live_grade.py
+TimeoutStartSec=120
+MemoryMax=150M

@@ -1,0 +1,13 @@
+[Unit]
+Description=Soft-book +EV companion push worker (new High / reverse-middle / settlement)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/softbook_push_worker.py
+TimeoutStartSec=120
+MemoryMax=150M
