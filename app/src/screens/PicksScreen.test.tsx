@@ -16,16 +16,20 @@ jest.mock("../api/client", () => ({
     dismissPick: jest.fn(async () => ({ ok: true })),
     putSettings: jest.fn(async () => ({ ok: true })),
     getSettings: jest.fn(async () => ({ min_ev: 0, sports: null, muted_books: null, sort: "ev" })),
+    scanBet: jest.fn(async () => ({ bet: { event_id: "EVT123", market: "batter_total_bases", source: "scan" }, matched: true, notes: "" })),
   },
 }));
+jest.mock("../scan", () => ({ pickImage: jest.fn(async () => ({ base64: "QkFTRTY0", mediaType: "image/png" })) }));
+const mockNavigate = jest.fn();
 jest.mock("@react-navigation/native", () => ({
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   useFocusEffect: (cb: () => void) => { require("react").useEffect(cb, []); },
-  useNavigation: () => ({ navigate: jest.fn(), push: jest.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate, push: jest.fn() }),
 }));
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import { api } from "../api/client";
+import { pickImage } from "../scan";
 import { PicksScreen } from "./PicksScreen";
 
 test("renders the active feed from the API", async () => {
@@ -72,4 +76,14 @@ test("changing a filter preserves existing sport and book prefs (no clobber)", a
   expect(sent.sports).toEqual(["baseball_mlb"]);
   expect(sent.muted_books).toEqual(["BallyBet"]);
   expect(sent.sort).toBe("time");
+});
+
+test("📷 슬립 캡처 scans and navigates to CaptureSheet with the draft", async () => {
+  mockNavigate.mockClear();
+  await render(<PicksScreen />);
+  await waitFor(() => expect(screen.getByText("NYM ML")).toBeOnTheScreen());
+  await fireEvent.press(screen.getByTestId("scan-capture-library"));
+  await waitFor(() => expect(pickImage).toHaveBeenCalledWith("library"));
+  await waitFor(() => expect(api.scanBet).toHaveBeenCalledWith("QkFTRTY0", "image/png"));
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("CaptureSheet", { scanDraft: { event_id: "EVT123", market: "batter_total_bases", source: "scan" } }));
 });
