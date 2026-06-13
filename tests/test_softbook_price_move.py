@@ -33,3 +33,12 @@ def test_record_current_odds_and_pricing_helpers(tmp_path, monkeypatch):
     adb.mark_price_move_pushed(db, bid, "cashout", "2026-06-13T00:05:00Z")
     assert adb.price_move_pushed(db, bid, "cashout") is True
     assert adb.price_move_pushed(db, bid, "move") is False
+
+
+def test_project_price_move_classifies_by_direction():
+    import softbook_push_worker as w
+    assert w.project_price_move(2.0, 1.8)["kind"] == "cashout"
+    assert w.project_price_move(2.0, 2.2)["kind"] == "move"
+    assert w.project_price_move(2.0, 2.05)["kind"] is None
+    assert w.project_price_move(None, 1.8)["kind"] is None
+    assert w.project_price_move(2.0, None)["kind"] is None

@@ -20,6 +20,25 @@ import softbook_app_db as adb
 import softbook_app_feed as feed
 import softbook_push as push
 
+PRICE_MOVE_LIMIT = 15           # max open bets priced per run (credit budget)
+PRICE_MOVE_THRESHOLD = 0.05     # |move| >= 5% to push
+CATEGORY_PRICE_MOVE = "price_move"
+
+
+def project_price_move(fill_odds, current_odds, threshold=PRICE_MOVE_THRESHOLD):
+    """Classify an open bet's odds move. move = current/fill - 1.
+    drop (move <= -threshold) -> 'cashout' (you beat the market);
+    rise (move >= +threshold) -> 'move' (line against you); else None."""
+    if not fill_odds or not current_odds:
+        return {"kind": None, "move_pct": 0.0}
+    move = current_odds / fill_odds - 1.0
+    if move <= -threshold:
+        return {"kind": "cashout", "move_pct": move}
+    if move >= threshold:
+        return {"kind": "move", "move_pct": move}
+    return {"kind": None, "move_pct": move}
+
+
 EV_DB = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
 
 PUSHED_HIGH = """CREATE TABLE IF NOT EXISTS pushed_high(
