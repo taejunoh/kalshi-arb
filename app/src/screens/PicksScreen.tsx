@@ -14,6 +14,7 @@ export function PicksScreen() {
   const [error, setError] = useState<string | null>(null);
   const [prefs, setPrefs] = useState<Settings>({ min_ev: 0, sports: null, muted_books: null, sort: "ev" });
   const [showCooled, setShowCooled] = useState(false);
+  const [firstEntryOnly, setFirstEntryOnly] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,9 +76,16 @@ export function PicksScreen() {
     );
   }
 
+  const allActive = data?.picks ?? [];
+  const visiblePicks = firstEntryOnly ? allActive.filter((p) => p.first_entry) : allActive;
+  const feCount = allActive.filter((p) => p.first_entry).length;
+
   return (
     <View style={s.container}>
       <View style={s.filterBar}>
+        <Pressable onPress={() => setFirstEntryOnly((v) => !v)} style={[s.feChip, firstEntryOnly && s.feChipOn]}>
+          <Text style={s.chipText}>🟣 first-entry만{feCount ? ` (${feCount})` : ""}</Text>
+        </Pressable>
         <Text style={s.filterLabel}>최소 EV</Text>
         {MIN_EV_STEPS.map((v) => (
           <Pressable key={v} onPress={() => void applyFilters({ min_ev: v })} style={[s.chip, prefs.min_ev === v && s.chipOn]}>
@@ -91,7 +99,7 @@ export function PicksScreen() {
         ))}
       </View>
       <FlatList
-        data={data?.picks ?? []}
+        data={visiblePicks}
         keyExtractor={(p) => p.id}
         refreshing={loading}
         onRefresh={() => void load()}
@@ -103,7 +111,10 @@ export function PicksScreen() {
             onDismiss={(p) => void dismiss(p)}
           />
         )}
-        ListEmptyComponent={loading ? <ActivityIndicator style={{ marginTop: 40 }} /> : <Text style={s.empty}>활성 픽 없음</Text>}
+        ListEmptyComponent={
+          loading ? <ActivityIndicator style={{ marginTop: 40 }} />
+            : <Text style={s.empty}>{firstEntryOnly ? "first-entry 픽 없음 (late-crosser는 권장 스킵)" : "활성 픽 없음"}</Text>
+        }
         ListFooterComponent={
           data && data.cooled.length > 0 ? (
             <View>
@@ -128,6 +139,8 @@ const s = StyleSheet.create({
   filterLabel: { color: "#9CA3AF", fontSize: 12, marginRight: 4 },
   chip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: "#1F2937" },
   chipOn: { backgroundColor: "#7C3AED" },
+  feChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: "#1F2937", borderWidth: 1, borderColor: "#7C3AED" },
+  feChipOn: { backgroundColor: "#7C3AED", borderColor: "#7C3AED" },
   chipText: { color: "#FFF", fontSize: 12 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0E0E13", padding: 24 },
   err: { color: "#F87171", textAlign: "center", marginBottom: 12 },

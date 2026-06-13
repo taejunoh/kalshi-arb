@@ -34,8 +34,23 @@ test("fires onBet and onDismiss", async () => {
   const onBet = jest.fn();
   const onDismiss = jest.fn();
   await render(<PickCard pick={PICK} onOpen={() => {}} onBet={onBet} onDismiss={onDismiss} />);
-  fireEvent.press(screen.getByText("베팅"));
-  fireEvent.press(screen.getByText("관심없음"));
+  await fireEvent.press(screen.getByText("베팅"));
+  await fireEvent.press(screen.getByText("관심없음"));
   expect(onBet).toHaveBeenCalledWith(PICK);
   expect(onDismiss).toHaveBeenCalledWith(PICK);
+});
+
+test("shows the 🟣 first-entry badge when first_entry is true", async () => {
+  await render(<PickCard pick={{ ...PICK, first_entry: true }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(await screen.findByText(/first-entry/)).toBeOnTheScreen();
+});
+
+test("shows the ⚪ late-crosser badge when first_entry is false", async () => {
+  await render(<PickCard pick={{ ...PICK, first_entry: false }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(await screen.findByText(/late-crosser/)).toBeOnTheScreen();
+});
+
+test("shows no first-entry badge when the flag is absent", async () => {
+  await render(<PickCard pick={PICK} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(screen.queryByText(/first-entry|late-crosser/)).toBeNull();
 });
