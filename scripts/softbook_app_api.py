@@ -68,7 +68,9 @@ def require_auth(authorization: str = Header(default=""),
 
 
 def _ev_conn():
-    return sqlite3.connect(f"file:{EV_DB}?mode=ro", uri=True, timeout=15)
+    # Resolve at call time (env may be set after import; also keeps tests isolated).
+    ev_db = os.getenv("SOFTBOOK_EV_DB", EV_DB)
+    return sqlite3.connect(f"file:{ev_db}?mode=ro", uri=True, timeout=15)
 
 
 def _latest_high_rows():
