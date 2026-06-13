@@ -4,6 +4,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import { navigationRef, RootNavigator } from "./src/navigation";
+import { PushBridge } from "./src/PushBridge";
 
 // Foreground display (SDK 51+ fields; shouldShowAlert is deprecated).
 Notifications.setNotificationHandler({
@@ -20,6 +21,7 @@ export default function App() {
     <SafeAreaProvider>
       <NavigationContainer ref={navigationRef}>
         <RootNavigator />
+        <PushBridge />
       </NavigationContainer>
       <StatusBar style="light" />
     </SafeAreaProvider>
