@@ -35,7 +35,8 @@ test("fires onBet and onDismiss", async () => {
   const onDismiss = jest.fn();
   await render(<PickCard pick={PICK} onOpen={() => {}} onBet={onBet} onDismiss={onDismiss} />);
   await fireEvent.press(screen.getByText("베팅"));
-  await fireEvent.press(screen.getByText("관심없음"));
+  // The inline 관심없음 button (kept as the accessible fallback to the swipe action).
+  await fireEvent.press(screen.getByTestId("inline-dismiss"));
   expect(onBet).toHaveBeenCalledWith(PICK);
   expect(onDismiss).toHaveBeenCalledWith(PICK);
 });
@@ -53,4 +54,14 @@ test("shows the ⚪ late-crosser badge when first_entry is false", async () => {
 test("shows no first-entry badge when the flag is absent", async () => {
   await render(<PickCard pick={PICK} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
   expect(screen.queryByText(/first-entry|late-crosser/)).toBeNull();
+});
+
+// Gesture simulation isn't reliable in jest, so we press the revealed swipe
+// action directly to lock the wiring. onDismiss takes the Pick (same as the
+// inline button), so we assert it's called with the pick.
+test("the swipe dismiss action calls onDismiss with the pick", async () => {
+  const onDismiss = jest.fn();
+  await render(<PickCard pick={PICK} onOpen={() => {}} onBet={() => {}} onDismiss={onDismiss} />);
+  await fireEvent.press(screen.getByTestId("swipe-dismiss"));
+  expect(onDismiss).toHaveBeenCalledWith(PICK);
 });

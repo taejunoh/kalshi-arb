@@ -1,5 +1,6 @@
 // app/src/components/PickCard.tsx
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 import type { Pick } from "../api/types";
 import { decimalOdds, evPct, countdown } from "../format";
 
@@ -14,7 +15,15 @@ export function PickCard({
   onBet: (p: Pick) => void;
   onDismiss: (p: Pick) => void;
 }) {
+  // Swipe-left reveals 관심없음; same onDismiss as the inline button (kept as fallback).
+  const renderRightActions = () => (
+    <Pressable testID="swipe-dismiss" onPress={() => onDismiss(pick)} style={s.swipeAction}>
+      <Text style={s.swipeText}>관심없음</Text>
+    </Pressable>
+  );
+
   return (
+    <Swipeable renderRightActions={renderRightActions}>
     <Pressable style={[s.card, pick.first_entry === false && s.cardMuted]} onPress={() => onOpen(pick)}>
       {pick.first_entry !== undefined && (
         <Text style={pick.first_entry ? s.feBadge : s.lcBadge}>
@@ -30,9 +39,10 @@ export function PickCard({
       </Text>
       <View style={s.actions}>
         <Pressable style={[s.btn, s.bet]} onPress={() => onBet(pick)}><Text style={s.btnText}>베팅</Text></Pressable>
-        <Pressable style={[s.btn, s.dismiss]} onPress={() => onDismiss(pick)}><Text style={s.btnText}>관심없음</Text></Pressable>
+        <Pressable testID="inline-dismiss" style={[s.btn, s.dismiss]} onPress={() => onDismiss(pick)}><Text style={s.btnText}>관심없음</Text></Pressable>
       </View>
     </Pressable>
+    </Swipeable>
   );
 }
 
@@ -50,4 +60,6 @@ const s = StyleSheet.create({
   bet: { backgroundColor: "#7C3AED" },
   dismiss: { backgroundColor: "#374151" },
   btnText: { color: "#FFF", fontWeight: "600" },
+  swipeAction: { backgroundColor: "#DC2626", justifyContent: "center", paddingHorizontal: 24, marginVertical: 6, marginRight: 12, borderRadius: 12 },
+  swipeText: { color: "#FFF", fontWeight: "600" },
 });
