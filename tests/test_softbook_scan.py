@@ -1,4 +1,6 @@
 import json
+import sqlite3
+
 import softbook_scan as scan
 
 
@@ -43,3 +45,24 @@ def test_parse_bet_slip_returns_parsed_dict_and_sends_image():
     assert img["type"] == "image"
     assert img["source"] == {"type": "base64", "media_type": "image/png", "data": "QkFTRTY0"}
     assert fake.messages.kw["output_config"]["format"]["type"] == "json_schema"
+
+
+def _seed_ev(path):
+    db = sqlite3.connect(path)
+    db.execute(
+        "CREATE TABLE softbook_ev(recorded_at TEXT, sport TEXT, event_id TEXT, "
+        "commence_time TEXT, home TEXT, away TEXT, market TEXT, side TEXT, point REAL, "
+        "player TEXT, tier TEXT)")
+    db.execute(
+        "INSERT INTO softbook_ev(recorded_at, sport, event_id, commence_time, home, away) "
+        "VALUES (datetime('now'), 'baseball_mlb', 'EVT123', datetime('now','+2 hours'), "
+        "'Colorado Rockies', 'Chicago Cubs')")
+    db.commit()
+    return db
+
+
+def test_match_event_finds_recent_event_by_team_names(tmp_path):
+    db = _seed_ev(str(tmp_path / "ev.db"))
+    assert scan.match_event(db, {"home": "COL Rockies", "away": "Chicago Cubs"}) == "EVT123"
+    assert scan.match_event(db, {"home": None, "away": None}) is None
+    assert scan.match_event(db, {"home": "Boston", "away": "Yankees"}) is None

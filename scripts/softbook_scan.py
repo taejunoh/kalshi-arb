@@ -75,3 +75,38 @@ def parse_bet_slip(image_b64, media_type="image/jpeg", client=None):
     )
     text = next(b.text for b in resp.content if b.type == "text")
     return json.loads(text)
+
+
+def _overlap(a, b):
+    """Loose team-name match for slip→event: case-insensitive whole-string containment
+    OR a shared significant token (length >= 4). Real slips show abbreviated/partial names
+    ('COL Rockies') vs Odds-API full names ('Colorado Rockies'); the shared token ('rockies')
+    bridges them. match_event requires BOTH legs to overlap, which guards false positives."""
+    a = (a or "").strip().lower()
+    b = (b or "").strip().lower()
+    if not a or not b:
+        return False
+    if a in b or b in a:
+        return True
+    ta = {t for t in a.split() if len(t) >= 4}
+    tb = {t for t in b.split() if len(t) >= 4}
+    return bool(ta & tb)
+
+
+def match_event(ev_conn, draft):
+    """Best-effort map a scanned draft to a recent softbook_ev event_id, or None.
+
+    Requires BOTH home and away to overlap the same event to avoid false positives.
+    Scans only events commencing within the last day forward (recent slate)."""
+    home = draft.get("home")
+    away = draft.get("away")
+    if not (home and away):
+        return None
+    rows = ev_conn.execute(
+        "SELECT DISTINCT event_id, home, away FROM softbook_ev "
+        "WHERE datetime(commence_time) >= datetime('now','-1 day') "
+        "ORDER BY recorded_at DESC LIMIT 500").fetchall()
+    for eid, h, a in rows:
+        if _overlap(home, h) and _overlap(away, a):
+            return eid
+    return None
