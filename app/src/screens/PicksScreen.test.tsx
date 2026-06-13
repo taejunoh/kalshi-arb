@@ -24,10 +24,25 @@ jest.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: jest.fn(), push: jest.fn() }),
 }));
 
-import { render, screen, waitFor } from "@testing-library/react-native";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { api } from "../api/client";
 import { PicksScreen } from "./PicksScreen";
 
 test("renders the active feed from the API", async () => {
   await render(<PicksScreen />);
   await waitFor(() => expect(screen.getByText("NYM ML")).toBeOnTheScreen());
+});
+
+test("changing a filter preserves existing sport and book prefs (no clobber)", async () => {
+  (api.getSettings as jest.Mock).mockResolvedValueOnce({
+    min_ev: 0, sports: ["baseball_mlb"], muted_books: ["BallyBet"], sort: "ev",
+  });
+  await render(<PicksScreen />);
+  await waitFor(() => expect(api.getSettings).toHaveBeenCalled());
+  await fireEvent.press(screen.getByText("시간순"));
+  await waitFor(() => expect(api.putSettings).toHaveBeenCalled());
+  const sent = (api.putSettings as jest.Mock).mock.calls.at(-1)?.[0];
+  expect(sent.sports).toEqual(["baseball_mlb"]);
+  expect(sent.muted_books).toEqual(["BallyBet"]);
+  expect(sent.sort).toBe("time");
 });
