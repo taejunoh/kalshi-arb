@@ -1,0 +1,48 @@
+// app/src/api/client.ts
+import { getCredentials } from "../storage";
+import type { BetIn, MyBets, Pick, PicksResponse, RefreshResponse, Settings } from "./types";
+
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const c = await getCredentials();
+  if (!c) throw new ApiError(0, "No API credentials configured");
+  const res = await fetch(c.baseUrl + path, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${c.token}`,
+      "CF-Access-Client-Id": c.cfId,
+      "CF-Access-Client-Secret": c.cfSecret,
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!res.ok) throw new ApiError(res.status, `${init?.method ?? "GET"} ${path} -> ${res.status}`);
+  return (await res.json()) as T;
+}
+
+const enc = encodeURIComponent;
+
+export const api = {
+  getPicks: () => request<PicksResponse>("/picks"),
+  getPick: (id: string) => request<Pick>(`/picks/${enc(id)}`),
+  refreshPick: (id: string) => request<RefreshResponse>(`/picks/${enc(id)}/refresh`),
+  postBet: (bet: BetIn) =>
+    request<{ id: number }>("/bets", { method: "POST", body: JSON.stringify(bet) }),
+  dismissPick: (id: string) =>
+    request<{ ok: boolean }>(`/picks/${enc(id)}/dismiss`, { method: "POST" }),
+  getMyBets: () => request<MyBets>("/mybets"),
+  getSettings: () => request<Settings>("/settings"),
+  putSettings: (s: Settings) =>
+    request<{ ok: boolean }>("/settings", { method: "PUT", body: JSON.stringify(s) }),
+  registerPush: (token: string) =>
+    request<{ ok: boolean }>("/push/register", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+};
