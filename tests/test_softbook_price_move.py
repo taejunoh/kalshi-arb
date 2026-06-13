@@ -42,3 +42,25 @@ def test_project_price_move_classifies_by_direction():
     assert w.project_price_move(2.0, 2.05)["kind"] is None
     assert w.project_price_move(None, 1.8)["kind"] is None
     assert w.project_price_move(2.0, None)["kind"] is None
+
+
+def test_price_move_messages_pushes_once_per_kind(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOFTBOOK_PAPER_DB", str(tmp_path / "paper.db"))
+    import softbook_app_db as adb
+    import softbook_push_worker as w
+    db = adb.connect(); adb.init_schema(db)
+    bid = adb.insert_app_bet(db, {
+        "event_id": "EVT1", "sport": "baseball_mlb", "market": "h2h", "side": "COL",
+        "book": "FanDuel", "fill_odds": 2.0, "stake": 5.0,
+        "placed_at": "2026-06-13T00:00:00Z", "source": "one_tap", "label": "COL ML",
+    })
+    db.execute("INSERT INTO push_token(token, updated_at, active) VALUES('TOK', 't', 1)")
+    db.commit()
+    fetch = lambda *a, **k: 1.8
+    msgs = w._price_move_messages(db, ["TOK"], "2026-06-13T00:05:00Z", fetch_odds=fetch)
+    assert len(msgs) == 1
+    assert msgs[0]["categoryId"] == w.CATEGORY_PRICE_MOVE
+    assert msgs[0]["data"] == {"app_bet_id": bid}
+    assert db.execute("SELECT current_best_odds FROM app_bet WHERE id=?", (bid,)).fetchone()[0] == 1.8
+    msgs2 = w._price_move_messages(db, ["TOK"], "2026-06-13T00:10:00Z", fetch_odds=fetch)
+    assert msgs2 == []
