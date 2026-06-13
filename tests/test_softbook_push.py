@@ -88,6 +88,33 @@ def test_worker_pushes_new_high_once():
     assert len(sent) == 1
 
 
+def test_worker_alerts_first_entry_only():
+    """Only first-entry picks push; late-crossers (earliest snapshot was not High) are
+    deduped but never alerted."""
+    ev, pdb = _worker_dbs()
+    ev.execute("DELETE FROM softbook_ev")
+    latest = ev.execute("SELECT datetime('now')").fetchone()[0]
+    earlier = ev.execute("SELECT datetime('now','-40 minutes')").fetchone()[0]
+    cols = ("(recorded_at,sport,event_id,commence_time,home,away,market,side,point,"
+            "player,pinnacle_fair_prob,pinnacle_price,best_soft_book,best_soft_price,"
+            "snapshot_ev,n_books,n_ev,conf,tier)")
+    q = "INSERT INTO softbook_ev " + cols + " VALUES (" + ",".join("?" * 19) + ")"
+    # E1: single High snapshot -> first-entry -> SHOULD alert.
+    ev.execute(q, (latest, "baseball_mlb", "E1", "2099-01-01T00:00:00Z", "MIA", "NYM",
+                   "batter_total_bases", "Over", 1.5, "Brandon Nimmo", 0.45, 2.0,
+                   "theScore", 2.2, 0.074, 9, 5, 60, "High"))
+    # E2: earliest snapshot was Med (late-crosser) -> should NOT alert.
+    ev.execute(q, (earlier, "baseball_mlb", "E2", "2099-01-01T00:00:00Z", "MIA", "NYM",
+                   "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "Med"))
+    ev.execute(q, (latest, "baseball_mlb", "E2", "2099-01-01T00:00:00Z", "MIA", "NYM",
+                   "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "High"))
+    ev.commit()
+    sent = []
+    worker.run_once(ev, pdb, send=lambda msgs: sent.extend(msgs) or [])
+    assert len(sent) == 1                 # only the first-entry pick
+    assert "Nimmo" in sent[0]["body"]     # E1 (first-entry), not E2 (late-crosser)
+
+
 def test_worker_pushes_settlement_result_once():
     ev, pdb = _worker_dbs()
     pdb.execute("INSERT INTO app_bet(event_id,market,side,point,player,label,book,"
