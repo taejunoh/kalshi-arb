@@ -21,6 +21,7 @@ import softbook_ev_core as core
 import softbook_app_db as adb
 import softbook_app_feed as feed
 import softbook_deeplink as deeplink
+import softbook_scan as scan
 import datetime
 from pydantic import BaseModel
 import softbook_ev_recorder as rec
@@ -220,6 +221,11 @@ def refresh_pick(pick_id: str, _=Depends(require_auth)):
     return {"fair": fair, "books": books, "credits": credits}
 
 
+class ScanIn(BaseModel):
+    image_base64: str
+    media_type: str = "image/jpeg"
+
+
 class BetIn(BaseModel):
     event_id: str
     sport: str | None = None
@@ -255,6 +261,39 @@ def post_bet(bet: BetIn, _=Depends(require_auth)):
     finally:
         pdb.close()
     return {"id": bid}
+
+
+@app.post("/bets/scan")
+def scan_bet(body: ScanIn, _=Depends(require_auth)):
+    """Parse a bet-slip image into a BetIn-shaped draft for the confirm sheet.
+    Does NOT write app_bet — the app reviews, then POSTs /bets with source='scan'."""
+    try:
+        draft = scan.parse_bet_slip(body.image_base64, body.media_type)
+    except Exception as e:
+        raise HTTPException(422, f"scan parse failed: {e}")
+    edb = _ev_conn()
+    try:
+        eid = scan.match_event(edb, draft)
+    finally:
+        edb.close()
+    bet = {
+        "event_id": eid,
+        "sport": draft.get("sport"),
+        "home": draft.get("home"),
+        "away": draft.get("away"),
+        "commence_time": None,
+        "market": draft.get("market"),
+        "side": draft.get("side"),
+        "point": draft.get("point"),
+        "player": draft.get("player"),
+        "label": draft.get("label"),
+        "book": draft.get("book"),
+        "rec_odds": None,
+        "fill_odds": draft.get("fill_odds"),
+        "stake": draft.get("stake"),
+        "source": "scan",
+    }
+    return {"bet": bet, "matched": eid is not None, "notes": draft.get("notes", "")}
 
 
 def _auto_dismiss_opposite(pdb, eid, market, side, point, player):
