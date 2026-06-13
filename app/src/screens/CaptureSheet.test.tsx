@@ -27,3 +27,23 @@ test("prefills from the pick and posts a bet", async () => {
   const body = (api.postBet as jest.Mock).mock.calls[0][0];
   expect(body).toMatchObject({ event_id: "E1", stake: 5, fill_odds: 2.1, source: "one_tap" });
 });
+
+test("scan mode prefills from the draft and posts with source=scan", async () => {
+  (api.getPick as jest.Mock).mockClear();
+  (api.postBet as jest.Mock).mockClear();
+  const scanDraft = {
+    event_id: "EVT123", sport: "baseball_mlb", home: "COL", away: "CHC",
+    commence_time: null, market: "batter_total_bases", side: "Over", point: 1.5,
+    player: "Nico Hoerner", label: "Nico Hoerner TB Over 1.5", book: "FanDuel",
+    rec_odds: null, fill_odds: 2.0, stake: 2.0, source: "scan",
+  };
+  const scanRoute = { params: { scanDraft } } as never;
+  await render(<CaptureSheet route={scanRoute} />);
+  await waitFor(() => expect(screen.getByText("Nico Hoerner TB Over 1.5")).toBeOnTheScreen());
+  await fireEvent.changeText(screen.getByPlaceholderText("스테이크 ($)"), "5");
+  await fireEvent.press(screen.getByText("기록"));
+  await waitFor(() => expect(api.postBet).toHaveBeenCalled());
+  const body = (api.postBet as jest.Mock).mock.calls.at(-1)?.[0];
+  expect(body).toMatchObject({ event_id: "EVT123", market: "batter_total_bases", stake: 5, source: "scan" });
+  expect(api.getPick).not.toHaveBeenCalled();
+});

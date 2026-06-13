@@ -10,6 +10,7 @@
     "expo-clipboard": "~56.0.4",
     "expo-constants": "~56.0.18",
     "expo-device": "~56.0.4",
+    "expo-image-picker": "~56.0.17",
     "expo-linking": "~56.0.14",
     "expo-notifications": "~56.0.17",
     "expo-secure-store": "~56.0.4",
