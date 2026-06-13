@@ -92,7 +92,8 @@ def _settle_messages(pdb, tokens, now):
         " WHERE a.settled=1 AND n.app_bet_id IS NULL").fetchall()
     msgs = []
     for bid, label, won, pnl in rows:
-        verdict = "✅ 적중" if won else "❌ 미적중"
+        # won: 1=win, 0=lose, None=void/push (app_settle writes None for DNP/push)
+        verdict = "✅ 적중" if won == 1 else ("↩️ 무효" if won is None else "❌ 미적중")
         body = f"{label or ''} — {verdict} ({(pnl or 0):+.2f})"
         for tok in tokens:
             msgs.append(push.build_message(tok, "정산 결과", body,
