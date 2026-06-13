@@ -2188,27 +2188,43 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
     async def get_ev_history(strategy: str = "first"):
         """Every soft-book +EV PAPER bet ever placed (data/softbook_paper.db) —
         settled + pending — for the +EV History tab (split/filterable by tier).
-        strategy=first: one bet per game+market at the EARLIEST +EV snapshot.
-        strategy=high: one bet per exact line at its first High-tier snapshot
-        (the 'bet each new High pick' strategy). Modeled, not real."""
+        strategy=first: one bet per game+market at the EARLIEST +EV snapshot
+        (paper_bet). strategy=high: one bet per exact line at its first High-tier
+        snapshot (paper_bet_high, 'bet each new High pick'). strategy=late: the
+        LATE-CROSSER subset of high — High-trigger lines whose (event,market,player)
+        is NOT in the First-entry High ledger (paper_bet, tier=High), i.e. the line
+        only reached High after moving; historically ~breakeven dilution vs the
+        first-entry +ROI core. So high == first-entry-members ∪ late. Modeled, not
+        real."""
         import sqlite3
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        p = os.path.join(repo_root, "data", "softbook_paper.db")
-        table = "paper_bet_high" if strategy == "high" else "paper_bet"
+        p = os.getenv("SOFTBOOK_PAPER_DB", os.path.join(repo_root, "data", "softbook_paper.db"))
+        table = "paper_bet_high" if strategy in ("high", "late") else "paper_bet"
         cols = ["commence_time", "placed_at", "settled_at", "sport", "market", "label",
                 "home", "away", "book", "odds", "ev", "stake", "tier", "conf",
-                "completed", "won", "result", "pnl"]
+                "completed", "won", "result", "pnl", "event_id", "player"]
         try:
             db = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
             try:
                 rows = db.execute(
                     "SELECT " + ", ".join(cols) + f" FROM {table} ORDER BY commence_time DESC"
                 ).fetchall()
+                first_entry = None
+                if strategy == "late":
+                    # First-entry High keys (the +ROI core) — anything in high NOT here
+                    # only crossed High after the line moved (late-crosser dilution).
+                    first_entry = {(e, m, pl or "") for e, m, pl in db.execute(
+                        "SELECT DISTINCT event_id, market, COALESCE(player, '') "
+                        "FROM paper_bet WHERE tier = 'High'")}
             finally:
                 db.close()
         except sqlite3.Error as e:
             return {"bets": [], "count": 0, "error": str(e)}
-        return {"bets": [dict(zip(cols, r)) for r in rows], "count": len(rows)}
+        bets = [dict(zip(cols, r)) for r in rows]
+        if first_entry is not None:
+            bets = [b for b in bets
+                    if (b["event_id"], b["market"], b["player"] or "") not in first_entry]
+        return {"bets": bets, "count": len(bets)}
 
     # Serve static frontend files if they exist
     static_dir = os.path.join(os.path.dirname(__file__), "static")
