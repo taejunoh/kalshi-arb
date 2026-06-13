@@ -49,3 +49,16 @@ test("isVerifiedPrefill is true only for prefill tier on an allowlisted book", (
   expect(isVerifiedPrefill("DraftKings", pre)).toBe(false); // not allowlisted
   expect(isVerifiedPrefill("FanDuel", { ...pre, tier: "event" })).toBe(false);
 });
+
+import { VERIFIED_PREFILL_BOOKS } from "./config";
+
+const PREFILL_DL = { tier: "prefill" as const, url: "https://x", copy_text: "FanDuel · NYM ML @ 2.20" };
+const EVENT_DL = { tier: "event" as const, url: "https://x", copy_text: "DraftKings · NYM ML @ 2.20" };
+
+test("verified prefill label only shows for tier=prefill AND a verified book", () => {
+  for (const book of VERIFIED_PREFILL_BOOKS) {
+    expect(isVerifiedPrefill(book, PREFILL_DL)).toBe(true);
+  }
+  expect(isVerifiedPrefill(VERIFIED_PREFILL_BOOKS[0] ?? "FanDuel", EVENT_DL)).toBe(false);
+  expect(isVerifiedPrefill("BetMGM", PREFILL_DL)).toBe(false);
+});
