@@ -6,6 +6,6 @@
     "production": { "distribution": "store", "autoIncrement": true, "ios": { "resourceClass": "m-medium" } }
   },
   "submit": {
-    "production": { "ios": { "appleId": "REPLACE_APPLE_ID", "ascAppId": "REPLACE_ASC_APP_ID", "appleTeamId": "REPLACE_TEAM_ID" } }
+    "production": { "ios": { "appleId": "taejun55@gmail.com", "appleTeamId": "3BMF4LM6TM" } }
   }
 }
