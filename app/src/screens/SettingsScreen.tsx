@@ -6,6 +6,7 @@ import type { Settings, SortKey } from "../api/types";
 import { saveCredentials } from "../storage";
 import { registerForPush } from "../push";
 import { ALL_BOOKS, DEFAULT_SETTINGS, MIN_EV_STEPS, SPORT_LABELS } from "../config";
+import { RulesEditor } from "./RulesScreen";
 
 export function SettingsScreen() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -96,6 +97,9 @@ export function SettingsScreen() {
       <Pressable style={s.save} onPress={() => void saveCreds()}><Text style={s.saveText}>자격 증명 저장</Text></Pressable>
       <Pressable style={[s.save, s.push]} onPress={() => void enablePush()}><Text style={s.saveText}>푸시 등록</Text></Pressable>
       {msg && <Text style={s.msg}>{msg}</Text>}
+
+      <Text style={s.h}>트리아지 규칙 (Mute rules)</Text>
+      <RulesEditor />
     </ScrollView>
   );
 }

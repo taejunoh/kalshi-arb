@@ -89,3 +89,19 @@ test("scanBet posts the image and parses a ScanDraft", async () => {
     media_type: "image/png",
   });
 });
+
+test("rules CRUD client methods hit the right paths", async () => {
+  const fetchMock = jest.fn(async (url: string, init?: { method?: string }) => {
+    if (String(url).endsWith("/rules") && (!init || init.method === undefined))
+      return { ok: true, status: 200, json: async () => ({ rules: [{ id: 1, field: "player", value: "Nico Hoerner", created_at: "t" }] }) };
+    if (String(url).endsWith("/rules") && init?.method === "POST")
+      return { ok: true, status: 200, json: async () => ({ id: 2 }) };
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  });
+  (global as unknown as { fetch: typeof fetch }).fetch = fetchMock as never;
+  const { api } = require("./client");
+  expect((await api.getRules()).rules[0].field).toBe("player");
+  expect((await api.addRule("market", "total")).id).toBe(2);
+  expect((await api.deleteRule(2)).ok).toBe(true);
+  expect(fetchMock.mock.calls.some(([u, i]) => String(u).endsWith("/rules/2") && i?.method === "DELETE")).toBe(true);
+});
