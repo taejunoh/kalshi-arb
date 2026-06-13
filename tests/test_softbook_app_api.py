@@ -89,3 +89,25 @@ def test_refresh_returns_fresh_quotes_and_deeplinks(client, monkeypatch):
     assert fd["deeplink"]["tier"] == "prefill"
     assert fd["deeplink"]["url"].startswith("https://sportsbook.fanduel.com/addToBetslip")
     assert body["credits"] == 4
+
+
+def test_post_bet_records_and_marks_pick_bet(client):
+    body = {"event_id": "E1", "sport": "baseball_mlb", "home": "MIA", "away": "NYM",
+            "commence_time": "2099-01-01T00:00:00Z", "market": "batter_total_bases",
+            "side": "Over", "point": 1.5, "player": "Brandon Nimmo",
+            "label": "Brandon Nimmo TB Over 1.5", "book": "theScore",
+            "rec_odds": 2.2, "fill_odds": 2.25, "stake": 2.0, "source": "one_tap"}
+    r = client.post("/bets", json=body, headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200 and r.json()["id"] >= 1
+    # pick now excluded from the active feed
+    feed_r = client.get("/picks", headers={"Authorization": "Bearer secret"})
+    assert feed_r.json()["counts"].get("bet") == 1
+    assert feed_r.json()["picks"] == []
+
+
+def test_dismiss_marks_pick_dismissed(client):
+    pid = "E1|batter_total_bases|Over|1.5|Brandon Nimmo"
+    r = client.post(f"/picks/{pid}/dismiss", headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200
+    feed_r = client.get("/picks", headers={"Authorization": "Bearer secret"})
+    assert feed_r.json()["counts"].get("dismissed") == 1
