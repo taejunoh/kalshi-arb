@@ -144,6 +144,52 @@ def _settle_messages(pdb, tokens, now):
     return msgs
 
 
+def _default_fetch_odds(sport, event_id, market, side, point, player, book):
+    """Current best available odds for this exact selection at the user's book, or None."""
+    key = core.read_key()
+    markets = ([market, market + "_alternate"]
+               if market in getattr(core, "ALL_PROPS", set()) else core.GAME_MARKETS)
+    data, _ = core.event_odds(sport, event_id, key, markets)
+    _, quotes = core.line_quotes(data, market, side, point, player)
+    return dict(quotes).get(book)
+
+
+def _price_move_messages(pdb, tokens, now, fetch_odds=None):
+    """Price open bets (top PRICE_MOVE_LIMIT by stake) and push on a material move.
+    One push per (app_bet, kind). Records current odds even when no push fires."""
+    fetch_odds = fetch_odds or _default_fetch_odds
+    total = pdb.execute(
+        "SELECT COUNT(*) FROM app_bet WHERE settled=0 AND event_id IS NOT NULL "
+        "AND event_id!='' AND book IS NOT NULL AND fill_odds IS NOT NULL").fetchone()[0]
+    if total > PRICE_MOVE_LIMIT:
+        print(f"[price-move] {total} priceable open bets; capping at {PRICE_MOVE_LIMIT} by stake")
+    msgs = []
+    for b in adb.open_bets_for_pricing(pdb, limit=PRICE_MOVE_LIMIT):
+        try:
+            cur = fetch_odds(b["sport"], b["event_id"], b["market"],
+                             b["side"], b["point"], b["player"], b["book"])
+        except Exception as e:
+            print(f"[price-move] fetch failed for bet {b['id']}: {e}")
+            cur = None
+        if cur is None:
+            continue
+        adb.record_current_odds(pdb, b["id"], cur, now)
+        proj = project_price_move(b["fill_odds"], cur)
+        kind = proj["kind"]
+        if not kind or adb.price_move_pushed(pdb, b["id"], kind):
+            continue
+        title = "💸 캐시아웃 기회" if kind == "cashout" else "⚠️ 라인 이동"
+        arrow = "↓" if kind == "cashout" else "↑"
+        body = (f"{b['label'] or b['side']} · {b['book']} "
+                f"{b['fill_odds']:.2f}{arrow}{cur:.2f} ({proj['move_pct'] * 100:+.0f}%)")
+        for tok in tokens:
+            msgs.append(push.build_message(tok, title, body,
+                                           data={"app_bet_id": b["id"]},
+                                           category=CATEGORY_PRICE_MOVE))
+        adb.mark_price_move_pushed(pdb, b["id"], kind, now)
+    return msgs
+
+
 def run_once(ev, pdb, send=None):
     send = send or (lambda msgs: push.send(msgs))
     now = _now()
@@ -151,6 +197,7 @@ def run_once(ev, pdb, send=None):
     if not tokens:
         return 0
     msgs = _high_messages(ev, pdb, tokens, now) + _settle_messages(pdb, tokens, now)
+    msgs += _price_move_messages(pdb, tokens, now)
     if msgs:
         send(msgs)
     return len(msgs)
