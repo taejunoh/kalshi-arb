@@ -2227,3 +2227,24 @@ Tasks 6, 9 with the `{market,side,point,player,home,away}` dict shape it expects
 
 Known non-unit-tested seam (documented, not a blocker): Odds-API-event-id → MLB `gamePk` mapping in
 `softbook_live_grade.main()` (Task 10 note).
+
+## Post-Review Addendum (2026-06-13)
+
+The final whole-implementation review found one genuine integration gap the per-task
+reviews could not see: **nothing settled `app_bet` in production**, so `/mybets` calendar
+PnL and the settlement push were inert. Resolved:
+
+- **Task 12 (added): `scripts/softbook_app_settle.py`** — `settle_app_bets(db, key, fetch_scores,
+  player_stat)` settles open `app_bet` rows by REUSING the exact graders the paper ledgers use
+  (`core.grade` for game markets via Odds API `/scores`; `stats.player_stat` + `core.grade_prop`
+  for props; `team_total` + NPB fallbacks), writing `settled/won/pnl/settled_at` with PnL on
+  `fill_odds`. Legacy rows (sport NULL) are skipped. 7 tests, injected network. Runs on
+  `kalshi-softbook-app-settle.timer` (every 15 min — off the 5-min push cadence to save
+  `/scores` credits); the push worker then notifies the newly-settled rows on its next run.
+
+- **Deferred: invoking `migrate_real_fill`.** The function (Task 1) is tested and available, but
+  invoking it as-is produces unsettleable rows (real_fill lacks sport/home/away and stores no
+  settled PnL), which would clutter the open-bets list for marginal value. Carrying historical
+  Telegram fills forward properly needs cross-DB enrichment (JOIN `softbook_ev` by pick key to
+  fill sport/home/away/commence_time) — deferred to Plan 2. A fresh app starting with an empty
+  calendar that fills as bets are placed is the correct Phase-1 behavior.
