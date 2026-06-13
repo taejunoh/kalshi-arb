@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the soft-book push worker every 5 minutes (aligned to scans)
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=Soft-book +EV companion API (FastAPI/uvicorn, behind Cloudflare Tunnel)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/home/ubuntu/kalshi-arb/scripts
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/uvicorn softbook_app_api:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target

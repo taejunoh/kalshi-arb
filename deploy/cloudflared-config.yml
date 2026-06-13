@@ -1,0 +1,9 @@
+# Install to /etc/cloudflared/config.yml on EC2 (root). Replace <TUNNEL_UUID> and
+# the hostname. cloudflared runs as root (HOME=/root), so the config + credentials
+# file must live under /etc/cloudflared, not ~/.cloudflared.
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+ingress:
+  - hostname: api.<your-domain>
+    service: http://localhost:8000
+  - service: http_status:404
