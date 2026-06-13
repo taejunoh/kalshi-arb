@@ -55,6 +55,9 @@ def init_schema(db):
         "CREATE TABLE IF NOT EXISTS pushed_price_move("
         "app_bet_id INTEGER, kind TEXT, notified_at TEXT, "
         "PRIMARY KEY(app_bet_id, kind))")
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS mute_rule("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, field TEXT, value TEXT, created_at TEXT)")
     _ensure_app_bet_columns(db)
     db.commit()
 
@@ -97,6 +100,28 @@ def price_move_pushed(db, app_bet_id, kind):
 def mark_price_move_pushed(db, app_bet_id, kind, ts):
     db.execute("INSERT OR IGNORE INTO pushed_price_move(app_bet_id, kind, notified_at) "
                "VALUES (?,?,?)", (app_bet_id, kind, ts))
+    db.commit()
+
+
+def add_mute_rule(db, field, value, ts):
+    cur = db.execute("INSERT INTO mute_rule(field, value, created_at) VALUES (?,?,?)",
+                     (field, value, ts))
+    db.commit()
+    return cur.lastrowid
+
+
+def list_mute_rules(db):
+    rows = db.execute("SELECT id, field, value, created_at FROM mute_rule ORDER BY id").fetchall()
+    return [dict(zip(("id", "field", "value", "created_at"), r)) for r in rows]
+
+
+def active_mute_rules(db):
+    """[(field, value), …] for the feed filter."""
+    return [(r[0], r[1]) for r in db.execute("SELECT field, value FROM mute_rule")]
+
+
+def delete_mute_rule(db, rule_id):
+    db.execute("DELETE FROM mute_rule WHERE id=?", (rule_id,))
     db.commit()
 
 
