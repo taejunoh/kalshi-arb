@@ -51,3 +51,51 @@ def test_active_tokens_reads_only_active():
     db.execute("INSERT INTO push_token VALUES ('A','t',1)")
     db.execute("INSERT INTO push_token VALUES ('B','t',0)")
     assert push.active_tokens(db) == ["A"]
+
+
+import softbook_push_worker as worker  # noqa: E402
+
+
+def _worker_dbs():
+    ev = sqlite3.connect(":memory:")
+    ev.execute("""CREATE TABLE softbook_ev(
+        recorded_at TEXT, sport TEXT, event_id TEXT, commence_time TEXT, home TEXT,
+        away TEXT, market TEXT, side TEXT, point REAL, player TEXT,
+        pinnacle_fair_prob REAL, pinnacle_price REAL, best_soft_book TEXT,
+        best_soft_price REAL, snapshot_ev REAL, n_books INTEGER, n_ev INTEGER,
+        conf REAL, tier TEXT)""")
+    # datetime('now') so the worker's '-1 day' recency filter always includes it.
+    ev.execute("INSERT INTO softbook_ev VALUES (datetime('now'),"
+               "'baseball_mlb','E1','2099-01-01T00:00:00Z','MIA','NYM',"
+               "'batter_total_bases','Over',1.5,'Brandon Nimmo',0.45,2.0,"
+               "'theScore',2.2,0.074,9,5,60,'High')")
+    ev.commit()
+    pdb = sqlite3.connect(":memory:")
+    import softbook_app_db as adb
+    adb.init_schema(pdb)
+    pdb.execute("INSERT INTO push_token VALUES ('ExponentPushToken[x]','t',1)")
+    pdb.commit()
+    return ev, pdb
+
+
+def test_worker_pushes_new_high_once():
+    ev, pdb = _worker_dbs()
+    sent = []
+    worker.run_once(ev, pdb, send=lambda msgs: sent.extend(msgs) or [])
+    assert len(sent) == 1
+    assert "Nimmo" in sent[0]["title"] + sent[0]["body"]
+    worker.run_once(ev, pdb, send=lambda msgs: sent.extend(msgs) or [])  # dedup
+    assert len(sent) == 1
+
+
+def test_worker_pushes_settlement_result_once():
+    ev, pdb = _worker_dbs()
+    pdb.execute("INSERT INTO app_bet(event_id,market,side,point,player,label,book,"
+                "fill_odds,stake,settled,won,pnl,settled_at) VALUES "
+                "('E1','batter_total_bases','Over',1.5,'Brandon Nimmo','x','FanDuel',"
+                "2.2,2.0,1,1,2.4,'2026-06-12T22:00:00+00:00')")
+    pdb.commit()
+    sent = []
+    worker.run_once(ev, pdb, send=lambda msgs: sent.extend(msgs) or [])
+    settle = [m for m in sent if m.get("categoryId") == "settle"]
+    assert len(settle) == 1 and "win" in settle[0]["body"].lower() or "적중" in settle[0]["body"]
