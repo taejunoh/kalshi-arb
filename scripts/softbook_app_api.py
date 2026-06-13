@@ -112,6 +112,31 @@ def _prefs(pdb):
     return dict(zip(("min_ev", "sports_json", "muted_books_json", "sort"), row))
 
 
+def _enrich_first_entry(picks):
+    """Set p['first_entry']: True when this (event,market,player)'s EARLIEST
+    softbook_ev snapshot was already tier='High' (a standing soft-book mispricing
+    grabbed on sight). Mirrors softbook_ev_recorder._first_entry_note exactly — the
+    dashboard's First-entry High ledger settled +16.6% ROI on this subset, while
+    late-crossers (drifted into High only after the line moved) settled ~0 (dilution)."""
+    if not picks:
+        return picks
+    c = _ev_conn()
+    try:
+        cache = {}
+        for p in picks:
+            key = (p["event_id"], p["market"], p.get("player") or "")
+            if key not in cache:
+                row = c.execute(
+                    "SELECT tier FROM softbook_ev WHERE event_id=? AND market=?"
+                    " AND COALESCE(player,'')=? ORDER BY recorded_at LIMIT 1",
+                    key).fetchone()
+                cache[key] = bool(row and row[0] == "High")
+            p["first_entry"] = cache[key]
+    finally:
+        c.close()
+    return picks
+
+
 @app.get("/picks")
 def get_picks(_=Depends(require_auth)):
     import datetime
@@ -122,6 +147,7 @@ def get_picks(_=Depends(require_auth)):
                              _prefs(pdb), now)
     finally:
         pdb.close()
+    _enrich_first_entry(picks)
     active = [p for p in picks if p["status"] == "active"]
     counts = {}
     for p in picks:
@@ -140,6 +166,7 @@ def get_pick(pick_id: str, _=Depends(require_auth)):
                                  _prefs(pdb), now)
     finally:
         pdb.close()
+    _enrich_first_entry(all_picks)
     for p in all_picks:
         if p["id"] == pick_id:
             return p

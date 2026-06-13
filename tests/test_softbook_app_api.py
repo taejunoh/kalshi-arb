@@ -57,6 +57,33 @@ def test_picks_returns_active_high(client):
     assert p["id"] == "E1|batter_total_bases|Over|1.5|Brandon Nimmo"
 
 
+def test_picks_first_entry_flag(client):
+    """first_entry True iff the (event,market,player)'s EARLIEST snapshot was High."""
+    ev = sqlite3.connect(os.environ["SOFTBOOK_EV_DB"])
+    ev.execute("DELETE FROM softbook_ev")
+    latest = ev.execute("SELECT datetime('now')").fetchone()[0]
+    earlier = ev.execute("SELECT datetime('now','-40 minutes')").fetchone()[0]
+    cols = ("(recorded_at,sport,event_id,commence_time,home,away,market,side,point,"
+            "player,pinnacle_fair_prob,pinnacle_price,best_soft_book,best_soft_price,"
+            "snapshot_ev,n_books,n_ev,conf,tier)")
+    q = f"INSERT INTO softbook_ev {cols} VALUES ({','.join('?' * 19)})"
+    # E1: a single High snapshot -> first-entry.
+    ev.execute(q, (latest, "baseball_mlb", "E1", "2099-01-01T00:00:00Z", "MIA", "NYM",
+                   "batter_total_bases", "Over", 1.5, "Brandon Nimmo", 0.45, 2.0,
+                   "theScore", 2.2, 0.074, 9, 5, 60, "High"))
+    # E2: earliest snapshot was Med (late-crosser), only later crossed into High.
+    ev.execute(q, (earlier, "baseball_mlb", "E2", "2099-01-01T00:00:00Z", "MIA", "NYM",
+                   "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "Med"))
+    ev.execute(q, (latest, "baseball_mlb", "E2", "2099-01-01T00:00:00Z", "MIA", "NYM",
+                   "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "High"))
+    ev.commit(); ev.close()
+    picks = client.get("/picks", headers={"Authorization": "Bearer secret"}).json()["picks"]
+    by_event = {p["event_id"]: p for p in picks}
+    assert set(by_event) == {"E1", "E2"}
+    assert by_event["E1"]["first_entry"] is True
+    assert by_event["E2"]["first_entry"] is False
+
+
 def test_pick_detail_by_id(client):
     pid = "E1|batter_total_bases|Over|1.5|Brandon Nimmo"
     r = client.get(f"/picks/{pid}", headers={"Authorization": "Bearer secret"})

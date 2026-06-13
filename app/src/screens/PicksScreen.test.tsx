@@ -33,6 +33,33 @@ test("renders the active feed from the API", async () => {
   await waitFor(() => expect(screen.getByText("NYM ML")).toBeOnTheScreen());
 });
 
+test("the 🟣 first-entry filter hides late-crossers", async () => {
+  (api.getPicks as jest.Mock).mockResolvedValueOnce({
+    picks: [
+      {
+        id: "E1|h2h|NYM|0|", status: "active", event_id: "E1", sport: "baseball_mlb",
+        home: "MIA", away: "NYM", commence_time: "2099-01-01T00:00:00Z", market: "h2h",
+        side: "NYM", point: 0, player: "", label: "FIRST ENTRY PICK", ev: 0.05,
+        book: "FanDuel", odds: 2.1, conf: 55, n_books: 8, first_entry: true,
+      },
+      {
+        id: "E2|h2h|MIA|0|", status: "active", event_id: "E2", sport: "baseball_mlb",
+        home: "MIA", away: "NYM", commence_time: "2099-01-01T00:00:00Z", market: "h2h",
+        side: "MIA", point: 0, player: "", label: "LATE CROSSER PICK", ev: 0.04,
+        book: "BetMGM", odds: 2.0, conf: 50, n_books: 7, first_entry: false,
+      },
+    ],
+    counts: { active: 2, cooled: 0 },
+    cooled: [],
+  });
+  await render(<PicksScreen />);
+  await waitFor(() => expect(screen.getByText("FIRST ENTRY PICK")).toBeOnTheScreen());
+  expect(screen.getByText("LATE CROSSER PICK")).toBeOnTheScreen(); // both shown by default
+  await fireEvent.press(screen.getByText(/first-entry만/));
+  await waitFor(() => expect(screen.queryByText("LATE CROSSER PICK")).toBeNull()); // hidden
+  expect(screen.getByText("FIRST ENTRY PICK")).toBeOnTheScreen(); // first-entry kept
+});
+
 test("changing a filter preserves existing sport and book prefs (no clobber)", async () => {
   (api.getSettings as jest.Mock).mockResolvedValueOnce({
     min_ev: 0, sports: ["baseball_mlb"], muted_books: ["BallyBet"], sort: "ev",

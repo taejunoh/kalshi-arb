@@ -15,7 +15,12 @@ export function PickCard({
   onDismiss: (p: Pick) => void;
 }) {
   return (
-    <Pressable style={s.card} onPress={() => onOpen(pick)}>
+    <Pressable style={[s.card, pick.first_entry === false && s.cardMuted]} onPress={() => onOpen(pick)}>
+      {pick.first_entry !== undefined && (
+        <Text style={pick.first_entry ? s.feBadge : s.lcBadge}>
+          {pick.first_entry ? "🟣 first-entry · 베팅" : "⚪ late-crosser · 권장 스킵"}
+        </Text>
+      )}
       <View style={s.row}>
         <Text style={s.label} numberOfLines={2}>{pick.label}</Text>
         <Text style={s.ev}>{evPct(pick.ev)}</Text>
@@ -33,6 +38,9 @@ export function PickCard({
 
 const s = StyleSheet.create({
   card: { backgroundColor: "#1A1A22", borderRadius: 12, padding: 14, marginVertical: 6, marginHorizontal: 12 },
+  cardMuted: { opacity: 0.55 },
+  feBadge: { alignSelf: "flex-start", backgroundColor: "#7C3AED", color: "#FFF", fontSize: 12, fontWeight: "700", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, marginBottom: 8, overflow: "hidden" },
+  lcBadge: { alignSelf: "flex-start", backgroundColor: "#374151", color: "#9CA3AF", fontSize: 12, fontWeight: "600", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, marginBottom: 8, overflow: "hidden" },
   row: { flexDirection: "row", justifyContent: "space-between" },
   label: { color: "#FFF", fontSize: 16, fontWeight: "600", flex: 1, paddingRight: 8 },
   ev: { color: "#34D399", fontSize: 16, fontWeight: "700" },

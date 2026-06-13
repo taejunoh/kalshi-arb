@@ -19,6 +19,9 @@ export interface Pick {
   odds: number | null;
   conf: number | null;
   n_books: number | null;
+  // True when this (event,market,player)'s earliest snapshot was already High — the
+  // +16.6% ROI "first-entry" subset. False = late-crosser (drifted into High, ROI≈0).
+  first_entry?: boolean;
 }
 
 export interface PicksResponse {
