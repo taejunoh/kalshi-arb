@@ -28,7 +28,7 @@ def bet(market="pitcher_strikeouts", side="Over", point=5.5, player="Tarik Skuba
     return {"event_id": eid, "sport": "baseball_mlb", "commence_time": CT,
             "home": HOME, "away": AWAY, "market": market, "side": side,
             "point": point, "player": player, "book": book, "odds": odds,
-            "ev": ev, "n_books": 8, "n_ev": 6,
+            "ev": ev, "n_books": 8, "n_ev": 6, "tier": "High",
             "label": f"{player} {side} {point}"}
 
 
@@ -118,3 +118,50 @@ def test_late_crosser_tag_wired_into_message(monkeypatch):
     monkeypatch.setattr(rec.time, "sleep", lambda *a: None)
     rec._send_bet_alert(db, b, "🟣 High +EV 즉시 알림")
     assert "late-crosser" in captured["t"] and "SKIP" in captured["t"]
+
+
+# ---------- no-contradiction: 'bet small' lives ONLY in the first-entry verdict ----------
+
+def test_first_entry_verdict_carries_bet_action():
+    db = db_()
+    b = bet()
+    snap(db, b, "2026-06-13T20:00:00+00:00", "High")
+    assert "bet small" in rec._first_entry_note(db, b)
+
+
+def test_late_crosser_verdict_has_no_bet_action():
+    db = db_()
+    b = bet()
+    snap(db, b, "2026-06-13T14:00:00+00:00", "Med")
+    note = rec._first_entry_note(db, b)
+    assert "SKIP" in note and "bet small" not in note
+
+
+def _capture_alert(monkeypatch):
+    cap = {}
+    monkeypatch.setattr(rec, "send_telegram", lambda text: cap.setdefault("t", text) or 1)
+    monkeypatch.setattr(rec.time, "sleep", lambda *a: None)
+    return cap
+
+
+def test_alert_late_crosser_has_no_bet_small_contradiction(monkeypatch):
+    # the real confusion: header said 'bet small' while the verdict said SKIP.
+    # On a late-crosser the whole message must contain NO 'bet small' instruction.
+    db = db_()
+    b = bet()                                            # tier High -> alerts
+    snap(db, b, "2026-06-13T14:00:00+00:00", "Med")      # but late-crosser
+    cap = _capture_alert(monkeypatch)
+    rec.alert_new_high(db, [b], "2026-06-13T20:00:00+00:00")
+    assert "SKIP" in cap["t"]
+    assert "bet small" not in cap["t"]                   # no 'bet' instruction on a skip
+    assert "(pre-game)" in cap["t"]                      # neutral header
+
+
+def test_alert_first_entry_keeps_bet_small_in_verdict(monkeypatch):
+    db = db_()
+    b = bet()
+    snap(db, b, "2026-06-13T20:00:00+00:00", "High")     # first-entry
+    cap = _capture_alert(monkeypatch)
+    rec.alert_new_high(db, [b], "2026-06-13T21:00:00+00:00")
+    assert "🟣 BET" in cap["t"] and "bet small" in cap["t"]
+    assert "pre-game · bet small" not in cap["t"]        # header no longer carries it

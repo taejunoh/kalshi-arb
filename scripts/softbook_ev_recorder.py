@@ -122,8 +122,8 @@ def _first_entry_note(db, b):
     if not row:
         return ""
     if row[0] == "High":
-        return "🟣 BET · first-entry (첫 등장부터 High)"
-    return "⚪ SKIP · late-crosser (라인 이동 후 High 진입 · ROI≈0)"
+        return "🟣 BET · first-entry — 베팅 (bet small)"
+    return "⚪ SKIP · late-crosser (라인 이동 후 High · ROI≈0)"
 
 
 def _send_bet_alert(db, b, prefix, extra="", batch=()):
@@ -300,7 +300,7 @@ def alert_new_high(db, bets, now):
         return 0
     new.sort(key=lambda b: -b["ev"])
     for b in new[:8]:
-        _send_bet_alert(db, b, "🟣 High +EV 즉시 알림 (pre-game · bet small)", batch=new)
+        _send_bet_alert(db, b, "🟣 High +EV 즉시 알림 (pre-game)", batch=new)
     if len(new) > 8:
         send_telegram(f"…+{len(new)-8} more new High — 대쉬보드 +EV 탭 확인")
     db.commit()
