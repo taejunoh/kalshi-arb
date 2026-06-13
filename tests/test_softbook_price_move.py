@@ -1,0 +1,35 @@
+import os
+import sqlite3
+
+
+def _fresh_db(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOFTBOOK_PAPER_DB", str(tmp_path / "paper.db"))
+    import softbook_app_db as adb
+    db = adb.connect()
+    adb.init_schema(db)          # idempotent: also runs the column ALTERs
+    adb.init_schema(db)          # second call must not raise (columns already present)
+    return adb, db
+
+
+def test_init_schema_adds_price_columns_and_dedup_table(tmp_path, monkeypatch):
+    adb, db = _fresh_db(tmp_path, monkeypatch)
+    cols = {r[1] for r in db.execute("PRAGMA table_info(app_bet)")}
+    assert {"current_best_odds", "last_odds_check_at"} <= cols
+    db.execute("SELECT 1 FROM pushed_price_move LIMIT 1")
+
+
+def test_record_current_odds_and_pricing_helpers(tmp_path, monkeypatch):
+    adb, db = _fresh_db(tmp_path, monkeypatch)
+    bid = adb.insert_app_bet(db, {
+        "event_id": "EVT1", "market": "h2h", "side": "COL", "book": "FanDuel",
+        "fill_odds": 2.0, "stake": 5.0, "placed_at": "2026-06-13T00:00:00Z", "source": "one_tap",
+    })
+    bets = adb.open_bets_for_pricing(db, limit=15)
+    assert any(b["id"] == bid and b["fill_odds"] == 2.0 for b in bets)
+    adb.record_current_odds(db, bid, 1.8, "2026-06-13T00:05:00Z")
+    row = db.execute("SELECT current_best_odds, last_odds_check_at FROM app_bet WHERE id=?", (bid,)).fetchone()
+    assert row[0] == 1.8 and row[1] == "2026-06-13T00:05:00Z"
+    assert adb.price_move_pushed(db, bid, "cashout") is False
+    adb.mark_price_move_pushed(db, bid, "cashout", "2026-06-13T00:05:00Z")
+    assert adb.price_move_pushed(db, bid, "cashout") is True
+    assert adb.price_move_pushed(db, bid, "move") is False
