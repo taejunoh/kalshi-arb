@@ -1,0 +1,51 @@
+// app/src/deeplink.test.ts
+jest.mock("expo-linking", () => ({
+  canOpenURL: jest.fn(),
+  openURL: jest.fn(async () => true),
+}));
+jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn(async () => true) }));
+jest.mock("./config", () => ({ VERIFIED_PREFILL_BOOKS: ["FanDuel"] }));
+
+import * as Linking from "expo-linking";
+import * as Clipboard from "expo-clipboard";
+import { openOrCopy, isVerifiedPrefill } from "./deeplink";
+import type { Deeplink } from "./api/types";
+
+afterEach(() => jest.clearAllMocks());
+
+const COPY = "FanDuel · Nimmo TB Over 1.5 @ 2.20";
+
+test("https link opens directly without canOpenURL", async () => {
+  const dl: Deeplink = { tier: "prefill", url: "https://sportsbook.fanduel.com/addToBetslip?x=1", copy_text: COPY };
+  const r = await openOrCopy(dl);
+  expect(r).toBe("opened");
+  expect(Linking.canOpenURL).not.toHaveBeenCalled();
+  expect(Linking.openURL).toHaveBeenCalledWith(dl.url);
+});
+
+test("custom scheme checks canOpenURL then opens", async () => {
+  (Linking.canOpenURL as jest.Mock).mockResolvedValue(true);
+  const r = await openOrCopy({ tier: "prefill", url: "dksb://sb/addbet/S1", copy_text: COPY });
+  expect(r).toBe("opened");
+  expect(Linking.canOpenURL).toHaveBeenCalled();
+});
+
+test("custom scheme that throws canOpenURL falls back to clipboard", async () => {
+  (Linking.canOpenURL as jest.Mock).mockRejectedValue(new Error("not whitelisted"));
+  const r = await openOrCopy({ tier: "home", url: "dksb://sb/addbet/S1", copy_text: COPY });
+  expect(r).toBe("copied");
+  expect(Clipboard.setStringAsync).toHaveBeenCalledWith(COPY);
+});
+
+test("null url copies the text", async () => {
+  const r = await openOrCopy({ tier: "home", url: null, copy_text: COPY });
+  expect(r).toBe("copied");
+  expect(Clipboard.setStringAsync).toHaveBeenCalledWith(COPY);
+});
+
+test("isVerifiedPrefill is true only for prefill tier on an allowlisted book", () => {
+  const pre: Deeplink = { tier: "prefill", url: "x", copy_text: COPY };
+  expect(isVerifiedPrefill("FanDuel", pre)).toBe(true);
+  expect(isVerifiedPrefill("DraftKings", pre)).toBe(false); // not allowlisted
+  expect(isVerifiedPrefill("FanDuel", { ...pre, tier: "event" })).toBe(false);
+});
