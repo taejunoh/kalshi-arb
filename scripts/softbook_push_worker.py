@@ -144,12 +144,21 @@ def _settle_messages(pdb, tokens, now):
     return msgs
 
 
+def _markets_for(market):
+    """Mirror softbook_app_api._markets_for_pick EXACTLY: a comma-joined STRING (event_odds
+    interpolates it straight into the URL — a list would stringify to "['x','y']"), and only
+    append "_alternate" when market is in core.PROP_ALTS. Requesting a non-existent alternate
+    key 422s the WHOLE Odds API call (load-bearing PROP_ALTS guard), so never blindly add it."""
+    if market in core.ALL_PROPS:
+        keys = [market] + ([market + "_alternate"] if market in core.PROP_ALTS else [])
+        return ",".join(keys)
+    return core.GAME_MARKETS
+
+
 def _default_fetch_odds(sport, event_id, market, side, point, player, book):
     """Current best available odds for this exact selection at the user's book, or None."""
     key = core.read_key()
-    markets = ([market, market + "_alternate"]
-               if market in getattr(core, "ALL_PROPS", set()) else core.GAME_MARKETS)
-    data, _ = core.event_odds(sport, event_id, key, markets)
+    data, _ = core.event_odds(sport, event_id, key, _markets_for(market))
     _, quotes = core.line_quotes(data, market, side, point, player)
     return dict(quotes).get(book)
 
