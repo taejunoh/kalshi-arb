@@ -1,6 +1,14 @@
 // app/src/api/client.ts
 import { getCredentials } from "../storage";
-import type { BetIn, MyBets, Pick, PicksResponse, RefreshResponse, Settings } from "./types";
+import type {
+  BetIn,
+  MyBets,
+  Pick,
+  PicksResponse,
+  RefreshResponse,
+  ScanDraft,
+  Settings,
+} from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -44,5 +52,10 @@ export const api = {
     request<{ ok: boolean }>("/push/register", {
       method: "POST",
       body: JSON.stringify({ token }),
+    }),
+  scanBet: (image_base64: string, media_type = "image/jpeg") =>
+    request<ScanDraft>("/bets/scan", {
+      method: "POST",
+      body: JSON.stringify({ image_base64, media_type }),
     }),
 };
