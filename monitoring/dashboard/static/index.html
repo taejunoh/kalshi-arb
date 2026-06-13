@@ -2865,7 +2865,7 @@ async function renderEvBets() {
 }
 
 // ── +EV History tab: every PAPER bet, split + filterable by confidence tier ──
-let evhFilter = { tier: 'all', status: 'all', strategy: 'high', market: 'all' };   // High-trigger = the user's strategy, default view
+let evhFilter = { tier: 'High', status: 'all', strategy: 'first', market: 'all' };   // default = First-entry High (the +ROI core; mirrors the First-entry button's tier=High)
 let evhSort = { key: 'date', dir: -1 };          // dir -1 = descending
 const _EVH_ORDER = { High: 0, Med: 1, Low: 2, '?': 3 };
 
