@@ -21,6 +21,9 @@ import softbook_ev_core as core
 import softbook_app_db as adb
 import softbook_app_feed as feed
 import softbook_deeplink as deeplink
+import datetime
+from pydantic import BaseModel
+import softbook_ev_recorder as rec
 
 EV_DB = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
 
@@ -188,3 +191,70 @@ def refresh_pick(pick_id: str, _=Depends(require_auth)):
                       "ev": (fair * px - 1) if fair else None,
                       "deeplink": deeplink.build(bkey, links, pick)})
     return {"fair": fair, "books": books, "credits": credits}
+
+
+class BetIn(BaseModel):
+    event_id: str
+    sport: str | None = None
+    home: str | None = None
+    away: str | None = None
+    commence_time: str | None = None
+    market: str
+    side: str
+    point: float | None = 0
+    player: str | None = ""
+    label: str | None = None
+    book: str | None = None
+    rec_odds: float | None = None
+    fill_odds: float | None = None
+    stake: float | None = None
+    source: str = "one_tap"
+
+
+def _now():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+@app.post("/bets")
+def post_bet(bet: BetIn, _=Depends(require_auth)):
+    pdb = adb.connect()
+    try:
+        d = bet.dict()
+        d["placed_at"] = _now()
+        bid = adb.insert_app_bet(pdb, d)
+        adb.set_pick_state(pdb,
+            (bet.event_id, bet.market, bet.side, bet.point or 0, bet.player or ""),
+            "bet", _now())
+    finally:
+        pdb.close()
+    return {"id": bid}
+
+
+def _auto_dismiss_opposite(pdb, eid, market, side, point, player):
+    """Reverse-middle: a same-game opposite-direction High that can never both
+    win as this pick -> auto-dismiss it too (reuse recorder._no_both_win)."""
+    this = {"market": market, "side": side, "point": point or 0,
+            "player": player or "", "home": None, "away": None}
+    for r in _latest_high_rows():
+        if r["event_id"] != eid:
+            continue
+        other = {"market": r["market"], "side": r["side"], "point": r["point"] or 0,
+                 "player": r["player"] or "", "home": r["home"], "away": r["away"]}
+        this2 = {**this, "home": r["home"], "away": r["away"]}
+        if rec._no_both_win(this2, other):
+            adb.set_pick_state(pdb, (eid, r["market"], r["side"],
+                                     r["point"] or 0, r["player"] or ""),
+                               "dismissed", _now())
+
+
+@app.post("/picks/{pick_id}/dismiss")
+def dismiss_pick(pick_id: str, _=Depends(require_auth)):
+    eid, market, side, point, player = feed.decode_id(pick_id)
+    pdb = adb.connect()
+    try:
+        adb.set_pick_state(pdb, (eid, market, side, point, player),
+                           "dismissed", _now())
+        _auto_dismiss_opposite(pdb, eid, market, side, point, player)
+    finally:
+        pdb.close()
+    return {"ok": True}
