@@ -20,6 +20,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 import softbook_ev_core as core
 import softbook_app_db as adb
 import softbook_app_feed as feed
+import softbook_deeplink as deeplink
 
 EV_DB = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
 
@@ -140,3 +141,50 @@ def get_pick(pick_id: str, _=Depends(require_auth)):
         if p["id"] == pick_id:
             return p
     raise HTTPException(404, "pick not found")
+
+
+# Odds API book key (Odds API uses keys; NY_LEGAL maps key->label).
+_LABEL_TO_KEY = {v: k for k, v in core.NY_LEGAL.items()}
+
+
+def _markets_for_pick(market):
+    """Scope the single-event refetch to just this pick's markets (cheaper)."""
+    if market in core.ALL_PROPS:
+        keys = [market] + ([market + "_alternate"] if market in core.PROP_ALTS else [])
+        return ",".join(keys)
+    return core.GAME_MARKETS
+
+
+def _find_sport(pdb_unused, event_id):
+    c = _ev_conn()
+    try:
+        row = c.execute("SELECT sport FROM softbook_ev WHERE event_id=? LIMIT 1",
+                        (event_id,)).fetchone()
+    finally:
+        c.close()
+    return row[0] if row else None
+
+
+@app.get("/picks/{pick_id}/refresh")
+def refresh_pick(pick_id: str, _=Depends(require_auth)):
+    eid, market, side, point, player = feed.decode_id(pick_id)
+    sport = _find_sport(None, eid)
+    key = core.read_key()
+    if not (sport and key):
+        raise HTTPException(503, "no sport/key")
+    data, credits = core.event_odds(sport, eid, key, _markets_for_pick(market))
+    fair, quotes = core.line_quotes(
+        data, market, side, None if market == "h2h" else point, player or None)
+    books = []
+    for label_, px in sorted(quotes, key=lambda q: -q[1]):
+        bkey = _LABEL_TO_KEY.get(label_, label_)
+        links = deeplink.extract_links(data, bkey, market, side,
+                                       None if market == "h2h" else point,
+                                       player or None)
+        pick = {"book": label_, "label": core.label(
+            market, side, None if market == "h2h" else point, player or None),
+            "odds": px}
+        books.append({"book": label_, "odds": px,
+                      "ev": (fair * px - 1) if fair else None,
+                      "deeplink": deeplink.build(bkey, links, pick)})
+    return {"fair": fair, "books": books, "credits": credits}

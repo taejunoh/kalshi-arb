@@ -62,3 +62,30 @@ def test_pick_detail_by_id(client):
     r = client.get(f"/picks/{pid}", headers={"Authorization": "Bearer secret"})
     assert r.status_code == 200
     assert r.json()["label"] == "Brandon Nimmo TB Over 1.5" or r.json()["side"] == "Over"
+
+
+def test_refresh_returns_fresh_quotes_and_deeplinks(client, monkeypatch):
+    import softbook_app_api
+    # stub the Odds API single-event call
+    ev_payload = {"home_team": "MIA", "away_team": "NYM", "bookmakers": [
+        {"key": "pinnacle", "markets": [{"key": "batter_total_bases", "outcomes": [
+            {"name": "Over", "description": "Brandon Nimmo", "point": 1.5, "price": 1.9},
+            {"name": "Under", "description": "Brandon Nimmo", "point": 1.5, "price": 1.9}]}]},
+        {"key": "fanduel", "markets": [{"key": "batter_total_bases", "outcomes": [
+            {"name": "Over", "description": "Brandon Nimmo", "point": 1.5, "price": 2.2,
+             "link": "https://sportsbook.fanduel.com/addToBetslip?marketId=1&selectionId=2"}]}]},
+    ]}
+    monkeypatch.setattr(softbook_app_api.core, "event_odds",
+                        lambda sport, eid, key, markets=None: (ev_payload, 4))
+    monkeypatch.setattr(softbook_app_api.core, "read_key", lambda: "k")
+    pid = "E1|batter_total_bases|Over|1.5|Brandon Nimmo"
+    r = client.get(f"/picks/{pid}/refresh", headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200
+    body = r.json()
+    books = {b["book"]: b for b in body["books"]}
+    assert "FanDuel" in books
+    fd = books["FanDuel"]
+    assert fd["odds"] == 2.2
+    assert fd["deeplink"]["tier"] == "prefill"
+    assert fd["deeplink"]["url"].startswith("https://sportsbook.fanduel.com/addToBetslip")
+    assert body["credits"] == 4
