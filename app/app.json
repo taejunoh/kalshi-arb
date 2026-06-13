@@ -5,7 +5,9 @@
     "version": "1.0.0",
     "scheme": "softbook",
     "orientation": "portrait",
-    "platforms": ["ios"],
+    "platforms": [
+      "ios"
+    ],
     "userInterfaceStyle": "dark",
     "ios": {
       "bundleIdentifier": "com.taejun.softbookev",
@@ -13,15 +15,27 @@
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "LSApplicationQueriesSchemes": ["dksb", "fanduel", "draftkings"]
+        "LSApplicationQueriesSchemes": [
+          "dksb",
+          "fanduel",
+          "draftkings"
+        ]
       }
     },
     "plugins": [
-      ["expo-notifications", { "color": "#7C3AED" }],
+      [
+        "expo-notifications",
+        {
+          "color": "#7C3AED"
+        }
+      ],
       "expo-secure-store"
     ],
     "extra": {
-      "eas": { "projectId": "FILLED_BY_EAS_INIT" }
-    }
+      "eas": {
+        "projectId": "bb63465c-1e8f-414e-9ff8-2585cf778942"
+      }
+    },
+    "owner": "allinsimple"
   }
 }
