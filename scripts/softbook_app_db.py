@@ -51,6 +51,52 @@ APP_BET_COLS = ("event_id, sport, home, away, commence_time, market, side, point
 def init_schema(db):
     for s in (PICK_STATE_SCHEMA, APP_BET_SCHEMA, FILTER_PREFS_SCHEMA, PUSH_TOKEN_SCHEMA):
         db.execute(s)
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS pushed_price_move("
+        "app_bet_id INTEGER, kind TEXT, notified_at TEXT, "
+        "PRIMARY KEY(app_bet_id, kind))")
+    _ensure_app_bet_columns(db)
+    db.commit()
+
+
+def _ensure_app_bet_columns(db):
+    """Idempotently add advisory price columns to an existing app_bet table."""
+    have = {r[1] for r in db.execute("PRAGMA table_info(app_bet)")}
+    for name, decl in (("current_best_odds", "REAL"), ("last_odds_check_at", "TEXT")):
+        if name not in have:
+            db.execute(f"ALTER TABLE app_bet ADD COLUMN {name} {decl}")
+
+
+_PRICING_COLS = ("id", "event_id", "sport", "market", "side", "point", "player",
+                 "book", "fill_odds", "current_best_odds", "last_odds_check_at", "label")
+
+
+def open_bets_for_pricing(db, limit=15):
+    """Open bets eligible for a live-odds check: settled=0, matched event, known book+fill.
+    Ordered by stake desc so the credit budget covers the bets that matter most."""
+    rows = db.execute(
+        "SELECT " + ",".join(_PRICING_COLS) + " FROM app_bet "
+        "WHERE settled=0 AND event_id IS NOT NULL AND event_id!='' "
+        "AND book IS NOT NULL AND fill_odds IS NOT NULL "
+        "ORDER BY COALESCE(stake,0) DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(zip(_PRICING_COLS, r)) for r in rows]
+
+
+def record_current_odds(db, app_bet_id, odds, ts):
+    """Advisory live-column write — NOT a bet-record edit (ledger rule preserved)."""
+    db.execute("UPDATE app_bet SET current_best_odds=?, last_odds_check_at=? WHERE id=?",
+               (odds, ts, app_bet_id))
+    db.commit()
+
+
+def price_move_pushed(db, app_bet_id, kind):
+    return db.execute("SELECT 1 FROM pushed_price_move WHERE app_bet_id=? AND kind=?",
+                      (app_bet_id, kind)).fetchone() is not None
+
+
+def mark_price_move_pushed(db, app_bet_id, kind, ts):
+    db.execute("INSERT OR IGNORE INTO pushed_price_move(app_bet_id, kind, notified_at) "
+               "VALUES (?,?,?)", (app_bet_id, kind, ts))
     db.commit()
 
 
