@@ -14,10 +14,23 @@ Returned dict: {"tier": "prefill"|"event"|"home", "url": str|None, "copy_text": 
 """
 import softbook_ev_core as core
 
-# Only these two get the "prefill" tier; for them we trust a provider betslip
-# link / SID. (BetMGM/Caesars/BetRivers/Fanatics/theScore/BallyBet: no public
-# prefill confirmed -> event/home only.)
-PREFILL_BOOKS = {"fanduel", "draftkings"}
+# Books for which the Odds API (includeLinks/includeSids) returns an OUTCOME-level
+# bet-slip link we can deep-link into. FanDuel/DraftKings = clean links (primary-source
+# confirmed). theScore(espnbet) = clean link. Caesars(williamhill_us)/BetMGM/BetRivers =
+# links that carry a {state}/{pickType} placeholder we substitute (best-effort, gated by
+# on-device verification before the app shows a "verified prefill" label).
+# Fanatics(sid only, no link) and BallyBet(no link): event/home + copy only.
+PREFILL_BOOKS = {"fanduel", "draftkings", "espnbet",
+                 "williamhill_us", "betmgm", "betrivers"}
+
+# US state for Odds API bet-slip links that contain a {state} placeholder (NY user).
+STATE = "ny"
+
+
+def _fill_placeholders(url):
+    """Substitute the Odds API bet-slip link placeholders. {state} -> the user's state;
+    {pickType} (BetRivers coupon links) -> a single straight bet."""
+    return url.replace("{state}", STATE).replace("{pickType}", "single")
 
 # Universal-link / app home fallbacks (open the app to its home when no
 # event/betslip link is available). None => copy-only.
@@ -48,12 +61,14 @@ def build(book_key, links, pick):
     url, tier = None, "home"
 
     if book_key in PREFILL_BOOKS:
-        # Prefer the provider-returned bet-slip link (https universal link) for BOTH
-        # books — it is the book's own share-to-slip URL (FanDuel addToBetslip,
-        # DraftKings ?outcomes=). DK also exposes a SID we fall back to as a dksb://
-        # scheme link if no https betslip link is present.
+        # Prefer the provider-returned bet-slip link (https universal link) — it is the
+        # book's own share-to-slip URL (FanDuel addToBetslip, DraftKings ?outcomes=,
+        # theScore market_selection_id, Caesars/BetMGM/BetRivers betslip). Substitute any
+        # {state}/{pickType} placeholder. DK also exposes a SID we fall back to as a
+        # dksb:// scheme link if no https betslip link is present.
         if links.get("betslip"):
-            return {"tier": "prefill", "url": links["betslip"], "copy_text": copy_text}
+            return {"tier": "prefill", "url": _fill_placeholders(links["betslip"]),
+                    "copy_text": copy_text}
         if book_key == "draftkings" and links.get("sid"):
             return {"tier": "prefill", "url": f"dksb://sb/addbet/{links['sid']}",
                     "copy_text": copy_text}

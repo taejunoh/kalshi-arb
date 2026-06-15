@@ -53,9 +53,31 @@ def test_draftkings_without_sid_uses_event_link():
     assert out["url"] == "https://sportsbook.draftkings.com/event/123"
 
 
+def test_thescore_prefills_with_provider_betslip_link():
+    links = {"betslip": "https://sportsbook.thescore.bet/?market_selection_id[0]=abc123"}
+    out = dl.build("espnbet", links, PICK)
+    assert out["tier"] == "prefill"
+    assert out["url"] == links["betslip"]
+
+
+def test_state_placeholder_substituted_in_betslip_link():
+    # Caesars/BetMGM links carry a {state} placeholder -> replace with the NY user's state.
+    out = dl.build("betmgm", {"betslip": "https://sports.{state}.betmgm.com/en/sports?options=X"}, PICK)
+    assert out["tier"] == "prefill"
+    assert "{state}" not in out["url"]
+    assert "sports.ny.betmgm.com" in out["url"]
+
+
+def test_betrivers_substitutes_state_and_picktype():
+    out = dl.build("betrivers", {"betslip": "https://{state}.betrivers.com/?coupon={pickType}|123"}, PICK)
+    assert out["tier"] == "prefill"
+    assert "{state}" not in out["url"] and "{pickType}" not in out["url"]
+    assert "ny.betrivers.com" in out["url"]
+
+
 def test_non_prefill_book_never_prefills_even_with_betslip_link():
-    # BetMGM/Caesars/etc: prefill is NOT primary-source confirmed -> never claim it
-    out = dl.build("betmgm", {"betslip": "https://example/bet"}, PICK)
+    # Fanatics (sid only, no provider link) / BallyBet: prefill not available -> never claim it
+    out = dl.build("fanatics", {"betslip": "https://example/bet"}, PICK)
     assert out["tier"] in ("event", "home")
     assert out["url"] != "https://example/bet"
 
