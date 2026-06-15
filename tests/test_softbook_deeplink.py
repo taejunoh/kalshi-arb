@@ -53,11 +53,13 @@ def test_draftkings_without_sid_uses_event_link():
     assert out["url"] == "https://sportsbook.draftkings.com/event/123"
 
 
-def test_thescore_prefills_with_provider_betslip_link():
-    links = {"betslip": "https://sportsbook.thescore.bet/?market_selection_id[0]=abc123"}
-    out = dl.build("espnbet", links, PICK)
-    assert out["tier"] == "prefill"
-    assert out["url"] == links["betslip"]
+def test_thescore_excluded_from_prefill_opens_app_not_slip():
+    # On-device theScore's app opens from the link but does NOT load the selection -> not prefill.
+    out = dl.build("espnbet",
+                   {"betslip": "https://sportsbook.thescore.bet/?market_selection_id[0]=abc",
+                    "event": "https://sportsbook.thescore.bet/event/1"}, PICK)
+    assert out["tier"] != "prefill"
+    assert "market_selection_id" not in (out["url"] or "")
 
 
 def test_caesars_state_placeholder_substituted_in_betslip_link():
