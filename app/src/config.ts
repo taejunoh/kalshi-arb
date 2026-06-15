@@ -22,9 +22,10 @@ export const SPORT_LABELS: Record<string, string> = {
 // Books whose bet-slip PREFILL has been verified on the real NY iPhone (app installed)
 // to actually populate the slip. EMPTY until verified — see DEEPLINK_VERIFICATION.md.
 // Until a book label is in here, even a server "prefill"-tier link is shown as plain
-// "앱 열기", never "✓ 슬립 프리필". (Research: FanDuel addToBetslip is confirmed-but-best-effort;
-// DraftKings dksb:// is UNVERIFIED by any source.)
-export const VERIFIED_PREFILL_BOOKS: string[] = [];
+// "앱 열기", never "✓ 슬립 프리필". On-device verified on the NY iPhone (2026-06-15):
+// these four open the native app to a PRE-FILLED slip. BetMGM/BetRivers were tested but
+// open the web homepage (not the slip), so they stay out.
+export const VERIFIED_PREFILL_BOOKS: string[] = ["FanDuel", "DraftKings", "theScore", "Caesars"];
 
 export const DEFAULT_SETTINGS: Settings = { min_ev: 0, sports: null, muted_books: null, sort: "ev" };
 

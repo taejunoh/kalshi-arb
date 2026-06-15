@@ -60,19 +60,21 @@ def test_thescore_prefills_with_provider_betslip_link():
     assert out["url"] == links["betslip"]
 
 
-def test_state_placeholder_substituted_in_betslip_link():
-    # Caesars/BetMGM links carry a {state} placeholder -> replace with the NY user's state.
-    out = dl.build("betmgm", {"betslip": "https://sports.{state}.betmgm.com/en/sports?options=X"}, PICK)
+def test_caesars_state_placeholder_substituted_in_betslip_link():
+    # Caesars' betslip link carries a {state} placeholder -> replace with the NY user's state.
+    out = dl.build("williamhill_us",
+                   {"betslip": "https://sportsbook.caesars.com/us/{state}/bet/betslip?selectionIds=X"}, PICK)
     assert out["tier"] == "prefill"
     assert "{state}" not in out["url"]
-    assert "sports.ny.betmgm.com" in out["url"]
+    assert "/us/ny/bet/betslip" in out["url"]
 
 
-def test_betrivers_substitutes_state_and_picktype():
-    out = dl.build("betrivers", {"betslip": "https://{state}.betrivers.com/?coupon={pickType}|123"}, PICK)
-    assert out["tier"] == "prefill"
-    assert "{state}" not in out["url"] and "{pickType}" not in out["url"]
-    assert "ny.betrivers.com" in out["url"]
+def test_betmgm_and_betrivers_excluded_from_prefill():
+    # On-device: their betslip links open the web homepage, not a pre-filled slip -> never claim prefill.
+    for bk in ("betmgm", "betrivers"):
+        out = dl.build(bk, {"betslip": "https://example/{state}/bet", "event": "https://example/event"}, PICK)
+        assert out["tier"] != "prefill"
+        assert "example/bet" not in (out["url"] or "")
 
 
 def test_non_prefill_book_never_prefills_even_with_betslip_link():

@@ -14,23 +14,21 @@ Returned dict: {"tier": "prefill"|"event"|"home", "url": str|None, "copy_text": 
 """
 import softbook_ev_core as core
 
-# Books for which the Odds API (includeLinks/includeSids) returns an OUTCOME-level
-# bet-slip link we can deep-link into. FanDuel/DraftKings = clean links (primary-source
-# confirmed). theScore(espnbet) = clean link. Caesars(williamhill_us)/BetMGM/BetRivers =
-# links that carry a {state}/{pickType} placeholder we substitute (best-effort, gated by
-# on-device verification before the app shows a "verified prefill" label).
-# Fanatics(sid only, no link) and BallyBet(no link): event/home + copy only.
-PREFILL_BOOKS = {"fanduel", "draftkings", "espnbet",
-                 "williamhill_us", "betmgm", "betrivers"}
+# Books whose Odds API (includeLinks/includeSids) bet-slip link actually opens the
+# native app to a PRE-FILLED slip — on-device verified (NY iPhone). FanDuel, DraftKings,
+# theScore(espnbet) = clean links; Caesars(williamhill_us) = link with a {state}
+# placeholder we substitute. BetMGM/BetRivers were tried but their links open the web
+# HOMEPAGE (not the slip), so they're excluded -> event/home + copy. Fanatics(sid only,
+# no link) and BallyBet(no link): event/home + copy too.
+PREFILL_BOOKS = {"fanduel", "draftkings", "espnbet", "williamhill_us"}
 
-# US state for Odds API bet-slip links that contain a {state} placeholder (NY user).
+# US state for the Caesars bet-slip link's {state} placeholder (NY user).
 STATE = "ny"
 
 
 def _fill_placeholders(url):
-    """Substitute the Odds API bet-slip link placeholders. {state} -> the user's state;
-    {pickType} (BetRivers coupon links) -> a single straight bet."""
-    return url.replace("{state}", STATE).replace("{pickType}", "single")
+    """Substitute the {state} placeholder some Odds API bet-slip links carry (Caesars)."""
+    return url.replace("{state}", STATE)
 
 # Universal-link / app home fallbacks (open the app to its home when no
 # event/betslip link is available). None => copy-only.
