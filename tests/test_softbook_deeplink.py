@@ -37,6 +37,16 @@ def test_draftkings_builds_dksb_scheme_from_sid():
     assert out["url"] == "dksb://sb/addbet/0OU76623766U1250_3"
 
 
+def test_draftkings_prefers_provider_betslip_link_over_dksb_scheme():
+    # The Odds API returns a real https ?outcomes= betslip link for DK; prefer it
+    # over the hand-built dksb:// scheme (which was never primary-source verified).
+    links = {"betslip": "https://sportsbook.draftkings.com/?outcomes=0ML123_3",
+             "sid": "0ML123_3"}
+    out = dl.build("draftkings", links, PICK)
+    assert out["tier"] == "prefill"
+    assert out["url"] == "https://sportsbook.draftkings.com/?outcomes=0ML123_3"
+
+
 def test_draftkings_without_sid_uses_event_link():
     out = dl.build("draftkings", {"event": "https://sportsbook.draftkings.com/event/123"}, PICK)
     assert out["tier"] == "event"
