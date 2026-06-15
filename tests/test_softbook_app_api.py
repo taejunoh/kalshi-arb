@@ -103,7 +103,7 @@ def test_refresh_returns_fresh_quotes_and_deeplinks(client, monkeypatch):
              "link": "https://sportsbook.fanduel.com/addToBetslip?marketId=1&selectionId=2"}]}]},
     ]}
     monkeypatch.setattr(softbook_app_api.core, "event_odds",
-                        lambda sport, eid, key, markets=None: (ev_payload, 4))
+                        lambda sport, eid, key, markets=None, links=False: (ev_payload, 4))
     monkeypatch.setattr(softbook_app_api.core, "read_key", lambda: "k")
     pid = "E1|batter_total_bases|Over|1.5|Brandon Nimmo"
     r = client.get(f"/picks/{pid}/refresh", headers={"Authorization": "Bearer secret"})

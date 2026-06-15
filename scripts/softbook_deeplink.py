@@ -48,7 +48,11 @@ def build(book_key, links, pick):
     url, tier = None, "home"
 
     if book_key in PREFILL_BOOKS:
-        if book_key == "fanduel" and links.get("betslip"):
+        # Prefer the provider-returned bet-slip link (https universal link) for BOTH
+        # books — it is the book's own share-to-slip URL (FanDuel addToBetslip,
+        # DraftKings ?outcomes=). DK also exposes a SID we fall back to as a dksb://
+        # scheme link if no https betslip link is present.
+        if links.get("betslip"):
             return {"tier": "prefill", "url": links["betslip"], "copy_text": copy_text}
         if book_key == "draftkings" and links.get("sid"):
             return {"tier": "prefill", "url": f"dksb://sb/addbet/{links['sid']}",

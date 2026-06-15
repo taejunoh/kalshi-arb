@@ -107,9 +107,14 @@ def list_events(sport, key):
             and any(b.get("key") == "pinnacle" for b in g.get("bookmakers", []))]
 
 
-def event_odds(sport, eid, key, markets=GAME_MARKETS):
+def event_odds(sport, eid, key, markets=GAME_MARKETS, links=False):
     url = (f"{B}/{sport}/events/{eid}/odds/?apiKey={key}&bookmakers={BOOKMAKERS}"
            f"&markets={markets}&oddsFormat=decimal")
+    if links:
+        # Provider bet-slip links + outcome SIDs for the app's tiered deep-link prefill.
+        # Verified same credit cost as without (1 credit). Only request on the on-demand
+        # /refresh path — never the bulk scan or price-move polling.
+        url += "&includeLinks=true&includeSids=true"
     r = urllib.request.urlopen(url, timeout=30)
     data = json.loads(r.read())
     try:

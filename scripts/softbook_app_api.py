@@ -203,7 +203,7 @@ def refresh_pick(pick_id: str, _=Depends(require_auth)):
     key = core.read_key()
     if not (sport and key):
         raise HTTPException(503, "no sport/key")
-    data, credits = core.event_odds(sport, eid, key, _markets_for_pick(market))
+    data, credits = core.event_odds(sport, eid, key, _markets_for_pick(market), links=True)
     fair, quotes = core.line_quotes(
         data, market, side, None if market == "h2h" else point, player or None)
     books = []
