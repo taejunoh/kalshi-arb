@@ -1693,7 +1693,8 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     return hasActivity || stratMode === mode;
   });
 
-  // Sort: health dot first, then today's trades, then lifetime trades.
+  // Sort: ACTIVE-FIRST — most-recently-fired strategies on top (see
+  // activityTier below), then health dot, then today's / lifetime trades.
   // Disabled / demoted pinned to bottom regardless of health.
   //
   // Priority (best to worst, top to bottom):
@@ -1717,7 +1718,30 @@ function renderPerfCardsByMode(mode, gridId, opts = {}) {
     if (n >= 20 && roi <= -5) return 2;
     return 1;
   };
+  // Dead = disabled (active:false) or demoted → pinned to the very bottom.
+  const deadTier = (s) => {
+    const st = stratStatusCache[s] || {};
+    return (st.active === false || st.demoted) ? 1 : 0;
+  };
+  // Activity tier from last_fire_at (same field the IDLE badge reads). Lower
+  // = fired more recently = floats higher. Dormant / never-fired sink.
+  const activityTier = (s) => {
+    const lf = (stratStatusCache[s] || {}).last_fire_at;
+    if (!lf) return 3;                       // never fired
+    const hours = (Date.now() - new Date(lf).getTime()) / 3600000;
+    if (hours <= 24) return 0;               // firing now
+    if (hours <= 24 * 7) return 1;           // fired this week
+    if (hours <= 24 * 30) return 2;          // fired this month
+    return 3;                                 // dormant (>30d)
+  };
+  // ACTIVE-FIRST (2026-06-15): recency is the primary key so currently-firing
+  // strategies sit on top and seasonally-idle ones (soccer out-of-season,
+  // playoff_underdog past its window) sink. Health + volume break ties.
   filtered.sort((a, b) => {
+    const dead = deadTier(a) - deadTier(b);
+    if (dead !== 0) return dead;
+    const act = activityTier(a) - activityTier(b);
+    if (act !== 0) return act;
     const ht = healthTier(a) - healthTier(b);
     if (ht !== 0) return ht;
     const tt = todayTradesOf(b) - todayTradesOf(a);
