@@ -23,9 +23,9 @@ export const SPORT_LABELS: Record<string, string> = {
 // to actually populate the slip. EMPTY until verified — see DEEPLINK_VERIFICATION.md.
 // Until a book label is in here, even a server "prefill"-tier link is shown as plain
 // "앱 열기", never "✓ 슬립 프리필". On-device verified on the NY iPhone (2026-06-15):
-// these four open the native app to a PRE-FILLED slip. BetMGM/BetRivers were tested but
-// open the web homepage (not the slip), so they stay out.
-export const VERIFIED_PREFILL_BOOKS: string[] = ["FanDuel", "DraftKings", "theScore", "Caesars"];
+// these three open the native app to a PRE-FILLED slip. theScore opens its app but doesn't
+// load the selection; BetMGM/BetRivers open the web homepage — all left out.
+export const VERIFIED_PREFILL_BOOKS: string[] = ["FanDuel", "DraftKings", "Caesars"];
 
 export const DEFAULT_SETTINGS: Settings = { min_ev: 0, sports: null, muted_books: null, sort: "ev" };
 

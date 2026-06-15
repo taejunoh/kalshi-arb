@@ -14,13 +14,13 @@ Returned dict: {"tier": "prefill"|"event"|"home", "url": str|None, "copy_text": 
 """
 import softbook_ev_core as core
 
-# Books whose Odds API (includeLinks/includeSids) bet-slip link actually opens the
-# native app to a PRE-FILLED slip — on-device verified (NY iPhone). FanDuel, DraftKings,
-# theScore(espnbet) = clean links; Caesars(williamhill_us) = link with a {state}
-# placeholder we substitute. BetMGM/BetRivers were tried but their links open the web
-# HOMEPAGE (not the slip), so they're excluded -> event/home + copy. Fanatics(sid only,
-# no link) and BallyBet(no link): event/home + copy too.
-PREFILL_BOOKS = {"fanduel", "draftkings", "espnbet", "williamhill_us"}
+# Books whose Odds API (includeLinks/includeSids) bet-slip link actually opens the native
+# app to a PRE-FILLED slip — on-device verified (NY iPhone, 2026-06-15). Only FanDuel,
+# DraftKings, and Caesars(williamhill_us, link carries a {state} placeholder we substitute)
+# truly populate the slip. theScore(espnbet) opens its app but does NOT load the selection;
+# BetMGM/BetRivers open the web homepage. All three excluded -> event/home + copy. Fanatics
+# (sid only, no link) and BallyBet(no link): event/home + copy too.
+PREFILL_BOOKS = {"fanduel", "draftkings", "williamhill_us"}
 
 # US state for the Caesars bet-slip link's {state} placeholder (NY user).
 STATE = "ny"
