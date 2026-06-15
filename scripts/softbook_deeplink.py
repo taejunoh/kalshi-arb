@@ -72,7 +72,10 @@ def build(book_key, links, pick):
                     "copy_text": copy_text}
 
     if links.get("event"):
-        return {"tier": "event", "url": links["event"], "copy_text": copy_text}
+        # Event links can also carry a {state} placeholder (BetMGM/BetRivers) — substitute
+        # so the link resolves to the event page instead of a broken host.
+        return {"tier": "event", "url": _fill_placeholders(links["event"]),
+                "copy_text": copy_text}
 
     return {"tier": "home", "url": HOME_URL.get(book_key), "copy_text": copy_text}
 
