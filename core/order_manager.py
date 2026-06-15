@@ -207,6 +207,7 @@ PAPER_TWIN_STRATEGIES = {
     "atm_hold_v1",                     # 2026-05-18 crypto Phase 1 live promotion
     "cme_basis_fade_v1",               # 2026-05-21 14:33 UTC crypto Phase 1 live promotion
     "late_close_tail_v1",              # 2026-05-21 PM crypto Phase 1 live promotion (Config C)
+    "sports_mlb_pitcher_edge_v2_1",    # 2026-06-15 small live fill-calibration pilot — keep paper twin for live/paper slippage A/B
 }
 
 
