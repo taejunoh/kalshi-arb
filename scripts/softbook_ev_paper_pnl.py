@@ -388,6 +388,11 @@ def report(db, tg=False, high=None):
         else:
             msg = (f"📊 소프트북 +EV 페이퍼 PnL\n정산된 베팅 아직 없음 "
                    f"(대기 {len(pending)}). 파이프라인 정상.")
+        try:        # stake-tiered promotion tracker (non-critical: never break the digest)
+            import softbook_tripwire as tw
+            msg += "\n\n" + tw.telegram_block(db)
+        except Exception:
+            pass
         send_telegram(msg)
 
 
