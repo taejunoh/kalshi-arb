@@ -105,6 +105,17 @@ def test_fill_placeholders_substitutes_all_known_tokens():
     assert got == "https://ny.x/#e/1?coupon=single|55|"
 
 
+def test_fanatics_home_opens_native_app_via_custom_scheme():
+    # Odds API gives Fanatics only a sid (no link) and sportsbook.fanatics.com has no AASA, so
+    # the old web home URL opened Safari, not the app. The verified custom scheme opens the app
+    # (no prefill — the sid can't address a betslip). Requires "fanaticssportsbook" in app.json
+    # LSApplicationQueriesSchemes; openOrCopy falls back to copy if the app isn't installed.
+    out = dl.build("fanatics", {"sid": "1530070174"}, PICK)
+    assert out["tier"] == "home"
+    assert out["url"] == "fanaticssportsbook://discover"
+    assert out["copy_text"].startswith("Fanatics ·")
+
+
 def test_non_prefill_book_never_prefills_even_with_betslip_link():
     # Fanatics (sid only, no provider link) / BallyBet: prefill not available -> never claim it
     out = dl.build("fanatics", {"betslip": "https://example/bet"}, PICK)
