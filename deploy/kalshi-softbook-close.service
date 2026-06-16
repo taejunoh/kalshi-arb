@@ -1,0 +1,7 @@
+[Unit]
+Description=Capture the TRUE Pinnacle closing line for alerted +EV picks (real CLV, not truncated)
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/softbook_close_capture.py
+RuntimeMaxSec=300

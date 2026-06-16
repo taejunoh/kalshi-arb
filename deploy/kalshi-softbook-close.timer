@@ -1,0 +1,11 @@
+[Unit]
+Description=Capture closing Pinnacle lines every 10 min (alerted lines starting within 40 min)
+[Timer]
+# Every 10 min so each game's LAST pre-game capture lands within ~10 min of start
+# = the de-facto close. Measurement-only: writes the closing_line table, never bets
+# or alerts. Runs as root (softbook_ev.db is root-owned, like the refresh scan).
+OnCalendar=*-*-* *:00/10:00 UTC
+Persistent=true
+RandomizedDelaySec=20
+[Install]
+WantedBy=timers.target
