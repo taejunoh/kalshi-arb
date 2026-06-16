@@ -359,24 +359,35 @@ def report(db, tg=False, high=None):
                      f"순익 ${high[2]:+.2f} | ROI {high[3]:+.1f}% (n={high[0]})\n"
                      if high and high[0] else "")
             fline = ""
-            try:        # real fills logged by softbook_fill_listener replies
-                f_, s_, sl = db.execute(
-                    """SELECT sum(skipped=0), sum(skipped=1),
-                       avg(CASE WHEN skipped=0 AND alert_odds>0
-                           THEN 100.0*(fill_odds/alert_odds-1) END)
-                       FROM real_fill""").fetchone()
-                if (f_ or 0) + (s_ or 0):
+            try:        # real fills logged by softbook_fill_listener replies.
+                try:    # bonus col exists post 6/16 migration — exclude bonus bets
+                    f_, s_, sl, bn = db.execute(
+                        """SELECT sum(skipped=0 AND COALESCE(bonus,0)=0), sum(skipped=1),
+                           avg(CASE WHEN skipped=0 AND COALESCE(bonus,0)=0 AND alert_odds>0
+                               THEN 100.0*(fill_odds/alert_odds-1) END),
+                           sum(COALESCE(bonus,0)=1)
+                           FROM real_fill""").fetchone()
+                except Exception:    # pre-migration real_fill (no bonus col)
+                    f_, s_, sl = db.execute(
+                        """SELECT sum(skipped=0), sum(skipped=1),
+                           avg(CASE WHEN skipped=0 AND alert_odds>0
+                               THEN 100.0*(fill_odds/alert_odds-1) END)
+                           FROM real_fill""").fetchone()
+                    bn = 0
+                if (f_ or 0) + (s_ or 0) + (bn or 0):
                     co = 0
                     try:    # column exists post fill-listener 6/12 migration
                         co = db.execute("SELECT sum(cashed_out=1) FROM real_fill"
                                         ).fetchone()[0] or 0
                     except Exception:
                         pass
+                    denom = (f_ or 0) + (s_ or 0)
                     fline = (f"🎯 실체결 {f_ or 0}건"
                              + (f" 슬리피지 {sl:+.1f}%" if sl is not None else "")
                              + f" · skip {s_ or 0}"
-                             f" (노필 {100*(s_ or 0)/((f_ or 0)+(s_ or 0)):.0f}%)"
-                             + (f" · 캐시아웃 {co}" if co else "") + "\n")
+                             + (f" (노필 {100*(s_ or 0)/denom:.0f}%)" if denom else "")
+                             + (f" · 캐시아웃 {co}" if co else "")
+                             + (f" · 🎁보너스 {bn}" if bn else "") + "\n")
             except Exception:
                 pass
             msg = ("📊 소프트북 +EV 페이퍼 PnL (ML/스프레드/토탈)\n"

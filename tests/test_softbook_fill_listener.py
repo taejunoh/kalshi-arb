@@ -298,3 +298,59 @@ def test_stats_command():
     fl.handle_update(_upd("1.98"), adb, fdb, NOW)
     out = fl.handle_update(_upd("fills", reply_to=None), adb, fdb, NOW)
     assert "실체결 1" in out and "슬리피지" in out
+
+
+# ---------- ② listener: bonus-bet tagging (2026-06-16) ----------
+
+def test_parse_bonus_token():
+    p = fl.parse_reply("3.8 ts bonus")
+    assert p["odds"] == 3.8 and p["book"] == "theScore Bet" and p.get("bonus") is True
+    assert fl.parse_reply("보너스 +400 bally")["bonus"] is True
+    # a normal reply carries NO bonus key (backward-compatible shape)
+    assert "bonus" not in fl.parse_reply("1.98 fd")
+
+
+def test_bonus_fill_tagged_and_acked():
+    adb, fdb = seeded_alerts(), fill_db()
+    ack = fl.handle_update(_upd("3.8 ts bonus"), adb, fdb, NOW)
+    assert "보너스" in ack and "엣지 측정 제외" in ack
+    assert "슬리피지" not in ack                      # bonus bets don't report slippage
+    assert fdb.execute("SELECT bonus FROM real_fill").fetchone() == (1,)
+
+
+def test_bonus_excluded_from_edge_stats():
+    adb, fdb = seeded_alerts(), fill_db()
+    fl.handle_update(_upd("1.98 fd"), adb, fdb, NOW)            # edge fill
+    # a bonus fill on a different alert (distinct message_id)
+    adb.execute("INSERT INTO high_alerted(event_id,market,side,point,player,"
+                "alerted_at,book,odds,message_id) VALUES "
+                "('E2','h2h','X',0,'',?, 'FanDuel',3.50,778)", (NOW,))
+    fl.handle_update(_upd("3.5 fd bonus", reply_to=778), adb, fdb, NOW)
+    out = fl.handle_update(_upd("fills", reply_to=None), adb, fdb, NOW)
+    assert "실체결 1" in out                                    # only the edge fill counted
+    assert "보너스 베팅 1건" in out
+    # slippage averages ONLY the edge fill (1.98 vs 2.06 = -3.88%); if the bonus
+    # (3.5 vs 3.50 = 0%) leaked in, the mean would be -1.94%.
+    assert "-3.88%" in out
+
+
+def test_bonus_tag_persists_on_odds_correction():
+    adb, fdb = seeded_alerts(), fill_db()
+    fl.handle_update(_upd("3.8 ts bonus"), adb, fdb, NOW)
+    fl.handle_update(_upd("3.85 ts"), adb, fdb, NOW)           # plain correction, no token
+    row = fdb.execute("SELECT fill_odds, bonus FROM real_fill").fetchone()
+    assert row == (3.85, 1)                                    # tag survives
+
+
+def test_migrate_adds_bonus_col_to_legacy_db():
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE real_fill(
+        message_id INTEGER PRIMARY KEY,
+        event_id TEXT, market TEXT, side TEXT, point REAL, player TEXT,
+        alert_book TEXT, alert_odds REAL,
+        fill_book TEXT, fill_odds REAL, fill_stake REAL,
+        skipped INTEGER DEFAULT 0, raw_reply TEXT, replied_at TEXT)""")
+    db.execute("INSERT INTO real_fill(message_id, skipped) VALUES (1, 0)")
+    fl._migrate(db)
+    fl._migrate(db)                                            # idempotent
+    assert db.execute("SELECT bonus FROM real_fill").fetchone() == (0,)
