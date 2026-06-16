@@ -63,18 +63,20 @@ def _fill_placeholders(url):
 # available). https hosts open the native app only if that host has an applinks AASA,
 # else Safari. None => copy-only.
 #  - Fanatics: the Odds API gives ONLY a sid (no link) and sportsbook.fanatics.com has NO
-#    AASA, so the web URL opened Safari, not the app. Use the app's verified CUSTOM SCHEME
-#    instead (fanaticssportsbook://discover, extracted from the brand's live AppsFlyer
-#    OneLink af_dp; bundle com.fbg.sportsbook / App Store id1616738407). Opens the app to its
-#    Discover home — no prefill (the sid can't address a betslip). Requires "fanaticssportsbook"
-#    in app.json LSApplicationQueriesSchemes or canOpenURL throws -> copy fallback.
+#    AASA, so the web URL opened Safari, not the app. The af_dp value "fanaticssportsbook://"
+#    is NOT a registered iOS URL scheme (on-device Safari test: did not open) — it's only
+#    AppsFlyer's internal deep link used AFTER the app is launched. Use the brand's AppsFlyer
+#    OneLink instead: fanatics.onelink.me serves an AASA claiming /5kut/* (and /Xqu0/, /nQVy/)
+#    for com.fbg.sportsbook (App Store id1616738407), so this https UNIVERSAL link opens the
+#    native app directly — NO LSApplicationQueriesSchemes / canOpenURL needed (it's https).
+#    Opens to the Discover home — no prefill (the sid can't address a betslip).
 HOME_URL = {
     "fanduel": "https://sportsbook.fanduel.com",
     "draftkings": "https://sportsbook.draftkings.com",
     "betmgm": "https://sports.nj.betmgm.com",
     "williamhill_us": "https://www.williamhill.us",
     "betrivers": "https://www.betrivers.com",
-    "fanatics": "fanaticssportsbook://discover",
+    "fanatics": "https://fanatics.onelink.me/5kut/swz1hzmb",
     "espnbet": "https://espnbet.com",
     "ballybet": None,
 }
