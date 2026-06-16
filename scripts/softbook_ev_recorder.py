@@ -126,11 +126,10 @@ def _first_entry_note(db, b):
     if not row:
         return ""
     first_entry = row[0] == "High"
-    is_prop = b["market"] in core.PROP_SHORT
-    if is_prop:
-        return "⚪ SKIP · prop (게임 first-entry만 베팅)"
-    if first_entry:                                  # game + first-entry
+    if core.is_bet(first_entry, b["market"]):        # game + first-entry (single source)
         return "🟣 BET · first-entry game — 베팅 (bet small)"
+    if b["market"] in core.PROP_SHORT:
+        return "⚪ SKIP · prop (게임 first-entry만 베팅)"
     return "⚪ SKIP · late-crosser game (라인 이동 후)"
 
 

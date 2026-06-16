@@ -58,7 +58,8 @@ def test_picks_returns_active_high(client):
 
 
 def test_picks_first_entry_flag(client):
-    """first_entry True iff the (event,market,player)'s EARLIEST snapshot was High."""
+    """first_entry True iff the (event,market,player)'s EARLIEST snapshot was High;
+    should_bet = first-entry GAME only (props + late-crossers are False)."""
     ev = sqlite3.connect(os.environ["SOFTBOOK_EV_DB"])
     ev.execute("DELETE FROM softbook_ev")
     latest = ev.execute("SELECT datetime('now')").fetchone()[0]
@@ -76,12 +77,16 @@ def test_picks_first_entry_flag(client):
                    "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "Med"))
     ev.execute(q, (latest, "baseball_mlb", "E2", "2099-01-01T00:00:00Z", "MIA", "NYM",
                    "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "High"))
+    # E3: GAME first-entry (single High snapshot) -> first_entry AND should_bet True.
+    ev.execute(q, (latest, "baseball_mlb", "E3", "2099-01-01T00:00:00Z", "MIA", "NYM",
+                   "spread", "NYM", -1.5, "", 0.45, 2.0, "theScore", 2.1, 0.05, 9, 5, 60, "High"))
     ev.commit(); ev.close()
     picks = client.get("/picks", headers={"Authorization": "Bearer secret"}).json()["picks"]
     by_event = {p["event_id"]: p for p in picks}
-    assert set(by_event) == {"E1", "E2"}
-    assert by_event["E1"]["first_entry"] is True
-    assert by_event["E2"]["first_entry"] is False
+    assert set(by_event) == {"E1", "E2", "E3"}
+    assert by_event["E1"]["first_entry"] is True and by_event["E1"]["should_bet"] is False   # prop
+    assert by_event["E2"]["first_entry"] is False and by_event["E2"]["should_bet"] is False  # late game
+    assert by_event["E3"]["first_entry"] is True and by_event["E3"]["should_bet"] is True    # first-entry game
 
 
 def test_pick_detail_by_id(client):

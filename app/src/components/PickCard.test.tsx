@@ -41,19 +41,19 @@ test("fires onBet and onDismiss", async () => {
   expect(onDismiss).toHaveBeenCalledWith(PICK);
 });
 
-test("shows the 🟣 first-entry badge when first_entry is true", async () => {
-  await render(<PickCard pick={{ ...PICK, first_entry: true }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
-  expect(await screen.findByText(/first-entry/)).toBeOnTheScreen();
+test("shows the 🟣 BET badge when should_bet is true", async () => {
+  await render(<PickCard pick={{ ...PICK, should_bet: true }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(await screen.findByText(/BET/)).toBeOnTheScreen();
 });
 
-test("shows the ⚪ late-crosser badge when first_entry is false", async () => {
-  await render(<PickCard pick={{ ...PICK, first_entry: false }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
-  expect(await screen.findByText(/late-crosser/)).toBeOnTheScreen();
+test("shows the ⚪ SKIP badge when should_bet is false", async () => {
+  await render(<PickCard pick={{ ...PICK, should_bet: false }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(await screen.findByText(/SKIP/)).toBeOnTheScreen();
 });
 
-test("shows no first-entry badge when the flag is absent", async () => {
+test("shows no BET/SKIP badge when the flag is absent", async () => {
   await render(<PickCard pick={PICK} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
-  expect(screen.queryByText(/first-entry|late-crosser/)).toBeNull();
+  expect(screen.queryByText(/🟣 BET|⚪ SKIP/)).toBeNull();
 });
 
 // Gesture simulation isn't reliable in jest, so we press the revealed swipe

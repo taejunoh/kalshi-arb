@@ -15,7 +15,7 @@ export function PicksScreen() {
   const [error, setError] = useState<string | null>(null);
   const [prefs, setPrefs] = useState<Settings>({ min_ev: 0, sports: null, muted_books: null, sort: "ev" });
   const [showCooled, setShowCooled] = useState(false);
-  const [firstEntryOnly, setFirstEntryOnly] = useState(false);
+  const [betOnly, setBetOnly] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,8 +89,8 @@ export function PicksScreen() {
   }
 
   const allActive = data?.picks ?? [];
-  const visiblePicks = firstEntryOnly ? allActive.filter((p) => p.first_entry) : allActive;
-  const feCount = allActive.filter((p) => p.first_entry).length;
+  const visiblePicks = betOnly ? allActive.filter((p) => p.should_bet) : allActive;
+  const betCount = allActive.filter((p) => p.should_bet).length;
 
   return (
     <View style={s.container}>
@@ -98,8 +98,8 @@ export function PicksScreen() {
         <Pressable testID="scan-capture-library" onPress={() => void onCapture("library")} style={s.scanChip}>
           <Text style={s.chipText}>📷 슬립 캡처</Text>
         </Pressable>
-        <Pressable onPress={() => setFirstEntryOnly((v) => !v)} style={[s.feChip, firstEntryOnly && s.feChipOn]}>
-          <Text style={s.chipText}>🟣 first-entry만{feCount ? ` (${feCount})` : ""}</Text>
+        <Pressable onPress={() => setBetOnly((v) => !v)} style={[s.feChip, betOnly && s.feChipOn]}>
+          <Text style={s.chipText}>🟣 BET만{betCount ? ` (${betCount})` : ""}</Text>
         </Pressable>
         <Text style={s.filterLabel}>최소 EV</Text>
         {MIN_EV_STEPS.map((v) => (
@@ -128,7 +128,7 @@ export function PicksScreen() {
         )}
         ListEmptyComponent={
           loading ? <ActivityIndicator style={{ marginTop: 40 }} />
-            : <Text style={s.empty}>{firstEntryOnly ? "first-entry 픽 없음 (late-crosser는 권장 스킵)" : "활성 픽 없음"}</Text>
+            : <Text style={s.empty}>{betOnly ? "BET 픽 없음 (게임 first-entry만 베팅)" : "활성 픽 없음"}</Text>
         }
         ListFooterComponent={
           data && data.cooled.length > 0 ? (
