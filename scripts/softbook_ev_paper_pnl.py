@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 import softbook_ev_core as core
 import softbook_ev_stats as stats
 import softbook_ev_npb as npb
+import softbook_results as results
 
 SRC_DB = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
 PAPER_DB = os.getenv("SOFTBOOK_PAPER_DB", "/home/ubuntu/kalshi-arb/data/softbook_paper.db")
@@ -209,26 +210,33 @@ def settle(paper, key):
         sports |= {r[0] for r in paper.execute(
             f"SELECT DISTINCT sport FROM {t} WHERE completed=0").fetchall()}
     done = 0
+    res_cache = {}                       # softbook_results per-(sport,date) fetch cache
     for sport in sports:
-        # team scores for GAME markets via Odds API (props settle from a stats source)
+        # team scores for GAME markets via Odds API (props settle from a stats
+        # source). Skip the (billed, always-empty) call for sports the Odds API
+        # can't score — softbook_results sources those from ESPN/Naver instead.
         scores = {}
-        try:
-            games = json.loads(urllib.request.urlopen(
-                f"{core.B}/{sport}/scores/?apiKey={key}&daysFrom=3", timeout=25).read())
-            for g in games:
-                if not g.get("completed"):
-                    continue
-                sc = {s["name"]: _num(s["score"]) for s in (g.get("scores") or [])}
-                if len(sc) >= 2 and all(v is not None for v in sc.values()):
-                    scores[g["id"]] = sc
-        except Exception as e:
-            print(f"  scores {sport}: {e}")
+        if not results.handles(sport):
+            try:
+                games = json.loads(urllib.request.urlopen(
+                    f"{core.B}/{sport}/scores/?apiKey={key}&daysFrom=3", timeout=25).read())
+                for g in games:
+                    if not g.get("completed"):
+                        continue
+                    sc = {s["name"]: _num(s["score"]) for s in (g.get("scores") or [])}
+                    if len(sc) >= 2 and all(v is not None for v in sc.values()):
+                        scores[g["id"]] = sc
+            except Exception as e:
+                print(f"  scores {sport}: {e}")
         for t in LEDGERS:
             for (eid, market, side, point, player, home, away, ct, odds, stake) in paper.execute(
                     f"""SELECT event_id, market, side, point, player, home, away,
                               commence_time, odds, stake
                        FROM {t} WHERE completed=0 AND sport=?""", (sport,)).fetchall():
-                if market in core.ALL_PROPS:                      # PROP -> player stat
+                if results.handles(sport):                        # tennis/KBO/NCAA/MMA -> ESPN/Naver
+                    res = results.grade_bet(sport, home, away, ct, market, side,
+                                            point, player or "", cache=res_cache)
+                elif market in core.ALL_PROPS:                    # PROP -> player stat
                     stat = stats.player_stat(sport, away, home, ct, market, player)
                     res = "void" if stat == stats.DNP else core.grade_prop(side, point, stat)
                 elif market == "team_total":                      # player col holds the team

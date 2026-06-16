@@ -19,6 +19,7 @@ import softbook_ev_core as core
 import softbook_ev_stats as stats
 import softbook_ev_npb as npb
 import softbook_app_db as adb
+import softbook_results as results
 
 
 def _fetch_scores(sport, key):
@@ -59,6 +60,7 @@ def settle_app_bets(db, key=None, fetch_scores=_fetch_scores,
 
     # cache scores per sport so we fetch each at most once
     scores_cache = {}
+    res_cache = {}               # softbook_results per-(sport,date) fetch cache
     done = 0
 
     for (row_id, sport, event_id, market, side, point, player,
@@ -68,12 +70,27 @@ def settle_app_bets(db, key=None, fetch_scores=_fetch_scores,
         if not sport:
             continue
 
+        res = None
+        if results.handles(sport):
+            # tennis/KBO/NCAA/MMA -> ESPN/Naver (Odds API has no scores for these)
+            res = results.grade_bet(sport, home, away, commence_time, market, side,
+                                    point, player or "", cache=res_cache)
+            if res is None:
+                continue
+            won = 1 if res == "win" else (0 if res == "lose" else None)
+            pnl = (stake * (fill_odds - 1) if res == "win"
+                   else (-stake if res == "lose" else 0))
+            db.execute(
+                "UPDATE app_bet SET settled=1, won=?, pnl=?, settled_at=? WHERE id=?",
+                (won, round(pnl, 2), datetime.now(timezone.utc).isoformat(), row_id))
+            done += 1
+            continue
+
         # fetch scores for this sport (cached)
         if sport not in scores_cache:
             scores_cache[sport] = fetch_scores(sport, key)
         scores = scores_cache[sport]
 
-        res = None
         if market in core.ALL_PROPS:
             # prop market -> resolve via player stat source
             stat = player_stat(sport, away, home, commence_time, market, player)
