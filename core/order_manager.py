@@ -55,6 +55,13 @@ LIMIT_TTL_STRATEGIES = {
     # with worst-trade $0 — all 32 settled fires in the gated cohort won.
     # Thin-tail FOK same exposure as deribit_tail_fade → LIMIT_TTL required.
     "late_close_tail_v1",
+    # 2026-06-16 small live pilot. Live MARKET orders 409'd on Kalshi
+    # (`fill_or_kill_insufficient_resting_volume`) 6/15 — both attempts (CLE
+    # 29h-pre, SD 3.2h-pre) killed because MLB pre-game books are thin (<5
+    # contracts at the YES ask). Paper twins filled, live didn't — exact same
+    # failure mode as the WNBA/NHL/deribit FOK rejects above. Same fix:
+    # LIMIT_TTL routing (resting limit at signal price, partial-fill ok).
+    "sports_mlb_pitcher_edge_v2_1",
 }
 LIMIT_TTL_SECONDS = 60
 LIMIT_TTL_POLL_INTERVAL = 5
