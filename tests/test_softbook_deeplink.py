@@ -1,7 +1,8 @@
 # tests/test_softbook_deeplink.py
-"""Tiered sportsbook deep-link builder. FD/DK -> best-effort bet-slip prefill
-from provider-returned links/SIDs; all other books -> open event/app + copyable
-bet text (always present so a failed prefill degrades to manual entry)."""
+"""Tiered sportsbook deep-link builder. FD/DK/Caesars/BetRivers -> best-effort bet-slip
+prefill from provider links/SIDs (placeholders substituted); BetMGM/theScore/others ->
+open event/app + copyable bet text (always present so a failed prefill degrades to
+manual entry). See app/DEEPLINK_VERIFICATION.md for the per-book verification record."""
 import os
 import sys
 
@@ -71,16 +72,37 @@ def test_caesars_state_placeholder_substituted_in_betslip_link():
     assert "/us/ny/bet/betslip" in out["url"]
 
 
-def test_betmgm_and_betrivers_open_event_with_state_substituted_not_prefill():
-    # On-device their betslip links open the web homepage, not a slip -> not prefill;
-    # they fall to the event link, whose {state} placeholder must still be substituted.
-    for bk in ("betmgm", "betrivers"):
-        out = dl.build(bk, {"betslip": "https://example/{state}/bet",
-                            "event": "https://sports.{state}.example/event"}, PICK)
-        assert out["tier"] == "event"
-        assert "example/bet" not in (out["url"] or "")
-        assert "{state}" not in out["url"]
-        assert "sports.ny.example/event" in out["url"]
+def test_betmgm_stays_event_betslip_link_drops_selection_on_redirect():
+    # Verified 2026-06-15: BetMGM's options= betslip link 301-redirects sports.{state}.betmgm
+    # -> www.betmgm.com which DROPS the ?options= param -> homepage (selection lost), and its
+    # AASA is broken — prefill is not achievable. Stay event-tier; the event link survives the
+    # redirect to the right game page, and its {state} placeholder is still substituted.
+    out = dl.build("betmgm",
+                   {"betslip": "https://sports.{state}.betmgm.com/en/sports?options=X&type=Single",
+                    "event": "https://sports.{state}.betmgm.com/en/sports/events/foo-19684635"}, PICK)
+    assert out["tier"] == "event"
+    assert "options=" not in (out["url"] or "")
+    assert "{state}" not in out["url"]
+    assert out["url"] == "https://sports.ny.betmgm.com/en/sports/events/foo-19684635"
+
+
+def test_betrivers_prefill_fills_kambi_coupon_placeholders():
+    # Verified 2026-06-15: BetRivers only failed because the builder left {pickType}/{wagerAmount}
+    # literal -> malformed -> homepage. Filled in, the Kambi coupon (coupon=single|<sid>|, empty
+    # trailing stake) loads the selection in the slip. Opens the mobile-web Kambi slip (no applinks
+    # AASA on ny.betrivers.com) but is a real prefill -> prefill-tier.
+    links = {"betslip": "https://{state}.betrivers.com/?page=sportsbook#event/1024786776"
+                        "?coupon={pickType}|4222431357|{wagerAmount}"}
+    out = dl.build("betrivers", links, PICK)
+    assert out["tier"] == "prefill"
+    assert "{" not in out["url"]  # every placeholder substituted, no literal braces left
+    assert out["url"] == ("https://ny.betrivers.com/?page=sportsbook"
+                          "#event/1024786776?coupon=single|4222431357|")
+
+
+def test_fill_placeholders_substitutes_all_known_tokens():
+    got = dl._fill_placeholders("https://{state}.x/#e/1?coupon={pickType}|55|{wagerAmount}")
+    assert got == "https://ny.x/#e/1?coupon=single|55|"
 
 
 def test_non_prefill_book_never_prefills_even_with_betslip_link():
