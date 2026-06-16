@@ -297,18 +297,18 @@ INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
 # mapped here (both surfaced by /v4/sports?all=true, active=True). UFC stays
 # single-endpoint (mma_mixed_martial_arts, year-round).
 #
-# 2026-06-08 clay→grass rotation: French Open + Hamburg + Strasbourg ended
-# (now inactive in the Odds API). As of 6/08 the Odds API has published
-# exactly ONE grass endpoint — WTA Queen's Club; it carries NO ATP grass
-# endpoint yet (no queens/halle/'s-hertogenbosch slug exists in the full
-# /v4/sports?all=true list). ATP is therefore intentionally empty this week
-# — the rotation cron's unmapped-active alert will surface the ATP grass
-# slugs to wire the moment the Odds API publishes them.
+# 2026-06-16 grass mid-rotation: WTA Queen's Club ended (now stale in the
+# Odds API). The Odds API has since published the mid-June grass swing —
+# ATP Halle + ATP Queen's Club (both ATP 500 grass) and WTA German Open
+# (Berlin, WTA 500 grass) — all surfaced active by the rotation cron's
+# unmapped-active alert. ATP is no longer empty; the prior empty window
+# (6/08, no ATP grass slug published yet) is now closed.
 TENNIS_ATP_SLUGS: tuple[str, ...] = (
-    # (empty — no ATP grass endpoint live in the Odds API as of 2026-06-08)
+    "tennis_atp_halle_open",          # ATP 500 grass, Halle (~6/15–6/22)
+    "tennis_atp_queens_club_champ",   # ATP 500 grass, Queen's Club (~6/15–6/22)
 )
 TENNIS_WTA_SLUGS: tuple[str, ...] = (
-    "tennis_wta_queens_club_champ",  # WTA 500 grass, Queen's Club (~6/9–6/15)
+    "tennis_wta_german_open",         # WTA 500 grass, Berlin (~6/15–6/21)
 )
 
 # Single source of truth for Kalshi series → Odds API sport key(s). Tennis
@@ -414,8 +414,11 @@ TENNIS_SLUG_META = {
     "tennis_wta_dubai":               {"tier": "WTA500",  "surface": "hard",  "format": "BO3"},
     "tennis_wta_qatar_open":          {"tier": "WTA500",  "surface": "hard",  "format": "BO3"},
     "tennis_wta_strasbourg":          {"tier": "WTA250",  "surface": "clay",  "format": "BO3"},
-    # Grass warm-ups (added 2026-06-08 clay→grass rotation)
+    # Grass warm-ups (added 2026-06-08 clay→grass rotation; extended 2026-06-16)
     "tennis_wta_queens_club_champ":   {"tier": "WTA500",  "surface": "grass", "format": "BO3"},
+    "tennis_atp_halle_open":          {"tier": "ATP500",  "surface": "grass", "format": "BO3"},
+    "tennis_atp_queens_club_champ":   {"tier": "ATP500",  "surface": "grass", "format": "BO3"},
+    "tennis_wta_german_open":         {"tier": "WTA500",  "surface": "grass", "format": "BO3"},
 }
 
 # Regex for extracting round from a Kalshi tennis market title.
