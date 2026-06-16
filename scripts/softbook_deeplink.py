@@ -59,15 +59,22 @@ def _fill_placeholders(url):
                .replace("{pickType}", PICK_TYPE_SINGLE)
                .replace("{wagerAmount}", ""))
 
-# Universal-link / app home fallbacks (open the app to its home when no
-# event/betslip link is available). None => copy-only.
+# App-home fallbacks (open the app/site to its home when no event/betslip link is
+# available). https hosts open the native app only if that host has an applinks AASA,
+# else Safari. None => copy-only.
+#  - Fanatics: the Odds API gives ONLY a sid (no link) and sportsbook.fanatics.com has NO
+#    AASA, so the web URL opened Safari, not the app. Use the app's verified CUSTOM SCHEME
+#    instead (fanaticssportsbook://discover, extracted from the brand's live AppsFlyer
+#    OneLink af_dp; bundle com.fbg.sportsbook / App Store id1616738407). Opens the app to its
+#    Discover home — no prefill (the sid can't address a betslip). Requires "fanaticssportsbook"
+#    in app.json LSApplicationQueriesSchemes or canOpenURL throws -> copy fallback.
 HOME_URL = {
     "fanduel": "https://sportsbook.fanduel.com",
     "draftkings": "https://sportsbook.draftkings.com",
     "betmgm": "https://sports.nj.betmgm.com",
     "williamhill_us": "https://www.williamhill.us",
     "betrivers": "https://www.betrivers.com",
-    "fanatics": "https://sportsbook.fanatics.com",
+    "fanatics": "fanaticssportsbook://discover",
     "espnbet": "https://espnbet.com",
     "ballybet": None,
 }
