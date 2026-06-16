@@ -11,7 +11,7 @@ jest.mock("../api/client", () => ({
     })),
   },
 }));
-jest.mock("../deeplink", () => ({ openOrCopy: jest.fn(async () => "opened"), isVerifiedPrefill: () => false }));
+jest.mock("../deeplink", () => ({ openOrCopy: jest.fn(async () => "opened_and_copied"), isVerifiedPrefill: () => false }));
 jest.mock("@react-navigation/native", () => ({ useNavigation: () => ({ push: jest.fn() }) }));
 
 import { render, screen, waitFor, fireEvent } from "@testing-library/react-native";
@@ -26,9 +26,12 @@ test("loads refresh quotes and renders per-book rows", async () => {
   expect(screen.getByText(/BetMGM/)).toBeOnTheScreen();
 });
 
-test("tapping a book row opens or copies its deep-link", async () => {
+test("tapping a book row opens its deep-link (with the prefill flag) and toasts on copy", async () => {
   await render(<PickDetailScreen route={route} />);
   await waitFor(() => expect(screen.getByText(/FanDuel/)).toBeOnTheScreen());
-  fireEvent.press(screen.getByText(/FanDuel/));
-  expect(openOrCopy).toHaveBeenCalled();
+  await fireEvent.press(screen.getByText(/FanDuel/));
+  // called with the book's deeplink AND the verified-prefill flag (false here)
+  expect(openOrCopy).toHaveBeenCalledWith(expect.objectContaining({ tier: "prefill" }), false);
+  // a non-prefill open copies the bet text -> the screen surfaces a "복사됨" toast (no silent no-op)
+  await waitFor(() => expect(screen.getByText(/복사됨/)).toBeOnTheScreen());
 });
