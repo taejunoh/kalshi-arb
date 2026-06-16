@@ -96,22 +96,21 @@ def _other_books_line(b):
 
 
 def _first_entry_note(db, b):
-    """Tag the alert FIRST-ENTRY vs LATE-CROSSER.
+    """Tag the alert BET vs SKIP by the DIAGONAL rule (market type × entry timing).
 
-    First-entry = this opportunity (event, market, player) was ALREADY High at its
-    earliest recorded snapshot — a standing soft-book mispricing you grab on sight.
-    The dashboard's First-entry High ledger (paper_bet, tier=High) settled +16.6%
-    ROI on that subset. A late-crosser only drifted into High after the line moved
-    (earliest snapshot was Med/Low); every High-trigger pick that is NOT first-entry
-    settled ~breakeven (−0.9%) — pure dilution — so it is flagged 권장 스킵.
+    A pick is 'first-entry' if its (event, market, player) was ALREADY High at its
+    earliest recorded snapshot (a standing mispricing); a 'late-crosser' only drifted
+    into High after the line moved. The realized edge is DIAGONAL (paper, settled,
+    6/13 re-measure n=234):
+      • GAME (ML/spread/total): first-entry +29.5% / late-crosser −7.2% → bet first-entry
+      • PROPS:                  late-crosser +9.2% / first-entry −11.2% → bet late-crosser
+    So BET iff (game & first-entry) OR (prop & late-crosser); SKIP the other diagonal.
+    That combo settled +12.5% ROI with Wilson-LB > breakeven (the only cut that clears
+    it) and held split-half (early +13% / late +12%). MLB-driven; confirm 6/15.
 
-    Keyed on (event, market, player) to match that ledger; record() persists this
-    scan's snapshot before alert_new_high, so a pick High on its first appearance
-    reads as first-entry here. Side/point movement is _dup_note's job, not this.
-
-    Non-critical: on any lookup error (table not yet migrated, transient lock) or a
-    pick with no snapshot row, return "" — the alert must still fire untagged, and
-    mislabeling a real first-entry as SKIP would cost a +EV bet."""
+    Keyed on (event, market, player); record() persists this scan's snapshot before
+    alert_new_high. Non-critical: any lookup error / missing snapshot → "" (the alert
+    still fires untagged — never mislabel a pick on a transient miss)."""
     try:
         row = db.execute(
             "SELECT tier FROM softbook_ev WHERE event_id=? AND market=?"
@@ -121,9 +120,15 @@ def _first_entry_note(db, b):
         return ""
     if not row:
         return ""
-    if row[0] == "High":
-        return "🟣 BET · first-entry — 베팅 (bet small)"
-    return "⚪ SKIP · late-crosser (라인 이동 후 High · ROI≈0)"
+    first_entry = row[0] == "High"
+    is_prop = b["market"] in core.PROP_SHORT
+    if is_prop and not first_entry:
+        return "🟣 BET · late-crosser prop — 베팅 (bet small)"
+    if not is_prop and first_entry:
+        return "🟣 BET · first-entry game — 베팅 (bet small)"
+    if is_prop:                                      # first-entry prop
+        return "⚪ SKIP · first-entry prop (즉시 High 프롭 · ROI<0)"
+    return "⚪ SKIP · late-crosser game (라인 이동 후 · ROI<0)"
 
 
 def _send_bet_alert(db, b, prefix, extra="", batch=()):
