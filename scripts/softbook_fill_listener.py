@@ -10,6 +10,11 @@ that overstates capturable edge. So the user replies to each per-bet High alert:
     1.98          -> filled at the alerted book @ 1.98
     1.98 fd       -> filled at FanDuel @ 1.98
     +105 dk 5     -> filled at DraftKings @ +105 (american), $5 stake
+    3.8 ts bonus  -> a BONUS-driven bet (e.g. clearing a signup bonus on this
+                     pick). Recorded but TAGGED bonus=1 so it is EXCLUDED from the
+                     realized slippage / no-fill / ROI edge stats — its EV comes
+                     from the bonus, not the pick, so a $100 bonus bet must not
+                     pollute the first-entry edge measurement. Counted separately.
     skip          -> could not / chose not to bet (no-fill)
     cashout 1.50  -> cashed the bet out early for $1.50 back (e.g. the opposite
                      side later alerted as +EV). Marks the fill so settle-at-close
@@ -38,7 +43,8 @@ FILL_SCHEMA = """CREATE TABLE IF NOT EXISTS real_fill(
     alert_book TEXT, alert_odds REAL,
     fill_book TEXT, fill_odds REAL, fill_stake REAL,
     skipped INTEGER DEFAULT 0, raw_reply TEXT, replied_at TEXT,
-    cashed_out INTEGER DEFAULT 0, cashout_amount REAL)"""
+    cashed_out INTEGER DEFAULT 0, cashout_amount REAL,
+    bonus INTEGER DEFAULT 0)"""
 STATE_SCHEMA = "CREATE TABLE IF NOT EXISTS tg_state(k TEXT PRIMARY KEY, v TEXT)"
 
 FILL_COLS = ("message_id, event_id, market, side, point, player, alert_book,"
@@ -47,6 +53,9 @@ FILL_COLS = ("message_id, event_id, market, side, point, player, alert_book,"
 
 SKIP_WORDS = {"skip", "s", "pass", "x", "스킵", "패스", "안함", "노"}
 CASHOUT_WORDS = {"cashout", "cashedout", "co", "캐시아웃", "캐쉬아웃"}
+# A bonus-driven bet (clearing a signup bonus): recorded but tagged so it's
+# excluded from the edge stats — EV comes from the bonus, not the pick.
+BONUS_WORDS = {"bonus", "보너스", "bb", "freebet", "bonusbet"}
 BOOK_ALIASES = {
     "fd": "FanDuel", "fanduel": "FanDuel",
     "dk": "DraftKings", "draftkings": "DraftKings",
@@ -108,8 +117,12 @@ def parse_reply(text):
                 pass
         return {"cashout": True, "amount": amount}
     odds = stake = book = None
+    bonus = False
     for t in toks:
         low = t.lower().rstrip(".,")
+        if low in BONUS_WORDS:
+            bonus = True
+            continue
         if low in BOOK_ALIASES:
             book = BOOK_ALIASES[low]
             continue
@@ -123,12 +136,16 @@ def parse_reply(text):
                 pass
     if odds is None:
         return None
-    return {"odds": odds, "book": book, "stake": stake}
+    out = {"odds": odds, "book": book, "stake": stake}
+    if bonus:                       # only present when tagged (keeps non-bonus shape)
+        out["bonus"] = True
+    return out
 
 
 def _migrate(fdb):
-    """Pre-2026-06-12 real_fill lacks the cashout columns."""
-    for col in ("cashed_out INTEGER DEFAULT 0", "cashout_amount REAL"):
+    """Pre-2026-06-12 real_fill lacks the cashout columns; pre-06-16 lacks bonus."""
+    for col in ("cashed_out INTEGER DEFAULT 0", "cashout_amount REAL",
+                "bonus INTEGER DEFAULT 0"):
         try:
             fdb.execute(f"ALTER TABLE real_fill ADD COLUMN {col}")
         except sqlite3.OperationalError:        # already there
@@ -183,44 +200,60 @@ def record_fill(fdb, message_id, alert, parsed, raw, now):
         n = fdb.execute("SELECT count(*) FROM real_fill WHERE cashed_out=1").fetchone()[0]
         return ack + f" · 누적 캐시아웃 {n}"
     book = parsed["book"] or abook
-    # UPDATE-first keeps cashed_out/cashout_amount when correcting odds later
+    is_bonus = 1 if parsed.get("bonus") else 0
+    # UPDATE-first keeps cashed_out/cashout_amount when correcting odds later. Only
+    # SET bonus when flagged this time — a later plain odds-correction must not
+    # silently clear an earlier bonus tag.
+    set_bonus = ", bonus=1" if is_bonus else ""
     cur = fdb.execute(
-        "UPDATE real_fill SET fill_book=?, fill_odds=?, fill_stake=?, skipped=0,"
+        f"UPDATE real_fill SET fill_book=?, fill_odds=?, fill_stake=?, skipped=0{set_bonus},"
         " raw_reply=?, replied_at=? WHERE message_id=?",
         (book, parsed["odds"], parsed.get("stake"), raw, now, message_id))
     if cur.rowcount == 0:
-        fdb.execute(f"INSERT INTO real_fill({FILL_COLS})"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        fdb.execute(f"INSERT INTO real_fill({FILL_COLS}, bonus)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (message_id, eid, market, side, point, player, abook, aodds,
-                     book, parsed["odds"], parsed.get("stake"), 0, raw, now))
+                     book, parsed["odds"], parsed.get("stake"), 0, raw, now, is_bonus))
     fdb.commit()
     ack = f"✅ 기록: {book} @ {parsed['odds']:.2f}"
+    if is_bonus:
+        nb = fdb.execute("SELECT count(*) FROM real_fill WHERE bonus=1").fetchone()[0]
+        return ack + f" · 🎁 보너스 (엣지 측정 제외) · 누적 보너스 {nb}"
     if aodds:
         slip = (parsed["odds"] / aodds - 1) * 100
         ack += f" (알림 {abook} {aodds:.2f} → 슬리피지 {slip:+.1f}%)"
-    n = fdb.execute("SELECT count(*) FROM real_fill WHERE skipped=0").fetchone()[0]
+    n = fdb.execute("SELECT count(*) FROM real_fill"
+                    " WHERE skipped=0 AND COALESCE(bonus,0)=0").fetchone()[0]
     return ack + f" · 누적 체결 {n}"
 
 
 def stats_text(fdb):
-    fills, skips, slip, couts, conet = fdb.execute(
-        """SELECT sum(skipped=0), sum(skipped=1),
-           avg(CASE WHEN skipped=0 AND alert_odds>0
+    # Edge stats (slippage / no-fill) count ONLY non-bonus fills — a bonus-driven
+    # bet is placed for the bonus, not at the alerted edge, so it would distort.
+    fills, skips, slip, couts, conet, bonus = fdb.execute(
+        """SELECT sum(skipped=0 AND COALESCE(bonus,0)=0), sum(skipped=1),
+           avg(CASE WHEN skipped=0 AND COALESCE(bonus,0)=0 AND alert_odds>0
                THEN 100.0*(fill_odds/alert_odds-1) END),
            sum(cashed_out=1),
            sum(CASE WHEN cashed_out=1 AND cashout_amount IS NOT NULL
-               AND fill_stake IS NOT NULL THEN cashout_amount-fill_stake END)
+               AND fill_stake IS NOT NULL THEN cashout_amount-fill_stake END),
+           sum(COALESCE(bonus,0)=1)
            FROM real_fill""").fetchone()
-    fills, skips = fills or 0, skips or 0
-    if not fills and not skips:
+    fills, skips, bonus = fills or 0, skips or 0, bonus or 0
+    if not fills and not skips and not bonus:
         return "기록된 체결/스킵 없음 — High 알림에 답장하면 쌓입니다."
-    out = f"🎯 실체결 {fills} · skip {skips} (노필률 {100*skips/(fills+skips):.0f}%)"
+    if fills or skips:
+        out = f"🎯 실체결 {fills} · skip {skips} (노필률 {100*skips/(fills+skips):.0f}%)"
+    else:
+        out = "🎯 엣지 체결 없음 (보너스만 기록됨)"
     if slip is not None:
         out += f"\n평균 슬리피지 {slip:+.2f}% (알림 배당 대비)"
     if couts:
         out += f"\n캐시아웃 {couts}건"
         if conet is not None:
             out += f" (확정 손익 ${conet:+.2f})"
+    if bonus:
+        out += f"\n🎁 보너스 베팅 {bonus}건 (엣지 측정서 제외)"
     return out
 
 
@@ -264,7 +297,7 @@ def handle_update(upd, adb, fdb, now):
     parsed = parse_reply(text)
     if not parsed:
         return ('형식을 못 읽었어요. 예) "1.98" · "1.98 fd" · "+105 dk 5" · "skip"'
-                ' · "cashout 1.50"')
+                ' · "cashout 1.50" · "3.8 ts bonus" (보너스벳)')
     return record_fill(fdb, reply["message_id"], alert, parsed, text, now)
 
 

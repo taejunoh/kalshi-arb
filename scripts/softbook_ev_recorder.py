@@ -81,7 +81,7 @@ def _min_odds_line(ev, odds):
             " (어느 북이든 최소 위면 OK)")
 
 
-REPLY_HINT = '↩️ 답장: 체결배당 [북] (예: 1.98 fd) · 안 했으면 "skip"'
+REPLY_HINT = '↩️ 답장: 체결배당 [북] (예: 1.98 fd) · 안 했으면 "skip" · 보너스벳이면 "bonus"'
 
 
 def _other_books_line(b):
