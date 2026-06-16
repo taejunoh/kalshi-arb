@@ -28,8 +28,8 @@ Research (2026): FanDuel's `addToBetslip` universal link is confirmed but best-e
   {wagerAmount}` had its `{pickType}`/`{wagerAmount}` tokens left literal → malformed URL.
   Now substituted to `coupon=single|<sid>|` (format confirmed across 4 independent sources).
   ⚠️ `ny.betrivers.com` serves NO `applinks` AASA (webcredentials only) → the link opens the
-  **mobile-web** Kambi slip, not the native app. Still a real prefill. **TODO: re-verify
-  on-device → if the selection loads, add `"BetRivers"` to `VERIFIED_PREFILL_BOOKS`.**
+  **mobile-web** Kambi slip, not the native app. Still a real prefill. ✅ **On-device verified
+  2026-06-15: the selection loads in the slip → `"BetRivers"` added to `VERIFIED_PREFILL_BOOKS`.**
 - **BetMGM** — prefill NOT achievable (do not re-chase). The `options=` betslip link
   301-redirects `sports.{state}.betmgm.com → www.betmgm.com`, which DROPS the `?options=`
   param → homepage (selection lost, before any app/AASA matters); BetMGM's AASA is also broken
