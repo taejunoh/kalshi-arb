@@ -15,19 +15,29 @@ afterEach(() => jest.clearAllMocks());
 
 const COPY = "FanDuel · Nimmo TB Over 1.5 @ 2.20";
 
-test("https link opens directly without canOpenURL", async () => {
+test("verified prefill (isPrefill) opens the slip without copying", async () => {
   const dl: Deeplink = { tier: "prefill", url: "https://sportsbook.fanduel.com/addToBetslip?x=1", copy_text: COPY };
-  const r = await openOrCopy(dl);
-  expect(r).toBe("opened");
+  const r = await openOrCopy(dl, true);
+  expect(r).toBe("prefilled");
   expect(Linking.canOpenURL).not.toHaveBeenCalled();
   expect(Linking.openURL).toHaveBeenCalledWith(dl.url);
+  expect(Clipboard.setStringAsync).not.toHaveBeenCalled(); // slip is filled — no noise copy
 });
 
-test("custom scheme checks canOpenURL then opens", async () => {
+test("non-prefill https link opens the app AND copies the bet text", async () => {
+  const dl: Deeplink = { tier: "home", url: "https://fanatics.onelink.me/5kut/x", copy_text: COPY };
+  const r = await openOrCopy(dl, false);
+  expect(r).toBe("opened_and_copied");
+  expect(Linking.openURL).toHaveBeenCalledWith(dl.url);
+  expect(Clipboard.setStringAsync).toHaveBeenCalledWith(COPY);
+});
+
+test("custom scheme checks canOpenURL then opens (prefill -> no copy)", async () => {
   (Linking.canOpenURL as jest.Mock).mockResolvedValue(true);
-  const r = await openOrCopy({ tier: "prefill", url: "dksb://sb/addbet/S1", copy_text: COPY });
-  expect(r).toBe("opened");
+  const r = await openOrCopy({ tier: "prefill", url: "dksb://sb/addbet/S1", copy_text: COPY }, true);
+  expect(r).toBe("prefilled");
   expect(Linking.canOpenURL).toHaveBeenCalled();
+  expect(Clipboard.setStringAsync).not.toHaveBeenCalled();
 });
 
 test("custom scheme that throws canOpenURL falls back to clipboard", async () => {
