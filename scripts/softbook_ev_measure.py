@@ -32,15 +32,33 @@ def main():
     g = defaultdict(list)
     for eid, market, side, point, player, ts, fair, px, tier in rows:
         g[(eid, market, side, point, player)].append((ts, fair, px, tier))
-    clvs, px_clv, mkt, tier_clv = [], [], defaultdict(list), defaultdict(list)
+    # TRUE closing fairs (softbook_close_capture: Pinnacle at commence, any band).
+    # Falling back to the last in-band snapshot biases CLV UP (corrected lines were
+    # truncated out), so prefer the true close whenever it exists.
+    close = {}
+    try:
+        for eid, m, s, p, pl, cf in db.execute(
+                "SELECT event_id, market, side, point, player, close_fair FROM closing_line"):
+            close[(eid, m, s, p or 0, pl or "")] = cf
+    except sqlite3.OperationalError:
+        pass                                      # capturer not deployed yet
+    clvs, px_clv, mkt, tier_clv, n_true = [], [], defaultdict(list), defaultdict(list), 0
     for k, track in g.items():
-        if len(track) < 2:
-            continue
         track.sort()
-        clv = track[-1][1] - track[0][1]          # close fair - open fair
+        open_fair = track[0][1]
+        ck = (k[0], k[1], k[2], k[3] or 0, k[4] or "")
+        if ck in close:
+            close_fair, is_true = close[ck], True
+        elif len(track) >= 2:
+            close_fair, is_true = track[-1][1], False
+        else:
+            continue                              # no close available -> unmeasurable
+        n_true += is_true
+        clv = close_fair - open_fair              # close fair - open fair
         clvs.append(clv); px_clv.append((track[0][2], clv)); mkt[k[1]].append(clv)
         tier_clv[track[0][3] or "?"].append(clv)  # by OPENING confidence tier
-    print(f"# {len(g)} unique +EV bets recorded; {len(clvs)} with >=2 snapshots (CLV-measurable)")
+    print(f"# {len(g)} unique +EV bets recorded; {len(clvs)} CLV-measurable "
+          f"({n_true} vs TRUE close, {len(clvs)-n_true} fallback to last in-band = biased UP)")
     if len(clvs) < 15:
         print("not enough closed opportunities yet — keep recording (need ~1-2 weeks).")
         return
