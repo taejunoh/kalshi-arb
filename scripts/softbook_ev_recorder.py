@@ -96,17 +96,22 @@ def _other_books_line(b):
 
 
 def _first_entry_note(db, b):
-    """Tag the alert BET vs SKIP by the DIAGONAL rule (market type × entry timing).
+    """Tag the alert BET vs SKIP. Rule = FIRST-ENTRY GAME ONLY (user, 2026-06-16).
 
     A pick is 'first-entry' if its (event, market, player) was ALREADY High at its
     earliest recorded snapshot (a standing mispricing); a 'late-crosser' only drifted
-    into High after the line moved. The realized edge is DIAGONAL (paper, settled,
-    6/13 re-measure n=234):
-      • GAME (ML/spread/total): first-entry +29.5% / late-crosser −7.2% → bet first-entry
-      • PROPS:                  late-crosser +9.2% / first-entry −11.2% → bet late-crosser
-    So BET iff (game & first-entry) OR (prop & late-crosser); SKIP the other diagonal.
-    That combo settled +12.5% ROI with Wilson-LB > breakeven (the only cut that clears
-    it) and held split-half (early +13% / late +12%). MLB-driven; confirm 6/15.
+    into High after the line moved. BET iff (game [ML/spread/total] AND first-entry);
+    SKIP everything else (all props, all late-crossers).
+
+    This is a CONTRACTION of the first-entry-only discipline, not an edge claim. The
+    6/15 re-measure (independent + adversarial) found NO confirmed pick edge: every
+    cut ≈ breakeven, Pikkit realized −4.6% governs, and the seductive cells were
+    artifacts (late-crosser-props was ~90% one 6/14 slate; first-entry's only + cell
+    was one chalk spread). Props are dropped because first-entry props ran negative
+    and the late-crosser-prop "edge" was a single-day cluster — carving them out is
+    safe (it removes volume, it does not chase a phantom). Real +EV lives in signup
+    BONUSES, not the picks; these ≈BE game bets are the low-variance vehicle to clear
+    them. No size increase until forward CLV confirms an edge.
 
     Keyed on (event, market, player); record() persists this scan's snapshot before
     alert_new_high. Non-critical: any lookup error / missing snapshot → "" (the alert
@@ -122,13 +127,11 @@ def _first_entry_note(db, b):
         return ""
     first_entry = row[0] == "High"
     is_prop = b["market"] in core.PROP_SHORT
-    if is_prop and not first_entry:
-        return "🟣 BET · late-crosser prop — 베팅 (bet small)"
-    if not is_prop and first_entry:
+    if is_prop:
+        return "⚪ SKIP · prop (게임 first-entry만 베팅)"
+    if first_entry:                                  # game + first-entry
         return "🟣 BET · first-entry game — 베팅 (bet small)"
-    if is_prop:                                      # first-entry prop
-        return "⚪ SKIP · first-entry prop (즉시 High 프롭 · ROI<0)"
-    return "⚪ SKIP · late-crosser game (라인 이동 후 · ROI<0)"
+    return "⚪ SKIP · late-crosser game (라인 이동 후)"
 
 
 def _send_bet_alert(db, b, prefix, extra="", batch=()):
