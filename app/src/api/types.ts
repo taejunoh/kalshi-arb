@@ -19,9 +19,12 @@ export interface Pick {
   odds: number | null;
   conf: number | null;
   n_books: number | null;
-  // True when this (event,market,player)'s earliest snapshot was already High — the
-  // +16.6% ROI "first-entry" subset. False = late-crosser (drifted into High, ROI≈0).
+  // True when this (event,market,player)'s earliest snapshot was already High
+  // (first-entry). Informational; the actionable verdict is should_bet.
   first_entry?: boolean;
+  // BET verdict = FIRST-ENTRY GAME ONLY (core.is_bet: h2h/spread/total & first-entry;
+  // props and late-crossers are false). Drives the card badge and the bet filter.
+  should_bet?: boolean;
 }
 
 export interface PicksResponse {

@@ -94,10 +94,10 @@ def _is_first_entry(ev, r):
 
 
 def _high_messages(ev, pdb, tokens, now):
-    """Push ONE alert per NEW first-entry High pick. Late-crossers are still deduped
-    into pushed_high (so they are not re-evaluated each scan) but never alerted — the
-    user wants first-entry-only notifications; the app feed still shows everything,
-    tagged 🟣/⚪ with a first-entry filter."""
+    """Push ONE alert per NEW BET pick = FIRST-ENTRY GAME only (core.is_bet: h2h/
+    spread/total & first-entry; props and late-crossers skip). Non-bet picks are
+    still deduped into pushed_high (not re-evaluated each scan) but never alerted —
+    the app feed still shows everything, tagged 🟣BET/⚪SKIP with a bet filter."""
     pdb.execute(PUSHED_HIGH)
     rows = _latest_high(ev)
     latest = max((r["recorded_at"] for r in rows), default=None)
@@ -110,7 +110,7 @@ def _high_messages(ev, pdb, tokens, now):
             "INSERT OR IGNORE INTO pushed_high VALUES (?,?,?,?,?,?)", (*pk, now))
         if not cur.rowcount:
             continue
-        if not _is_first_entry(ev, r):       # first-entry-only alerts (the +EV edge)
+        if not core.is_bet(_is_first_entry(ev, r), r["market"]):   # first-entry GAME only
             continue
         label = core.label(r["market"], r["side"],
                            None if r["market"] == "h2h" else r["point"],
@@ -119,7 +119,7 @@ def _high_messages(ev, pdb, tokens, now):
         body = (f"{label} · {r['best_soft_book']} {r['best_soft_price']:.2f}"
                 f" · EV {(r['snapshot_ev'] or 0)*100:+.1f}%" + _opp_note(rows, r))
         for tok in tokens:
-            msgs.append(push.build_message(tok, "🟣 First-entry +EV", body,
+            msgs.append(push.build_message(tok, "🟣 First-entry game +EV", body,
                                            data={"pick_id": pid}, category="high_pick"))
     pdb.commit()
     return msgs

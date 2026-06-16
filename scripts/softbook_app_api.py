@@ -114,11 +114,11 @@ def _prefs(pdb):
 
 
 def _enrich_first_entry(picks):
-    """Set p['first_entry']: True when this (event,market,player)'s EARLIEST
-    softbook_ev snapshot was already tier='High' (a standing soft-book mispricing
-    grabbed on sight). Mirrors softbook_ev_recorder._first_entry_note exactly — the
-    dashboard's First-entry High ledger settled +16.6% ROI on this subset, while
-    late-crossers (drifted into High only after the line moved) settled ~0 (dilution)."""
+    """Set p['first_entry'] (earliest softbook_ev snapshot was tier='High') and
+    p['bet'] = the BET verdict via core.is_bet = FIRST-ENTRY GAME ONLY (h2h/spread/
+    total & first-entry; props and late-crossers skip). Single source of truth shared
+    with the Telegram tag and the push worker — see core.is_bet. No confirmed pick
+    edge (6/15 ≈BE); ≈BE bonus-clearing bets, not a money-maker."""
     if not picks:
         return picks
     c = _ev_conn()
@@ -133,6 +133,9 @@ def _enrich_first_entry(picks):
                     key).fetchone()
                 cache[key] = bool(row and row[0] == "High")
             p["first_entry"] = cache[key]
+            # should_bet = the BET verdict (first-entry GAME only); named distinctly
+            # from the pick lifecycle status 'bet' (user-marked-as-placed).
+            p["should_bet"] = core.is_bet(cache[key], p["market"])
     finally:
         c.close()
     return picks

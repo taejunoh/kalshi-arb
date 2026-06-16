@@ -56,6 +56,17 @@ PROP_SHORT = {"pitcher_strikeouts": "K", "batter_total_bases": "TB",
 ALL_PROPS = {m for v in PROP_MARKETS.values() for m in v}
 
 
+def is_bet(first_entry, market):
+    """THE bet rule = FIRST-ENTRY GAME ONLY (user, 2026-06-16): bet iff the pick was
+    High from its earliest snapshot (first_entry) AND it is a game market — h2h /
+    spread / total (props, incl. team_total, and late-crossers skip). SINGLE SOURCE
+    OF TRUTH for the Telegram tag, the app /picks 'bet' flag, and the push worker —
+    change the policy here, once (the Telegram↔app divergence on 6/16 is why). No
+    confirmed pick edge (6/15 re-measure ≈BE, Pikkit −4.6%); ≈BE bonus-clearing
+    vehicle, bet small, no size increase until forward CLV confirms an edge."""
+    return bool(first_entry) and market not in PROP_SHORT
+
+
 def markets_for(sport):
     # FanDuel/DraftKings/BetMGM list props ONLY under the _alternate key (verified
     # live 2026-06-12: batter_home_runs had no FD/DK/MGM rows, _alternate did) —

@@ -24,10 +24,10 @@ export function PickCard({
 
   return (
     <Swipeable renderRightActions={renderRightActions}>
-    <Pressable style={[s.card, pick.first_entry === false && s.cardMuted]} onPress={() => onOpen(pick)}>
-      {pick.first_entry !== undefined && (
-        <Text style={pick.first_entry ? s.feBadge : s.lcBadge}>
-          {pick.first_entry ? "🟣 first-entry · 베팅" : "⚪ late-crosser · 권장 스킵"}
+    <Pressable style={[s.card, pick.should_bet === false && s.cardMuted]} onPress={() => onOpen(pick)}>
+      {pick.should_bet !== undefined && (
+        <Text style={pick.should_bet ? s.feBadge : s.lcBadge}>
+          {pick.should_bet ? "🟣 BET · first-entry game" : "⚪ SKIP · 권장 스킵"}
         </Text>
       )}
       <View style={s.row}>
