@@ -1009,6 +1009,7 @@
       <button type="button" data-view="schedule">Schedule</button>
       <button type="button" data-view="ev">+EV</button>
       <button type="button" data-view="evhist">History</button>
+      <button type="button" data-view="bonus">Bonus</button>
     </div>
     <span id="refresh-indicator" class="refresh-indicator" title="Auto-refresh status">auto —</span>
     <div class="status-items">
@@ -1202,6 +1203,69 @@
       </div>
       <div id="evhist-summary" class="evh-summary"></div>
       <div id="evhist-body"></div>
+    </section>
+
+    <!-- ── Bonus conversion calculator (matched-betting hedge → locked profit) ── -->
+    <section id="bonus-section" style="display:none;">
+      <div class="section-title">Bonus conversion calculator — hedge a signup bonus to locked profit</div>
+      <div style="color:var(--text-dim);font-size:11.5px;margin-bottom:14px;line-height:1.5;">
+        Pick the offer type, enter your stake and the two odds (your book + the Kalshi <b>opposite-side</b> price).
+        Output = exact hedge stake + guaranteed locked profit. Bonus bets are stake-not-returned.
+        Formulas verified 3 independent ways. Edge comes from the <b>bonus</b>, not the pick.
+      </div>
+      <style>
+        #bonus-section .bc-tab{padding:7px 11px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);cursor:pointer;font-size:12px;font-family:var(--font)}
+        #bonus-section .bc-tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+        #bonus-section .bc-pre{padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);background:transparent;color:var(--text-dim);cursor:pointer;font-size:11.5px;font-family:var(--font)}
+        #bonus-section .bc-row{display:flex;align-items:center;gap:10px;margin:11px 0;flex-wrap:wrap}
+        #bonus-section .bc-row>label{font-size:12.5px;color:var(--text-dim);min-width:150px}
+        #bonus-section .bc-mut{font-size:11.5px;color:var(--text-dim)}
+        #bonus-section input[type=number]{width:108px}
+        #bonus-section .bc-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
+        #bonus-section .bc-num{font-size:21px;font-weight:700;font-family:var(--font-mono)}
+        #bonus-section .bc-lbl{font-size:10.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:5px}
+      </style>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:6px">
+        <button class="bc-tab on" data-bcmode="free">보너스벳 전환</button>
+        <button class="bc-tab" data-bcmode="nosweat">첫베팅 환급</button>
+        <button class="bc-tab" data-bcmode="qual">퀄리파잉/아빗</button>
+        <button class="bc-tab" data-bcmode="dep">입금매치(EV)</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px;align-items:center">
+        <span class="bc-mut">프리셋:</span>
+        <button class="bc-pre" data-bcpre="bally">Bally $50</button>
+        <button class="bc-pre" data-bcpre="thescore">theScore 환급</button>
+        <button class="bc-pre" data-bcpre="fanatics">Fanatics $50</button>
+      </div>
+      <div class="bc-card" style="margin-bottom:14px">
+        <div class="bc-row"><label id="bcAmtLab">보너스벳 면액 ($)</label>
+          <input id="bcAmt" type="number" value="50" step="1"/></div>
+        <div class="bc-row" data-bcshow="free nosweat qual"><label id="bcBlab">내 배당 (American)</label>
+          <input id="bcBam" type="number" value="300" step="5"/>
+          <span class="bc-mut">= <span id="bcBdec">4.00</span> dec</span></div>
+        <div class="bc-row" data-bcshow="free nosweat qual"><label>헷지 방식</label>
+          <button class="bc-tab on" id="bcHKal" style="font-size:11.5px">Kalshi (¢)</button>
+          <button class="bc-tab" id="bcHAmBtn" style="font-size:11.5px">타북 (American)</button></div>
+        <div class="bc-row" data-bcshow="free nosweat qual" data-bchedge="kal"><label>Kalshi 반대편 가격 (¢)</label>
+          <input id="bcKprice" type="number" value="72" min="1" max="99" step="1" style="width:84px"/>
+          <label style="min-width:auto;display:flex;align-items:center;gap:5px;color:var(--text)"><input id="bcKfee" type="checkbox" checked style="width:auto"/> 수수료</label>
+          <span class="bc-mut">= <span id="bcLdec">1.37</span> dec</span></div>
+        <div class="bc-row" data-bcshow="free nosweat qual" data-bchedge="am" style="display:none"><label>반대편 배당 (American)</label>
+          <input id="bcHam" type="number" value="-260" step="5"/>
+          <span class="bc-mut">= <span id="bcLdec2">1.38</span> dec</span></div>
+        <div class="bc-row" data-bcshow="nosweat"><label>보너스 전환율 r</label>
+          <input id="bcRr" type="range" min="0.5" max="0.9" step="0.01" value="0.7" style="flex:1;max-width:200px"/>
+          <span id="bcRout" style="font-size:12.5px;font-weight:700;font-family:var(--font-mono)">0.70</span></div>
+        <div class="bc-row" data-bcshow="dep" style="display:none"><label>롤오버 배수 N</label>
+          <input id="bcN" type="number" value="10" step="1" style="width:84px"/>
+          <label style="min-width:auto">기준 X ($)</label><input id="bcX" type="number" value="100" step="10" style="width:84px"/></div>
+        <div class="bc-row" data-bcshow="dep" style="display:none"><label>턴오버당 비용 e</label>
+          <input id="bcE" type="range" min="0.005" max="0.05" step="0.005" value="0.01" style="flex:1;max-width:200px"/>
+          <span id="bcEout" style="font-size:12.5px;font-weight:700;font-family:var(--font-mono)">1.0%</span>
+          <span class="bc-mut">헷지≈0.5% / 막베팅≈5%</span></div>
+      </div>
+      <div id="bcOut" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:12px"></div>
+      <div id="bcRec" style="font-size:12.5px;line-height:1.6;color:var(--text)"></div>
     </section>
 
     <!-- ── Regime / scanner state ── -->
@@ -2579,7 +2643,8 @@ function applyViewMode(mode) {
   const isSchedule = (mode === 'schedule');
   const isEv = (mode === 'ev');
   const isHist = (mode === 'evhist');
-  const isSpecial = isSchedule || isEv || isHist;   // full-page views with their own section
+  const isBonus = (mode === 'bonus');
+  const isSpecial = isSchedule || isEv || isHist || isBonus;   // full-page views with their own section
   const showLive  = !isSpecial && (mode === 'all' || mode === 'live');
   const showPaper = !isSpecial && (mode === 'all' || mode === 'paper');
 
@@ -2597,6 +2662,8 @@ function applyViewMode(mode) {
   if (evSection) evSection.style.display = isEv ? '' : 'none';
   const evhistSection = document.getElementById('evhist-section');
   if (evhistSection) evhistSection.style.display = isHist ? '' : 'none';
+  const bonusSection = document.getElementById('bonus-section');
+  if (bonusSection) bonusSection.style.display = isBonus ? '' : 'none';
   const snapshotSection = document.getElementById('snapshot-section');
   if (snapshotSection) snapshotSection.style.display = isSpecial ? 'none' : '';
   const regimeSection = document.getElementById('regime-section');
@@ -2611,6 +2678,7 @@ function applyViewMode(mode) {
 
   if (isEv) { renderEvBets(); return; }
   if (isHist) { renderEvHistory(); return; }
+  if (isBonus) { return; }   // static calculator — no fetch/render needed
   if (isSchedule) {
     renderSchedule();
     return;
@@ -3285,6 +3353,96 @@ document.querySelectorAll('.ev-sort-link').forEach(a => a.addEventListener('clic
   document.querySelectorAll('.ev-sort-link').forEach(x => x.classList.toggle('active', x.dataset.sort === evSort));
   renderEvBets();
 }));
+</script>
+
+<script>
+// ─────────────────────────────────────────────
+//  Bonus conversion calculator (matched-betting). Formulas verified 3 ways:
+//    free bet (SNR): H = F*(B-1)/L ; lock = F*(B-1)*(L-1)/L
+//    no-sweat:       H = S*(B-r)/L ; lock = S*(B-1) - S*(B-r)/L
+//    qualifier:      H = S*B/L     ; lock = S*B*(L-1)/L - S   (sign data-dependent; >0 = arb)
+//  Back outcome A at the book (decimal B); hedge the OPPOSITE outcome at decimal L, stake H.
+// ─────────────────────────────────────────────
+(function(){
+  var sec = document.getElementById('bonus-section');
+  if (!sec) return;
+  var bcMode = 'free', bcHedge = 'kal';
+  var $ = function(id){ return document.getElementById(id); };
+  var amToDec = function(v){ v = parseFloat(v); if (!v) return NaN; return v > 0 ? 1 + v/100 : 1 + 100/Math.abs(v); };
+  var kalToDec = function(p, fee){ var f = p/100; if (f <= 0 || f >= 1) return NaN; var fa = fee ? 0.07*f*(1-f) : 0; return (1 - fa)/f; };
+  var money = function(x){ return (x < 0 ? '-$' : '$') + Math.abs(x).toFixed(2); };
+  var pct = function(x){ return (x*100).toFixed(0) + '%'; };
+
+  function showRows(){
+    sec.querySelectorAll('[data-bcshow]').forEach(function(r){
+      var on = r.getAttribute('data-bcshow').split(' ').indexOf(bcMode) >= 0;
+      if (on && r.getAttribute('data-bchedge')) on = (r.getAttribute('data-bchedge') === bcHedge);
+      r.style.display = on ? 'flex' : 'none';
+    });
+    $('bcAmtLab').textContent = bcMode === 'free' ? '보너스벳 면액 ($)' : bcMode === 'nosweat' ? '첫 베팅 캐시 ($)' : bcMode === 'qual' ? '베팅 스테이크 ($)' : '보너스 Bo ($)';
+  }
+  function card(lbl, val, good){ return '<div class="bc-card"><div class="bc-lbl">' + lbl + '</div><div class="bc-num"' + (good ? ' style="color:var(--green)"' : '') + '>' + val + '</div></div>'; }
+
+  function bcCompute(){
+    showRows();
+    var A = parseFloat($('bcAmt').value) || 0;
+    var B = amToDec($('bcBam').value); $('bcBdec').textContent = isNaN(B) ? '–' : B.toFixed(2);
+    var L = bcHedge === 'kal' ? kalToDec(parseFloat($('bcKprice').value), $('bcKfee').checked) : amToDec($('bcHam').value);
+    $('bcLdec').textContent = isNaN(L) ? '–' : L.toFixed(2); $('bcLdec2').textContent = $('bcLdec').textContent;
+    var r = parseFloat($('bcRr').value); $('bcRout').textContent = r.toFixed(2);
+    var e = parseFloat($('bcE').value); $('bcEout').textContent = (e*100).toFixed(1) + '%';
+    var out = $('bcOut'), rec = $('bcRec'); out.innerHTML = '';
+
+    if (bcMode === 'dep'){
+      var N = parseFloat($('bcN').value) || 0, X = parseFloat($('bcX').value) || 0;
+      var turn = N*X, ev = A - turn*e;
+      out.innerHTML = card('총 턴오버', money(turn)) + card('예상 EV', money(ev), ev > 0);
+      rec.innerHTML = '예상치 (확정 아님). 진짜 리스크는 턴오버 <b>' + money(turn) + '</b>에 대한 <b>변동성</b>. 롤오버 레그를 헷지하면 e가 ~0.5%로 떨어져 EV가 거의 두 배. 딜 비교는 <b>N×X</b>로만.';
+      return;
+    }
+    if (isNaN(B) || isNaN(L) || L <= 1){ out.innerHTML = card('입력', '배당 확인'); rec.textContent = ''; return; }
+
+    var H, win, lose, locked, ret, contracts;
+    if (bcMode === 'free'){ H = A*(B-1)/L; win = A*(B-1) - H; lose = H*(L-1); }
+    else if (bcMode === 'nosweat'){ H = A*(B-r)/L; win = A*(B-1) - H; lose = -A + r*A + H*(L-1); }
+    else { H = A*B/L; win = A*(B-1) - H; lose = -A + H*(L-1); }
+    locked = Math.min(win, lose); ret = locked/A;
+    contracts = bcHedge === 'kal' ? H/(parseFloat($('bcKprice').value)/100) : null;
+
+    out.innerHTML =
+      card('헷지 스테이크' + (contracts ? ' (Kalshi)' : ''), money(H) + (contracts ? ' <span class="bc-mut">· ' + Math.round(contracts) + '계약</span>' : '')) +
+      card('내 베팅 이기면', money(win)) +
+      card('내 베팅 지면', money(lose)) +
+      card('🔒 확정 수익', money(locked) + ' <span class="bc-mut">(' + pct(ret) + ')</span>', locked > 0.01);
+
+    if (bcMode === 'free'){
+      rec.innerHTML = 'Kalshi 반대편에 <b>' + money(H) + '</b> 걸면 결과 무관 <b>' + money(locked) + '</b> 확정. 보너스벳은 <b>배당 높을수록</b> 가치↑ — 지금 retention ' + pct(ret) + ' (공정배당이면 1−1/배당).';
+    } else if (bcMode === 'nosweat'){
+      var pStar = 1 - 1/L;
+      rec.innerHTML = '<b>' + money(H) + '</b> 헷지 → <b>' + money(locked) + '</b> 확정. 지면 보너스 받는 구조라 <b>높은 배당에 크게</b>가 유리. ⚡ A 승률이 <b>' + pct(pStar) + '</b>보다 높다고 보면 헷지를 줄여 그대로 두면 기대값은 더 높음 (대신 변동성↑·확정 아님).';
+    } else {
+      if (locked > 0.01) rec.innerHTML = '📈 <b>아비트리지</b> — Kalshi에 ' + money(H) + ' 걸면 결과 무관 <b>+' + money(locked) + '</b> 확정 이익.';
+      else if (locked < -0.01) rec.innerHTML = '조건 충족 비용 <b>' + money(-locked) + '</b> (받는 보너스가 이보다 크면 진행 OK). 비용 줄이려면 양쪽 배당을 공정값에 가깝게.';
+      else rec.innerHTML = '거의 <b>공짜</b>로 조건 충족 (≈' + money(locked) + ').';
+    }
+  }
+
+  sec.querySelectorAll('.bc-tab[data-bcmode]').forEach(function(b){
+    b.onclick = function(){ bcMode = b.getAttribute('data-bcmode');
+      sec.querySelectorAll('.bc-tab[data-bcmode]').forEach(function(x){ x.classList.toggle('on', x === b); }); bcCompute(); }; });
+  $('bcHKal').onclick = function(){ bcHedge = 'kal'; $('bcHKal').classList.add('on'); $('bcHAmBtn').classList.remove('on'); bcCompute(); };
+  $('bcHAmBtn').onclick = function(){ bcHedge = 'am'; $('bcHAmBtn').classList.add('on'); $('bcHKal').classList.remove('on'); bcCompute(); };
+  sec.querySelectorAll('.bc-pre').forEach(function(b){ b.onclick = function(){
+    var p = b.getAttribute('data-bcpre');
+    if (p === 'bally'){ bcMode = 'free'; $('bcAmt').value = 50; $('bcBam').value = 300; $('bcKprice').value = 72; }
+    if (p === 'thescore'){ bcMode = 'nosweat'; $('bcAmt').value = 150; $('bcBam').value = 300; $('bcKprice').value = 72; $('bcRr').value = 0.7; }
+    if (p === 'fanatics'){ bcMode = 'free'; $('bcAmt').value = 50; $('bcBam').value = 300; $('bcKprice').value = 72; }
+    sec.querySelectorAll('.bc-tab[data-bcmode]').forEach(function(x){ x.classList.toggle('on', x.getAttribute('data-bcmode') === bcMode); });
+    bcHedge = 'kal'; $('bcHKal').classList.add('on'); $('bcHAmBtn').classList.remove('on'); bcCompute(); }; });
+  ['bcAmt','bcBam','bcKprice','bcHam','bcRr','bcN','bcX','bcE'].forEach(function(id){ $(id).addEventListener('input', bcCompute); });
+  $('bcKfee').addEventListener('change', bcCompute);
+  bcCompute();
+})();
 </script>
 </body>
 </html>
