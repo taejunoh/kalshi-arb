@@ -12,3 +12,15 @@ console.error = (...args: unknown[]) => {
   }
   originalError(...args);
 };
+
+// react-native-safe-area-context needs a SafeAreaProvider at runtime; screens that
+// call useSafeAreaInsets() (MyBets, Settings) would throw when rendered bare in tests.
+// Mock it to zero insets (the screens only read insets.top for notch padding).
+jest.mock("react-native-safe-area-context", () => {
+  const passthrough = (props: { children?: unknown }) => props.children;
+  return {
+    useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+    SafeAreaProvider: passthrough,
+    SafeAreaView: passthrough,
+  };
+});

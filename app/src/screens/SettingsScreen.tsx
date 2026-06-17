@@ -8,6 +8,7 @@ import { registerForPush } from "../push";
 import { ALL_BOOKS, DEFAULT_SETTINGS, MIN_EV_STEPS, SPORT_LABELS } from "../config";
 import { RulesEditor } from "./RulesScreen";
 import { color, radius, space } from "../theme";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export function SettingsScreen() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -16,6 +17,7 @@ export function SettingsScreen() {
   const [cfId, setCfId] = useState("");
   const [cfSecret, setCfSecret] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     void (async () => {
@@ -55,7 +57,7 @@ export function SettingsScreen() {
   };
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={{ padding: 16 }}>
+    <ScrollView style={s.container} contentContainerStyle={{ padding: 16, paddingTop: insets.top + 16 }}>
       <Text style={s.h}>필터</Text>
       <Text style={s.field}>최소 EV</Text>
       <View style={s.chips}>
