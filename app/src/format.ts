@@ -32,3 +32,8 @@ export function liveProgressLabel(lp: LiveProgress | null | undefined): string {
   const head = `${cur} / ${lp.needed}`;
   return lp.game_state ? `${head} · ${lp.game_state}` : head;
 }
+
+export function countdownUrgent(commenceISO: string, now: Date = new Date()): boolean {
+  const diffMs = new Date(commenceISO).getTime() - now.getTime();
+  return diffMs > 0 && diffMs < 60 * 60000;
+}
