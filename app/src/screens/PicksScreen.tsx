@@ -6,8 +6,12 @@ import { api } from "../api/client";
 import type { Pick, PicksResponse, Settings, SortKey } from "../api/types";
 import { PickCard } from "../components/PickCard";
 import { pickImage } from "../scan";
-import { MIN_EV_STEPS } from "../config";
+import { Feather } from "@expo/vector-icons";
 import { color, radius, space } from "../theme";
+
+const FEED_EV_STEPS = [0, 0.02, 0.04];
+const SORT_ORDER: SortKey[] = ["ev", "time", "n_books"];
+const SORT_LABEL: Record<SortKey, string> = { ev: "EV순", time: "시간순", n_books: "북수순" };
 
 export function PicksScreen() {
   const nav = useNavigation<{ push: (s: string, p?: object) => void; navigate: (s: string, p?: object) => void }>();
@@ -60,6 +64,11 @@ export function PicksScreen() {
     [prefs, load],
   );
 
+  const cycleSort = useCallback(() => {
+    const i = SORT_ORDER.indexOf(prefs.sort);
+    void applyFilters({ sort: SORT_ORDER[(i + 1) % SORT_ORDER.length] });
+  }, [prefs.sort, applyFilters]);
+
   const onCapture = useCallback(async (source: "camera" | "library") => {
     const img = await pickImage(source);
     if (!img) return;
@@ -96,23 +105,28 @@ export function PicksScreen() {
   return (
     <View style={s.container}>
       <View style={s.filterBar}>
-        <Pressable testID="scan-capture-library" onPress={() => void onCapture("library")} style={s.scanChip}>
-          <Text style={s.chipText}>📷 슬립 캡처</Text>
-        </Pressable>
-        <Pressable onPress={() => setBetOnly((v) => !v)} style={[s.feChip, betOnly && s.feChipOn]}>
-          <Text style={s.chipText}>🟣 BET만{betCount ? ` (${betCount})` : ""}</Text>
-        </Pressable>
-        <Text style={s.filterLabel}>최소 EV</Text>
-        {MIN_EV_STEPS.map((v) => (
-          <Pressable key={v} onPress={() => void applyFilters({ min_ev: v })} style={[s.chip, prefs.min_ev === v && s.chipOn]}>
-            <Text style={s.chipText}>{v === 0 ? "전체" : `${(v * 100).toFixed(0)}%`}</Text>
+        <View style={s.actionRow}>
+          <Pressable testID="scan-capture-library" onPress={() => void onCapture("library")} style={s.scanChip}>
+            <Feather name="camera" size={17} color={color.accentText} />
           </Pressable>
-        ))}
-        {(["ev", "time", "n_books"] as SortKey[]).map((k) => (
-          <Pressable key={k} onPress={() => void applyFilters({ sort: k })} style={[s.chip, prefs.sort === k && s.chipOn]}>
-            <Text style={s.chipText}>{k === "ev" ? "EV순" : k === "time" ? "시간순" : "북수순"}</Text>
+          <Pressable onPress={() => setBetOnly((v) => !v)} style={[s.feChip, betOnly && s.feChipOn]}>
+            <Feather name="zap" size={13} color={betOnly ? color.onAccent : color.accentText} />
+            <Text style={[s.feText, betOnly && s.feTextOn]}>BET만{betCount ? ` · ${betCount}` : ""}</Text>
           </Pressable>
-        ))}
+        </View>
+        <View style={s.filterRow}>
+          <Text style={s.filterLabel}>EV</Text>
+          {FEED_EV_STEPS.map((v) => (
+            <Pressable key={v} onPress={() => void applyFilters({ min_ev: v })} style={[s.chip, prefs.min_ev === v && s.chipOn]}>
+              <Text style={[s.chipText, prefs.min_ev === v && s.chipTextOn]}>{v === 0 ? "전체" : `${(v * 100).toFixed(0)}%+`}</Text>
+            </Pressable>
+          ))}
+          <View style={s.divider} />
+          <Pressable testID="sort-cycle" onPress={cycleSort} style={s.sortChip}>
+            <Text style={s.sortText}>{SORT_LABEL[prefs.sort]}</Text>
+            <Feather name="chevron-down" size={14} color={color.muted} />
+          </Pressable>
+        </View>
       </View>
       <FlatList
         data={visiblePicks}
@@ -153,14 +167,22 @@ export function PicksScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: color.bg },
-  filterBar: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6, padding: 10 },
-  filterLabel: { color: color.muted, fontSize: 12, marginRight: space.xs },
-  chip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: color.surfaceRaised },
+  filterBar: { padding: 10, gap: 9 },
+  actionRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  filterRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 },
+  scanChip: { backgroundColor: color.surfaceRaised, width: 34, height: 30, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
+  feChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: color.accentDim },
+  feChipOn: { backgroundColor: color.accent },
+  feText: { color: color.accentText, fontSize: 13, fontWeight: "500" },
+  feTextOn: { color: color.onAccent },
+  filterLabel: { color: color.faint, fontSize: 11, letterSpacing: 0.4 },
+  chip: { paddingHorizontal: 11, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: color.surfaceRaised },
   chipOn: { backgroundColor: color.accent },
-  scanChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: color.accentDim },
-  feChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: color.surfaceRaised, borderWidth: 1, borderColor: color.accent },
-  feChipOn: { backgroundColor: color.accent, borderColor: color.accent },
-  chipText: { color: color.text, fontSize: 12 },
+  chipText: { color: color.muted, fontSize: 12 },
+  chipTextOn: { color: color.onAccent },
+  divider: { width: 1, height: 16, backgroundColor: color.border, marginHorizontal: 2 },
+  sortChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: color.surfaceRaised },
+  sortText: { color: color.muted, fontSize: 12 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: color.bg, padding: space.xl },
   err: { color: color.negative, textAlign: "center", marginBottom: space.md },
   retry: { backgroundColor: color.accent, paddingHorizontal: space.lg, paddingVertical: 10, borderRadius: radius.sm },
