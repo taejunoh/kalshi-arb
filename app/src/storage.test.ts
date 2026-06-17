@@ -7,7 +7,8 @@ jest.mock("expo-secure-store", () => ({
 }));
 
 import * as SecureStore from "expo-secure-store";
-import { saveCredentials, getCredentials, clearCredentials } from "./storage";
+import { saveCredentials, getCredentials, clearCredentials, getUnitStake, setUnitStake } from "./storage";
+import { DEFAULT_UNIT_STAKE } from "./config";
 
 afterEach(() => jest.clearAllMocks());
 
@@ -38,9 +39,26 @@ test("getCredentials returns the bundle when all keys present", async () => {
   expect(await getCredentials()).toEqual(CREDS && { ...CREDS, baseUrl: "https://api.example.com" });
 });
 
-test("clearCredentials deletes all four keys", async () => {
+test("clearCredentials deletes all four keys (NOT the unit-stake pref)", async () => {
   await clearCredentials();
-  expect((SecureStore.deleteItemAsync as jest.Mock).mock.calls.map((c) => c[0]).sort()).toEqual(
-    ["api_base_url", "app_api_token", "cf_access_client_id", "cf_access_client_secret"],
-  );
+  const deleted = (SecureStore.deleteItemAsync as jest.Mock).mock.calls.map((c) => c[0]).sort();
+  expect(deleted).toEqual(["api_base_url", "app_api_token", "cf_access_client_id", "cf_access_client_secret"]);
+  expect(deleted).not.toContain("unit_stake");
+});
+
+test("getUnitStake falls back to the default for unset / invalid / non-positive", async () => {
+  (SecureStore.getItemAsync as jest.Mock).mockResolvedValueOnce(null);
+  expect(await getUnitStake()).toBe(DEFAULT_UNIT_STAKE);
+  (SecureStore.getItemAsync as jest.Mock).mockResolvedValueOnce("abc");
+  expect(await getUnitStake()).toBe(DEFAULT_UNIT_STAKE);
+  (SecureStore.getItemAsync as jest.Mock).mockResolvedValueOnce("0");
+  expect(await getUnitStake()).toBe(DEFAULT_UNIT_STAKE);
+});
+
+test("getUnitStake returns a stored positive value; setUnitStake persists it", async () => {
+  (SecureStore.getItemAsync as jest.Mock).mockResolvedValueOnce("50");
+  expect(await getUnitStake()).toBe(50);
+  await setUnitStake(35);
+  const call = (SecureStore.setItemAsync as jest.Mock).mock.calls.find((c) => c[0] === "unit_stake");
+  expect(call?.[1]).toBe("35");
 });

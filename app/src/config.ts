@@ -34,3 +34,8 @@ export const DEFAULT_SETTINGS: Settings = { min_ev: 0, sports: null, muted_books
 
 // EV thresholds for the filter stepper (matches the pipeline's 1–8% band).
 export const MIN_EV_STEPS = [0, 0.01, 0.02, 0.03, 0.04, 0.05];
+
+// Flat per-bet stake ($). The policy is "bet small, NO size-up" (≈BE bonus-clearing
+// vehicle), so every BET pick shows the SAME unit — not an EV/Kelly-scaled amount.
+// Stored app-locally (storage.getUnitStake); editable in Settings.
+export const DEFAULT_UNIT_STAKE = 20;

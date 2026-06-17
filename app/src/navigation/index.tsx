@@ -8,7 +8,6 @@ import type { PicksStackParamList, RootParamList, TabParamList } from "./types";
 import { PicksScreen } from "../screens/PicksScreen";
 import { PickDetailScreen } from "../screens/PickDetailScreen";
 import { CaptureSheet } from "../screens/CaptureSheet";
-import { MyBetsScreen } from "../screens/MyBetsScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 
 export const navigationRef = createNavigationContainerRef<RootParamList>();
@@ -19,9 +18,6 @@ export function captureRoute(pickId: string): ["Tabs", object] {
 }
 export function pickDetailRoute(pickId: string): ["Tabs", object] {
   return ["Tabs", { screen: "Picks", params: { screen: "PickDetail", params: { pickId } } }];
-}
-export function myBetsRoute(): ["Tabs", object] {
-  return ["Tabs", { screen: "MyBets" }];
 }
 
 const PicksStack = createNativeStackNavigator<PicksStackParamList>();
@@ -55,7 +51,6 @@ export function RootNavigator() {
       }}
     >
       <Tabs.Screen name="Picks" component={PicksNavigator} options={{ title: "픽", tabBarIcon: ({ color: c, size }) => <Feather name="zap" size={size} color={c} /> }} />
-      <Tabs.Screen name="MyBets" component={MyBetsScreen} options={{ title: "내 베팅", tabBarIcon: ({ color: c, size }) => <Feather name="calendar" size={size} color={c} /> }} />
       <Tabs.Screen name="Settings" component={SettingsScreen} options={{ title: "설정", tabBarIcon: ({ color: c, size }) => <Feather name="settings" size={size} color={c} /> }} />
     </Tabs.Navigator>
   );

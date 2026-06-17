@@ -6,7 +6,12 @@ jest.mock("../api/client", () => ({
     registerPush: jest.fn(async () => ({ ok: true })),
   },
 }));
-jest.mock("../storage", () => ({ saveCredentials: jest.fn(async () => undefined), getCredentials: jest.fn(async () => null) }));
+jest.mock("../storage", () => ({
+  saveCredentials: jest.fn(async () => undefined),
+  getCredentials: jest.fn(async () => null),
+  getUnitStake: jest.fn(async () => 20),
+  setUnitStake: jest.fn(async () => undefined),
+}));
 jest.mock("../push", () => ({ registerForPush: jest.fn(async () => "ExponentPushToken[x]") }));
 
 import { render, screen, waitFor, fireEvent } from "@testing-library/react-native";

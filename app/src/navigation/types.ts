@@ -10,7 +10,6 @@ export type PicksStackParamList = {
 
 export type TabParamList = {
   Picks: NavigatorScreenParams<PicksStackParamList> | undefined;
-  MyBets: undefined;
   Settings: undefined;
 };
 

@@ -4,7 +4,7 @@ import * as Notifications from "expo-notifications";
 import { api } from "./api/client";
 import { getCredentials } from "./storage";
 import { registerCategories, registerForPush, notifTarget, type NotifTarget } from "./push";
-import { captureRoute, myBetsRoute, navigationRef, pickDetailRoute } from "./navigation";
+import { captureRoute, navigationRef, pickDetailRoute } from "./navigation";
 
 export interface TargetDeps {
   navigate: (name: string, params?: object) => void;
@@ -21,10 +21,6 @@ export function runTarget(target: NotifTarget, deps: TargetDeps): void {
     }
     case "pickDetail": {
       const [name, params] = pickDetailRoute(target.pickId);
-      return deps.navigate(name, params);
-    }
-    case "mybets": {
-      const [name, params] = myBetsRoute();
       return deps.navigate(name, params);
     }
     case "dismiss":

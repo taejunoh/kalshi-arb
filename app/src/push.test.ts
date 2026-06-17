@@ -57,15 +57,15 @@ test("notifTarget maps a body tap with pick_id to pickDetail", () => {
   });
 });
 
-test("notifTarget maps a settle notification to mybets", () => {
-  expect(notifTarget(resp({ app_bet_id: 12 }, Notifications.DEFAULT_ACTION_IDENTIFIER))).toEqual({ kind: "mybets", appBetId: 12 });
+test("notifTarget returns null for a settle notification (no in-app destination after 내 베팅 removed)", () => {
+  expect(notifTarget(resp({ app_bet_id: 12 }, Notifications.DEFAULT_ACTION_IDENTIFIER))).toBeNull();
 });
 
 test("notifTarget returns null for an unrecognized payload", () => {
   expect(notifTarget(resp({}, Notifications.DEFAULT_ACTION_IDENTIFIER))).toBeNull();
 });
 
-test("a price_move push routes to MyBets via app_bet_id", () => {
+test("a price_move push (app_bet_id only) returns null — informational, no nav target", () => {
   const resp = {
     actionIdentifier: "default",
     notification: { request: { content: {
@@ -73,7 +73,7 @@ test("a price_move push routes to MyBets via app_bet_id", () => {
       data: { app_bet_id: 7 },
     } } },
   };
-  expect(notifTarget(resp as never)).toEqual({ kind: "mybets", appBetId: 7 });
+  expect(notifTarget(resp as never)).toBeNull();
 });
 
 test("registerCategories includes price_move (no action buttons)", async () => {

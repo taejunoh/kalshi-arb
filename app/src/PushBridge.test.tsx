@@ -45,12 +45,6 @@ test("runTarget routes a pickDetail intent", () => {
   expect(navigate).toHaveBeenCalledWith("Tabs", { screen: "Picks", params: { screen: "PickDetail", params: { pickId: "E1|h2h|NYM|0|" } } });
 });
 
-test("runTarget routes a settle intent to MyBets", () => {
-  const navigate = jest.fn();
-  runTarget({ kind: "mybets", appBetId: 7 }, { navigate, dismiss: jest.fn() });
-  expect(navigate).toHaveBeenCalledWith("Tabs", { screen: "MyBets" });
-});
-
 test("runTarget calls dismiss (no navigation) for a dismiss intent", () => {
   const navigate = jest.fn();
   const dismiss = jest.fn();
