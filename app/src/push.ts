@@ -8,20 +8,20 @@ export type NotifTarget =
   | { kind: "capture"; pickId: string }
   | { kind: "dismiss"; pickId: string }
   | { kind: "pickDetail"; pickId: string }
-  | { kind: "mybets"; appBetId: number }
   | null;
 
-/** Pure: tapped notification / action button -> in-app intent. */
+/** Pure: tapped notification / action button -> in-app intent. Settle / price-move
+ * pushes carry only app_bet_id; with the 내 베팅 tab removed there is no in-app
+ * destination for them, so they return null (the notification still informs — act at
+ * the book / Pikkit). */
 export function notifTarget(response: Notifications.NotificationResponse): NotifTarget {
   const data = (response.notification.request.content.data ?? {}) as {
     pick_id?: string;
-    app_bet_id?: number;
   };
   const action = response.actionIdentifier;
   if (action === ACTION_BET && data.pick_id) return { kind: "capture", pickId: data.pick_id };
   if (action === ACTION_DISMISS && data.pick_id) return { kind: "dismiss", pickId: data.pick_id };
   if (data.pick_id) return { kind: "pickDetail", pickId: data.pick_id };
-  if (data.app_bet_id != null) return { kind: "mybets", appBetId: data.app_bet_id };
   return null;
 }
 

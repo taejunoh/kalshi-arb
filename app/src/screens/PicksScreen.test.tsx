@@ -20,6 +20,7 @@ jest.mock("../api/client", () => ({
   },
 }));
 jest.mock("../scan", () => ({ pickImage: jest.fn(async () => ({ base64: "QkFTRTY0", mediaType: "image/png" })) }));
+jest.mock("../storage", () => ({ getUnitStake: jest.fn(async () => 20) }));
 const mockNavigate = jest.fn();
 jest.mock("@react-navigation/native", () => ({
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -70,8 +71,9 @@ test("changing a filter preserves existing sport and book prefs (no clobber)", a
   });
   await render(<PicksScreen />);
   await waitFor(() => expect(api.getSettings).toHaveBeenCalled());
-  // Sort is a single cycling chip: ev -> time -> n_books. One tap from ev = time.
-  await fireEvent.press(screen.getByTestId("sort-cycle"));
+  // Sort is a dropdown: tap to open, then pick an option (EV순 / 시간순 / 북수순).
+  await fireEvent.press(screen.getByTestId("sort-dropdown"));
+  await fireEvent.press(screen.getByTestId("sort-opt-time"));
   await waitFor(() => expect(api.putSettings).toHaveBeenCalled());
   const sent = (api.putSettings as jest.Mock).mock.calls.at(-1)?.[0];
   expect(sent.sports).toEqual(["baseball_mlb"]);

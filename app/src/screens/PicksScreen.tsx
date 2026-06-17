@@ -1,11 +1,13 @@
 // app/src/screens/PicksScreen.tsx
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { api } from "../api/client";
 import type { Pick, PicksResponse, Settings, SortKey } from "../api/types";
 import { PickCard } from "../components/PickCard";
 import { pickImage } from "../scan";
+import { getUnitStake } from "../storage";
+import { DEFAULT_UNIT_STAKE } from "../config";
 import { Feather } from "@expo/vector-icons";
 import { color, radius, space } from "../theme";
 
@@ -21,6 +23,8 @@ export function PicksScreen() {
   const [prefs, setPrefs] = useState<Settings>({ min_ev: 0, sports: null, muted_books: null, sort: "ev" });
   const [showCooled, setShowCooled] = useState(false);
   const [betOnly, setBetOnly] = useState(false);
+  const [unitStake, setUnitStake] = useState<number>(DEFAULT_UNIT_STAKE);
+  const [sortOpen, setSortOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -41,6 +45,7 @@ export function PicksScreen() {
       } catch {
         /* no creds yet — keep defaults */
       }
+      setUnitStake(await getUnitStake()); // app-local; safe without creds
     })();
   }, []);
 
@@ -64,10 +69,10 @@ export function PicksScreen() {
     [prefs, load],
   );
 
-  const cycleSort = useCallback(() => {
-    const i = SORT_ORDER.indexOf(prefs.sort);
-    void applyFilters({ sort: SORT_ORDER[(i + 1) % SORT_ORDER.length] });
-  }, [prefs.sort, applyFilters]);
+  const selectSort = useCallback((k: SortKey) => {
+    setSortOpen(false);
+    void applyFilters({ sort: k });
+  }, [applyFilters]);
 
   const onCapture = useCallback(async (source: "camera" | "library") => {
     const img = await pickImage(source);
@@ -122,12 +127,25 @@ export function PicksScreen() {
             </Pressable>
           ))}
           <View style={s.divider} />
-          <Pressable testID="sort-cycle" onPress={cycleSort} style={s.sortChip}>
+          <Pressable testID="sort-dropdown" onPress={() => setSortOpen(true)} style={s.sortChip}>
             <Text style={s.sortText}>{SORT_LABEL[prefs.sort]}</Text>
             <Feather name="chevron-down" size={14} color={color.muted} />
           </Pressable>
         </View>
       </View>
+      <Modal visible={sortOpen} transparent animationType="fade" onRequestClose={() => setSortOpen(false)}>
+        <Pressable style={s.modalBackdrop} onPress={() => setSortOpen(false)}>
+          <View style={s.sortMenu}>
+            <Text style={s.sortMenuTitle}>정렬</Text>
+            {SORT_ORDER.map((k) => (
+              <Pressable key={k} testID={`sort-opt-${k}`} onPress={() => selectSort(k)} style={[s.sortOpt, prefs.sort === k && s.sortOptOn]}>
+                <Text style={[s.sortOptText, prefs.sort === k && s.sortOptTextOn]}>{SORT_LABEL[k]}</Text>
+                {prefs.sort === k && <Feather name="check" size={16} color={color.accentText} />}
+              </Pressable>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
       <FlatList
         data={visiblePicks}
         keyExtractor={(p) => p.id}
@@ -138,6 +156,7 @@ export function PicksScreen() {
           // PickDetail의 "베팅함 기록"에서 (베팅 후) — 빠른 베팅 > 사후 기록.
           <PickCard
             pick={item}
+            unitStake={unitStake}
             onOpen={(p) => nav.push("PickDetail", { pickId: p.id })}
             onBet={(p) => nav.push("PickDetail", { pickId: p.id })}
             onDismiss={(p) => void dismiss(p)}
@@ -155,7 +174,7 @@ export function PicksScreen() {
               </Pressable>
               {showCooled &&
                 data.cooled.map((p) => (
-                  <PickCard key={p.id} pick={p} onOpen={(x) => nav.push("PickDetail", { pickId: x.id })} onBet={(x) => nav.push("PickDetail", { pickId: x.id })} onDismiss={(x) => void dismiss(x)} />
+                  <PickCard key={p.id} pick={p} unitStake={unitStake} onOpen={(x) => nav.push("PickDetail", { pickId: x.id })} onBet={(x) => nav.push("PickDetail", { pickId: x.id })} onDismiss={(x) => void dismiss(x)} />
                 ))}
             </View>
           ) : null
@@ -183,6 +202,13 @@ const s = StyleSheet.create({
   divider: { width: 1, height: 16, backgroundColor: color.border, marginHorizontal: 2 },
   sortChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: color.surfaceRaised },
   sortText: { color: color.muted, fontSize: 12 },
+  modalBackdrop: { flex: 1, backgroundColor: "#0009", alignItems: "center", justifyContent: "center", padding: space.xl },
+  sortMenu: { backgroundColor: color.surfaceRaised, borderRadius: radius.card, paddingVertical: space.sm, minWidth: 200, borderWidth: 1, borderColor: color.border },
+  sortMenuTitle: { color: color.faint, fontSize: 11, letterSpacing: 0.4, paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.xs },
+  sortOpt: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space.lg, paddingVertical: 12 },
+  sortOptOn: { backgroundColor: color.accentDim },
+  sortOptText: { color: color.text, fontSize: 15 },
+  sortOptTextOn: { color: color.accentText, fontWeight: "600" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: color.bg, padding: space.xl },
   err: { color: color.negative, textAlign: "center", marginBottom: space.md },
   retry: { backgroundColor: color.accent, paddingHorizontal: space.lg, paddingVertical: 10, borderRadius: radius.sm },

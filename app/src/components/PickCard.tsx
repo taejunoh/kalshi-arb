@@ -10,12 +10,17 @@ export function PickCard({
   onOpen,
   onBet,
   onDismiss,
+  unitStake,
 }: {
   pick: Pick;
   onOpen: (p: Pick) => void;
   onBet: (p: Pick) => void;
   onDismiss: (p: Pick) => void;
+  unitStake?: number; // flat recommended stake ($); shown on BET picks only
 }) {
+  // "얼마 베팅" — the policy is a flat unit on the picks we actually bet (first-entry
+  // games). SKIP picks intentionally show no amount (not recommended).
+  const betLabel = pick.should_bet && unitStake ? `베팅 $${unitStake}` : "베팅";
   // Swipe-left reveals 관심없음; same onDismiss as the inline button (kept as fallback).
   const renderRightActions = () => (
     <Pressable testID="swipe-dismiss" onPress={() => onDismiss(pick)} style={s.swipeAction}>
@@ -41,7 +46,7 @@ export function PickCard({
         <Text style={[s.metaDim, countdownUrgent(pick.commence_time) && s.metaUrgent]}>{countdown(pick.commence_time)}</Text>
       </View>
       <View style={s.actions}>
-        <Pressable style={[s.btn, s.bet]} onPress={() => onBet(pick)}><Text style={s.betText}>베팅</Text></Pressable>
+        <Pressable testID="bet-button" style={[s.btn, s.bet]} onPress={() => onBet(pick)}><Text style={s.betText}>{betLabel}</Text></Pressable>
         <Pressable testID="inline-dismiss" style={[s.btn, s.dismiss]} onPress={() => onDismiss(pick)}><Text style={s.dismissText}>관심없음</Text></Pressable>
       </View>
     </Pressable>

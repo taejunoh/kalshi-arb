@@ -1,11 +1,12 @@
 // app/src/screens/SettingsScreen.tsx
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { api } from "../api/client";
 import type { Settings, SortKey } from "../api/types";
-import { saveCredentials } from "../storage";
+import { getCredentials, getUnitStake, saveCredentials, setUnitStake } from "../storage";
 import { registerForPush } from "../push";
-import { ALL_BOOKS, DEFAULT_SETTINGS, MIN_EV_STEPS, SPORT_LABELS } from "../config";
+import { ALL_BOOKS, DEFAULT_SETTINGS, DEFAULT_UNIT_STAKE, MIN_EV_STEPS, SPORT_LABELS } from "../config";
 import { RulesEditor } from "./RulesScreen";
 import { color, radius, space } from "../theme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,6 +18,8 @@ export function SettingsScreen() {
   const [cfId, setCfId] = useState("");
   const [cfSecret, setCfSecret] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [unit, setUnit] = useState(String(DEFAULT_UNIT_STAKE));
+  const [connOpen, setConnOpen] = useState(false);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -26,8 +29,17 @@ export function SettingsScreen() {
       } catch {
         /* no creds yet — keep defaults */
       }
+      setUnit(String(await getUnitStake()));
+      setConnOpen(!(await getCredentials())); // first run (no creds) → expanded so it's findable
     })();
   }, []);
+
+  const persistUnit = async () => {
+    const n = Number(unit);
+    const v = Number.isFinite(n) && n > 0 ? n : DEFAULT_UNIT_STAKE;
+    setUnit(String(v));
+    await setUnitStake(v);
+  };
 
   const persist = async (next: Settings) => {
     setSettings(next);
@@ -92,17 +104,39 @@ export function SettingsScreen() {
         ))}
       </View>
 
-      <Text style={s.h}>연결</Text>
-      <TextInput style={s.input} placeholder="API base URL" placeholderTextColor={color.faint} autoCapitalize="none" value={baseUrl} onChangeText={setBaseUrl} />
-      <TextInput style={s.input} placeholder="APP_API_TOKEN" placeholderTextColor={color.faint} autoCapitalize="none" value={token} onChangeText={setToken} />
-      <TextInput style={s.input} placeholder="CF-Access-Client-Id" placeholderTextColor={color.faint} autoCapitalize="none" value={cfId} onChangeText={setCfId} />
-      <TextInput style={s.input} placeholder="CF-Access-Client-Secret" placeholderTextColor={color.faint} autoCapitalize="none" secureTextEntry value={cfSecret} onChangeText={setCfSecret} />
-      <Pressable style={s.save} onPress={() => void saveCreds()}><Text style={s.saveText}>자격 증명 저장</Text></Pressable>
-      <Pressable style={[s.save, s.push]} onPress={() => void enablePush()}><Text style={s.saveText}>푸시 등록</Text></Pressable>
-      {msg && <Text style={s.msg}>{msg}</Text>}
+      <Text style={s.field}>유닛 (1회 베팅액)</Text>
+      <View style={s.unitRow}>
+        <Text style={s.dollar}>$</Text>
+        <TextInput
+          style={s.unitInput}
+          placeholder={String(DEFAULT_UNIT_STAKE)}
+          placeholderTextColor={color.faint}
+          keyboardType="number-pad"
+          value={unit}
+          onChangeText={setUnit}
+          onEndEditing={() => void persistUnit()}
+        />
+      </View>
+      <Text style={s.hint}>모든 BET 픽에 동일 적용 (bet small · no size-up). 픽 카드 베팅 버튼에 표시.</Text>
 
       <Text style={s.h}>트리아지 규칙 (Mute rules)</Text>
       <RulesEditor />
+
+      <Pressable style={s.connHeader} onPress={() => setConnOpen((v) => !v)}>
+        <Text style={s.h}>연결 (자격 증명)</Text>
+        <Feather name={connOpen ? "chevron-up" : "chevron-down"} size={20} color={color.muted} />
+      </Pressable>
+      {connOpen && (
+        <View>
+          <TextInput style={s.input} placeholder="API base URL" placeholderTextColor={color.faint} autoCapitalize="none" value={baseUrl} onChangeText={setBaseUrl} />
+          <TextInput style={s.input} placeholder="APP_API_TOKEN" placeholderTextColor={color.faint} autoCapitalize="none" value={token} onChangeText={setToken} />
+          <TextInput style={s.input} placeholder="CF-Access-Client-Id" placeholderTextColor={color.faint} autoCapitalize="none" value={cfId} onChangeText={setCfId} />
+          <TextInput style={s.input} placeholder="CF-Access-Client-Secret" placeholderTextColor={color.faint} autoCapitalize="none" secureTextEntry value={cfSecret} onChangeText={setCfSecret} />
+          <Pressable style={s.save} onPress={() => void saveCreds()}><Text style={s.saveText}>자격 증명 저장</Text></Pressable>
+          <Pressable style={[s.save, s.push]} onPress={() => void enablePush()}><Text style={s.saveText}>푸시 등록</Text></Pressable>
+          {msg && <Text style={s.msg}>{msg}</Text>}
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -116,6 +150,11 @@ const s = StyleSheet.create({
   chipOn: { backgroundColor: color.accent },
   chipMuted: { backgroundColor: color.negative },
   chipText: { color: color.text, fontSize: 13 },
+  unitRow: { flexDirection: "row", alignItems: "center", backgroundColor: color.surface, borderRadius: radius.sm, paddingHorizontal: space.md },
+  dollar: { color: color.muted, fontSize: 16, fontWeight: "600" },
+  unitInput: { flex: 1, color: color.text, padding: space.md, fontSize: 16 },
+  hint: { color: color.faint, fontSize: 12, marginTop: 6 },
+  connHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   input: { backgroundColor: color.surface, color: color.text, borderRadius: radius.sm, padding: space.md, fontSize: 14, marginTop: space.sm },
   save: { backgroundColor: color.accent, borderRadius: radius.button, padding: space.lg, alignItems: "center", marginTop: space.lg },
   push: { backgroundColor: color.surfaceRaised },

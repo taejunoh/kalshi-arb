@@ -51,6 +51,17 @@ test("shows the ⚪ SKIP badge when should_bet is false", async () => {
   expect(await screen.findByText(/SKIP/)).toBeOnTheScreen();
 });
 
+test("shows the flat unit stake on the bet button for BET picks", async () => {
+  await render(<PickCard pick={{ ...PICK, should_bet: true }} unitStake={20} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(await screen.findByText("베팅 $20")).toBeOnTheScreen();
+});
+
+test("does NOT show a stake on SKIP picks (not recommended)", async () => {
+  await render(<PickCard pick={{ ...PICK, should_bet: false }} unitStake={20} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(screen.getByTestId("bet-button")).toHaveTextContent("베팅");
+  expect(screen.queryByText("베팅 $20")).toBeNull();
+});
+
 test("shows no BET/SKIP badge when the flag is absent", async () => {
   await render(<PickCard pick={PICK} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
   expect(screen.queryByText(/🟣 BET|⚪ SKIP/)).toBeNull();

@@ -3,7 +3,6 @@ import { getCredentials } from "../storage";
 import type {
   BetIn,
   MuteRule,
-  MyBets,
   Pick,
   PicksResponse,
   RefreshResponse,
@@ -45,7 +44,6 @@ export const api = {
     request<{ id: number }>("/bets", { method: "POST", body: JSON.stringify(bet) }),
   dismissPick: (id: string) =>
     request<{ ok: boolean }>(`/picks/${enc(id)}/dismiss`, { method: "POST" }),
-  getMyBets: () => request<MyBets>("/mybets"),
   getSettings: () => request<Settings>("/settings"),
   putSettings: (s: Settings) =>
     request<{ ok: boolean }>("/settings", { method: "PUT", body: JSON.stringify(s) }),

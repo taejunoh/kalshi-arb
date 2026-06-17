@@ -71,37 +71,6 @@ export interface BetIn {
   source: string;
 }
 
-export interface LiveProgress {
-  current: number | null;
-  needed: number;
-  remaining?: number;
-  game_state: string | null;
-}
-
-export interface OpenBet {
-  id: number;
-  event_id: string;
-  sport: string | null;
-  home: string | null;
-  away: string | null;
-  commence_time: string | null;
-  market: string;
-  side: string;
-  point: number | null;
-  player: string | null;
-  label: string | null;
-  book: string | null;
-  fill_odds: number | null;
-  stake: number | null;
-  live_status: string | null;
-  live_progress: LiveProgress | null;
-}
-
-export interface MyBets {
-  calendar: Record<string, number>;
-  open: OpenBet[];
-}
-
 export type SortKey = "ev" | "time" | "n_books";
 export interface Settings {
   min_ev: number;
