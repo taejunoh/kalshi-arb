@@ -9,6 +9,7 @@ import type { PicksStackParamList } from "../navigation/types";
 import { buildBetIn } from "../capture";
 import { draftToBetIn } from "../scan";
 import { decimalOdds } from "../format";
+import { color, radius, space } from "../theme";
 
 // Indexed access (not the `Pick<>` utility — `Pick` is imported above as the API type).
 type Props = { route: NativeStackScreenProps<PicksStackParamList, "CaptureSheet">["route"] };
@@ -81,9 +82,9 @@ export function CaptureSheet({ route }: Props) {
         </Text>
         {scanDraft.event_id == null && <Text style={s.offfeed}>오프피드 — 정산 수동</Text>}
         <Text style={s.field}>스테이크</Text>
-        <TextInput style={s.input} placeholder="스테이크 ($)" placeholderTextColor="#6B7280" keyboardType="decimal-pad" value={stake} onChangeText={setStake} />
+        <TextInput style={s.input} placeholder="스테이크 ($)" placeholderTextColor={color.faint} keyboardType="decimal-pad" value={stake} onChangeText={setStake} />
         <Text style={s.field}>실제 체결 배당</Text>
-        <TextInput style={s.input} placeholder="실배당" placeholderTextColor="#6B7280" keyboardType="decimal-pad" value={fillOdds} onChangeText={setFillOdds} />
+        <TextInput style={s.input} placeholder="실배당" placeholderTextColor={color.faint} keyboardType="decimal-pad" value={fillOdds} onChangeText={setFillOdds} />
         {error && <Text style={s.err}>{error}</Text>}
         <View style={s.actions}>
           <Pressable style={[s.btn, s.cancel]} onPress={() => nav.goBack()}><Text style={s.btnText}>취소</Text></Pressable>
@@ -104,9 +105,9 @@ export function CaptureSheet({ route }: Props) {
       <Text style={s.label}>{pick.label}</Text>
       <Text style={s.meta}>추천: {pick.book ?? "—"} @ {decimalOdds(pick.odds)}</Text>
       <Text style={s.field}>스테이크</Text>
-      <TextInput style={s.input} placeholder="스테이크 ($)" placeholderTextColor="#6B7280" keyboardType="decimal-pad" value={stake} onChangeText={setStake} />
+      <TextInput style={s.input} placeholder="스테이크 ($)" placeholderTextColor={color.faint} keyboardType="decimal-pad" value={stake} onChangeText={setStake} />
       <Text style={s.field}>실제 체결 배당</Text>
-      <TextInput style={s.input} placeholder="실배당" placeholderTextColor="#6B7280" keyboardType="decimal-pad" value={fillOdds} onChangeText={setFillOdds} />
+      <TextInput style={s.input} placeholder="실배당" placeholderTextColor={color.faint} keyboardType="decimal-pad" value={fillOdds} onChangeText={setFillOdds} />
       {error && <Text style={s.err}>{error}</Text>}
       <View style={s.actions}>
         <Pressable style={[s.btn, s.cancel]} onPress={() => nav.goBack()}><Text style={s.btnText}>취소</Text></Pressable>
@@ -119,17 +120,17 @@ export function CaptureSheet({ route }: Props) {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0E0E13", padding: 18 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0E0E13" },
-  label: { color: "#FFF", fontSize: 18, fontWeight: "700" },
-  meta: { color: "#9CA3AF", marginTop: 6, marginBottom: 16 },
-  offfeed: { color: "#FBBF24", fontSize: 12, marginBottom: 10 },
-  field: { color: "#9CA3AF", fontSize: 13, marginTop: 12, marginBottom: 4 },
-  input: { backgroundColor: "#1A1A22", color: "#FFF", borderRadius: 8, padding: 12, fontSize: 16 },
+  container: { flex: 1, backgroundColor: color.bg, padding: 18 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: color.bg },
+  label: { color: color.text, fontSize: 18, fontWeight: "600" },
+  meta: { color: color.muted, marginTop: 6, marginBottom: space.lg },
+  offfeed: { color: color.urgent, fontSize: 12, marginBottom: 10 },
+  field: { color: color.muted, fontSize: 13, marginTop: space.md, marginBottom: space.xs },
+  input: { backgroundColor: color.surface, color: color.text, borderRadius: radius.sm, padding: space.md, fontSize: 16 },
   actions: { flexDirection: "row", gap: 10, marginTop: 24 },
-  btn: { flex: 1, padding: 14, borderRadius: 10, alignItems: "center" },
-  cancel: { backgroundColor: "#374151" },
-  save: { backgroundColor: "#7C3AED" },
-  btnText: { color: "#FFF", fontWeight: "700", fontSize: 16 },
-  err: { color: "#F87171", marginTop: 8 },
+  btn: { flex: 1, padding: space.lg, borderRadius: radius.button, alignItems: "center" },
+  cancel: { backgroundColor: color.surfaceRaised },
+  save: { backgroundColor: color.accent },
+  btnText: { color: color.onAccent, fontWeight: "600", fontSize: 16 },
+  err: { color: color.negative, marginTop: space.sm },
 });

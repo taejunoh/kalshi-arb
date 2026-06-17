@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, FlatList, StyleSheet } from "react-native";
 import { api } from "../api/client";
 import type { MuteRule } from "../api/types";
+import { color, radius, space } from "../theme";
 
 const FIELDS: MuteRule["field"][] = ["player", "market", "sport", "event"];
 const FIELD_LABEL: Record<MuteRule["field"], string> = {
@@ -44,7 +45,7 @@ export function RulesEditor() {
       </View>
       <View style={styles.addRow}>
         <TextInput style={styles.input} value={value} onChangeText={setValue}
-          placeholder="값 (예: Aaron Judge / total / EVT123)" placeholderTextColor="#6B7280" autoCapitalize="none" />
+          placeholder="값 (예: Aaron Judge / total / EVT123)" placeholderTextColor={color.faint} autoCapitalize="none" />
         <Pressable onPress={add} style={styles.addBtn}><Text style={styles.addBtnText}>규칙 추가</Text></Pressable>
       </View>
       <FlatList
@@ -66,18 +67,18 @@ export function RulesEditor() {
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: 8 },
-  fieldRow: { flexDirection: "row", gap: 8 },
-  chip: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, backgroundColor: "#1F2937" },
-  chipOn: { backgroundColor: "#7C3AED" },
-  chipText: { color: "#FFF", fontSize: 13 },
-  chipTextOn: { color: "#FFF" },
-  addRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-  input: { flex: 1, backgroundColor: "#1A1A22", color: "#FFF", borderRadius: 8, padding: 10, fontSize: 14 },
-  addBtn: { backgroundColor: "#7C3AED", borderRadius: 8, paddingVertical: 10, paddingHorizontal: 14 },
-  addBtnText: { color: "#FFF", fontWeight: "600" },
+  wrap: { gap: space.sm },
+  fieldRow: { flexDirection: "row", gap: space.sm },
+  chip: { paddingVertical: 6, paddingHorizontal: space.md, borderRadius: radius.pill, backgroundColor: color.surfaceRaised },
+  chipOn: { backgroundColor: color.accent },
+  chipText: { color: color.text, fontSize: 13 },
+  chipTextOn: { color: color.onAccent },
+  addRow: { flexDirection: "row", gap: space.sm, alignItems: "center" },
+  input: { flex: 1, backgroundColor: color.surface, color: color.text, borderRadius: radius.sm, padding: 10, fontSize: 14 },
+  addBtn: { backgroundColor: color.accent, borderRadius: radius.sm, paddingVertical: 10, paddingHorizontal: space.lg },
+  addBtnText: { color: color.onAccent, fontWeight: "600" },
   ruleRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 10 },
-  ruleText: { color: "#E5E7EB" },
-  del: { color: "#F87171" },
-  empty: { color: "#888", paddingVertical: 12 },
+  ruleText: { color: color.text },
+  del: { color: color.negative },
+  empty: { color: color.faint, paddingVertical: space.md },
 });
