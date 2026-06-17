@@ -9,7 +9,8 @@ flag the pair on the alert and recommend only the higher-EV side.
 ② _opposite_note: cross-market pair (h2h vs spread) from same-scan batch and
    from previously alerted lines, with the EV pick.
 ③ _dup_note: same-market opposite side (Under 153.5 vs Over 158.5 across
-   scans) now carries the EV comparison too.
+   scans) is a LATE-CROSSER (side-aware first-entry SKIPs it) → recommend the
+   first-entry side only, no hedge (the old "take higher-EV side" was refuted).
 """
 import os
 import sqlite3
@@ -124,14 +125,18 @@ def test_no_note_for_same_direction_or_other_event():
     assert rec._opposite_note(db, batch[0], batch) == ""
 
 
-# ---------- ③ _dup_note same-market opposite now compares EV ----------
+# ---------- ③ _dup_note same-market opposite = late-crosser, skip ----------
 
-def test_dup_note_opposite_side_recommends_higher_ev():
+def test_dup_note_opposite_side_recommends_skip_first_entry_only():
+    # The later opposite side is a LATE-CROSSER (side-aware is_first_entry SKIPs it).
+    # _dup_note must point back to the first-entry side and forbid hedging — NOT
+    # recommend the higher-EV side (data-refuted: higher-EV opposite won only 3/8).
     db = db_()
     under = bet("total", "Under", 153.5, ev=0.025, book="Fanatics", odds=2.25)
     snap(db, under)
     mark_alerted(db, under)
     over = bet("total", "Over", 158.5, ev=0.024, book="FanDuel", odds=2.14)
     note = rec._dup_note(db, over)
-    assert "방향 반대" in note
-    assert "+2.4%" in note and "+2.5%" in note and "처음 쪽" in note
+    assert "방향 반대" in note and "late-crosser" in note
+    assert "first-entry" in note and "헤지 금지" in note
+    assert "처음 쪽" not in note and "+2.4%" not in note

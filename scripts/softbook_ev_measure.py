@@ -29,19 +29,25 @@ def _band(px):
 
 
 def first_entry_map(rows):
-    """(event_id, market, player) -> True iff its EARLIEST recorded snapshot was High.
+    """(event_id, market, player) -> frozenset of the sides that were High at that key's
+    EARLIEST recorded snapshot. A pick is first-entry iff ITS side is in the set.
 
-    Mirrors recorder._first_entry_note's single source EXACTLY: keyed on
-    (event, market, player) — NOT side/point — and 'first-entry' = the tier of the
-    minimum-recorded_at snapshot for that key is 'High'. core.is_bet(first_entry,
-    market) then drops props + late-crossers, identically to the Telegram tag /
-    app /picks flag / push worker."""
-    earliest = {}                                   # fk -> (ts, tier)
+    Side-aware mirror of core.market_first_entry_sides (the DB single source for the
+    Telegram tag / app /picks flag / push): the OPPOSITE side that crosses into High only
+    after the line moved is a LATE-CROSSER, not a first-entry. core.is_bet(first_entry,
+    market) then drops props + late-crossers. Deterministic on same-scan multi-side ties
+    (set membership at the min recorded_at, not a nondeterministic single-row pick)."""
+    open_ts = {}                                    # fk -> earliest recorded_at
     for eid, market, side, point, player, ts, fair, px, tier in rows:
         fk = (eid, market, player or "")
-        if fk not in earliest or ts < earliest[fk][0]:
-            earliest[fk] = (ts, tier)
-    return {fk: (t == "High") for fk, (_, t) in earliest.items()}
+        if fk not in open_ts or ts < open_ts[fk]:
+            open_ts[fk] = ts
+    sides = {}                                       # fk -> {sides High at open_ts}
+    for eid, market, side, point, player, ts, fair, px, tier in rows:
+        fk = (eid, market, player or "")
+        if ts == open_ts[fk] and tier == "High":
+            sides.setdefault(fk, set()).add(side)
+    return {fk: frozenset(s) for fk, s in sides.items()}
 
 
 def measure(rows, close):
@@ -74,7 +80,7 @@ def measure(rows, close):
         clv = close_fair - open_fair                # close fair - open fair
         clvs.append(clv); px_clv.append((track[0][2], clv)); mkt[k[1]].append(clv)
         tier_clv[track[0][3] or "?"].append(clv)    # by OPENING confidence tier
-        if core.is_bet(fe.get((k[0], k[1], k[4] or ""), False), k[1]):
+        if core.is_bet(k[2] in fe.get((k[0], k[1], k[4] or ""), frozenset()), k[1]):
             bet_clvs.append(clv); bet_true += is_true
             if is_true:
                 bet_clvs_true.append(clv)            # honest cut: TRUE close, no UP bias
@@ -103,7 +109,7 @@ def main():
     try:
         rows = db.execute("""SELECT event_id, market, side, point, player, recorded_at,
             pinnacle_fair_prob, best_soft_price, tier FROM softbook_ev
-            ORDER BY recorded_at""").fetchall()        # match recorder's first-entry tie-break
+            ORDER BY recorded_at""").fetchall()        # first_entry_map is order-independent
     except Exception as e:
         print("read err (schema?):", e); return
     # TRUE closing fairs (softbook_close_capture: Pinnacle at commence, any band).
