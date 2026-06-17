@@ -120,10 +120,12 @@ export function PicksScreen() {
         refreshing={loading}
         onRefresh={() => void load()}
         renderItem={({ item }) => (
+          // "베팅" + 카드 탭 = PickDetail (북별 호가 + 딥링크로 바로 베팅). 기록은
+          // PickDetail의 "베팅함 기록"에서 (베팅 후) — 빠른 베팅 > 사후 기록.
           <PickCard
             pick={item}
             onOpen={(p) => nav.push("PickDetail", { pickId: p.id })}
-            onBet={(p) => nav.push("CaptureSheet", { pickId: p.id })}
+            onBet={(p) => nav.push("PickDetail", { pickId: p.id })}
             onDismiss={(p) => void dismiss(p)}
           />
         )}
@@ -139,7 +141,7 @@ export function PicksScreen() {
               </Pressable>
               {showCooled &&
                 data.cooled.map((p) => (
-                  <PickCard key={p.id} pick={p} onOpen={(x) => nav.push("PickDetail", { pickId: x.id })} onBet={(x) => nav.push("CaptureSheet", { pickId: x.id })} onDismiss={(x) => void dismiss(x)} />
+                  <PickCard key={p.id} pick={p} onOpen={(x) => nav.push("PickDetail", { pickId: x.id })} onBet={(x) => nav.push("PickDetail", { pickId: x.id })} onDismiss={(x) => void dismiss(x)} />
                 ))}
             </View>
           ) : null
