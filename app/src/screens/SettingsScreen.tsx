@@ -7,6 +7,7 @@ import { saveCredentials } from "../storage";
 import { registerForPush } from "../push";
 import { ALL_BOOKS, DEFAULT_SETTINGS, MIN_EV_STEPS, SPORT_LABELS } from "../config";
 import { RulesEditor } from "./RulesScreen";
+import { color, radius, space } from "../theme";
 
 export function SettingsScreen() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -90,10 +91,10 @@ export function SettingsScreen() {
       </View>
 
       <Text style={s.h}>연결</Text>
-      <TextInput style={s.input} placeholder="API base URL" placeholderTextColor="#6B7280" autoCapitalize="none" value={baseUrl} onChangeText={setBaseUrl} />
-      <TextInput style={s.input} placeholder="APP_API_TOKEN" placeholderTextColor="#6B7280" autoCapitalize="none" value={token} onChangeText={setToken} />
-      <TextInput style={s.input} placeholder="CF-Access-Client-Id" placeholderTextColor="#6B7280" autoCapitalize="none" value={cfId} onChangeText={setCfId} />
-      <TextInput style={s.input} placeholder="CF-Access-Client-Secret" placeholderTextColor="#6B7280" autoCapitalize="none" secureTextEntry value={cfSecret} onChangeText={setCfSecret} />
+      <TextInput style={s.input} placeholder="API base URL" placeholderTextColor={color.faint} autoCapitalize="none" value={baseUrl} onChangeText={setBaseUrl} />
+      <TextInput style={s.input} placeholder="APP_API_TOKEN" placeholderTextColor={color.faint} autoCapitalize="none" value={token} onChangeText={setToken} />
+      <TextInput style={s.input} placeholder="CF-Access-Client-Id" placeholderTextColor={color.faint} autoCapitalize="none" value={cfId} onChangeText={setCfId} />
+      <TextInput style={s.input} placeholder="CF-Access-Client-Secret" placeholderTextColor={color.faint} autoCapitalize="none" secureTextEntry value={cfSecret} onChangeText={setCfSecret} />
       <Pressable style={s.save} onPress={() => void saveCreds()}><Text style={s.saveText}>자격 증명 저장</Text></Pressable>
       <Pressable style={[s.save, s.push]} onPress={() => void enablePush()}><Text style={s.saveText}>푸시 등록</Text></Pressable>
       {msg && <Text style={s.msg}>{msg}</Text>}
@@ -105,17 +106,17 @@ export function SettingsScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0E0E13" },
-  h: { color: "#FFF", fontSize: 18, fontWeight: "800", marginTop: 20, marginBottom: 8 },
-  field: { color: "#9CA3AF", fontSize: 13, marginTop: 12, marginBottom: 6 },
+  container: { flex: 1, backgroundColor: color.bg },
+  h: { color: color.text, fontSize: 18, fontWeight: "600", marginTop: space.xl, marginBottom: space.sm },
+  field: { color: color.muted, fontSize: 13, marginTop: space.md, marginBottom: 6 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: "#1F2937" },
-  chipOn: { backgroundColor: "#7C3AED" },
-  chipMuted: { backgroundColor: "#B91C1C" },
-  chipText: { color: "#FFF", fontSize: 13 },
-  input: { backgroundColor: "#1A1A22", color: "#FFF", borderRadius: 8, padding: 12, fontSize: 14, marginTop: 8 },
-  save: { backgroundColor: "#7C3AED", borderRadius: 10, padding: 14, alignItems: "center", marginTop: 14 },
-  push: { backgroundColor: "#2563EB" },
-  saveText: { color: "#FFF", fontWeight: "700" },
-  msg: { color: "#34D399", textAlign: "center", marginTop: 12 },
+  chip: { paddingHorizontal: space.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: color.surfaceRaised },
+  chipOn: { backgroundColor: color.accent },
+  chipMuted: { backgroundColor: color.negative },
+  chipText: { color: color.text, fontSize: 13 },
+  input: { backgroundColor: color.surface, color: color.text, borderRadius: radius.sm, padding: space.md, fontSize: 14, marginTop: space.sm },
+  save: { backgroundColor: color.accent, borderRadius: radius.button, padding: space.lg, alignItems: "center", marginTop: space.lg },
+  push: { backgroundColor: color.surfaceRaised },
+  saveText: { color: color.onAccent, fontWeight: "600" },
+  msg: { color: color.positive, textAlign: "center", marginTop: space.md },
 });
