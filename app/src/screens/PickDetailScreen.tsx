@@ -8,6 +8,7 @@ import type { RefreshResponse } from "../api/types";
 import type { PicksStackParamList } from "../navigation/types";
 import { openOrCopy, isVerifiedPrefill } from "../deeplink";
 import { decimalOdds, evPct } from "../format";
+import { color, radius, space, font } from "../theme";
 
 type Book = RefreshResponse["books"][number];
 
@@ -57,23 +58,25 @@ export function PickDetailScreen({ route }: Props) {
 
   return (
     <View style={s.root}>
-      <ScrollView style={s.container} contentContainerStyle={{ padding: 12 }}>
+      <ScrollView style={s.container} contentContainerStyle={{ padding: space.md }}>
         <View style={s.headerRow}>
           <Text style={s.fair}>{data?.fair != null ? `공정확률 ${(data.fair * 100).toFixed(1)}%` : "—"}</Text>
           <Pressable style={s.refresh} onPress={() => void load()}><Text style={s.refreshText}>새로고침{data ? ` (${data.credits})` : ""}</Text></Pressable>
         </View>
         {loading && <ActivityIndicator style={{ marginTop: 24 }} />}
         {error && <Text style={s.err}>로드 실패: {error}</Text>}
-        {data?.books.map((b) => {
+        {data?.books.map((b, i) => {
           const verified = isVerifiedPrefill(b.book, b.deeplink);
           return (
-            <Pressable key={b.book} style={s.bookRow} onPress={() => void onTapBook(b)}>
+            <Pressable key={b.book} style={[s.bookRow, i === 0 && s.bookBest]} onPress={() => void onTapBook(b)}>
               <View style={{ flex: 1 }}>
-                <Text style={s.bookName}>{b.book}</Text>
-                <Text style={s.tier}>{verified ? "✓ 슬립 프리필" : "앱 열기 + 복사"}</Text>
+                <Text style={s.bookName}>{b.book}{i === 0 ? <Text style={s.bestTag}> · 추천</Text> : null}</Text>
+                <Text style={verified ? s.prefill : s.openCopy}>{verified ? "✓ 슬립 프리필" : "앱 열기 + 복사"}</Text>
               </View>
-              <Text style={s.odds}>{decimalOdds(b.odds)}</Text>
-              <Text style={s.bookEv}>{evPct(b.ev)}</Text>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={s.odds}>{decimalOdds(b.odds)}</Text>
+                <Text style={s.bookEv}>{evPct(b.ev)}</Text>
+              </View>
             </Pressable>
           );
         })}
@@ -89,20 +92,23 @@ export function PickDetailScreen({ route }: Props) {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#0E0E13" },
-  container: { flex: 1, backgroundColor: "#0E0E13" },
-  toast: { position: "absolute", left: 16, right: 16, bottom: 28, backgroundColor: "#1F2937", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, alignItems: "center", borderWidth: 1, borderColor: "#374151" },
-  toastText: { color: "#FFF", fontSize: 13, textAlign: "center" },
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-  fair: { color: "#9CA3AF", fontSize: 14 },
-  refresh: { backgroundColor: "#1F2937", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  refreshText: { color: "#FFF", fontSize: 12 },
-  err: { color: "#F87171", marginTop: 12 },
-  bookRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#1A1A22", borderRadius: 10, padding: 14, marginVertical: 5 },
-  bookName: { color: "#FFF", fontSize: 16, fontWeight: "600" },
-  tier: { color: "#60A5FA", fontSize: 12, marginTop: 2 },
-  odds: { color: "#FFF", fontSize: 16, fontWeight: "700", marginHorizontal: 10 },
-  bookEv: { color: "#34D399", fontSize: 14, width: 56, textAlign: "right" },
-  betBtn: { backgroundColor: "#7C3AED", borderRadius: 10, padding: 14, alignItems: "center", marginTop: 16 },
-  betText: { color: "#FFF", fontWeight: "700", fontSize: 16 },
+  root: { flex: 1, backgroundColor: color.bg },
+  container: { flex: 1, backgroundColor: color.bg },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: space.sm },
+  fair: { color: color.muted, fontSize: 14 },
+  refresh: { backgroundColor: color.surfaceRaised, paddingHorizontal: space.md, paddingVertical: 6, borderRadius: radius.sm },
+  refreshText: { color: color.accentText, fontSize: 12 },
+  err: { color: color.negative, marginTop: space.md },
+  bookRow: { flexDirection: "row", alignItems: "center", backgroundColor: color.surface, borderRadius: radius.button, padding: space.lg, marginVertical: 5 },
+  bookBest: { borderWidth: 1, borderColor: color.accent },
+  bookName: { ...font.rowName },
+  bestTag: { color: color.accentText, fontSize: 11, fontWeight: "500" },
+  prefill: { color: color.positive, fontSize: 11, marginTop: 3 },
+  openCopy: { color: color.faint, fontSize: 11, marginTop: 3 },
+  odds: { color: color.text, fontSize: 15, fontWeight: "600" },
+  bookEv: { color: color.positive, fontSize: 12, marginTop: 2 },
+  betBtn: { backgroundColor: color.surfaceRaised, borderRadius: radius.button, padding: space.lg, alignItems: "center", marginTop: space.lg },
+  betText: { color: color.accentText, fontWeight: "600", fontSize: 15 },
+  toast: { position: "absolute", left: space.lg, right: space.lg, bottom: 28, backgroundColor: color.surfaceRaised, borderRadius: radius.sm, paddingVertical: space.md, paddingHorizontal: space.lg, alignItems: "center", borderWidth: 1, borderColor: color.border },
+  toastText: { color: color.text, fontSize: 13, textAlign: "center" },
 });
