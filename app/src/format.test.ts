@@ -1,5 +1,5 @@
 // app/src/format.test.ts
-import { decimalOdds, evPct, pnl, countdown, liveProgressLabel } from "./format";
+import { decimalOdds, evPct, pnl, countdown, countdownUrgent, liveProgressLabel } from "./format";
 
 test("decimalOdds formats to 2 dp", () => {
   expect(decimalOdds(2.2)).toBe("2.20");
@@ -29,4 +29,11 @@ test("liveProgressLabel composes current/needed + game state", () => {
   expect(liveProgressLabel({ current: 1, needed: 1.5, remaining: 1, game_state: "Mid 2nd" })).toBe("1 / 1.5 · Mid 2nd");
   expect(liveProgressLabel({ current: null, needed: 1.5, game_state: null })).toBe("— / 1.5");
   expect(liveProgressLabel(null)).toBe("");
+});
+
+test("countdownUrgent: true only when < 1h to start and not started", () => {
+  const now = new Date("2026-06-16T12:00:00Z");
+  expect(countdownUrgent("2026-06-16T12:45:00Z", now)).toBe(true);
+  expect(countdownUrgent("2026-06-16T13:30:00Z", now)).toBe(false);
+  expect(countdownUrgent("2026-06-16T11:59:00Z", now)).toBe(false);
 });
