@@ -8,6 +8,7 @@ import { calendarSummary } from "../mybets";
 import { decimalOdds, liveProgressLabel, pnl } from "../format";
 import { CalendarHeatmap } from "../components/CalendarHeatmap";
 import { color, radius, space, font } from "../theme";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const STATUS_COLOR: Record<string, string> = {
   winning: color.positive,
@@ -18,6 +19,7 @@ const STATUS_COLOR: Record<string, string> = {
 export function MyBetsScreen() {
   const [data, setData] = useState<MyBets | null>(null);
   const [loading, setLoading] = useState(true);
+  const insets = useSafeAreaInsets();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,7 +35,7 @@ export function MyBetsScreen() {
   const summary = calendarSummary(data?.calendar ?? {});
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={{ padding: space.md }}>
+    <ScrollView style={s.container} contentContainerStyle={{ padding: space.md, paddingTop: insets.top + space.md }}>
       <Text style={s.title}>내 베팅</Text>
       <View style={s.metric}>
         <Text style={s.metricLabel}>누적 PnL</Text>
