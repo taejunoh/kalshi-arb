@@ -7,6 +7,7 @@ import type { Pick, PicksResponse, Settings, SortKey } from "../api/types";
 import { PickCard } from "../components/PickCard";
 import { pickImage } from "../scan";
 import { MIN_EV_STEPS } from "../config";
+import { color, radius, space } from "../theme";
 
 export function PicksScreen() {
   const nav = useNavigation<{ push: (s: string, p?: object) => void; navigate: (s: string, p?: object) => void }>();
@@ -149,20 +150,20 @@ export function PicksScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0E0E13" },
+  container: { flex: 1, backgroundColor: color.bg },
   filterBar: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6, padding: 10 },
-  filterLabel: { color: "#9CA3AF", fontSize: 12, marginRight: 4 },
-  chip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: "#1F2937" },
-  chipOn: { backgroundColor: "#7C3AED" },
-  scanChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: "#7C3AED" },
-  feChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: "#1F2937", borderWidth: 1, borderColor: "#7C3AED" },
-  feChipOn: { backgroundColor: "#7C3AED", borderColor: "#7C3AED" },
-  chipText: { color: "#FFF", fontSize: 12 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0E0E13", padding: 24 },
-  err: { color: "#F87171", textAlign: "center", marginBottom: 12 },
-  retry: { backgroundColor: "#7C3AED", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
-  retryText: { color: "#FFF", fontWeight: "600" },
-  empty: { color: "#6B7280", textAlign: "center", marginTop: 40 },
-  cooledHeader: { padding: 14 },
-  cooledText: { color: "#9CA3AF", fontWeight: "600" },
+  filterLabel: { color: color.muted, fontSize: 12, marginRight: space.xs },
+  chip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: color.surfaceRaised },
+  chipOn: { backgroundColor: color.accent },
+  scanChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: color.accentDim },
+  feChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: color.surfaceRaised, borderWidth: 1, borderColor: color.accent },
+  feChipOn: { backgroundColor: color.accent, borderColor: color.accent },
+  chipText: { color: color.text, fontSize: 12 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: color.bg, padding: space.xl },
+  err: { color: color.negative, textAlign: "center", marginBottom: space.md },
+  retry: { backgroundColor: color.accent, paddingHorizontal: space.lg, paddingVertical: 10, borderRadius: radius.sm },
+  retryText: { color: color.onAccent, fontWeight: "600" },
+  empty: { color: color.faint, textAlign: "center", marginTop: 40 },
+  cooledHeader: { padding: space.lg },
+  cooledText: { color: color.muted, fontWeight: "600" },
 });
