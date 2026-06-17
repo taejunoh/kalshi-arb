@@ -70,7 +70,8 @@ test("changing a filter preserves existing sport and book prefs (no clobber)", a
   });
   await render(<PicksScreen />);
   await waitFor(() => expect(api.getSettings).toHaveBeenCalled());
-  await fireEvent.press(screen.getByText("시간순"));
+  // Sort is a single cycling chip: ev -> time -> n_books. One tap from ev = time.
+  await fireEvent.press(screen.getByTestId("sort-cycle"));
   await waitFor(() => expect(api.putSettings).toHaveBeenCalled());
   const sent = (api.putSettings as jest.Mock).mock.calls.at(-1)?.[0];
   expect(sent.sports).toEqual(["baseball_mlb"]);
