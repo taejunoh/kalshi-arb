@@ -2,6 +2,8 @@
 import { createNavigationContainerRef } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { Feather } from "@expo/vector-icons";
+import { color } from "../theme";
 import type { PicksStackParamList, RootParamList, TabParamList } from "./types";
 import { PicksScreen } from "../screens/PicksScreen";
 import { PickDetailScreen } from "../screens/PickDetailScreen";
@@ -25,7 +27,15 @@ export function myBetsRoute(): ["Tabs", object] {
 const PicksStack = createNativeStackNavigator<PicksStackParamList>();
 function PicksNavigator() {
   return (
-    <PicksStack.Navigator>
+    <PicksStack.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: color.bg },
+        headerTintColor: color.accent,
+        headerTitleStyle: { color: color.text },
+        headerShadowVisible: false,
+        contentStyle: { backgroundColor: color.bg },
+      }}
+    >
       <PicksStack.Screen name="PicksList" component={PicksScreen} options={{ title: "픽" }} />
       <PicksStack.Screen name="PickDetail" component={PickDetailScreen} options={{ title: "픽 상세" }} />
       <PicksStack.Screen name="CaptureSheet" component={CaptureSheet} options={{ presentation: "modal", title: "베팅 기록" }} />
@@ -36,10 +46,17 @@ function PicksNavigator() {
 const Tabs = createBottomTabNavigator<TabParamList>();
 export function RootNavigator() {
   return (
-    <Tabs.Navigator screenOptions={{ headerShown: false }}>
-      <Tabs.Screen name="Picks" component={PicksNavigator} options={{ title: "픽" }} />
-      <Tabs.Screen name="MyBets" component={MyBetsScreen} options={{ title: "내 베팅" }} />
-      <Tabs.Screen name="Settings" component={SettingsScreen} options={{ title: "설정" }} />
+    <Tabs.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: { backgroundColor: color.bg, borderTopColor: color.border },
+        tabBarActiveTintColor: color.accent,
+        tabBarInactiveTintColor: color.faint,
+      }}
+    >
+      <Tabs.Screen name="Picks" component={PicksNavigator} options={{ title: "픽", tabBarIcon: ({ color: c, size }) => <Feather name="zap" size={size} color={c} /> }} />
+      <Tabs.Screen name="MyBets" component={MyBetsScreen} options={{ title: "내 베팅", tabBarIcon: ({ color: c, size }) => <Feather name="calendar" size={size} color={c} /> }} />
+      <Tabs.Screen name="Settings" component={SettingsScreen} options={{ title: "설정", tabBarIcon: ({ color: c, size }) => <Feather name="settings" size={size} color={c} /> }} />
     </Tabs.Navigator>
   );
 }

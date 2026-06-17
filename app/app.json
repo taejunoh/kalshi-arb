@@ -31,7 +31,8 @@
           "color": "#7C3AED"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-asset"
     ],
     "extra": {
       "eas": {

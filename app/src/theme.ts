@@ -1,7 +1,8 @@
 // app/src/theme.ts
 // Single source of truth for the app's dark visual language. Plain data — no theming lib.
+// (Kept free of React Navigation imports so importing a token never pulls the nav stack —
+//  the navTheme that wraps these into a NavigationContainer theme lives in App.tsx.)
 import type { TextStyle } from "react-native";
-import { DarkTheme } from "@react-navigation/native";
 
 export const color = {
   bg: "#0B0B0F",
@@ -35,17 +36,4 @@ export const font: Record<string, TextStyle> = {
   body: { fontSize: 14, color: color.text },
   meta: { fontSize: 13, color: color.muted },
   micro: { fontSize: 11, fontWeight: "500", letterSpacing: 0.4 },
-};
-
-export const navTheme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    primary: color.accent,
-    background: color.bg,
-    card: color.bg,
-    text: color.text,
-    border: color.border,
-    notification: color.accent,
-  },
 };
