@@ -6,11 +6,13 @@ import { api } from "../api/client";
 import type { MyBets, OpenBet } from "../api/types";
 import { calendarSummary } from "../mybets";
 import { decimalOdds, liveProgressLabel, pnl } from "../format";
+import { CalendarHeatmap } from "../components/CalendarHeatmap";
+import { color, radius, space, font } from "../theme";
 
 const STATUS_COLOR: Record<string, string> = {
-  winning: "#34D399",
-  losing: "#F87171",
-  pending: "#9CA3AF",
+  winning: color.positive,
+  losing: color.negative,
+  pending: color.muted,
 };
 
 export function MyBetsScreen() {
@@ -31,25 +33,21 @@ export function MyBetsScreen() {
   const summary = calendarSummary(data?.calendar ?? {});
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={{ padding: 12 }}>
-      <View style={s.totalCard}>
-        <Text style={s.totalLabel}>누적 PnL</Text>
-        <Text style={[s.total, { color: summary.total >= 0 ? "#34D399" : "#F87171" }]}>{pnl(summary.total)}</Text>
+    <ScrollView style={s.container} contentContainerStyle={{ padding: space.md }}>
+      <Text style={s.title}>내 베팅</Text>
+      <View style={s.metric}>
+        <Text style={s.metricLabel}>누적 PnL</Text>
+        <Text style={[s.metricVal, { color: summary.total >= 0 ? color.positive : color.negative }]}>{pnl(summary.total)}</Text>
       </View>
-      {summary.days.map((d) => (
-        <View key={d.day} style={s.dayRow}>
-          <Text style={s.day}>{d.day}</Text>
-          <Text style={[s.dayPnl, { color: d.pnl >= 0 ? "#34D399" : "#F87171" }]}>{pnl(d.pnl)}</Text>
-        </View>
-      ))}
+      <CalendarHeatmap calendar={data?.calendar ?? {}} />
 
       <Text style={s.section}>진행 중 ({data?.open.length ?? 0})</Text>
-      {loading && <ActivityIndicator style={{ marginTop: 16 }} />}
+      {loading && <ActivityIndicator style={{ marginTop: space.lg }} />}
       {data?.open.map((b: OpenBet) => (
         <View key={b.id} style={s.betCard}>
           <View style={s.betRow}>
             <Text style={s.betLabel} numberOfLines={1}>{b.label ?? `${b.side} ${b.point ?? ""}`}</Text>
-            <Text style={[s.betStatus, { color: STATUS_COLOR[b.live_status ?? "pending"] ?? "#9CA3AF" }]}>
+            <Text style={[s.betStatus, { color: STATUS_COLOR[b.live_status ?? "pending"] ?? color.muted }]}>
               {b.live_status ?? "pending"}
             </Text>
           </View>
@@ -65,18 +63,16 @@ export function MyBetsScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0E0E13" },
-  totalCard: { backgroundColor: "#1A1A22", borderRadius: 12, padding: 16, alignItems: "center", marginBottom: 10 },
-  totalLabel: { color: "#9CA3AF", fontSize: 13 },
-  total: { fontSize: 28, fontWeight: "800", marginTop: 4 },
-  dayRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 8, paddingHorizontal: 4, borderBottomColor: "#1F2937", borderBottomWidth: 1 },
-  day: { color: "#D1D5DB" },
-  dayPnl: { fontWeight: "600" },
-  section: { color: "#FFF", fontSize: 16, fontWeight: "700", marginTop: 20, marginBottom: 8 },
-  betCard: { backgroundColor: "#1A1A22", borderRadius: 10, padding: 14, marginVertical: 5 },
+  container: { flex: 1, backgroundColor: color.bg },
+  title: { ...font.title, marginBottom: space.md },
+  metric: { backgroundColor: color.surface, borderRadius: radius.sm, padding: space.md, marginBottom: space.lg },
+  metricLabel: { color: color.faint, fontSize: 11 },
+  metricVal: { fontSize: 24, fontWeight: "600", marginTop: 3 },
+  section: { color: color.text, fontSize: 16, fontWeight: "600", marginTop: space.xl, marginBottom: space.sm },
+  betCard: { backgroundColor: color.surface, borderRadius: radius.sm, padding: space.lg, marginVertical: 5 },
   betRow: { flexDirection: "row", justifyContent: "space-between" },
-  betLabel: { color: "#FFF", fontWeight: "600", flex: 1, paddingRight: 8 },
-  betStatus: { fontWeight: "700", fontSize: 13 },
-  betMeta: { color: "#9CA3AF", marginTop: 6, fontSize: 13 },
-  empty: { color: "#6B7280", textAlign: "center", marginTop: 20 },
+  betLabel: { color: color.text, fontWeight: "600", flex: 1, paddingRight: space.sm },
+  betStatus: { fontWeight: "600", fontSize: 13 },
+  betMeta: { color: color.muted, marginTop: 6, fontSize: 13 },
+  empty: { color: color.faint, textAlign: "center", marginTop: space.xl },
 });
