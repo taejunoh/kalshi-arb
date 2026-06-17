@@ -98,10 +98,11 @@ def _other_books_line(b):
 def _first_entry_note(db, b):
     """Tag the alert BET vs SKIP. Rule = FIRST-ENTRY GAME ONLY (user, 2026-06-16).
 
-    A pick is 'first-entry' if its (event, market, player) was ALREADY High at its
-    earliest recorded snapshot (a standing mispricing); a 'late-crosser' only drifted
-    into High after the line moved. BET iff (game [ML/spread/total] AND first-entry);
-    SKIP everything else (all props, all late-crossers).
+    A pick is 'first-entry' if THIS SIDE was already High at the (event, market, player)'s
+    earliest recorded snapshot (a standing mispricing on this side); a 'late-crosser' only
+    drifted into High after the line moved — INCLUDING the opposite side that crosses after
+    the total/spread steams (side-aware since 2026-06-17; see core.market_first_entry_sides).
+    BET iff (game [ML/spread/total] AND first-entry); SKIP else (all props, all late-crossers).
 
     This is a CONTRACTION of the first-entry-only discipline, not an edge claim. The
     6/15 re-measure (independent + adversarial) found NO confirmed pick edge: every
@@ -113,19 +114,18 @@ def _first_entry_note(db, b):
     BONUSES, not the picks; these ≈BE game bets are the low-variance vehicle to clear
     them. No size increase until forward CLV confirms an edge.
 
-    Keyed on (event, market, player); record() persists this scan's snapshot before
-    alert_new_high. Non-critical: any lookup error / missing snapshot → "" (the alert
-    still fires untagged — never mislabel a pick on a transient miss)."""
+    Looks up the High sides at the (event, market, player)'s earliest snapshot, then
+    matches THIS side; record() persists this scan's snapshot before alert_new_high.
+    Non-critical: any lookup error / missing snapshot → "" (the alert still fires untagged
+    — never mislabel a pick on a transient miss)."""
     try:
-        row = db.execute(
-            "SELECT tier FROM softbook_ev WHERE event_id=? AND market=?"
-            " AND COALESCE(player,'')=? ORDER BY recorded_at LIMIT 1",
-            (b["event_id"], b["market"], b.get("player") or "")).fetchone()
+        seen, sides = core.market_first_entry_sides(
+            db, b["event_id"], b["market"], b.get("player") or "")
     except sqlite3.Error:
         return ""
-    if not row:
+    if not seen:
         return ""
-    first_entry = row[0] == "High"
+    first_entry = b["side"] in sides                      # side-aware (single source)
     if core.is_bet(first_entry, b["market"]):        # game + first-entry (single source)
         return "🟣 BET · first-entry game — 베팅 (bet small)"
     if b["market"] in core.PROP_SHORT:
@@ -189,19 +189,14 @@ def _dup_note(db, b):
         chain = " → ".join(core.label(b["market"], s, p or None, b.get("player"))
                            for s, p in prior + [(b["side"], b["point"] or 0)])
     if first_side != b["side"]:
-        evf = db.execute(
-            "SELECT snapshot_ev FROM softbook_ev WHERE event_id=? AND market=?"
-            " AND side=? AND COALESCE(point,0)=? AND COALESCE(player,'')=?"
-            " AND tier='High' ORDER BY recorded_at LIMIT 1",
-            (b["event_id"], b["market"], first_side, first_point,
-             b.get("player") or "")).fetchone()
-        pick = ""
-        if evf:
-            pick = (f", 아니면 EV 높은 쪽만: 이번 {b['ev']*100:+.1f}%"
-                    f" vs 처음 {evf[0]*100:+.1f}%"
-                    f" → {'이번' if b['ev'] >= evf[0] else '처음'} 쪽")
-        return (f"\n   ⚠️ 중복 {len(prior)+1}번째: {chain} — 처음 알림과 방향 반대"
-                f" (동시적중 불가, 사이 구간이면 둘 다 패) — 이미 베팅했다면 스킵{pick}")
+        # Opposite side: it crossed into High only after the line moved = a LATE-CROSSER
+        # (is_first_entry is side-aware → this alert is already tagged SKIP). The first-entry
+        # side was the standing edge; do NOT bet the opposite side and do NOT hedge (reverse
+        # middle — a close game kills both). Pre-2026-06-17 this recommended "take the higher-EV
+        # side"; the data refuted it (higher-EV opposite won 3/8; the first-entry side won 6/8).
+        return (f"\n   ⚠️ 중복 {len(prior)+1}번째: {chain} — 처음과 방향 반대"
+                f" (동시적중 불가, 사이 구간이면 둘 다 패). 라인 이동 후 넘어온 late-crosser →"
+                f" 스킵; 베팅은 처음 사이드(first-entry)만, 헤지 금지")
     new_point = b["point"] or 0
     if b["side"] == "Under":
         better = new_point > first_point

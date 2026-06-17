@@ -112,6 +112,50 @@ def test_keyed_on_event_market_independent():
     assert "SKIP" in rec._first_entry_note(db, tot)
 
 
+def test_opposite_side_crosser_is_skip_not_inherited_bet():
+    # THE BUG (fixed 2026-06-17): a total is High from the open on ONE side; the total
+    # then steams and the OPPOSITE side crosses into High. Side-blind keying made the
+    # opposite side inherit the open side's first_entry=True -> mislabeled BET. It is a
+    # LATE-CROSSER: the first-entry side still BETs, the opposite side must SKIP.
+    db = db_()
+    under = game_bet(market="total", side="Under", point=163.5, eid="T1")
+    snap(db, under, "2026-06-17T01:40:00+00:00", "High")     # Under High from the open
+    over = game_bet(market="total", side="Over", point=164.5, eid="T1")
+    snap(db, over, "2026-06-17T07:00:00+00:00", "Med")       # Over appears only after the move
+    snap(db, over, "2026-06-17T07:40:00+00:00", "High")      # ...then crosses to High
+    assert "BET" in rec._first_entry_note(db, under)         # true first-entry side -> BET
+    note = rec._first_entry_note(db, over)                   # opposite-side crosser -> SKIP
+    assert "SKIP" in note and "late-crosser game" in note
+    assert "bet small" not in note
+
+
+def test_same_side_line_move_stays_first_entry():
+    # A same-direction re-quote (line moved, SAME side) keeps the first-entry verdict —
+    # it is the same directional view, not a new opposite-side crosser.
+    db = db_()
+    o1 = game_bet(market="total", side="Over", point=164.5, eid="T2")
+    snap(db, o1, "2026-06-17T01:40:00+00:00", "High")        # Over High from the open
+    o2 = game_bet(market="total", side="Over", point=165.5, eid="T2")
+    snap(db, o2, "2026-06-17T07:40:00+00:00", "High")        # Over re-quoted at a new line
+    assert "BET" in rec._first_entry_note(db, o2)
+
+
+def test_opposite_side_dup_note_recommends_skip_not_higher_ev():
+    # The opposite-direction dup warning must NOT tell the user to take the higher-EV
+    # side (data-refuted); it points back to the first-entry side and forbids hedging.
+    db = db_()
+    under = game_bet(market="total", side="Under", point=163.5, eid="T3")
+    over = game_bet(market="total", side="Over", point=164.5, eid="T3")
+    snap(db, under, "2026-06-17T01:40:00+00:00", "High")
+    snap(db, over, "2026-06-17T07:40:00+00:00", "High")
+    db.execute("INSERT INTO high_alerted (event_id, market, side, point, player,"
+               " alerted_at) VALUES (?,?,?,?,?,?)",
+               ("T3", "total", "Under", 163.5, "", "2026-06-17T01:40:00+00:00"))
+    note = rec._dup_note(db, over)
+    assert "late-crosser" in note and "first-entry" in note
+    assert "EV 높은 쪽만" not in note
+
+
 def test_missing_snapshot_returns_empty_tag():
     db = db_()                                           # no softbook_ev rows
     assert rec._first_entry_note(db, prop_bet()) == ""

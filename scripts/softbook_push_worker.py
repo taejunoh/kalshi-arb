@@ -78,19 +78,18 @@ def _opp_note(rows, pick):
 
 
 def _is_first_entry(ev, r):
-    """True if this (event,market,player)'s EARLIEST softbook_ev snapshot was already
-    High — the +16.6% ROI 'first-entry' subset. Late-crossers (drifted into High only
-    after the line moved) settled ~0 (pure dilution). Mirrors recorder._first_entry_note
+    """True if THIS SIDE was already High at the (event,market,player)'s EARLIEST
+    softbook_ev snapshot — the 'first-entry' subset. Late-crossers (drifted into High
+    only after the line moved, INCLUDING the opposite side after a steam) settled ~0
+    (pure dilution). Side-aware via core (single source) — mirrors recorder._first_entry_note
     and the app /picks first_entry flag. On any lookup error, return True: never suppress
     a possibly-real first-entry alert (a missed +EV bet costs more than a stray push)."""
     try:
-        row = ev.execute(
-            "SELECT tier FROM softbook_ev WHERE event_id=? AND market=?"
-            " AND COALESCE(player,'')=? ORDER BY recorded_at LIMIT 1",
-            (r["event_id"], r["market"], r.get("player") or "")).fetchone()
+        _seen, sides = core.market_first_entry_sides(
+            ev, r["event_id"], r["market"], r.get("player") or "")
     except sqlite3.Error:
         return True
-    return bool(row and row[0] == "High")
+    return r["side"] in sides
 
 
 def _high_messages(ev, pdb, tokens, now):

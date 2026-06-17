@@ -67,6 +67,32 @@ def is_bet(first_entry, market):
     return bool(first_entry) and market not in PROP_SHORT
 
 
+def market_first_entry_sides(db, event_id, market, player):
+    """(seen, sides): `sides` = frozenset of the sides that were High at this
+    (event, market, player)'s EARLIEST softbook_ev snapshot. A pick is first-entry iff
+    ITS side is in `sides`. Side-aware: the OPPOSITE side that crosses into High only
+    after the line moved is a LATE-CROSSER even though the market was High early — so it
+    SKIPs. (Before 2026-06-17 this was keyed on (event,market,player) only, ignoring
+    side, so an opposite-side post-steam crosser inherited the open-High side's
+    first_entry=True and was mislabeled BET in Telegram, the app /picks flag, and push.)
+    Deterministic if a scan stored multiple sides at one recorded_at (set membership at
+    the min ts, not a nondeterministic LIMIT 1). `seen`=False only when NO snapshot
+    exists — the recorder then emits no tag; app/push treat it as not-first-entry.
+    Raises sqlite3.Error to the caller (each applies its own on-error policy). SINGLE
+    SOURCE for the Telegram tag / app /picks flag / push; softbook_ev_measure
+    .first_entry_map mirrors this exactly on in-memory rows."""
+    opn = db.execute(
+        "SELECT MIN(recorded_at) FROM softbook_ev"
+        " WHERE event_id=? AND market=? AND COALESCE(player,'')=?",
+        (event_id, market, player or "")).fetchone()
+    if not opn or opn[0] is None:
+        return (False, frozenset())
+    return (True, frozenset(s for (s,) in db.execute(
+        "SELECT side FROM softbook_ev WHERE event_id=? AND market=?"
+        " AND COALESCE(player,'')=? AND recorded_at=? AND tier='High'",
+        (event_id, market, player or "", opn[0]))))
+
+
 def markets_for(sport):
     # FanDuel/DraftKings/BetMGM list props ONLY under the _alternate key (verified
     # live 2026-06-12: batter_home_runs had no FD/DK/MGM rows, _alternate did) —

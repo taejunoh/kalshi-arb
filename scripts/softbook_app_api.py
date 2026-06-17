@@ -114,7 +114,8 @@ def _prefs(pdb):
 
 
 def _enrich_first_entry(picks):
-    """Set p['first_entry'] (earliest softbook_ev snapshot was tier='High') and
+    """Set p['first_entry'] (THIS SIDE was High at the market's earliest snapshot —
+    side-aware, so the opposite side after a steam is a late-crosser, not a first-entry) and
     p['bet'] = the BET verdict via core.is_bet = FIRST-ENTRY GAME ONLY (h2h/spread/
     total & first-entry; props and late-crossers skip). Single source of truth shared
     with the Telegram tag and the push worker — see core.is_bet. No confirmed pick
@@ -123,19 +124,17 @@ def _enrich_first_entry(picks):
         return picks
     c = _ev_conn()
     try:
-        cache = {}
+        cache = {}                                       # market -> (seen, High sides at open)
         for p in picks:
             key = (p["event_id"], p["market"], p.get("player") or "")
             if key not in cache:
-                row = c.execute(
-                    "SELECT tier FROM softbook_ev WHERE event_id=? AND market=?"
-                    " AND COALESCE(player,'')=? ORDER BY recorded_at LIMIT 1",
-                    key).fetchone()
-                cache[key] = bool(row and row[0] == "High")
-            p["first_entry"] = cache[key]
+                cache[key] = core.market_first_entry_sides(c, *key)
+            # side-aware: the opposite side that crossed High after a steam is a
+            # late-crosser, NOT this market's first-entry (single source: core).
+            p["first_entry"] = p["side"] in cache[key][1]
             # should_bet = the BET verdict (first-entry GAME only); named distinctly
             # from the pick lifecycle status 'bet' (user-marked-as-placed).
-            p["should_bet"] = core.is_bet(cache[key], p["market"])
+            p["should_bet"] = core.is_bet(p["first_entry"], p["market"])
     finally:
         c.close()
     return picks
