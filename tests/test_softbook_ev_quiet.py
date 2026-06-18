@@ -127,7 +127,7 @@ def test_wakeup_still_in_band_marks_alerted(monkeypatch):
     n, sent = run_wake(db, monkeypatch, payload(fd_price=2.10))   # EV +5% in band
     assert n == 1 and len(sent) == 1
     # valid line now goes out as its own per-bet alert (fill replies map to it)
-    assert "아직 유효" in sent[0] and "FanDuel @ 2.10" in sent[0]
+    assert "아직 유효" in sent[0] and "FanDuel @ +110" in sent[0]   # 2.10 -> +110 (american)
     assert "✂️" in sent[0] and "답장" in sent[0]
     assert db.execute("SELECT COUNT(*) FROM high_alerted").fetchone()[0] == 1
     # second call same day: once-per-day guard

@@ -18,6 +18,11 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# local build artifacts (eas build --local output)
+*.ipa
+*.aab
+*.apk
+
 # Metro
 .metro-health-check*
 

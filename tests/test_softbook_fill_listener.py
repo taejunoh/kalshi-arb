@@ -42,8 +42,8 @@ def test_alert_stores_book_odds_message_id(monkeypatch):
     row = db.execute("SELECT book, odds, message_id FROM high_alerted").fetchone()
     assert row == ("BetMGM", 2.06, 777)
     assert len(sent) == 1                          # one message per bet
-    assert "✂️ 최소 2.00" in sent[0]               # 1.01/fair, fair=1.04/2.06
-    assert "본전 1.98" in sent[0]
+    assert "✂️ 최소 +100" in sent[0]               # 1.01/fair=2.0006 -> +100 (american)
+    assert "본전 -102" in sent[0]                    # 1/fair=1.9808 -> -102
     assert "답장" in sent[0]
 
 
@@ -68,9 +68,9 @@ def test_alert_dedup_unchanged(monkeypatch):
 
 
 def test_min_odds_line_math():
-    # fair = 1.04/2.06 = 0.50485; min = 1.01/fair = 2.0006; be = 1/fair = 1.9808
+    # fair = 1.04/2.06 = 0.50485; min = 1.01/fair = 2.0006 -> +100; be = 1/fair = 1.9808 -> -102
     line = rec._min_odds_line(0.04, 2.06)
-    assert "최소 2.00" in line and "본전 1.98" in line
+    assert "최소 +100" in line and "본전 -102" in line
 
 
 def test_failed_send_unmarks_for_retry(monkeypatch):

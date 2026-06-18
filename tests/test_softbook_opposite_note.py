@@ -102,7 +102,7 @@ def test_batch_pair_notes_both_sides_with_ev_pick():
     n_spread = rec._opposite_note(db, spread, batch)
     n_ml = rec._opposite_note(db, ml, batch)
     assert "반대방향" in n_spread and "이쪽" in n_spread        # 4.5% >= 1.8%
-    assert "Caesars 3.22" in n_spread and "+1.8%" in n_spread
+    assert "Caesars +222" in n_spread and "+1.8%" in n_spread   # 3.22 -> +222 (american)
     assert "반대방향" in n_ml and "반대쪽" in n_ml
     assert "Dallas Wings -5.5" in n_ml
 

@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import type { Pick } from "../api/types";
 import { color, radius, space, font } from "../theme";
-import { countdown, countdownUrgent, decimalOdds, evPct } from "../format";
+import { countdown, countdownUrgent, americanOdds, evPct } from "../format";
 
 export function PickCard({
   pick,
@@ -41,7 +41,7 @@ export function PickCard({
       </View>
       <Text style={s.label} numberOfLines={2}>{pick.label}</Text>
       <View style={s.meta}>
-        <Text style={s.metaBook}>{pick.book ?? "—"} {decimalOdds(pick.odds)}</Text>
+        <Text style={s.metaBook}>{pick.book ?? "—"} {americanOdds(pick.odds)}</Text>
         <Text style={s.metaDim}>{pick.n_books ?? 0}북</Text>
         <Text style={[s.metaDim, countdownUrgent(pick.commence_time) && s.metaUrgent]}>{countdown(pick.commence_time)}</Text>
       </View>
