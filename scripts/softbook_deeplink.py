@@ -83,10 +83,16 @@ HOME_URL = {
 
 
 def _odds(px):
+    """American odds (what US books show) so the copied bet text matches the
+    sportsbook screen — same convention as the alert/app (recorder._american)."""
     try:
-        return f"{float(px):.2f}"
+        d = float(px)
     except Exception:
         return "?"
+    if d <= 1:
+        return "?"
+    a = round((d - 1) * 100) if d >= 2 else round(-100 / (d - 1))
+    return f"+{a}" if a > 0 else f"{a}"
 
 
 def build(book_key, links, pick):

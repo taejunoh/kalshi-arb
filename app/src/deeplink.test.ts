@@ -13,7 +13,7 @@ import type { Deeplink } from "./api/types";
 
 afterEach(() => jest.clearAllMocks());
 
-const COPY = "FanDuel · Nimmo TB Over 1.5 @ 2.20";
+const COPY = "FanDuel · Nimmo TB Over 1.5 @ +120";
 
 test("verified prefill (isPrefill) opens the slip without copying", async () => {
   const dl: Deeplink = { tier: "prefill", url: "https://sportsbook.fanduel.com/addToBetslip?x=1", copy_text: COPY };
@@ -62,8 +62,8 @@ test("isVerifiedPrefill is true only for prefill tier on an allowlisted book", (
 
 import { VERIFIED_PREFILL_BOOKS } from "./config";
 
-const PREFILL_DL = { tier: "prefill" as const, url: "https://x", copy_text: "FanDuel · NYM ML @ 2.20" };
-const EVENT_DL = { tier: "event" as const, url: "https://x", copy_text: "DraftKings · NYM ML @ 2.20" };
+const PREFILL_DL = { tier: "prefill" as const, url: "https://x", copy_text: "FanDuel · NYM ML @ +120" };
+const EVENT_DL = { tier: "event" as const, url: "https://x", copy_text: "DraftKings · NYM ML @ +110" };
 
 test("verified prefill label only shows for tier=prefill AND a verified book", () => {
   for (const book of VERIFIED_PREFILL_BOOKS) {

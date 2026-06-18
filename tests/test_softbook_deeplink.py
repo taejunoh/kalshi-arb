@@ -16,7 +16,7 @@ PICK = {"book": "FanDuel", "label": "Brandon Nimmo TB Over 1.5", "odds": 2.2,
 
 def test_copy_text_always_present():
     out = dl.build("fanduel", {}, PICK)
-    assert out["copy_text"] == "FanDuel · Brandon Nimmo TB Over 1.5 @ 2.20"
+    assert out["copy_text"] == "FanDuel · Brandon Nimmo TB Over 1.5 @ +120"  # 2.2 -> american
 
 
 def test_fanduel_uses_provider_betslip_universal_link():
