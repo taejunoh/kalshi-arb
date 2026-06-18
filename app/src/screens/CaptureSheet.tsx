@@ -8,7 +8,7 @@ import type { Pick } from "../api/types";
 import type { PicksStackParamList } from "../navigation/types";
 import { buildBetIn } from "../capture";
 import { draftToBetIn } from "../scan";
-import { decimalOdds } from "../format";
+import { americanOdds, parseOddsToDecimal } from "../format";
 import { color, radius, space } from "../theme";
 
 // Indexed access (not the `Pick<>` utility — `Pick` is imported above as the API type).
@@ -20,7 +20,7 @@ export function CaptureSheet({ route }: Props) {
   const pickId = route.params?.pickId;
   const [pick, setPick] = useState<Pick | null>(null);
   const [stake, setStake] = useState(scanDraft?.stake != null ? String(scanDraft.stake) : "");
-  const [fillOdds, setFillOdds] = useState(scanDraft?.fill_odds != null ? String(scanDraft.fill_odds) : "");
+  const [fillOdds, setFillOdds] = useState(scanDraft?.fill_odds != null ? americanOdds(scanDraft.fill_odds) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,7 +30,7 @@ export function CaptureSheet({ route }: Props) {
       try {
         const p = await api.getPick(pickId);
         setPick(p);
-        setFillOdds(p.odds != null ? String(p.odds) : "");
+        setFillOdds(p.odds != null ? americanOdds(p.odds) : "");
       } catch (e) {
         setError((e as Error).message);
       }
@@ -45,7 +45,7 @@ export function CaptureSheet({ route }: Props) {
         await api.postBet(
           draftToBetIn(scanDraft, {
             stake: stake ? Number(stake) : undefined,
-            fillOdds: fillOdds ? Number(fillOdds) : undefined,
+            fillOdds: parseOddsToDecimal(fillOdds) ?? undefined,
             book: scanDraft.book,
           }),
         );
@@ -53,7 +53,7 @@ export function CaptureSheet({ route }: Props) {
         await api.postBet(
           buildBetIn(pick, {
             stake: stake ? Number(stake) : undefined,
-            fillOdds: fillOdds ? Number(fillOdds) : undefined,
+            fillOdds: parseOddsToDecimal(fillOdds) ?? undefined,
           }),
         );
       } else {
@@ -78,13 +78,13 @@ export function CaptureSheet({ route }: Props) {
         <Text style={s.meta}>
           {scanDraft.book ?? "—"}
           {ctx ? ` · ${ctx}` : ""}
-          {scanDraft.fill_odds != null ? ` @ ${decimalOdds(scanDraft.fill_odds)}` : ""}
+          {scanDraft.fill_odds != null ? ` @ ${americanOdds(scanDraft.fill_odds)}` : ""}
         </Text>
         {scanDraft.event_id == null && <Text style={s.offfeed}>오프피드 — 정산 수동</Text>}
         <Text style={s.field}>스테이크</Text>
         <TextInput style={s.input} placeholder="스테이크 ($)" placeholderTextColor={color.faint} keyboardType="decimal-pad" value={stake} onChangeText={setStake} />
         <Text style={s.field}>실제 체결 배당</Text>
-        <TextInput style={s.input} placeholder="실배당" placeholderTextColor={color.faint} keyboardType="decimal-pad" value={fillOdds} onChangeText={setFillOdds} />
+        <TextInput style={s.input} placeholder="실배당 (예: -110)" placeholderTextColor={color.faint} keyboardType="numbers-and-punctuation" value={fillOdds} onChangeText={setFillOdds} />
         {error && <Text style={s.err}>{error}</Text>}
         <View style={s.actions}>
           <Pressable style={[s.btn, s.cancel]} onPress={() => nav.goBack()}><Text style={s.btnText}>취소</Text></Pressable>
@@ -103,7 +103,7 @@ export function CaptureSheet({ route }: Props) {
   return (
     <View style={s.container}>
       <Text style={s.label}>{pick.label}</Text>
-      <Text style={s.meta}>추천: {pick.book ?? "—"} @ {decimalOdds(pick.odds)}</Text>
+      <Text style={s.meta}>추천: {pick.book ?? "—"} @ {americanOdds(pick.odds)}</Text>
       <Text style={s.field}>스테이크</Text>
       <TextInput style={s.input} placeholder="스테이크 ($)" placeholderTextColor={color.faint} keyboardType="decimal-pad" value={stake} onChangeText={setStake} />
       <Text style={s.field}>실제 체결 배당</Text>

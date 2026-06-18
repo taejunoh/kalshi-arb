@@ -205,3 +205,77 @@ def test_alert_prop_late_crosser_also_skips(monkeypatch):
     rec.alert_new_high(db, [b], "2026-06-13T20:00:00+00:00")
     assert "SKIP" in cap["t"] and "prop" in cap["t"]
     assert "bet small" not in cap["t"]
+
+
+# ---------- flat unit stake on BET picks only (app parity, build#11) ----------
+
+def test_alert_bet_shows_flat_unit_stake(monkeypatch):
+    # BET (game first-entry) carries the flat unit ($20 default), mirroring the
+    # app's DEFAULT_UNIT_STAKE — same unit on every pick, NOT EV-scaled.
+    db = db_()
+    b = game_bet()                                       # odds 2.05 / ev 0.03 → old Kelly was $2
+    snap(db, b, "2026-06-13T20:00:00+00:00", "High")
+    cap = _capture(monkeypatch)
+    rec.alert_new_high(db, [b], "2026-06-13T21:00:00+00:00")
+    assert "🟣 BET" in cap["t"]
+    assert f"💵 ${rec.UNIT_STAKE:.0f}" in cap["t"] and "💵 $20" in cap["t"]
+
+
+def test_alert_unit_stake_is_flat_not_kelly(monkeypatch):
+    # Wildly different EV/odds must NOT change the shown amount — it tracks the
+    # flat unit constant, not a Kelly function of the pick.
+    db = db_()
+    b = game_bet(ev=0.07, odds=3.90)
+    snap(db, b, "2026-06-13T20:00:00+00:00", "High")
+    monkeypatch.setattr(rec, "UNIT_STAKE", 25.0)
+    cap = _capture(monkeypatch)
+    rec.alert_new_high(db, [b], "2026-06-13T21:00:00+00:00")
+    assert "💵 $25" in cap["t"]
+
+
+def test_alert_skip_prop_shows_no_stake(monkeypatch):
+    # SKIP picks must show NO $ amount — a stake would contradict SKIP (the app
+    # hides it on non-BET picks too).
+    db = db_()
+    b = prop_bet()
+    snap(db, b, "2026-06-13T20:00:00+00:00", "High")
+    cap = _capture(monkeypatch)
+    rec.alert_new_high(db, [b], "2026-06-13T21:00:00+00:00")
+    assert "SKIP" in cap["t"] and "💵" not in cap["t"]
+
+
+def test_alert_skip_late_crosser_game_shows_no_stake(monkeypatch):
+    # a game that only crossed into High after the line moved = late-crosser = SKIP.
+    db = db_()
+    b = game_bet()
+    snap(db, b, "2026-06-13T14:00:00+00:00", "Med")      # not High at first sight
+    cap = _capture(monkeypatch)
+    rec.alert_new_high(db, [b], "2026-06-13T20:00:00+00:00")
+    assert "SKIP" in cap["t"] and "💵" not in cap["t"]
+
+
+# ---------- odds shown in American (matches the US sportsbook screen) ----------
+
+def test_american_conversion():
+    assert rec._american(3.90) == "+290"        # underdog
+    assert rec._american(4.25) == "+325"
+    assert rec._american(2.00) == "+100"        # even
+    assert rec._american(1.91) == "-110"        # favorite
+    assert rec._american(1.50) == "-200"
+    assert rec._american(2.50) == "+150"
+    assert rec._american(None) == "-" and rec._american(1.0) == "-"
+
+
+def test_alert_odds_rendered_american_not_decimal(monkeypatch):
+    # 📍 best book + 📚 other books + ✂️ floor must all read American so the user
+    # eyeballs them against the book; no decimal odds string leaks through.
+    db = db_()
+    b = game_bet(odds=1.91, ev=0.04)
+    b["books_all"] = [{"book": "FanDuel", "odds": 1.91}, {"book": "DraftKings", "odds": 1.87}]
+    snap(db, b, "2026-06-13T20:00:00+00:00", "High")
+    cap = _capture(monkeypatch)
+    rec.alert_new_high(db, [b], "2026-06-13T21:00:00+00:00")
+    assert "📍 FanDuel @ -110" in cap["t"]                # decimal 1.91 -> -110
+    assert "DraftKings -115" in cap["t"]                  # 📚 other book (1.87) in American
+    assert "1.91" not in cap["t"] and "1.87" not in cap["t"]   # no decimal odds leak
+    assert "✂️ 최소 " in cap["t"]                          # floor line still present

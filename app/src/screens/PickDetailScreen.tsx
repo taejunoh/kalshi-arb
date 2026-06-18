@@ -7,7 +7,7 @@ import { api } from "../api/client";
 import type { RefreshResponse } from "../api/types";
 import type { PicksStackParamList } from "../navigation/types";
 import { openOrCopy, isVerifiedPrefill } from "../deeplink";
-import { decimalOdds, evPct } from "../format";
+import { americanOdds, evPct } from "../format";
 import { color, radius, space, font } from "../theme";
 
 type Book = RefreshResponse["books"][number];
@@ -74,7 +74,7 @@ export function PickDetailScreen({ route }: Props) {
                 <Text style={verified ? s.prefill : s.openCopy}>{verified ? "✓ 슬립 프리필" : "앱 열기 + 복사"}</Text>
               </View>
               <View style={{ alignItems: "flex-end" }}>
-                <Text style={s.odds}>{decimalOdds(b.odds)}</Text>
+                <Text style={s.odds}>{americanOdds(b.odds)}</Text>
                 <Text style={s.bookEv}>{evPct(b.ev)}</Text>
               </View>
             </Pressable>

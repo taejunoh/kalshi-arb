@@ -115,7 +115,7 @@ def _high_messages(ev, pdb, tokens, now):
                            None if r["market"] == "h2h" else r["point"],
                            r["player"] or None)
         pid = feed._encode_id(pk)
-        body = (f"{label} · {r['best_soft_book']} {r['best_soft_price']:.2f}"
+        body = (f"{label} · {r['best_soft_book']} {rec._american(r['best_soft_price'])}"
                 f" · EV {(r['snapshot_ev'] or 0)*100:+.1f}%" + _opp_note(rows, r))
         for tok in tokens:
             msgs.append(push.build_message(tok, "🟣 First-entry game +EV", body,

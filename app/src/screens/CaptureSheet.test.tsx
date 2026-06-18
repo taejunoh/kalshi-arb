@@ -28,6 +28,19 @@ test("prefills from the pick and posts a bet", async () => {
   expect(body).toMatchObject({ event_id: "E1", stake: 5, fill_odds: 2.1, source: "one_tap" });
 });
 
+test("prefills american and saves an american-entered fill as decimal", async () => {
+  (api.postBet as jest.Mock).mockClear();
+  await render(<CaptureSheet route={route} />);
+  await waitFor(() => expect(screen.getByText("NYM ML")).toBeOnTheScreen());
+  const fillInput = screen.getByDisplayValue("+110");           // 2.1 prefilled as american
+  await fireEvent.changeText(fillInput, "-110");
+  await fireEvent.changeText(screen.getByPlaceholderText("스테이크 ($)"), "5");
+  await fireEvent.press(screen.getByText("기록"));
+  await waitFor(() => expect(api.postBet).toHaveBeenCalled());
+  const body = (api.postBet as jest.Mock).mock.calls.at(-1)?.[0];
+  expect(body.fill_odds).toBeCloseTo(1.9091, 3);                // -110 -> decimal
+});
+
 test("scan mode prefills from the draft and posts with source=scan", async () => {
   (api.getPick as jest.Mock).mockClear();
   (api.postBet as jest.Mock).mockClear();

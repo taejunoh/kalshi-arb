@@ -13,13 +13,24 @@ import softbook_ev_core as core
 
 OUT = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
 QUIET_UTC = core.QUIET_UTC         # 22:00-05:00 NYC: no pushes while user sleeps
-BANKROLL = float(os.getenv("SOFTBOOK_BANKROLL", "240"))
+# Flat per-bet stake ($) shown on BET picks — mirrors the app's unit (build#11
+# eb7fcac: DEFAULT_UNIT_STAKE=20, "bet small / NO size-up, SAME unit on every
+# pick", NOT EV-scaled). Env-overridable so this channel tracks the app default.
+# SKIP picks (props / late-crossers) show NO amount — the app hides it too; the
+# BET/SKIP tag (_first_entry_note) is the single source of which picks we stake.
+UNIT_STAKE = float(os.getenv("SOFTBOOK_UNIT_STAKE", "20"))
+BET_TAG = "🟣 BET · first-entry game — 베팅 (bet small)"
 
 
-def _stake(ev, odds):
-    """Quarter-Kelly, $2 floor, 2% cap — same sizing as the paper ledgers."""
-    kelly = ev / (odds - 1) if odds > 1 else 0
-    return max(2.0, min(BANKROLL * 0.02, BANKROLL * kelly * 0.25))
+def _is_bet(db, event_id, market, side, player):
+    """True iff (game first-entry) — the only picks we stake. Mirrors core.is_bet
+    over market_first_entry_sides; missing snapshot / lookup error → False (never
+    claim a stake on an unverified pick)."""
+    try:
+        seen, sides = core.market_first_entry_sides(db, event_id, market, player or "")
+    except sqlite3.Error:
+        return False
+    return bool(seen) and core.is_bet(side in sides, market)
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS softbook_ev(
     recorded_at TEXT, sport TEXT, event_id TEXT, commence_time TEXT,
@@ -73,15 +84,26 @@ def _ensure_alert_cols(db):
                     raise
 
 
+def _american(dec):
+    """Decimal odds -> the American number US books actually display on screen
+    (+underdog / -favorite), so the alert matches the sportsbook 1:1 for instant
+    eyeballing. The reply parser already accepts American back (no decimal needed):
+    softbook_fill_listener._to_decimal handles '+290'/'-110'/bare ints."""
+    if not dec or dec <= 1:
+        return "-"
+    a = round((dec - 1) * 100) if dec >= 2 else round(-100 / (dec - 1))
+    return f"{a:+d}"
+
+
 def _min_odds_line(ev, odds):
     """Floor odds for taking this bet at ANY book: EV scales ~1:1 with the odds,
     so below min the user's ROI>=1% bar is gone even though the alert said +EV."""
     fair = (1 + ev) / odds
-    return (f"   ✂️ 최소 {(1 + core.EV_MIN) / fair:.2f} · 본전 {1 / fair:.2f}"
+    return (f"   ✂️ 최소 {_american((1 + core.EV_MIN) / fair)} · 본전 {_american(1 / fair)}"
             " (어느 북이든 최소 위면 OK)")
 
 
-REPLY_HINT = '↩️ 답장: 체결배당 [북] (예: 1.98 fd) · 안 했으면 "skip" · 보너스벳이면 "bonus"'
+REPLY_HINT = '↩️ 답장: 체결배당 [북] (예: -110 fd) · 안 했으면 "skip" · 보너스벳이면 "bonus"'
 
 
 def _other_books_line(b):
@@ -92,7 +114,7 @@ def _other_books_line(b):
                     key=lambda q: -q["odds"])[:3]
     if not others:
         return ""
-    return "\n   📚 " + " · ".join(f"{q['book']} {q['odds']:.2f}" for q in others)
+    return "\n   📚 " + " · ".join(f"{q['book']} {_american(q['odds'])}" for q in others)
 
 
 def _first_entry_note(db, b):
@@ -127,7 +149,7 @@ def _first_entry_note(db, b):
         return ""
     first_entry = b["side"] in sides                      # side-aware (single source)
     if core.is_bet(first_entry, b["market"]):        # game + first-entry (single source)
-        return "🟣 BET · first-entry game — 베팅 (bet small)"
+        return BET_TAG
     if b["market"] in core.PROP_SHORT:
         return "⚪ SKIP · prop (게임 first-entry만 베팅)"
     return "⚪ SKIP · late-crosser game (라인 이동 후)"
@@ -143,10 +165,11 @@ def _send_bet_alert(db, b, prefix, extra="", batch=()):
     overlap on this root-owned db at digest hours)."""
     pk = (b["event_id"], b["market"], b["side"], b["point"] or 0, b.get("player") or "")
     fe = _first_entry_note(db, b)
+    stake_seg = f" · 💵 ${UNIT_STAKE:.0f}" if fe == BET_TAG else ""   # bet picks only (app parity)
     text = (f"{prefix}\n{fe}\n\n" if fe else f"{prefix}\n\n") + (
             f"• {b['away'][:16]} @ {b['home'][:16]}\n"
             f"   {b['label']}\n"
-            f"   📍 {b['book']} @ {b['odds']:.2f} · 💵 ${_stake(b['ev'], b['odds']):.0f}\n"
+            f"   📍 {b['book']} @ {_american(b['odds'])}{stake_seg}\n"
             f"   (EV {b['ev']*100:+.1f}%, {b['n_ev']}/{b['n_books']}bk)"
             + _other_books_line(b) + "\n"
             + _min_odds_line(b["ev"], b["odds"])
@@ -266,7 +289,7 @@ def _opposite_note(db, b, batch=()):
         if not _no_both_win(b, other):
             continue
         lbl = core.label(m, s, None if m == "h2h" else p, pl or None)
-        quote = f" {bk_} {od:.2f}" if od else ""
+        quote = f" {bk_} {_american(od)}" if od else ""
         if ev_o is None:
             notes.append(f"\n   ⚖️ 같은 경기 반대방향 High: {lbl}{quote}"
                          " — 동시적중 불가(접전이면 둘 다 패), 둘 중 하나만 권장")
@@ -356,14 +379,14 @@ def wakeup_requote(db, key, now):
             tbook, todds, tev) in cand:
         lbl = core.label(market, side, None if market == "h2h" else point, player or None)
         head = (f"• {away[:16]} @ {home[:16]}\n   {lbl}\n"
-                f"   밤 {_et(rec_at)} High: {tbook} {todds:.2f} (EV {tev*100:+.1f}%)")
+                f"   밤 {_et(rec_at)} High: {tbook} {_american(todds)} (EV {tev*100:+.1f}%)")
         try:
             started = datetime.fromisoformat(ct.replace("Z", "+00:00")) <= now_dt
         except Exception:
             started = True
         if started:
             missed.append(f"• 경기 시작돼 패스: {away[:16]} @ {home[:16]} — {lbl}"
-                          f" (밤 {_et(rec_at)} High {tbook} {todds:.2f})")
+                          f" (밤 {_et(rec_at)} High {tbook} {_american(todds)})")
             continue
         ck = (sport, eid)
         if ck not in odds_cache:
@@ -393,16 +416,18 @@ def wakeup_requote(db, key, now):
                     "n_ev": sum(1 for _, px in quotes if fair * px - 1 >= core.EV_MIN),
                     "books_all": [{"book": bl, "odds": px} for bl, px in quotes]},
                     "🌅 기상 재호가 — 밤사이 High, 아직 유효",
-                    extra=f"\n   🌙 밤 {_et(rec_at)} 트리거: {tbook} {todds:.2f} (EV {tev*100:+.1f}%)")
+                    extra=f"\n   🌙 밤 {_et(rec_at)} 트리거: {tbook} {_american(todds)} (EV {tev*100:+.1f}%)")
             else:                # overflow: batch line (no fill tracking)
-                lines.append(head + f"\n   ✅ 아직 유효: {bbook} {bpx:.2f}"
-                                    f" (EV {evv*100:+.1f}%) · 💵 ${_stake(evv, bpx):.0f}")
+                lines.append(head + f"\n   ✅ 아직 유효: {bbook} {_american(bpx)}"
+                                    f" (EV {evv*100:+.1f}%)"
+                                    + (f" · 💵 ${UNIT_STAKE:.0f}"
+                                       if _is_bet(db, eid, market, side, player) else ""))
             valid += 1
         elif evv > core.EV_MAX:
-            lines.append(head + f"\n   ⚠️ 현재 {bbook} {bpx:.2f} EV {evv*100:+.1f}% > 8% 상한"
+            lines.append(head + f"\n   ⚠️ 현재 {bbook} {_american(bpx)} EV {evv*100:+.1f}% > 8% 상한"
                                 " — 라인 급변/의심 호가, 직접 확인")
         else:
-            lines.append(head + f"\n   ⛔ 엣지 소멸: 현재 최선 {bbook} {bpx:.2f}"
+            lines.append(head + f"\n   ⛔ 엣지 소멸: 현재 최선 {bbook} {_american(bpx)}"
                                 f" (EV {evv*100:+.1f}%) → 스킵 (밴드 재진입시 재알림)")
     body = lines[:10] + ([f"…+{len(lines)-10} more"] if len(lines) > 10 else []) + missed[:5]
     if body:

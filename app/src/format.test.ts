@@ -1,9 +1,24 @@
 // app/src/format.test.ts
-import { decimalOdds, evPct, countdown, countdownUrgent } from "./format";
+import { americanOdds, parseOddsToDecimal, evPct, countdown, countdownUrgent } from "./format";
 
-test("decimalOdds formats to 2 dp", () => {
-  expect(decimalOdds(2.2)).toBe("2.20");
-  expect(decimalOdds(null)).toBe("—");
+test("americanOdds shows the US-book number (+underdog / -favorite)", () => {
+  expect(americanOdds(3.9)).toBe("+290");
+  expect(americanOdds(2.0)).toBe("+100");
+  expect(americanOdds(1.91)).toBe("-110");
+  expect(americanOdds(1.5)).toBe("-200");
+  expect(americanOdds(null)).toBe("—");
+  expect(americanOdds(1.0)).toBe("—");
+});
+
+test("parseOddsToDecimal accepts american or decimal (mirrors the Telegram parser)", () => {
+  expect(parseOddsToDecimal("+105")).toBeCloseTo(2.05, 5);
+  expect(parseOddsToDecimal("-120")).toBeCloseTo(1.8333, 3);
+  expect(parseOddsToDecimal("150")).toBeCloseTo(2.5, 5);   // bare int >=100 = american
+  expect(parseOddsToDecimal("1.98")).toBeCloseTo(1.98, 5); // decimal stays decimal
+  expect(parseOddsToDecimal("+110")).toBeCloseTo(2.1, 5);  // round-trips americanOdds(2.1)
+  expect(parseOddsToDecimal("")).toBeNull();
+  expect(parseOddsToDecimal("+50")).toBeNull();            // |american| < 100 is invalid
+  expect(parseOddsToDecimal("abc")).toBeNull();
 });
 
 test("evPct shows a signed percentage", () => {
