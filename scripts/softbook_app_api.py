@@ -140,6 +140,23 @@ def _enrich_first_entry(picks):
     return picks
 
 
+EXPIRED_WINDOW_H = 24   # recently-commenced expired picks stay findable in-app (a
+                        # pushed pick you reacted to after game start); older expired
+                        # picks are stale noise and are dropped from the feed.
+
+
+def _within_hours(ct, now_dt, hours):
+    """True if commence_time ct is within `hours` before now_dt. On any parse
+    ambiguity, return True — never hide a pick the user may be looking for."""
+    dt = feed._parse_dt(ct)
+    if dt is None or now_dt is None:
+        return True
+    try:
+        return 0 <= (now_dt - dt).total_seconds() <= hours * 3600
+    except TypeError:
+        return True
+
+
 @app.get("/picks")
 def get_picks(_=Depends(require_auth)):
     import datetime
@@ -155,8 +172,18 @@ def get_picks(_=Depends(require_auth)):
     counts = {}
     for p in picks:
         counts[p["status"]] = counts.get(p["status"], 0) + 1
+    # Expired = game already started. Kept (windowed to recent commence, newest
+    # first) so an alert you reacted to late stays findable — the feed list used to
+    # drop these entirely, leaving only a count. counts['expired'] is the full
+    # classification count; this list is the bounded display set.
+    now_dt = feed._parse_dt(now)
+    expired = sorted(
+        (p for p in picks if p["status"] == "expired"
+         and _within_hours(p["commence_time"], now_dt, EXPIRED_WINDOW_H)),
+        key=lambda p: p.get("commence_time") or "", reverse=True)
     return {"picks": active, "counts": counts,
-            "cooled": [p for p in picks if p["status"] == "cooled"]}
+            "cooled": [p for p in picks if p["status"] == "cooled"],
+            "expired": expired}
 
 
 @app.get("/picks/{pick_id}")

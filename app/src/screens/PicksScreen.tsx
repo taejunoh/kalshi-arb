@@ -22,6 +22,7 @@ export function PicksScreen() {
   const [error, setError] = useState<string | null>(null);
   const [prefs, setPrefs] = useState<Settings>({ min_ev: 0, sports: null, muted_books: null, sort: "ev" });
   const [showCooled, setShowCooled] = useState(false);
+  const [showExpired, setShowExpired] = useState(false);
   const [betOnly, setBetOnly] = useState(false);
   const [unitStake, setUnitStake] = useState<number>(DEFAULT_UNIT_STAKE);
   const [sortOpen, setSortOpen] = useState(false);
@@ -107,6 +108,21 @@ export function PicksScreen() {
   const visiblePicks = betOnly ? allActive.filter((p) => p.should_bet) : allActive;
   const betCount = allActive.filter((p) => p.should_bet).length;
 
+  // Collapsed sections under the active feed: 식은 픽 (cooled — gone from the
+  // latest scan) and 지나간 픽 (expired — game started). Same card + handlers.
+  const collapsibleSection = (key: string, title: string, items: Pick[], open: boolean, toggle: () => void) =>
+    items.length > 0 ? (
+      <View key={key}>
+        <Pressable style={s.cooledHeader} onPress={toggle}>
+          <Text style={s.cooledText}>{title} {items.length} {open ? "▲" : "▼"}</Text>
+        </Pressable>
+        {open &&
+          items.map((p) => (
+            <PickCard key={p.id} pick={p} unitStake={unitStake} onOpen={(x) => nav.push("PickDetail", { pickId: x.id })} onBet={(x) => nav.push("PickDetail", { pickId: x.id })} onDismiss={(x) => void dismiss(x)} />
+          ))}
+      </View>
+    ) : null;
+
   return (
     <View style={s.container}>
       <View style={s.filterBar}>
@@ -167,17 +183,10 @@ export function PicksScreen() {
             : <Text style={s.empty}>{betOnly ? "BET 픽 없음 (게임 first-entry만 베팅)" : "활성 픽 없음"}</Text>
         }
         ListFooterComponent={
-          data && data.cooled.length > 0 ? (
-            <View>
-              <Pressable style={s.cooledHeader} onPress={() => setShowCooled((v) => !v)}>
-                <Text style={s.cooledText}>식은 픽 {data.cooled.length} {showCooled ? "▲" : "▼"}</Text>
-              </Pressable>
-              {showCooled &&
-                data.cooled.map((p) => (
-                  <PickCard key={p.id} pick={p} unitStake={unitStake} onOpen={(x) => nav.push("PickDetail", { pickId: x.id })} onBet={(x) => nav.push("PickDetail", { pickId: x.id })} onDismiss={(x) => void dismiss(x)} />
-                ))}
-            </View>
-          ) : null
+          <>
+            {collapsibleSection("cooled", "식은 픽", data?.cooled ?? [], showCooled, () => setShowCooled((v) => !v))}
+            {collapsibleSection("expired", "지나간 픽", data?.expired ?? [], showExpired, () => setShowExpired((v) => !v))}
+          </>
         }
       />
     </View>

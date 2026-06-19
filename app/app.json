@@ -9,6 +9,13 @@
       "ios"
     ],
     "userInterfaceStyle": "dark",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/bb63465c-1e8f-414e-9ff8-2585cf778942",
+      "fallbackToCacheTimeout": 0
+    },
     "ios": {
       "bundleIdentifier": "com.taejun.softbookev",
       "buildNumber": "1",

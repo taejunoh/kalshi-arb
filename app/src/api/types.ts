@@ -31,6 +31,9 @@ export interface PicksResponse {
   picks: Pick[];
   counts: Record<string, number>;
   cooled: Pick[];
+  // Recently-commenced High picks (game started). Kept so a pick you were alerted
+  // about stays findable after start. Optional: a pre-deploy API omits it.
+  expired?: Pick[];
 }
 
 export type DeeplinkTier = "prefill" | "event" | "home";
