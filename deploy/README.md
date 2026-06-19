@@ -199,6 +199,35 @@ three fast scanners but reduced to 300s on 2026-05-11 after bot.db
 write-lock contention with 8+ concurrent writers — see [Database
 locking](#database-locking-wal-mode) below.
 
+## 5i. Install +EV refresh scan (20-min; instant Telegram alerts + app-push trigger)
+
+The soft-book +EV scan that powers the dashboard JSON **and** the instant
+🟣 Telegram bet alerts (`softbook_ev_today.py` → `rec.alert_new_high`, inline
+at :00/:20/:40 UTC — the unit's "no telegram" description refers only to the
+4×/day digest, which is off here).
+
+The `kalshi-ev-refresh.service.d/push-trigger.conf` drop-in fires the Expo
+push worker the instant the scan finishes. Without it the app push only went
+out on `kalshi-softbook-push.timer`'s next 5-min tick, so the app notification
+trailed Telegram by ~5 min. With it the gap is 0–4 s (verified 2026-06-19).
+The push worker dedups via `pushed_high` (idempotent) and the 5-min timer
+remains a backstop.
+
+```bash
+sudo cp deploy/kalshi-ev-refresh.service /etc/systemd/system/
+sudo cp deploy/kalshi-ev-refresh.timer   /etc/systemd/system/
+# drop-in must preserve the .service.d/ subdir:
+sudo mkdir -p /etc/systemd/system/kalshi-ev-refresh.service.d
+sudo cp deploy/kalshi-ev-refresh.service.d/push-trigger.conf \
+        /etc/systemd/system/kalshi-ev-refresh.service.d/
+sudo systemctl daemon-reload
+sudo systemctl enable --now kalshi-ev-refresh.timer
+
+# Verify the drop-in is active (ExecStartPost present) + timer scheduled
+systemctl cat kalshi-ev-refresh.service | grep ExecStartPost
+systemctl list-timers kalshi-ev-refresh.timer
+```
+
 ## Database locking (WAL mode)
 
 bot.db now runs in **WAL journal mode** (set 2026-05-11). Apply this

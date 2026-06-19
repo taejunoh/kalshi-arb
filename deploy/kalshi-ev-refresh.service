@@ -1,0 +1,7 @@
+[Unit]
+Description=Refresh +EV bet list JSON for dashboard (no telegram)
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/softbook_ev_today.py 240 --json data/ev_bets_latest.json
+RuntimeMaxSec=300
