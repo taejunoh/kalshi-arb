@@ -1,0 +1,7 @@
+[Unit]
+Description=Refresh +EV bet list every 20 min
+[Timer]
+OnCalendar=*-*-* *:00,20,40:00 UTC
+Persistent=true
+[Install]
+WantedBy=timers.target
