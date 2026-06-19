@@ -65,6 +65,27 @@ test("the 🟣 BET filter hides non-bet picks (props + late-crossers)", async ()
   expect(screen.getByText("BET PICK")).toBeOnTheScreen(); // bet kept
 });
 
+test("지나간 픽 (expired) section reveals an alerted pick the user missed after game start", async () => {
+  (api.getPicks as jest.Mock).mockResolvedValueOnce({
+    picks: [],
+    counts: { expired: 1 },
+    cooled: [],
+    expired: [
+      {
+        id: "E9|h2h|Lotte Giants|0|", status: "expired", event_id: "E9", sport: "baseball_kbo",
+        home: "Kiwoom Heroes", away: "Lotte Giants", commence_time: "2020-01-01T00:00:00Z",
+        market: "h2h", side: "Lotte Giants", point: 0, player: "", label: "MISSED PICK",
+        ev: 0.071, book: "BetMGM", odds: 2.35, conf: 60, n_books: 8, first_entry: true, should_bet: true,
+      },
+    ],
+  });
+  await render(<PicksScreen />);
+  await waitFor(() => expect(screen.getByText(/지나간 픽/)).toBeOnTheScreen());
+  expect(screen.queryByText("MISSED PICK")).toBeNull(); // collapsed by default
+  await fireEvent.press(screen.getByText(/지나간 픽/));
+  await waitFor(() => expect(screen.getByText("MISSED PICK")).toBeOnTheScreen());
+});
+
 test("changing a filter preserves existing sport and book prefs (no clobber)", async () => {
   (api.getSettings as jest.Mock).mockResolvedValueOnce({
     min_ev: 0, sports: ["baseball_mlb"], muted_books: ["BallyBet"], sort: "ev",

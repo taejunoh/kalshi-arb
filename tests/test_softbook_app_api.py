@@ -89,6 +89,36 @@ def test_picks_first_entry_flag(client):
     assert by_event["E3"]["first_entry"] is True and by_event["E3"]["should_bet"] is True    # first-entry game
 
 
+def test_picks_returns_recently_expired(client):
+    """A High pick whose game already started is returned under 'expired' (not
+    'picks'), so an alerted pick stays findable after commence. Bounded to recent
+    commence — a long-ago-started game is dropped from the list (still counted)."""
+    ev = sqlite3.connect(os.environ["SOFTBOOK_EV_DB"])
+    ev.execute("DELETE FROM softbook_ev")
+    cols = ("(recorded_at,sport,event_id,commence_time,home,away,market,side,point,"
+            "player,pinnacle_fair_prob,pinnacle_price,best_soft_book,best_soft_price,"
+            "snapshot_ev,n_books,n_ev,conf,tier)")
+    q = f"INSERT INTO softbook_ev {cols} VALUES ({','.join('?' * 19)})"
+    now = ev.execute("SELECT datetime('now')").fetchone()[0]
+    # commence_time must be Z-suffixed (aware) to match production + the API's now.
+    started = ev.execute("SELECT strftime('%Y-%m-%dT%H:%M:%SZ','now','-2 hours')").fetchone()[0]
+    long_ago = ev.execute("SELECT strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 hours')").fetchone()[0]
+    # E1: started 2h ago -> expired AND inside the 24h window -> in the list.
+    ev.execute(q, (now, "baseball_kbo", "E1", started, "Kiwoom Heroes", "Lotte Giants",
+                   "h2h", "Lotte Giants", 0, "", 0.42, 2.0, "BetMGM", 2.35, 0.071, 8, 5, 60, "High"))
+    # E2: started 30h ago -> expired but OUTSIDE the window -> counted, not listed.
+    ev.execute(q, (now, "baseball_mlb", "E2", long_ago, "MIA", "NYM",
+                   "h2h", "NYM", 0, "", 0.45, 2.0, "FanDuel", 2.1, 0.05, 8, 5, 60, "High"))
+    ev.commit(); ev.close()
+    r = client.get("/picks", headers={"Authorization": "Bearer secret"}).json()
+    assert r["picks"] == []                          # neither is active (both commenced)
+    exp_ids = [p["id"] for p in r["expired"]]
+    assert "E1|h2h|Lotte Giants|0.0|" in exp_ids      # recent expired stays findable
+    assert all(not pid.startswith("E2|") for pid in exp_ids)  # stale expired dropped
+    assert r["counts"].get("expired") == 2            # both classified expired
+    assert r["expired"][0]["should_bet"] is True      # enriched like active picks
+
+
 def test_pick_detail_by_id(client):
     pid = "E1|batter_total_bases|Over|1.5|Brandon Nimmo"
     r = client.get(f"/picks/{pid}", headers={"Authorization": "Bearer secret"})
