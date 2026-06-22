@@ -1,0 +1,13 @@
+[Unit]
+Description=Fire the KXETH cme_basis emitter every 5 min
+Requires=kalshi-cme-eth-emitter.service
+
+[Timer]
+OnBootSec=300
+OnUnitActiveSec=300
+# Jitter to avoid the boot-stampede SQLite contention that took the host down
+# on 2026-05-27 (5 oneshots hit D-state within 14s). See stablecoin-mints unit.
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

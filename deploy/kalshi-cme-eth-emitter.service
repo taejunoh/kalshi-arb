@@ -1,0 +1,19 @@
+[Unit]
+Description=KXETH-only cme_basis signal emitter (cme_basis_follow_v1 paper twin source)
+After=network.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+EnvironmentFile=/home/ubuntu/kalshi-arb/.env
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/cme_eth_signal_emitter.py
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs
+# Bound runtime so a hung yfinance / Kalshi call can't pile up (mirrors the
+# RuntimeMaxSec drop-ins added after the 2026-05-27 host overload).
+RuntimeMaxSec=120
