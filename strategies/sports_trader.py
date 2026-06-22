@@ -304,11 +304,10 @@ INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
 # unmapped-active alert. ATP is no longer empty; the prior empty window
 # (6/08, no ATP grass slug published yet) is now closed.
 TENNIS_ATP_SLUGS: tuple[str, ...] = (
-    "tennis_atp_halle_open",          # ATP 500 grass, Halle (~6/15–6/22)
-    "tennis_atp_queens_club_champ",   # ATP 500 grass, Queen's Club (~6/15–6/22)
+    "tennis_atp_wimbledon",           # Grand Slam grass, Wimbledon (~6/29–7/12)
 )
 TENNIS_WTA_SLUGS: tuple[str, ...] = (
-    "tennis_wta_german_open",         # WTA 500 grass, Berlin (~6/15–6/21)
+    "tennis_wta_bad_homburg_open",    # WTA 500 grass, Bad Homburg (~6/22–6/28)
 )
 
 # Single source of truth for Kalshi series → Odds API sport key(s). Tennis
@@ -419,6 +418,7 @@ TENNIS_SLUG_META = {
     "tennis_atp_halle_open":          {"tier": "ATP500",  "surface": "grass", "format": "BO3"},
     "tennis_atp_queens_club_champ":   {"tier": "ATP500",  "surface": "grass", "format": "BO3"},
     "tennis_wta_german_open":         {"tier": "WTA500",  "surface": "grass", "format": "BO3"},
+    "tennis_wta_bad_homburg_open":    {"tier": "WTA500",  "surface": "grass", "format": "BO3"},
 }
 
 # Regex for extracting round from a Kalshi tennis market title.
