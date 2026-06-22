@@ -228,6 +228,27 @@ systemctl cat kalshi-ev-refresh.service | grep ExecStartPost
 systemctl list-timers kalshi-ev-refresh.timer
 ```
 
+## 5j. Install KXETH cme_basis signal emitter (5-min, cme_basis_follow_v1 paper-twin source)
+
+Standalone KXETH-only `cme_basis_fade` signal emitter
+(`scripts/cme_eth_signal_emitter.py`), decoupled from the frozen main crypto
+observer (see crypto freeze 2026-05-27), so the `cme_basis_follow_v1` paper twin
+keeps getting fresh signals without un-freezing the full observer. Reuses
+`CmeBasisFadeObserver.evaluate()` + `_build_leg` from
+`strategies/crypto_observer.py` (identical gates). ETH-only, REST spot, low-freq
+timer with a per-market DB cooldown + RandomizedDelaySec jitter (avoids the
+2026-05-27 boot-stampede SQLite contention).
+
+```bash
+sudo cp deploy/kalshi-cme-eth-emitter.service /etc/systemd/system/
+sudo cp deploy/kalshi-cme-eth-emitter.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now kalshi-cme-eth-emitter.timer
+
+systemctl list-timers kalshi-cme-eth-emitter.timer
+cd /home/ubuntu/kalshi-arb && venv/bin/python scripts/cme_eth_signal_emitter.py --dry  # manual dry-run
+```
+
 ## Database locking (WAL mode)
 
 bot.db now runs in **WAL journal mode** (set 2026-05-11). Apply this
