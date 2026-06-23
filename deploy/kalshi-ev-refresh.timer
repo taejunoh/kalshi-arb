@@ -1,7 +1,12 @@
 [Unit]
-Description=Refresh +EV bet list every 20 min
+Description=Refresh +EV bet list every 10 min
 [Timer]
-OnCalendar=*-*-* *:00,20,40:00 UTC
+# 10-min cadence (was :00,20,40) to halve detection lag for short-fuse
+# first-entry picks — esp. tennis "next on court" lines that publish only
+# minutes before play. Doubling scans is quota-safe (see ev.timer override
+# note: ~4.86M/5M remaining). Pairs with the push-trigger drop-in so a new
+# High pick is alerted+pushed within ~10 min of its line appearing.
+OnCalendar=*-*-* *:00,10,20,30,40,50:00 UTC
 Persistent=true
 [Install]
 WantedBy=timers.target
