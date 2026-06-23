@@ -79,9 +79,10 @@ def main():
         b["stake"] = stake_for(b["ev"], b["odds"], bankroll)
 
     # Persist THIS scan as the canonical record: the dashboard json, the ev.db CLV
-    # snapshots and the instant High alerts all come from the SAME scan, so what
-    # the +EV tab shows is exactly what gets recorded/alerted (no two-scan drift —
-    # tier flickers at the Med/High boundary made tab and ledger disagree before).
+    # snapshots and the instant High alerts all come from the SAME scan (no two-scan
+    # drift — tier flickers at the Med/High boundary made tab and ledger disagree
+    # before). The +EV tab shows the High subset (== the alerted set); ev.db keeps
+    # ALL tiers (bets_all) so CLV-by-tier re-tuning still has Med/Low to learn from.
     try:
         import softbook_ev_recorder as rec
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -100,13 +101,18 @@ def main():
     except Exception as e:
         print("record err:", e)
 
-    # --json : dashboard feed (one entry per +EV market bet; keeps legacy fields)
+    # --json : dashboard +EV tab feed (one entry per +EV market bet; keeps legacy
+    # fields). HIGH-TIER ONLY — Med/Low are never actionable (the bet rule is
+    # first-entry High game-only) and were just noise on the live "bet now" list, so
+    # the user dropped them from the tab (2026-06-23). They still live in ev.db (all
+    # tiers, recorded above) for CLV-by-tier re-tuning and in the +EV History tab.
     if "--json" in sys.argv:
         i = sys.argv.index("--json")
         path = sys.argv[i + 1] if i + 1 < len(sys.argv) else "data/ev_bets_latest.json"
         out = {"generated_at": datetime.now(timezone.utc).isoformat(),
                "bankroll": bankroll, "api_credits": credits, "bets": []}
-        for b in bets[:JSON_CAP]:
+        high = [b for b in bets if b["tier"] == "High"]
+        for b in high[:JSON_CAP]:
             out["bets"].append({
                 "team": b["label"], "matchup": f"{b['away']} @ {b['home']}",
                 "sport": b["sport"].replace("_", " ").upper(),
@@ -149,12 +155,12 @@ def main():
     print("\nLong-run edge — bet small, one per market. Different games/markets = diversify.")
 
     if "--telegram" in sys.argv:
-        # High-tier only — Low/Med live on the dashboard; the user only bets High
-        # (ledger B). No High right now = no message (instant 🟣 alerts cover new
-        # Highs between digests anyway).
+        # High-tier only — the user only bets High (ledger B), and the +EV tab is now
+        # High-only too; Med/Low survive solely in the +EV History tab. No High right
+        # now = no message (instant 🟣 alerts cover new Highs between digests anyway).
         high = [b for b in bets if b["tier"] == "High"]
         if not high:
-            print("telegram: 0 High-tier bets — digest skipped (Low/Med on dashboard)")
+            print("telegram: 0 High-tier bets — digest skipped (Med/Low: History tab only)")
             return
         top = high[:TG_CAP]
         tg = defaultdict(list)
@@ -172,7 +178,7 @@ def main():
         msg = ("🎯 High-tier +EV live now (ML/spread/total/props), one per market:\n\n"
                + "\n\n".join(lines)
                + (f"\n\n…+{more} more High on dashboard." if more > 0 else "")
-               + "\n\n+EV vs sharp Pinnacle. Bet small, pre-game only. Low/Med: dashboard.")
+               + "\n\n+EV vs sharp Pinnacle. Bet small, pre-game only.")
         send_telegram(msg)
 
 
