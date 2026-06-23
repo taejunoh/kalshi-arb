@@ -308,6 +308,7 @@ TENNIS_ATP_SLUGS: tuple[str, ...] = (
 )
 TENNIS_WTA_SLUGS: tuple[str, ...] = (
     "tennis_wta_bad_homburg_open",    # WTA 500 grass, Bad Homburg (~6/22–6/28)
+    "tennis_wta_wimbledon",           # Grand Slam grass, Wimbledon (~6/29–7/12)
 )
 
 # Single source of truth for Kalshi series → Odds API sport key(s). Tennis
