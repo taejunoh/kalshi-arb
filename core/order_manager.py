@@ -62,6 +62,8 @@ LIMIT_TTL_STRATEGIES = {
     # failure mode as the WNBA/NHL/deribit FOK rejects above. Same fix:
     # LIMIT_TTL routing (resting limit at signal price, partial-fill ok).
     "sports_mlb_pitcher_edge_v2_1",
+    "sports_mlb_pitcher_edge_v1",  # 2026-06-23 user live-promote (eval-override); same signal as v2_1, both kept live per user
+    "sports_tennis_underdog_v1",  # 2026-06-23 user live-promote (eval-override)
 }
 LIMIT_TTL_SECONDS = 60
 LIMIT_TTL_POLL_INTERVAL = 5
@@ -215,6 +217,8 @@ PAPER_TWIN_STRATEGIES = {
     "cme_basis_fade_v1",               # 2026-05-21 14:33 UTC crypto Phase 1 live promotion
     "late_close_tail_v1",              # 2026-05-21 PM crypto Phase 1 live promotion (Config C)
     "sports_mlb_pitcher_edge_v2_1",    # 2026-06-15 small live fill-calibration pilot — keep paper twin for live/paper slippage A/B
+    "sports_mlb_pitcher_edge_v1",      # 2026-06-23 user live-promote — keep paper twin for live/paper A/B
+    "sports_tennis_underdog_v1",       # 2026-06-23 user live-promote — keep paper twin for live/paper A/B
 }
 
 
