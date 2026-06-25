@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Auto-settle stuck past-dated +EV paper bets via Claude web search.
+"""Auto-settle stuck past-dated +EV paper bets via Gemini (Google Search grounding).
 
 The regular settler (softbook_ev_paper_pnl.settle) handles feed sports (Odds API
 /scores) and ESPN/Naver sports (softbook_results). What it CAN'T settle lingers as
@@ -9,11 +9,11 @@ for boxing (no data feed at all), whose real W/L would be mis-voided. The user a
 this be handled automatically rather than by manual request (2026-06-23).
 
 This runs daily on a timer, finds GAME-market bets (h2h/spread/total) still pending
->= MIN_HOURS after start, web-verifies each event's result with Claude (web_search),
-and settles HIGH-CONFIDENCE results via the SAME grade convention as the pipeline.
-Anything uncertain is left pending (stale-void remains the backstop). Conservative by
-design: game markets only, confidence gate, capped per run, every decision logged +
-a Telegram summary so settlements are visible without being asked.
+>= MIN_HOURS after start, web-verifies each event's result with Gemini (google_search
+grounding — free tier, no pay-as-you-go API), and settles HIGH-CONFIDENCE results via
+the SAME grade convention as the pipeline. Anything uncertain is left pending
+(stale-void remains the backstop). Conservative by design: game markets only,
+confidence gate, capped per run, every decision logged + a Telegram summary.
 
 Usage:
   python scripts/softbook_auto_settle_stuck.py            # verify + settle + telegram
@@ -34,14 +34,43 @@ import softbook_ev_core as core
 PAPER_DB = os.getenv("SOFTBOOK_PAPER_DB", "/home/ubuntu/kalshi-arb/data/softbook_paper.db")
 LEDGERS = ("paper_bet", "paper_bet_high")
 GAME_MARKETS = ("h2h", "spread", "total")
-MODEL = "claude-opus-4-8"                       # skill-mandated default; web-search capable
-WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search"}
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
+MODEL = os.getenv("AUTOSETTLE_GEMINI_MODEL", "gemini-2.5-flash")   # free tier + grounding
 MIN_HOURS = float(os.getenv("AUTOSETTLE_MIN_HOURS", "18"))   # pipeline has long since given up
 MAX_EVENTS = int(os.getenv("AUTOSETTLE_MAX_EVENTS", "25"))   # bound cost per run
-MAX_TURNS = 8                                  # server-tool loop safety cap
 
 
-# ---- result verification (Claude + web_search) ----------------------------------
+# ---- Gemini (google_search grounding) -------------------------------------------
+
+def _gemini_key():
+    if os.getenv("GEMINI_API_KEY"):
+        return os.getenv("GEMINI_API_KEY")
+    try:                                # fall back to .env (same pattern as core.read_key)
+        for line in open(os.getenv("ENV_PATH", "/home/ubuntu/kalshi-arb/.env")):
+            if line.startswith("GEMINI_API_KEY="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return None
+
+
+def gemini_verify(prompt, model=MODEL, key=None):
+    """One grounded Gemini call. Returns the concatenated answer text (raises on
+    HTTP / API error). google_search grounding lets it look up the real result."""
+    key = key or _gemini_key()
+    url = f"{GEMINI_BASE}/models/{model}:generateContent?key={urllib.parse.quote(key)}"
+    body = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "tools": [{"google_search": {}}],
+        "generationConfig": {"temperature": 0, "maxOutputTokens": 4096},
+    }).encode()
+    req = urllib.request.Request(url, data=body, headers={"content-type": "application/json"})
+    resp = json.loads(urllib.request.urlopen(req, timeout=70).read())
+    if "error" in resp:
+        raise RuntimeError(f"gemini {resp['error'].get('code')}: {str(resp['error'].get('message'))[:120]}")
+    c = (resp.get("candidates") or [{}])[0]
+    return "".join(p.get("text", "") for p in c.get("content", {}).get("parts", []))
+
 
 _SCHEMA_HINT = (
     "Return ONLY a JSON object (no prose, no markdown fence) with EXACTLY these keys:\n"
@@ -54,48 +83,34 @@ _SCHEMA_HINT = (
     "games won by that player), or null\n"
     '  "away_score": same for the AWAY side, or null\n'
     '  "retired": true if a tennis match ended in mid-match retirement (RET), else false\n'
-    '  "confidence": "high" | "medium" | "low"  (use "high" ONLY if 2+ independent '
-    "sources agree on the outcome — and on the exact score when a score is requested)\n"
+    '  "confidence": "high" | "medium" | "low"  (use "high" ONLY if you found the result '
+    "from a reliable source — and the exact score when a score is requested)\n"
     '  "sources": array of source URLs you used\n'
 )
 
 
-def verify_event(client, ev, model=MODEL):
+def verify_event(ev, verify=None):
     """Web-verify one event's final result. Returns a parsed dict (schema above) or
-    None on failure. `client` is an anthropic.Anthropic (injectable for tests)."""
+    None on failure. `verify(prompt)->text` is injectable for tests."""
+    verify = verify or gemini_verify
     need_score = any(b["market"] in ("spread", "total") for b in ev["bets"])
     prompt = (
-        "You are settling a sports betting ledger. Find the FINAL result of this "
-        "completed event using web search. Search 2-3 times with different queries and "
-        "cross-check independent sources (ESPN, official league sites, Wikipedia, BoxRec "
-        "for boxing, flashscore/sofascore, news).\n\n"
+        "You are settling a sports betting ledger. Use Google Search to find the FINAL "
+        "result of this completed event. Cross-check independent sources (ESPN, official "
+        "league sites, Wikipedia, BoxRec for boxing, flashscore/sofascore, news).\n\n"
         f"SPORT: {ev['sport']}\n"
         f"DATE (UTC): {ev['commence_time']}\n"
         f"HOME: {ev['home']}\nAWAY: {ev['away']}\n\n"
         + ("This settles spread/total bets, so the EXACT final score matters.\n\n" if need_score else "")
         + _SCHEMA_HINT
     )
-    messages = [{"role": "user", "content": prompt}]
-    for _ in range(MAX_TURNS):
-        resp = client.messages.create(
-            model=model, max_tokens=3000,
-            thinking={"type": "adaptive"},
-            tools=[WEB_SEARCH],
-            messages=messages,
-        )
-        if resp.stop_reason == "pause_turn":      # server-tool loop hit its limit; resume
-            messages.append({"role": "assistant", "content": resp.content})
-            continue
-        break
-    text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
-    return _extract_json(text)
+    return _extract_json(verify(prompt))
 
 
 def _extract_json(text):
     if not text:
         return None
-    # strip a ```json fence if present, then take the last balanced {...}
-    m = re.search(r"\{.*\}", text, re.DOTALL)
+    m = re.search(r"\{.*\}", text, re.DOTALL)   # last balanced {...}, fence-tolerant
     if not m:
         return None
     try:
@@ -197,24 +212,7 @@ def send_telegram(text):
 
 # ---- main ------------------------------------------------------------------------
 
-def _anthropic_key():
-    if os.getenv("ANTHROPIC_API_KEY"):
-        return os.getenv("ANTHROPIC_API_KEY")
-    try:                                # fall back to .env (same pattern as core.read_key)
-        for line in open(os.getenv("ENV_PATH", "/home/ubuntu/kalshi-arb/.env")):
-            if line.startswith("ANTHROPIC_API_KEY="):
-                return line.split("=", 1)[1].strip().strip('"').strip("'")
-    except Exception:
-        pass
-    return None
-
-
-def _client():
-    import anthropic
-    return anthropic.Anthropic(api_key=_anthropic_key())
-
-
-def main(client=None):
+def main(verify=None):
     dry = "--dry-run" in sys.argv
     db = sqlite3.connect(PAPER_DB)
     events = stuck_events(db)
@@ -222,17 +220,17 @@ def main(client=None):
         print("[auto-settle] no stuck game-market bets")
         return
     events = events[:MAX_EVENTS]
-    if client is None:
-        if not _anthropic_key():
-            print(f"[auto-settle] {len(events)} stuck event(s) but no ANTHROPIC_API_KEY in "
+    if verify is None:
+        if not _gemini_key():
+            print(f"[auto-settle] {len(events)} stuck event(s) but no GEMINI_API_KEY in "
                   f"env/.env — skipping. Add the key to activate.")
             return
-        client = _client()
+        verify = gemini_verify
     now = datetime.now(timezone.utc).isoformat()
     settled, skipped, lines, net = 0, 0, [], 0.0
     for ev in events:
         try:
-            res = verify_event(client, ev)
+            res = verify_event(ev, verify=verify)
         except Exception as e:
             print(f"  verify err {ev['event_id'][:8]} {ev['away']}@{ev['home']}: {e}")
             skipped += len(ev["bets"]); continue
@@ -257,7 +255,7 @@ def main(client=None):
     print(f"[auto-settle] {'DRY-RUN ' if dry else ''}settled {settled}, skipped {skipped}, "
           f"net ${net:+.2f} across {len(events)} events")
     if settled and not dry:
-        send_telegram("🤖 자동 정산 (stuck 과거 베팅, 웹검증):\n" + "\n".join(lines[:20])
+        send_telegram("🤖 자동 정산 (stuck 과거 베팅, Gemini 웹검증):\n" + "\n".join(lines[:20])
                       + (f"\n…+{len(lines)-20}" if len(lines) > 20 else "")
                       + f"\n순손익 ${net:+.2f}")
 

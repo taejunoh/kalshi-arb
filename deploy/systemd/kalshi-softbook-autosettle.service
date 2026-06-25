@@ -1,5 +1,5 @@
 [Unit]
-Description=Auto-settle stuck past-dated +EV paper bets via Claude web search (boxing/no-feed stragglers)
+Description=Auto-settle stuck past-dated +EV paper bets via Gemini web search (boxing/no-feed stragglers)
 After=network-online.target
 Wants=network-online.target
 
@@ -7,5 +7,5 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=/home/ubuntu/kalshi-arb
 ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/softbook_auto_settle_stuck.py
-# ANTHROPIC_API_KEY is read from /home/ubuntu/kalshi-arb/.env by the script itself.
+# GEMINI_API_KEY is read from /home/ubuntu/kalshi-arb/.env by the script itself.
 TimeoutStartSec=900
