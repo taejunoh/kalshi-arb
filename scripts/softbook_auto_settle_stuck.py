@@ -36,7 +36,11 @@ LEDGERS = ("paper_bet", "paper_bet_high")
 GAME_MARKETS = ("h2h", "spread", "total")
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 MODEL = os.getenv("AUTOSETTLE_GEMINI_MODEL", "gemini-2.5-flash")   # free tier + grounding
-MIN_HOURS = float(os.getenv("AUTOSETTLE_MIN_HOURS", "18"))   # pipeline has long since given up
+# 6h = the game is definitively over (baseball/boxing cards included) AND the hourly
+# feed settler has already won the race for any feed-settleable game, so only true
+# no-feed/postponed stragglers are still pending here. Lower risks catching in-progress
+# games (Gemini -> uncertain -> SKIP, harmless retry next run).
+MIN_HOURS = float(os.getenv("AUTOSETTLE_MIN_HOURS", "6"))
 MAX_EVENTS = int(os.getenv("AUTOSETTLE_MAX_EVENTS", "25"))   # bound cost per run
 
 
