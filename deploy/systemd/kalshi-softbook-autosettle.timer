@@ -1,8 +1,8 @@
 [Unit]
-Description=Daily run of the stuck-bet auto-settler
+Description=Stuck-bet auto-settler — every 3h (picks up no-feed/boxing stragglers ~6-9h after start)
 
 [Timer]
-OnCalendar=*-*-* 17:30:00 UTC
+OnCalendar=*-*-* 00/3:00:00 UTC
 RandomizedDelaySec=300
 Persistent=true
 
