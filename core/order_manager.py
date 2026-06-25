@@ -64,6 +64,7 @@ LIMIT_TTL_STRATEGIES = {
     "sports_mlb_pitcher_edge_v2_1",
     "sports_mlb_pitcher_edge_v1",  # 2026-06-23 user live-promote (eval-override); same signal as v2_1, both kept live per user
     "sports_tennis_underdog_v1",  # 2026-06-23 user live-promote (eval-override)
+    "sports_tennis_live_fade_v1",  # 2026-06-25 user live-promote (eval-override); in-play, $4 size, LIMIT_TTL rests-or-skips on fast live books
 }
 LIMIT_TTL_SECONDS = 60
 LIMIT_TTL_POLL_INTERVAL = 5
@@ -219,6 +220,7 @@ PAPER_TWIN_STRATEGIES = {
     "sports_mlb_pitcher_edge_v2_1",    # 2026-06-15 small live fill-calibration pilot — keep paper twin for live/paper slippage A/B
     "sports_mlb_pitcher_edge_v1",      # 2026-06-23 user live-promote — keep paper twin for live/paper A/B
     "sports_tennis_underdog_v1",       # 2026-06-23 user live-promote — keep paper twin for live/paper A/B
+    "sports_tennis_live_fade_v1",      # 2026-06-25 user live-promote (eval-override); paper twin = measure in-play live-fill vs paper-signal
 }
 
 
