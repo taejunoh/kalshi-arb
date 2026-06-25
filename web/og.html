@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1200px;height:630px;overflow:hidden}
+  body{background:#0a0e14;color:#e6edf3;font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;position:relative;
+    background-image:radial-gradient(720px 420px at 88% -8%,rgba(123,123,255,.16),transparent 62%);}
+  .mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
+  .pad{position:absolute;inset:0;padding:62px 68px;display:flex;flex-direction:column;justify-content:space-between}
+  .top{display:flex;align-items:center;gap:14px}
+  .top svg{width:42px;height:42px}
+  .wm{font-size:30px;font-weight:800;letter-spacing:-.02em}
+  .wm span{color:#7b7bff}
+  h1{font-size:78px;font-weight:800;letter-spacing:-.03em;line-height:1.02;margin-bottom:22px}
+  h1 em{font-style:normal;color:#7b7bff}
+  .sub{font-size:27px;color:#8b98a8;max-width:760px;line-height:1.4}
+  .stats{display:flex;gap:46px;align-items:flex-end}
+  .stat .v{font-size:46px;font-weight:700;letter-spacing:-.02em}
+  .stat .k{font-size:16px;color:#5b6675;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-top:4px}
+  .pos{color:#48b58a}
+  .foot{display:flex;justify-content:space-between;align-items:center;font-size:19px}
+  .foot .site{display:flex;align-items:center;gap:11px;font-weight:600}
+  .foot .dot{width:11px;height:11px;border-radius:3px;background:#7b7bff;box-shadow:0 0 14px rgba(123,123,255,.7)}
+  .foot .tag{color:#5b6675;font-weight:600;letter-spacing:.06em;font-size:15px}
+  .curve{position:absolute;right:0;bottom:150px;width:560px;height:300px;opacity:.5}
+</style>
+</head>
+<body>
+  <svg class="curve" viewBox="0 0 560 300" preserveAspectRatio="none" aria-hidden="true">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7b7bff" stop-opacity=".30"/>
+      <stop offset="1" stop-color="#7b7bff" stop-opacity="0"/></linearGradient></defs>
+    <path d="M0 250 L70 235 L120 250 L170 205 L210 215 L260 150 L300 175 L350 120 L400 140 L450 80 L500 105 L560 40 L560 300 L0 300 Z" fill="url(#g)"/>
+    <path d="M0 250 L70 235 L120 250 L170 205 L210 215 L260 150 L300 175 L350 120 L400 140 L450 80 L500 105 L560 40" fill="none" stroke="#7b7bff" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>
+
+  <div class="pad">
+    <div class="top">
+      <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#121821" stroke="#1e2733"/><path d="M6 21 L13 14 L18 18 L26 9" fill="none" stroke="#7b7bff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="26" cy="9" r="2.6" fill="#7b7bff"/></svg>
+      <div class="wm">Keep<span>My</span>Pick</div>
+    </div>
+
+    <div>
+      <h1>Every pick, <em>graded.</em></h1>
+      <div class="sub">+EV value picks on soft sportsbooks — priced to beat the sharp Pinnacle line. The complete record, nothing hidden.</div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="v mono pos">+8.0%</div><div class="k">ROI</div></div>
+      <div class="stat"><div class="v mono">49–47</div><div class="k">Record</div></div>
+      <div class="stat"><div class="v mono">96</div><div class="k">Picks tracked</div></div>
+    </div>
+
+    <div class="foot">
+      <div class="site"><span class="dot"></span>keepmypick.com</div>
+      <div class="tag">PUBLIC TRACK RECORD · NOTHING HIDDEN</div>
+    </div>
+  </div>
+</body>
+</html>
