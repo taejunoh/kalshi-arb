@@ -67,25 +67,11 @@ def test_spread_missing_scores_left_pending():
                        {"status": "final", "home_score": None, "away_score": None}) is None
 
 
-# ---- main() flow with a fake client ----
+# ---- main() flow with an injected fake verify() ----
 
-class _Txt:
-    type = "text"
-    def __init__(self, t): self.text = t
-
-
-class _Resp:
-    stop_reason = "end_turn"
-    def __init__(self, t): self.content = [_Txt(t)]
-
-
-class _Msgs:
-    def __init__(self, payload): self._p = payload
-    def create(self, **kw): return _Resp(self._p)
-
-
-class _FakeClient:
-    def __init__(self, payload): self.messages = _Msgs(payload)
+def _fake_verify(payload):
+    """Return a verify(prompt)->text stub that always yields the same JSON answer."""
+    return lambda prompt: payload
 
 
 _SCHEMA = ("event_id TEXT, sport TEXT, home TEXT, away TEXT, market TEXT, side TEXT, "
@@ -123,11 +109,11 @@ def test_main_settles_only_stuck_past_high_conf(tmp_path, monkeypatch):
     db.execute("UPDATE paper_bet SET commence_time=datetime('now','-3 days') WHERE event_id='E3'")
     db.commit(); db.close()
 
-    client = _FakeClient('{"status":"final","winner":"Cushing","home_score":null,'
-                         '"away_score":null,"retired":false,"confidence":"high","sources":["x"]}')
+    verify = _fake_verify('{"status":"final","winner":"Cushing","home_score":null,'
+                          '"away_score":null,"retired":false,"confidence":"high","sources":["x"]}')
     monkeypatch.setattr("sys.argv", ["prog"])
     monkeypatch.setattr(a, "send_telegram", lambda *x: None)
-    a.main(client=client)
+    a.main(verify=verify)
 
     db = sqlite3.connect(str(tmp_path / "p.db"))
     e1 = db.execute("SELECT completed,won,result,pnl FROM paper_bet WHERE event_id='E1'").fetchone()
@@ -146,8 +132,8 @@ def test_main_low_confidence_left_pending(tmp_path, monkeypatch):
          commence_time="x", completed=0)
     db.execute("UPDATE paper_bet SET commence_time=datetime('now','-2 days') WHERE event_id='E1'")
     db.commit(); db.close()
-    client = _FakeClient('{"status":"final","winner":"Cushing","confidence":"low","sources":[]}')
+    verify = _fake_verify('{"status":"final","winner":"Cushing","confidence":"low","sources":[]}')
     monkeypatch.setattr("sys.argv", ["prog"])
-    a.main(client=client)
+    a.main(verify=verify)
     db = sqlite3.connect(str(tmp_path / "p.db"))
     assert db.execute("SELECT completed FROM paper_bet WHERE event_id='E1'").fetchone()[0] == 0
