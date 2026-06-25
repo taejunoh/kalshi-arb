@@ -1,0 +1,11 @@
+[Unit]
+Description=Auto-settle stuck past-dated +EV paper bets via Claude web search (boxing/no-feed stragglers)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/softbook_auto_settle_stuck.py
+# ANTHROPIC_API_KEY is read from /home/ubuntu/kalshi-arb/.env by the script itself.
+TimeoutStartSec=900
