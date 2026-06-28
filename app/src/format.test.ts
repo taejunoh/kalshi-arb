@@ -1,5 +1,5 @@
 // app/src/format.test.ts
-import { americanOdds, parseOddsToDecimal, evPct, countdown, countdownUrgent } from "./format";
+import { americanOdds, parseOddsToDecimal, evPct, countdown, countdownUrgent, matchup } from "./format";
 
 test("americanOdds shows the US-book number (+underdog / -favorite)", () => {
   expect(americanOdds(3.9)).toBe("+290");
@@ -39,4 +39,12 @@ test("countdownUrgent: true only when < 1h to start and not started", () => {
   expect(countdownUrgent("2026-06-16T12:45:00Z", now)).toBe(true);
   expect(countdownUrgent("2026-06-16T13:30:00Z", now)).toBe(false);
   expect(countdownUrgent("2026-06-16T11:59:00Z", now)).toBe(false);
+});
+
+test("matchup is Away @ Home, degrades gracefully when a side is missing", () => {
+  expect(matchup("New York Mets", "Miami Marlins")).toBe("New York Mets @ Miami Marlins");
+  expect(matchup("Lakers", null)).toBe("Lakers");
+  expect(matchup(null, "Celtics")).toBe("Celtics");
+  expect(matchup(null, null)).toBeNull();
+  expect(matchup("  ", "  ")).toBeNull(); // whitespace-only counts as missing
 });

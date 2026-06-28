@@ -4,7 +4,7 @@ import type { BetInDraft } from "../api/types";
 
 export type PicksStackParamList = {
   PicksList: undefined;
-  PickDetail: { pickId: string };
+  PickDetail: { pickId: string; matchup?: string | null };
   CaptureSheet: { pickId?: string; scanDraft?: BetInDraft };
 };
 

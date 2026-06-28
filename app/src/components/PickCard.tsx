@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import type { Pick } from "../api/types";
 import { color, radius, space, font } from "../theme";
-import { countdown, countdownUrgent, americanOdds, evPct } from "../format";
+import { countdown, countdownUrgent, americanOdds, evPct, matchup } from "../format";
 
 export function PickCard({
   pick,
@@ -21,6 +21,9 @@ export function PickCard({
   // "얼마 베팅" — the policy is a flat unit on the picks we actually bet (first-entry
   // games). SKIP picks intentionally show no amount (not recommended).
   const betLabel = pick.should_bet && unitStake ? `베팅 $${unitStake}` : "베팅";
+  // The bet label alone ("Over 167.5") doesn't say which game it is — show the
+  // matchup so a totals/spread pick is identifiable at a glance.
+  const game = matchup(pick.away, pick.home);
   // Swipe-left reveals 관심없음; same onDismiss as the inline button (kept as fallback).
   const renderRightActions = () => (
     <Pressable testID="swipe-dismiss" onPress={() => onDismiss(pick)} style={s.swipeAction}>
@@ -39,7 +42,8 @@ export function PickCard({
         )}
         <Text style={s.evPill}>{evPct(pick.ev)}</Text>
       </View>
-      <Text style={s.label} numberOfLines={2}>{pick.label}</Text>
+      {game && <Text style={s.matchup} numberOfLines={1}>{game}</Text>}
+      <Text style={[s.label, game && s.labelTight]} numberOfLines={2}>{pick.label}</Text>
       <View style={s.meta}>
         <Text style={s.metaBook}>{pick.book ?? "—"} {americanOdds(pick.odds)}</Text>
         <Text style={s.metaDim}>{pick.n_books ?? 0}북</Text>
@@ -61,7 +65,9 @@ const s = StyleSheet.create({
   betBadge: { color: color.accentText, backgroundColor: color.accentDim, fontSize: 12, fontWeight: "500", paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, overflow: "hidden" },
   skipBadge: { color: color.muted, backgroundColor: color.surfaceRaised, fontSize: 12, fontWeight: "500", paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, overflow: "hidden" },
   evPill: { color: color.positive, backgroundColor: color.positiveDim, fontSize: 17, fontWeight: "600", paddingHorizontal: 11, paddingVertical: 3, borderRadius: radius.sm, overflow: "hidden" },
+  matchup: { color: color.muted, fontSize: 13, fontWeight: "500", marginTop: space.md },
   label: { ...font.pickLabel, marginTop: space.md },
+  labelTight: { marginTop: 1 },
   meta: { flexDirection: "row", alignItems: "center", gap: space.md, marginTop: 9 },
   metaBook: { color: color.text, fontSize: 13, fontWeight: "500" },
   metaDim: { color: color.muted, fontSize: 13 },
