@@ -85,6 +85,8 @@ def test_worker_pushes_new_high_once():
     worker.run_once(ev, pdb, send=lambda msgs: sent.extend(msgs) or [])
     assert len(sent) == 1
     assert "NYM" in sent[0]["title"] + sent[0]["body"]
+    # Body leads with the matchup so the alert says which game it is, not just the bet.
+    assert sent[0]["body"].startswith("NYM @ MIA · ")
     worker.run_once(ev, pdb, send=lambda msgs: sent.extend(msgs) or [])  # dedup
     assert len(sent) == 1
 

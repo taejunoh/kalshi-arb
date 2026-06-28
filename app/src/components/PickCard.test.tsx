@@ -30,6 +30,16 @@ test("renders label, book@odds and EV", async () => {
   expect(screen.getByText("+7.4%")).toBeOnTheScreen();
 });
 
+test("shows the matchup so you can tell which game it is", async () => {
+  await render(<PickCard pick={PICK} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(screen.getByText("NYM @ MIA")).toBeOnTheScreen();
+});
+
+test("omits the matchup line when teams are unknown", async () => {
+  await render(<PickCard pick={{ ...PICK, home: null, away: null }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(screen.queryByText(/@/)).toBeNull();
+});
+
 test("fires onBet and onDismiss", async () => {
   const onBet = jest.fn();
   const onDismiss = jest.fn();

@@ -8,6 +8,7 @@ import { PickCard } from "../components/PickCard";
 import { pickImage } from "../scan";
 import { getUnitStake } from "../storage";
 import { DEFAULT_UNIT_STAKE } from "../config";
+import { matchup } from "../format";
 import { Feather } from "@expo/vector-icons";
 import { color, radius, space } from "../theme";
 
@@ -110,6 +111,10 @@ export function PicksScreen() {
 
   // Collapsed sections under the active feed: 식은 픽 (cooled — gone from the
   // latest scan) and 지나간 픽 (expired — game started). Same card + handlers.
+  // Open the book/deeplink detail, passing the matchup so the detail header shows
+  // which game it is (the bet label alone doesn't say).
+  const openDetail = (p: Pick) => nav.push("PickDetail", { pickId: p.id, matchup: matchup(p.away, p.home) });
+
   const collapsibleSection = (key: string, title: string, items: Pick[], open: boolean, toggle: () => void) =>
     items.length > 0 ? (
       <View key={key}>
@@ -118,7 +123,7 @@ export function PicksScreen() {
         </Pressable>
         {open &&
           items.map((p) => (
-            <PickCard key={p.id} pick={p} unitStake={unitStake} onOpen={(x) => nav.push("PickDetail", { pickId: x.id })} onBet={(x) => nav.push("PickDetail", { pickId: x.id })} onDismiss={(x) => void dismiss(x)} />
+            <PickCard key={p.id} pick={p} unitStake={unitStake} onOpen={openDetail} onBet={openDetail} onDismiss={(x) => void dismiss(x)} />
           ))}
       </View>
     ) : null;
@@ -173,8 +178,8 @@ export function PicksScreen() {
           <PickCard
             pick={item}
             unitStake={unitStake}
-            onOpen={(p) => nav.push("PickDetail", { pickId: p.id })}
-            onBet={(p) => nav.push("PickDetail", { pickId: p.id })}
+            onOpen={openDetail}
+            onBet={openDetail}
             onDismiss={(p) => void dismiss(p)}
           />
         )}

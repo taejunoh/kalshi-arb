@@ -32,6 +32,17 @@ export function evPct(ev: number | null | undefined): string {
   return `${ev >= 0 ? "+" : "-"}${Math.abs(ev * 100).toFixed(1)}%`;
 }
 
+// "Away @ Home" — the game a pick belongs to. core.label() only describes the
+// market (e.g. "Over 167.5" / "Boston Celtics ML"), so for totals & spreads you
+// can't tell which game it is without this. Away first = standard US convention.
+// null when no teams are known (e.g. a screenshot draft before it's matched).
+export function matchup(away: string | null | undefined, home: string | null | undefined): string | null {
+  const a = away?.trim();
+  const h = home?.trim();
+  if (a && h) return `${a} @ ${h}`;
+  return a || h || null;
+}
+
 export function countdown(commenceISO: string, now: Date = new Date()): string {
   const start = new Date(commenceISO).getTime();
   const diffMs = start - now.getTime();

@@ -115,7 +115,11 @@ def _high_messages(ev, pdb, tokens, now):
                            None if r["market"] == "h2h" else r["point"],
                            r["player"] or None)
         pid = feed._encode_id(pk)
-        body = (f"{label} · {r['best_soft_book']} {rec._american(r['best_soft_price'])}"
+        # Lead with the matchup ("Away @ Home") — the bet label alone ("Over 167.5")
+        # doesn't say which game it is. game-only here, so both teams are present.
+        game = " @ ".join(t for t in (r["away"], r["home"]) if t)
+        head = f"{game} · {label}" if game else label
+        body = (f"{head} · {r['best_soft_book']} {rec._american(r['best_soft_price'])}"
                 f" · EV {(r['snapshot_ev'] or 0)*100:+.1f}%" + _opp_note(rows, r))
         for tok in tokens:
             msgs.append(push.build_message(tok, "🟣 First-entry game +EV", body,

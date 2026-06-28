@@ -33,7 +33,11 @@ function PicksNavigator() {
       }}
     >
       <PicksStack.Screen name="PicksList" component={PicksScreen} options={{ title: "픽" }} />
-      <PicksStack.Screen name="PickDetail" component={PickDetailScreen} options={{ title: "픽 상세" }} />
+      <PicksStack.Screen
+        name="PickDetail"
+        component={PickDetailScreen}
+        options={({ route }) => ({ title: route.params?.matchup || "픽 상세" })}
+      />
       <PicksStack.Screen name="CaptureSheet" component={CaptureSheet} options={{ presentation: "modal", title: "베팅 기록" }} />
     </PicksStack.Navigator>
   );
