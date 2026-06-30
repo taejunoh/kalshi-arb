@@ -307,7 +307,9 @@ TENNIS_ATP_SLUGS: tuple[str, ...] = (
     "tennis_atp_wimbledon",           # Grand Slam grass, Wimbledon (~6/29–7/12)
 )
 TENNIS_WTA_SLUGS: tuple[str, ...] = (
-    "tennis_wta_bad_homburg_open",    # WTA 500 grass, Bad Homburg (~6/22–6/28)
+    # 2026-06-30 rotation: Bad Homburg ended (~6/28) and is now stale in the
+    # Odds API (confirmed 0 active via /sports). During the Wimbledon
+    # fortnight it is the only WTA tour event — tuple collapses to Wimbledon.
     "tennis_wta_wimbledon",           # Grand Slam grass, Wimbledon (~6/29–7/12)
 )
 
