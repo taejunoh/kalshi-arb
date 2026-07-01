@@ -79,12 +79,11 @@ class SportsTennisLiveFadeV1Strategy(SportsTraderStrategy):
     # the polymarket arc handles freshness for sharp-book data.
     MAX_PIN_AGE_S = 600
 
-    # Small paper size — tiny edge per trade means variance dominates.
-    # Scale to $20 only after forward validates n≥30 with WR≥90%.
-    BASE_SIZE_USDC = 4.0
-
+    # 2026-07-01: bankroll fraction 2%→4% and $4 flat cap removed (user call,
+    # paper n=156 WR84.6%). Size floats with real free balance; global
+    # MAX_SINGLE_TRADE_PCT / MAX_DAILY_LOSS guards still apply upstream.
     def _get_trade_size(self, signal: dict) -> float:
-        return min(self.BASE_SIZE_USDC, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
+        return self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.04
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
