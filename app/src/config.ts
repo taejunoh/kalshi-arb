@@ -21,11 +21,11 @@ export const SPORT_LABELS: Record<string, string> = {
 
 // Books whose bet-slip PREFILL has been verified on the real NY iPhone (app installed) to
 // actually populate the slip IN THE NATIVE APP. Until a book label is in here, even a server
-// "prefill"-tier link is shown as plain "앱 열기 + 복사", never "✓ 슬립 프리필". See
+// "prefill"-tier link is shown as plain "복사 + 직접 앱 열기", never "✓ 슬립 프리필". See
 // DEEPLINK_VERIFICATION.md.
 // On-device verified (NY iPhone): these open the native app to a PRE-FILLED slip.
 //   • BetMGM / theScore — prefill structurally NOT achievable (host redirect drops the
-//     selection / native router ignores the web param). Stay out; honest "앱 열기 + 복사".
+//     selection / native router ignores the web param). Stay out; honest "복사 + 직접 앱 열기".
 //   • BetRivers — COPY-ONLY as of 2026-07-01 (do not re-promote). No applinks AASA AND no
 //     custom URL scheme (on-device verified: betrivers://, rushstreet://, rsi://, … all
 //     unregistered), so there is NO way to open its native app — https only launches Safari.

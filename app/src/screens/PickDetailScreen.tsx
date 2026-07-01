@@ -84,7 +84,7 @@ export function PickDetailScreen({ route }: Props) {
               <View style={{ flex: 1 }}>
                 <Text style={s.bookName}>{b.book}{i === 0 ? <Text style={s.bestTag}> · 추천</Text> : null}</Text>
                 <Text style={verified ? s.prefill : s.openCopy}>
-                  {verified ? "✓ 슬립 프리필" : (copyOnly ? "복사 · 앱에서 검색" : "앱 열기 + 복사")}
+                  {verified ? "✓ 슬립 프리필" : (copyOnly ? "복사 · 앱에서 검색" : "복사 + 직접 앱 열기")}
                 </Text>
               </View>
               <View style={{ alignItems: "flex-end" }}>

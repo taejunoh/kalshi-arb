@@ -5,7 +5,7 @@ The server returns a `prefill`-tier link for FanDuel and DraftKings, but a prefi
 link only *proves the app opens* — the AASA wildcard does NOT prove the slip fills.
 Research (2026): FanDuel's `addToBetslip` universal link is confirmed but best-effort;
 **DraftKings `dksb://` is unverified by any public source.** So a book's label stays
-"앱 열기 + 복사" until you confirm the slip actually populates on YOUR phone.
+"복사 + 직접 앱 열기" until you confirm the slip actually populates on YOUR phone.
 
 ## Procedure (per book)
 1. Install the production TestFlight build on the NY iPhone, with the sportsbook app
@@ -17,7 +17,7 @@ Research (2026): FanDuel's `addToBetslip` universal link is confirmed but best-e
 4. If — and only if — the slip is correctly pre-filled, add that book's label to
    `VERIFIED_PREFILL_BOOKS` in `src/config.ts` (e.g. `["FanDuel"]`). Rebuild.
 5. If it opens to home/event or the wrong selection, leave it OUT — the honest
-   "앱 열기 + 복사" label + copyable text is the correct UX. Re-test after book-app
+   "복사 + 직접 앱 열기" label + copyable text is the correct UX. Re-test after book-app
    updates; prefill can regress silently.
 
 ## Per-book status (verified 2026-06-15)
