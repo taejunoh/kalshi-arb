@@ -19,16 +19,18 @@ export const SPORT_LABELS: Record<string, string> = {
   basketball_nba: "NBA",
 };
 
-// Books whose bet-slip PREFILL has been verified on the real NY iPhone (app installed)
-// to actually populate the slip. Until a book label is in here, even a server "prefill"-tier
-// link is shown as plain "앱 열기", never "✓ 슬립 프리필". See DEEPLINK_VERIFICATION.md.
-// On-device verified (NY iPhone): these open to a PRE-FILLED slip.
-//   • BetRivers — verified 2026-06-15: the fixed Kambi-coupon link loads the selection in the
-//     slip. Promoted. (ny.betrivers.com has no applinks AASA, so it opens the mobile-WEB Kambi
-//     slip rather than the native app — still a real, populated slip.)
+// Books whose bet-slip PREFILL has been verified on the real NY iPhone (app installed) to
+// actually populate the slip IN THE NATIVE APP. Until a book label is in here, even a server
+// "prefill"-tier link is shown as plain "앱 열기 + 복사", never "✓ 슬립 프리필". See
+// DEEPLINK_VERIFICATION.md.
+// On-device verified (NY iPhone): these open the native app to a PRE-FILLED slip.
 //   • BetMGM / theScore — prefill structurally NOT achievable (host redirect drops the
 //     selection / native router ignores the web param). Stay out; honest "앱 열기 + 복사".
-export const VERIFIED_PREFILL_BOOKS: string[] = ["FanDuel", "DraftKings", "Caesars", "BetRivers"];
+//   • BetRivers — DEMOTED 2026-06-30 (user preference). No applinks AASA on ny.betrivers.com,
+//     so its "prefill" only ever opened a mobile-WEB Kambi slip in Safari, never the app — a
+//     prefilled slip in a stray Safari tab is worse UX than an honest event open + copy. The
+//     server no longer emits its prefill link, so it lands at event/home tier like BetMGM.
+export const VERIFIED_PREFILL_BOOKS: string[] = ["FanDuel", "DraftKings", "Caesars"];
 
 export const DEFAULT_SETTINGS: Settings = { min_ev: 0, sports: null, muted_books: null, sort: "ev" };
 
