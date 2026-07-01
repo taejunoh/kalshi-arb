@@ -109,24 +109,18 @@ def test_betmgm_stays_event_betslip_link_drops_selection_on_redirect():
     assert out["url"] == "https://sports.ny.betmgm.com/en/sports/events/foo-19684635"
 
 
-def test_betrivers_demoted_never_prefills_opens_event_plus_copy():
-    # 2026-06-30: BetRivers DEMOTED from prefill (user preference). ny.betrivers.com has no
-    # applinks AASA, so the Kambi coupon "prefill" link only ever opened a mobile-WEB slip in
-    # Safari — worse UX than an honest event-page open + copyable text. Now event-tier like
-    # BetMGM: with an event link it opens the game page; the betslip coupon link is NOT used.
+def test_betrivers_is_copy_only_never_emits_a_url():
+    # 2026-07-01: BetRivers is COPY-ONLY. No applinks AASA (https -> Safari, never the app) AND
+    # no custom URL scheme (on-device verified: betrivers://, rushstreet://, rsi://, … all
+    # unregistered). Any url we could emit only opens a Safari tab, which the user does not want,
+    # so emit NONE — even when the API hands us a betslip AND an event link. Copy the search
+    # entity; the user opens the BetRivers app manually and pastes.
     links = {"betslip": "https://ny.betrivers.com/?page=sportsbook#event/1?coupon=single|X|",
              "event": "https://ny.betrivers.com/?page=sportsbook#event/1"}
     out = dl.build("betrivers", links, PICK)
-    assert out["tier"] == "event"
-    assert "coupon=" not in (out["url"] or "")   # never emits the prefill coupon link
-    assert out["url"] == "https://ny.betrivers.com/?page=sportsbook#event/1"
-
-
-def test_betrivers_without_event_link_falls_back_to_home():
-    # No event link (only the now-unused betslip) -> home tier, never prefill.
-    out = dl.build("betrivers", {"betslip": "https://ny.betrivers.com/#event/1?coupon=single|X|"}, PICK)
+    assert out["url"] is None            # never opens Safari
     assert out["tier"] == "home"
-    assert out["url"] == "https://www.betrivers.com"
+    assert out["copy_text"] == "Brandon Nimmo"   # still the search entity to paste
 
 
 def test_fill_placeholders_substitutes_state_token():

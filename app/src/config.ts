@@ -26,10 +26,11 @@ export const SPORT_LABELS: Record<string, string> = {
 // On-device verified (NY iPhone): these open the native app to a PRE-FILLED slip.
 //   • BetMGM / theScore — prefill structurally NOT achievable (host redirect drops the
 //     selection / native router ignores the web param). Stay out; honest "앱 열기 + 복사".
-//   • BetRivers — DEMOTED 2026-06-30 (user preference). No applinks AASA on ny.betrivers.com,
-//     so its "prefill" only ever opened a mobile-WEB Kambi slip in Safari, never the app — a
-//     prefilled slip in a stray Safari tab is worse UX than an honest event open + copy. The
-//     server no longer emits its prefill link, so it lands at event/home tier like BetMGM.
+//   • BetRivers — COPY-ONLY as of 2026-07-01 (do not re-promote). No applinks AASA AND no
+//     custom URL scheme (on-device verified: betrivers://, rushstreet://, rsi://, … all
+//     unregistered), so there is NO way to open its native app — https only launches Safari.
+//     The server emits no url (COPY_ONLY_BOOKS), so tapping it just copies the search entity
+//     and the user opens the BetRivers app manually. Row shows "복사 · 앱에서 검색".
 export const VERIFIED_PREFILL_BOOKS: string[] = ["FanDuel", "DraftKings", "Caesars"];
 
 export const DEFAULT_SETTINGS: Settings = { min_ev: 0, sports: null, muted_books: null, sort: "ev" };
