@@ -1,6 +1,6 @@
 # tests/test_softbook_deeplink.py
-"""Tiered sportsbook deep-link builder. FD/DK/Caesars/BetRivers -> best-effort bet-slip
-prefill from provider links/SIDs (placeholders substituted); BetMGM/theScore/others ->
+"""Tiered sportsbook deep-link builder. FD/DK/Caesars -> best-effort NATIVE-app bet-slip
+prefill from provider links/SIDs ({state} substituted); BetMGM/theScore/BetRivers/others ->
 open event/app + copyable bet text (always present so a failed prefill degrades to
 manual entry). See app/DEEPLINK_VERIFICATION.md for the per-book verification record."""
 import os
@@ -86,23 +86,29 @@ def test_betmgm_stays_event_betslip_link_drops_selection_on_redirect():
     assert out["url"] == "https://sports.ny.betmgm.com/en/sports/events/foo-19684635"
 
 
-def test_betrivers_prefill_fills_kambi_coupon_placeholders():
-    # Verified 2026-06-15: BetRivers only failed because the builder left {pickType}/{wagerAmount}
-    # literal -> malformed -> homepage. Filled in, the Kambi coupon (coupon=single|<sid>|, empty
-    # trailing stake) loads the selection in the slip. Opens the mobile-web Kambi slip (no applinks
-    # AASA on ny.betrivers.com) but is a real prefill -> prefill-tier.
-    links = {"betslip": "https://{state}.betrivers.com/?page=sportsbook#event/1024786776"
-                        "?coupon={pickType}|4222431357|{wagerAmount}"}
+def test_betrivers_demoted_never_prefills_opens_event_plus_copy():
+    # 2026-06-30: BetRivers DEMOTED from prefill (user preference). ny.betrivers.com has no
+    # applinks AASA, so the Kambi coupon "prefill" link only ever opened a mobile-WEB slip in
+    # Safari — worse UX than an honest event-page open + copyable text. Now event-tier like
+    # BetMGM: with an event link it opens the game page; the betslip coupon link is NOT used.
+    links = {"betslip": "https://ny.betrivers.com/?page=sportsbook#event/1?coupon=single|X|",
+             "event": "https://ny.betrivers.com/?page=sportsbook#event/1"}
     out = dl.build("betrivers", links, PICK)
-    assert out["tier"] == "prefill"
-    assert "{" not in out["url"]  # every placeholder substituted, no literal braces left
-    assert out["url"] == ("https://ny.betrivers.com/?page=sportsbook"
-                          "#event/1024786776?coupon=single|4222431357|")
+    assert out["tier"] == "event"
+    assert "coupon=" not in (out["url"] or "")   # never emits the prefill coupon link
+    assert out["url"] == "https://ny.betrivers.com/?page=sportsbook#event/1"
 
 
-def test_fill_placeholders_substitutes_all_known_tokens():
-    got = dl._fill_placeholders("https://{state}.x/#e/1?coupon={pickType}|55|{wagerAmount}")
-    assert got == "https://ny.x/#e/1?coupon=single|55|"
+def test_betrivers_without_event_link_falls_back_to_home():
+    # No event link (only the now-unused betslip) -> home tier, never prefill.
+    out = dl.build("betrivers", {"betslip": "https://ny.betrivers.com/#event/1?coupon=single|X|"}, PICK)
+    assert out["tier"] == "home"
+    assert out["url"] == "https://www.betrivers.com"
+
+
+def test_fill_placeholders_substitutes_state_token():
+    got = dl._fill_placeholders("https://sports.{state}.betmgm.com/en/sports/events/foo-1")
+    assert got == "https://sports.ny.betmgm.com/en/sports/events/foo-1"
 
 
 def test_fanatics_home_opens_native_app_via_onelink_universal_link():

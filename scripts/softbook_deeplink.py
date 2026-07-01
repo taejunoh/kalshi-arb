@@ -4,34 +4,31 @@
 
 Reality (researched + adversarially verified 2026-06-15, see PREFILL_BOOKS below):
 bet-slip PREFILL works for FanDuel (addToBetslip universal link), DraftKings
-(?outcomes= / dksb://sb/addbet/<sid>), Caesars (/bet/betslip?selectionIds=, {state}
-filled) and BetRivers (Kambi #event/<id>?coupon=single|<sid>|, {pickType}/{wagerAmount}
-filled — mobile-web slip). BetMGM (options= link drops the selection on a host redirect)
-and theScore (native router ignores the web quick-bet param; no scheme) CANNOT prefill —
-they open the event page + copy. Links/SIDs come from The Odds API includeLinks/includeSids;
-we never hand-build hosts (state drift), only substitute the {state}/{pickType}/{wagerAmount}
-placeholders the API leaves in. Always emit copy_text so a failed prefill degrades to manual
-entry, never a dead end.
+(?outcomes= / dksb://sb/addbet/<sid>) and Caesars (/bet/betslip?selectionIds=, {state}
+filled) — all open the NATIVE app on a populated slip. BetMGM (options= link drops the
+selection on a host redirect), theScore (native router ignores the web quick-bet param; no
+scheme) and BetRivers (no applinks AASA at all → every link opens a mobile-WEB slip in
+Safari, not the app) do NOT prefill — they open the event page + copy. Links/SIDs come from
+The Odds API includeLinks/includeSids; we never hand-build hosts (state drift), only
+substitute the {state} placeholder the API leaves in. Always emit copy_text so a failed
+prefill degrades to manual entry, never a dead end.
 
 Returned dict: {"tier": "prefill"|"event"|"home", "url": str|None, "copy_text": str}
 """
 import softbook_ev_core as core
 
 # Books whose Odds API (includeLinks/includeSids) bet-slip link resolves to a PRE-FILLED
-# slip. On-device verified (NY iPhone, 2026-06-15): FanDuel, DraftKings, and Caesars
-# (williamhill_us; link carries a {state} placeholder we substitute) open the native app
-# with the slip populated.
+# slip IN THE NATIVE APP. On-device verified (NY iPhone, 2026-06-15): FanDuel, DraftKings,
+# and Caesars (williamhill_us; link carries a {state} placeholder we substitute) open the
+# native app with the slip populated.
 #
-# BetRivers added 2026-06-15 after the placeholder fix below: its Kambi coupon link only
-# failed before because the builder left the {pickType}/{wagerAmount} tokens un-substituted
-# -> malformed URL -> homepage. Filled in (coupon=single|<sid>|, format verified across 4
-# independent sources) the selection loads in the slip. NOTE ny.betrivers.com serves NO
-# applinks AASA (webcredentials only), so this opens the mobile-WEB Kambi slip, not the
-# native app — still a pre-filled slip; user re-verifies on-device before the app promotes
-# the "✓ 슬립 프리필" label (app/src/config.ts VERIFIED_PREFILL_BOOKS).
-#
-# Deliberately EXCLUDED (adversarially verified 2026-06-15, prefill NOT achievable — do not
-# re-chase; see app/DEEPLINK_VERIFICATION.md):
+# Deliberately EXCLUDED (prefill NOT achievable or not worth it — do not re-chase; see
+# app/DEEPLINK_VERIFICATION.md):
+#  - BetRivers (betrivers): DEMOTED 2026-06-30 (user preference). ny.betrivers.com serves NO
+#    applinks AASA (webcredentials only), so even the working Kambi coupon link
+#    (#event/<id>?coupon=single|<sid>|) only ever opened a mobile-WEB slip in Safari, never
+#    the native app. A prefilled slip in a stray Safari tab is worse UX than an honest
+#    event-page open + copyable text, so BetRivers now stays event/home tier like BetMGM.
 #  - BetMGM (betmgm): the options= betslip link 301-redirects sports.{state}.betmgm.com ->
 #    www.betmgm.com, which DROPS the ?options= param -> homepage (selection lost, before any
 #    app/AASA matters); BetMGM's AASA is itself broken (redirect + malformed appIDs) and no
@@ -42,22 +39,17 @@ import softbook_ev_core as core
 #    scheme, and the real external path (Branch.io) isn't constructable from a raw sid. The
 #    event link opens the app on the game page = best achievable.
 #  - Fanatics (sid only, no link) / BallyBet (no link): event/home + copy.
-PREFILL_BOOKS = {"fanduel", "draftkings", "williamhill_us", "betrivers"}
+PREFILL_BOOKS = {"fanduel", "draftkings", "williamhill_us"}
 
-# US state for {state} host/path placeholders (NY user); Kambi single-bet coupon code.
+# US state for {state} host/path placeholders (NY user).
 STATE = "ny"
-PICK_TYPE_SINGLE = "single"  # BetRivers/Kambi coupon: pickType for a single straight bet
 
 
 def _fill_placeholders(url):
-    """Substitute the placeholder tokens the Odds API leaves in some bet-slip / event links:
-      {state}       -> the NY user's state (Caesars path, BetMGM/BetRivers hosts).
-      {pickType}    -> 'single' (BetRivers Kambi coupon: pickType|outcomeId|wagerAmount).
-      {wagerAmount} -> '' (empty trailing field; Kambi opens the slip with the stake blank).
-    Leaving any token un-substituted breaks the deep link (the BetRivers homepage bug)."""
-    return (url.replace("{state}", STATE)
-               .replace("{pickType}", PICK_TYPE_SINGLE)
-               .replace("{wagerAmount}", ""))
+    """Substitute the {state} placeholder the Odds API leaves in some bet-slip / event links
+    (Caesars betslip path, BetMGM/BetRivers event hosts) with the NY user's state. Leaving it
+    un-substituted resolves to a broken host."""
+    return url.replace("{state}", STATE)
 
 # App-home fallbacks (open the app/site to its home when no event/betslip link is
 # available). https hosts open the native app only if that host has an applinks AASA,
@@ -104,10 +96,9 @@ def build(book_key, links, pick):
 
     if book_key in PREFILL_BOOKS:
         # Prefer the provider-returned bet-slip link — the book's own share-to-slip URL
-        # (FanDuel addToBetslip, DraftKings ?outcomes=, Caesars /bet/betslip?selectionIds=,
-        # BetRivers Kambi #event/<id>?coupon=single|<sid>|). Substitute any
-        # {state}/{pickType}/{wagerAmount} placeholder. DK also exposes a SID we fall back to
-        # as a dksb:// scheme link if no https betslip link is present.
+        # (FanDuel addToBetslip, DraftKings ?outcomes=, Caesars /bet/betslip?selectionIds=).
+        # Substitute any {state} placeholder. DK also exposes a SID we fall back to as a
+        # dksb:// scheme link if no https betslip link is present.
         if links.get("betslip"):
             return {"tier": "prefill", "url": _fill_placeholders(links["betslip"]),
                     "copy_text": copy_text}

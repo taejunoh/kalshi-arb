@@ -11,9 +11,9 @@ Research (2026): FanDuel's `addToBetslip` universal link is confirmed but best-e
 1. Install the production TestFlight build on the NY iPhone, with the sportsbook app
    installed and logged in.
 2. Open a High pick → 픽 상세 → tap the book's row.
-3. Confirm the exact selection + line is pre-loaded in the bet slip (not just the app
-   home / event page). The slip may open in the native app OR in mobile-web (BetRivers,
-   see below) — either counts as long as the *selection* is loaded.
+3. Confirm the exact selection + line is pre-loaded in the bet slip **in the native app**
+   (not just the app home / event page, and not a mobile-web slip in Safari — see BetRivers
+   below for why web-only prefill does NOT qualify).
 4. If — and only if — the slip is correctly pre-filled, add that book's label to
    `VERIFIED_PREFILL_BOOKS` in `src/config.ts` (e.g. `["FanDuel"]`). Rebuild.
 5. If it opens to home/event or the wrong selection, leave it OUT — the honest
@@ -23,13 +23,14 @@ Research (2026): FanDuel's `addToBetslip` universal link is confirmed but best-e
 ## Per-book status (verified 2026-06-15)
 - **FanDuel / DraftKings / Caesars** — server emits a `prefill` link; on-device confirmed →
   in `VERIFIED_PREFILL_BOOKS`. (Caesars link carries `{state}` → substituted to `ny`.)
-- **BetRivers** — server NOW emits a `prefill` link (fixed 2026-06-15). The earlier "opens
-  homepage" was a builder bug: the Kambi coupon link `#event/<id>?coupon={pickType}|<sid>|
-  {wagerAmount}` had its `{pickType}`/`{wagerAmount}` tokens left literal → malformed URL.
-  Now substituted to `coupon=single|<sid>|` (format confirmed across 4 independent sources).
-  ⚠️ `ny.betrivers.com` serves NO `applinks` AASA (webcredentials only) → the link opens the
-  **mobile-web** Kambi slip, not the native app. Still a real prefill. ✅ **On-device verified
-  2026-06-15: the selection loads in the slip → `"BetRivers"` added to `VERIFIED_PREFILL_BOOKS`.**
+- **BetRivers** — **DEMOTED 2026-06-30 (user preference). Do not re-promote.** A working Kambi
+  coupon `prefill` link exists (`#event/<id>?coupon=single|<sid>|`, fixed 2026-06-15) and it
+  *does* load the selection — **but `ny.betrivers.com` serves NO `applinks` AASA (webcredentials
+  only), so it only ever opens a mobile-WEB slip in Safari, never the native app.** A prefilled
+  slip in a stray Safari tab is worse UX than an honest event-page open + copyable bet text, so
+  BetRivers now stays event/home tier like BetMGM: removed from `PREFILL_BOOKS`
+  (`scripts/softbook_deeplink.py`) AND `VERIFIED_PREFILL_BOOKS` (`src/config.ts`). Its tap now
+  opens the event page (Safari) + copies the bet text — the standard "앱 열기 + 복사" UX.
 - **BetMGM** — prefill NOT achievable (do not re-chase). The `options=` betslip link
   301-redirects `sports.{state}.betmgm.com → www.betmgm.com`, which DROPS the `?options=`
   param → homepage (selection lost, before any app/AASA matters); BetMGM's AASA is also broken
