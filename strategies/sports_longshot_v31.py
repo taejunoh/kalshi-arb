@@ -47,7 +47,9 @@ class SportsLongshotV31Strategy(SportsLongshotStrategy):
     # double-fire (-$42.54, both = "COL wins") was the visible leak; full
     # PAIR_FIRE_DEDUP can't fix it here (2026-05-15 audit: dedup hurts longshot
     # -36pp), so the sport block is the correct lever — no MLB fires at all.
-    SPORT_BLOCKLIST = frozenset({"NHL", "MLB"})
+    # WNBA added 2026-06-30 — dog-side regime collapse; 30d live fills were
+    # WNBA-only at WR 13%, -$576. NBA cohort preserved for October.
+    SPORT_BLOCKLIST = frozenset({"NHL", "MLB", "WNBA"})
     # 2026-05-25 N4: Pinnacle-agreement gate. 60d data: extreme band
     # n=17/-$52, center band n=3/+$27 (longshot fires rarely overall).
     # Conservative MAX_PIN_GAP=0.05 cuts the bleed without killing fire rate.
