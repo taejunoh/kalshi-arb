@@ -32,13 +32,15 @@ export function PickDetailScreen({ route }: Props) {
   }, []);
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
-  // Tap a book row: open its slip/app, and (unless it's a verified prefill) copy the bet text
-  // so the user can paste it into the book. Always surface what happened so a copy isn't a
-  // silent no-op (the old behavior felt like "nothing happened").
+  // Tap a book row: open its slip/app, and (unless it's a verified prefill) copy the SEARCH
+  // entity (player/team/matchup name) so the user can paste it into the book's search box.
+  // Show the copied term in the toast so a copy isn't a silent no-op and the user knows exactly
+  // what to search.
   const onTapBook = useCallback(async (b: Book) => {
     const result = await openOrCopy(b.deeplink, isVerifiedPrefill(b.book, b.deeplink));
-    if (result === "opened_and_copied") showToast(`${b.book} 앱 열림 · 베팅 정보 복사됨 (검색창에 붙여넣기)`);
-    else if (result === "copied") showToast("베팅 정보 복사됨 (앱을 열지 못했어요)");
+    const term = b.deeplink.copy_text;
+    if (result === "opened_and_copied") showToast(`${b.book} 앱 열림 · 검색어 "${term}" 복사됨 (검색창에 붙여넣기)`);
+    else if (result === "copied") showToast(`검색어 "${term}" 복사됨 (앱을 열지 못했어요)`);
     // "prefilled": opened straight to a pre-filled slip — no toast needed.
   }, [showToast]);
 

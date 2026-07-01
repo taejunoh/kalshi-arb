@@ -1,8 +1,9 @@
 # tests/test_softbook_deeplink.py
 """Tiered sportsbook deep-link builder. FD/DK/Caesars -> best-effort NATIVE-app bet-slip
 prefill from provider links/SIDs ({state} substituted); BetMGM/theScore/BetRivers/others ->
-open event/app + copyable bet text (always present so a failed prefill degrades to
-manual entry). See app/DEEPLINK_VERIFICATION.md for the per-book verification record."""
+open event/app + copy the SEARCH entity (name to paste into the book's search box; always
+present so a non-prefill link degrades to a one-tap search). See app/DEEPLINK_VERIFICATION.md
+for the per-book verification record."""
 import os
 import sys
 
@@ -14,9 +15,31 @@ PICK = {"book": "FanDuel", "label": "Brandon Nimmo TB Over 1.5", "odds": 2.2,
         "player": "Brandon Nimmo"}
 
 
-def test_copy_text_always_present():
+def test_copy_text_is_search_entity_always_present():
+    # copy_text is the SEARCH entity (name to paste into the book's search box), NOT a bet line.
     out = dl.build("fanduel", {}, PICK)
-    assert out["copy_text"] == "FanDuel · Brandon Nimmo TB Over 1.5 @ +120"  # 2.2 -> american
+    assert out["copy_text"] == "Brandon Nimmo"  # the prop's player — no book/odds/market noise
+
+
+def test_copy_text_search_entity_by_market():
+    # h2h -> the backed team/player (the user's Fanatics tennis ML case that failed search)
+    h2h = dl.build("fanatics", {"sid": "1"},
+                   {"market": "h2h", "side": "Mananchaya Sawangkaew", "point": None,
+                    "player": None, "odds": 2.35})
+    assert h2h["copy_text"] == "Mananchaya Sawangkaew"
+    # spread -> the team (the -1.5 line is dropped so search matches the team, not "-1.5")
+    sp = dl.build("fanduel", {}, {"market": "spread", "side": "New York Yankees",
+                                  "point": -1.5, "player": None, "odds": 1.91})
+    assert sp["copy_text"] == "New York Yankees"
+    # total -> the game has no name in the pick, so search a team from the matchup
+    tot = dl.build("fanduel", {}, {"market": "total", "side": "Over", "point": 8.5,
+                                   "player": None, "home": "Boston Red Sox",
+                                   "away": "New York Yankees", "odds": 1.95})
+    assert tot["copy_text"] == "Boston Red Sox"
+    # prop -> the player
+    pr = dl.build("fanduel", {}, {"market": "batter_total_bases", "side": "Over", "point": 1.5,
+                                  "player": "Brandon Nimmo", "odds": 2.2})
+    assert pr["copy_text"] == "Brandon Nimmo"
 
 
 def test_fanduel_uses_provider_betslip_universal_link():
@@ -119,7 +142,7 @@ def test_fanatics_home_opens_native_app_via_onelink_universal_link():
     out = dl.build("fanatics", {"sid": "1530070174"}, PICK)
     assert out["tier"] == "home"
     assert out["url"] == "https://fanatics.onelink.me/5kut/swz1hzmb"
-    assert out["copy_text"].startswith("Fanatics ·")
+    assert out["copy_text"] == "Brandon Nimmo"   # search entity to paste into Fanatics search
 
 
 def test_non_prefill_book_never_prefills_even_with_betslip_link():
@@ -133,7 +156,7 @@ def test_unknown_book_with_no_links_falls_back_to_none_url():
     out = dl.build("ballybet", {}, PICK)
     assert out["tier"] == "home"
     assert out["url"] is None          # app has no scheme/link -> copy-only
-    assert out["copy_text"].startswith("BallyBet ·")
+    assert out["copy_text"] == "Brandon Nimmo"   # still the search entity (copy-only fallback)
 
 
 def test_extract_links_pulls_outcome_betslip_and_sid():
