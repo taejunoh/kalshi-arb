@@ -76,7 +76,10 @@ class SportsUnderdogV31Strategy(SportsUnderdogStrategy):
     # was allocated here. Cascades to v32 (no SPORT_BLOCKLIST override).
     # playoff_underdog_v1/v1_us + soccer_underdog_v1 + v37 override this to
     # empty/their-own — unaffected. Re-eval ~2026-06-04.
-    SPORT_BLOCKLIST = frozenset({"MLB"})
+    # WNBA added 2026-06-30 — dog-side regime collapse (6/02-09 0-for-14);
+    # 30d live fills were WNBA-only at WR 13%, -$576. Hard-block, not demote:
+    # underdog NBA cohort (+$500/+42.7%) preserved for October.
+    SPORT_BLOCKLIST = frozenset({"MLB", "WNBA"})
     # 2026-05-25 N4: Pinnacle-agreement gate. 60d data showed extreme-band
     # (|pin-entry|>0.05) bled n=20/-$60. Center band (n=40/+$408) is alpha.
     # Cuts ~33% of fires, projected save ~$30/month.
