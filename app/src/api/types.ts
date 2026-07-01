@@ -40,6 +40,8 @@ export type DeeplinkTier = "prefill" | "event" | "home";
 export interface Deeplink {
   tier: DeeplinkTier;
   url: string | null;
+  /** The clean SEARCH entity (player / team / matchup name) to paste into the book's search
+   *  box — no book prefix, odds, or line, which all break search. Copied on open+copy tiers. */
   copy_text: string;
 }
 

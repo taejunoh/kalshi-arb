@@ -235,15 +235,18 @@ def refresh_pick(pick_id: str, _=Depends(require_auth)):
     data, credits = core.event_odds(sport, eid, key, _markets_for_pick(market), links=True)
     fair, quotes = core.line_quotes(
         data, market, side, None if market == "h2h" else point, player or None)
+    home, away = data.get("home_team"), data.get("away_team")
     books = []
     for label_, px in sorted(quotes, key=lambda q: -q[1]):
         bkey = _LABEL_TO_KEY.get(label_, label_)
         links = deeplink.extract_links(data, bkey, market, side,
                                        None if market == "h2h" else point,
                                        player or None)
-        pick = {"book": label_, "label": core.label(
-            market, side, None if market == "h2h" else point, player or None),
-            "odds": px}
+        # deeplink.build reads these structured fields to make copy_text a SEARCH-ready entity
+        # (name to paste into the book's search box), not a human-readable bet line.
+        pick = {"book": label_, "odds": px, "market": market, "side": side,
+                "point": None if market == "h2h" else point, "player": player or None,
+                "home": home, "away": away}
         books.append({"book": label_, "odds": px,
                       "ev": (fair * px - 1) if fair else None,
                       "deeplink": deeplink.build(bkey, links, pick)})

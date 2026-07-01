@@ -10,8 +10,10 @@ selection on a host redirect), theScore (native router ignores the web quick-bet
 scheme) and BetRivers (no applinks AASA at all → every link opens a mobile-WEB slip in
 Safari, not the app) do NOT prefill — they open the event page + copy. Links/SIDs come from
 The Odds API includeLinks/includeSids; we never hand-build hosts (state drift), only
-substitute the {state} placeholder the API leaves in. Always emit copy_text so a failed
-prefill degrades to manual entry, never a dead end.
+substitute the {state} placeholder the API leaves in. copy_text is the clean SEARCH entity
+(player / team / matchup name — NO book prefix, odds, or line, which all break search) to
+paste into the book's search box, so a non-prefill link degrades to a one-tap search, never
+a dead end. The bet side/line/odds stay visible on the app's pick card.
 
 Returned dict: {"tier": "prefill"|"event"|"home", "url": str|None, "copy_text": str}
 """
@@ -74,24 +76,27 @@ HOME_URL = {
 }
 
 
-def _odds(px):
-    """American odds (what US books show) so the copied bet text matches the
-    sportsbook screen — same convention as the alert/app (recorder._american)."""
-    try:
-        d = float(px)
-    except Exception:
-        return "?"
-    if d <= 1:
-        return "?"
-    a = round((d - 1) * 100) if d >= 2 else round(-100 / (d - 1))
-    return f"+{a}" if a > 0 else f"{a}"
+def _search_text(pick):
+    """The clean entity to paste into a sportsbook's SEARCH box — no book prefix, no odds, no
+    market/line noise (those break search). The bet side/line/odds stay visible on the app's
+    pick card; search only needs the NAME of the thing to find. Mirrors core.label's branching:
+      h2h / spread -> the team/player being backed (side)
+      total        -> the game has no name in the pick, so search a team from the matchup
+                      (home, else away; the raw 'Over'/'Under' side is a useless last resort)
+      prop / other -> the player (team_totals lands here too, with player = the team name)."""
+    m = pick.get("market")
+    if m == "total":
+        return pick.get("home") or pick.get("away") or pick.get("side") or ""
+    if m in ("h2h", "spread"):
+        return pick.get("side") or ""
+    return pick.get("player") or pick.get("side") or ""
 
 
 def build(book_key, links, pick):
-    """book_key: Odds API key (e.g. 'fanduel'). links: {betslip?, sid?, event?}
-    extracted for THIS outcome. pick: dict with label/odds/book(label)."""
-    label = core.NY_LEGAL.get(book_key, book_key)
-    copy_text = f"{label} · {pick['label']} @ {_odds(pick.get('odds'))}"
+    """book_key: Odds API key (e.g. 'fanduel'). links: {betslip?, sid?, event?} extracted for
+    THIS outcome. pick: dict with market/side/point/player[/home/away]; copy_text is the SEARCH
+    entity to paste into the book's search box (see _search_text)."""
+    copy_text = _search_text(pick)
     url, tier = None, "home"
 
     if book_key in PREFILL_BOOKS:
