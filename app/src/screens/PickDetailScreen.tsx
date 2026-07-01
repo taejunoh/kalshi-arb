@@ -40,7 +40,14 @@ export function PickDetailScreen({ route }: Props) {
     const result = await openOrCopy(b.deeplink, isVerifiedPrefill(b.book, b.deeplink));
     const term = b.deeplink.copy_text;
     if (result === "opened_and_copied") showToast(`${b.book} 앱 열림 · 검색어 "${term}" 복사됨 (검색창에 붙여넣기)`);
-    else if (result === "copied") showToast(`검색어 "${term}" 복사됨 (앱을 열지 못했어요)`);
+    else if (result === "copied") {
+      // url === null ⇒ a copy-only book (no AASA + no scheme, e.g. BetRivers/BallyBet): opening
+      // it would only launch Safari, so we intentionally open nothing. url set but not opened ⇒
+      // the app genuinely failed to launch.
+      showToast(b.deeplink.url == null
+        ? `검색어 "${term}" 복사됨 · ${b.book} 앱을 직접 열어 검색창에 붙여넣기`
+        : `검색어 "${term}" 복사됨 (앱을 열지 못했어요)`);
+    }
     // "prefilled": opened straight to a pre-filled slip — no toast needed.
   }, [showToast]);
 
@@ -69,11 +76,16 @@ export function PickDetailScreen({ route }: Props) {
         {error && <Text style={s.err}>로드 실패: {error}</Text>}
         {data?.books.map((b, i) => {
           const verified = isVerifiedPrefill(b.book, b.deeplink);
+          // A copy-only book (no AASA + no scheme, e.g. BetRivers/BallyBet) has no url — opening
+          // it would only launch Safari, so we copy the search term and the user opens the app.
+          const copyOnly = !verified && b.deeplink.url == null;
           return (
             <Pressable key={b.book} style={[s.bookRow, i === 0 && s.bookBest]} onPress={() => void onTapBook(b)}>
               <View style={{ flex: 1 }}>
                 <Text style={s.bookName}>{b.book}{i === 0 ? <Text style={s.bestTag}> · 추천</Text> : null}</Text>
-                <Text style={verified ? s.prefill : s.openCopy}>{verified ? "✓ 슬립 프리필" : "앱 열기 + 복사"}</Text>
+                <Text style={verified ? s.prefill : s.openCopy}>
+                  {verified ? "✓ 슬립 프리필" : (copyOnly ? "복사 · 앱에서 검색" : "앱 열기 + 복사")}
+                </Text>
               </View>
               <View style={{ alignItems: "flex-end" }}>
                 <Text style={s.odds}>{americanOdds(b.odds)}</Text>

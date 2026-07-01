@@ -43,6 +43,15 @@ import softbook_ev_core as core
 #  - Fanatics (sid only, no link) / BallyBet (no link): event/home + copy.
 PREFILL_BOOKS = {"fanduel", "draftkings", "williamhill_us"}
 
+# Books iOS cannot open natively AT ALL — emit NO url (copy-only), because any url we could
+# emit is an https link that just launches Safari, which the user does not want.
+#  - BetRivers (betrivers): no applinks AASA (https -> Safari, never the app) AND no custom URL
+#    scheme — on-device verified 2026-07-01 that betrivers://, betriverssportsbook://,
+#    rushstreet://, rushstreetinteractive://, rsi://, playsugarhouse:// are all unregistered.
+#    So even the event link only opened a Safari tab. Copy the search entity; user opens the
+#    BetRivers app manually and pastes. (BallyBet is already copy-only via HOME_URL=None.)
+COPY_ONLY_BOOKS = {"betrivers"}
+
 # US state for {state} host/path placeholders (NY user).
 STATE = "ny"
 
@@ -98,6 +107,10 @@ def build(book_key, links, pick):
     entity to paste into the book's search box (see _search_text)."""
     copy_text = _search_text(pick)
     url, tier = None, "home"
+
+    if book_key in COPY_ONLY_BOOKS:
+        # No native app path (no AASA, no scheme) — never emit a url that would only open Safari.
+        return {"tier": "home", "url": None, "copy_text": copy_text}
 
     if book_key in PREFILL_BOOKS:
         # Prefer the provider-returned bet-slip link — the book's own share-to-slip URL

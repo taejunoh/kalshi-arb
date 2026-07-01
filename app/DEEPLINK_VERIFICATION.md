@@ -23,14 +23,17 @@ Research (2026): FanDuel's `addToBetslip` universal link is confirmed but best-e
 ## Per-book status (verified 2026-06-15)
 - **FanDuel / DraftKings / Caesars** — server emits a `prefill` link; on-device confirmed →
   in `VERIFIED_PREFILL_BOOKS`. (Caesars link carries `{state}` → substituted to `ny`.)
-- **BetRivers** — **DEMOTED 2026-06-30 (user preference). Do not re-promote.** A working Kambi
-  coupon `prefill` link exists (`#event/<id>?coupon=single|<sid>|`, fixed 2026-06-15) and it
-  *does* load the selection — **but `ny.betrivers.com` serves NO `applinks` AASA (webcredentials
-  only), so it only ever opens a mobile-WEB slip in Safari, never the native app.** A prefilled
-  slip in a stray Safari tab is worse UX than an honest event-page open + copyable bet text, so
-  BetRivers now stays event/home tier like BetMGM: removed from `PREFILL_BOOKS`
-  (`scripts/softbook_deeplink.py`) AND `VERIFIED_PREFILL_BOOKS` (`src/config.ts`). Its tap now
-  opens the event page (Safari) + copies the bet text — the standard "앱 열기 + 복사" UX.
+- **BetRivers** — **COPY-ONLY as of 2026-07-01 (do not re-promote, do not re-chase a link).**
+  History: a working Kambi coupon `prefill` link exists but `ny.betrivers.com` serves NO
+  `applinks` AASA, so it only opened a mobile-WEB slip in Safari (demoted from prefill
+  2026-06-30). The event-tier fallback ALSO opened Safari (no AASA), which the user rejected.
+  On-device 2026-07-01 we then confirmed BetRivers exposes **no custom URL scheme** either —
+  `betrivers://`, `betriverssportsbook://`, `rushstreet://`, `rushstreetinteractive://`,
+  `rsi://`, `playsugarhouse://` are all unregistered. So there is **no way to open the native
+  app** from a link. BetRivers is now in `COPY_ONLY_BOOKS` (`scripts/softbook_deeplink.py`):
+  the server emits `url=None`, tapping it copies only the search entity and opens nothing (no
+  Safari), and the row shows "복사 · 앱에서 검색". The user opens the BetRivers app manually
+  and pastes. If a future BetRivers app version adds an AASA or a scheme, re-test then.
 - **BetMGM** — prefill NOT achievable (do not re-chase). The `options=` betslip link
   301-redirects `sports.{state}.betmgm.com → www.betmgm.com`, which DROPS the `?options=`
   param → homepage (selection lost, before any app/AASA matters); BetMGM's AASA is also broken
