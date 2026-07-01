@@ -2957,7 +2957,7 @@ async function renderEvBets() {
 }
 
 // ── +EV History tab: every PAPER bet, split + filterable by confidence tier ──
-let evhFilter = { tier: 'High', status: 'all', strategy: 'first', market: 'all' };   // default = First-entry High (the +ROI core; mirrors the First-entry button's tier=High)
+let evhFilter = { tier: 'High', status: 'all', strategy: 'first', market: 'all', sport: 'all' };   // default = First-entry High (the +ROI core; mirrors the First-entry button's tier=High)
 let evhSort = { key: 'date', dir: -1 };          // dir -1 = descending
 const _EVH_ORDER = { High: 0, Med: 1, Low: 2, '?': 3 };
 
@@ -2970,6 +2970,7 @@ function _evhWire() {                              // delegated listener, attach
     const ft = e.target.closest('[data-evh-tier]');
     const fs = e.target.closest('[data-evh-status]');
     const fm = e.target.closest('[data-evh-market]');
+    const fsp = e.target.closest('[data-evh-sport]');
     const th = e.target.closest('th[data-sk]');
     if (fg) {
       evhFilter.strategy = fg.dataset.evhStrategy;
@@ -2980,6 +2981,7 @@ function _evhWire() {                              // delegated listener, attach
     else if (ft) evhFilter.tier = ft.dataset.evhTier;
     else if (fs) evhFilter.status = fs.dataset.evhStatus;
     else if (fm) evhFilter.market = fm.dataset.evhMarket;
+    else if (fsp) evhFilter.sport = fsp.dataset.evhSport;
     else if (th) {
       const k = th.dataset.sk;
       if (evhSort.key === k) evhSort.dir *= -1; else { evhSort.key = k; evhSort.dir = -1; }
@@ -3010,6 +3012,16 @@ async function renderEvHistory() {
   }
   bets.forEach(b => { b._tier = b.tier || '?'; });
 
+  // broad sport category for the Sport filter: 'baseball_mlb' → 'baseball'
+  // basketball is split by league so NBA and WNBA filter separately
+  const sportKey = s => {
+    const p = (s || '').split('_');
+    return p[0] === 'basketball' ? (p[1] || 'basketball') : p[0];
+  };
+  const sportCats = [...new Set(bets.map(b => sportKey(b.sport)).filter(Boolean))].sort((a, c) => a.localeCompare(c));
+  // switching ledger can drop the selected sport — fall back to All so the table never goes silently empty
+  if (evhFilter.sport !== 'all' && !sportCats.includes(evhFilter.sport)) evhFilter.sport = 'all';
+
   // filter
   // bet-type buckets: market col is 'h2h' / 'spread' / 'total', anything else = player prop
   const betType = b => b.market === 'h2h' ? 'ml'
@@ -3017,6 +3029,7 @@ async function renderEvHistory() {
     : b.market === 'total' ? 'ou' : 'props';
   let rows = bets.slice();
   if (evhFilter.market !== 'all') rows = rows.filter(b => betType(b) === evhFilter.market);
+  if (evhFilter.sport !== 'all') rows = rows.filter(b => sportKey(b.sport) === evhFilter.sport);
   // summary cards reflect the Bet filter (per-tier WR/ROI of the selected bet type);
   // status/tier narrowing applies to the table only — won/lost would degenerate WR to 100/0%
   const sumBets = rows.slice();
@@ -3082,6 +3095,12 @@ async function renderEvHistory() {
     .map(([v, t]) => `<button class="evh-fbtn${evhFilter.status === v ? ' active' : ''}" data-evh-status="${v}">${t}</button>`).join('');
   const marketBtns = [['all', 'All'], ['ml', 'ML'], ['spread', 'Spread'], ['ou', 'O/U'], ['props', 'Props']]
     .map(([v, t]) => `<button class="evh-fbtn${evhFilter.market === v ? ' active' : ''}" data-evh-market="${v}">${t}</button>`).join('');
+  const SPORT_LABELS = { baseball: 'Baseball', basketball: 'Basketball', nba: 'NBA', wnba: 'WNBA',
+    soccer: 'Soccer', tennis: 'Tennis', americanfootball: 'Football', rugbyleague: 'Rugby',
+    aussierules: 'AFL', mma: 'MMA', boxing: 'Boxing', icehockey: 'Hockey', cricket: 'Cricket' };
+  const sportLabel = c => SPORT_LABELS[c] || (c.charAt(0).toUpperCase() + c.slice(1));
+  const sportBtns = [['all', 'All'], ...sportCats.map(c => [c, sportLabel(c)])]
+    .map(([v, t]) => `<button class="evh-fbtn${evhFilter.sport === v ? ' active' : ''}" data-evh-sport="${v}">${t}</button>`).join('');
   const arrow = k => evhSort.key === k ? (evhSort.dir < 0 ? ' ▾' : ' ▴') : '';
 
   // table
@@ -3110,6 +3129,7 @@ async function renderEvHistory() {
       <span class="evh-flabel">Ledger</span>${stratBtns}
       <span class="evh-flabel" style="margin-left:14px;">Tier</span>${tierBtns}
       <span class="evh-flabel" style="margin-left:14px;">Bet</span>${marketBtns}
+      <span class="evh-flabel" style="margin-left:14px;">Sport</span>${sportBtns}
       <span class="evh-flabel" style="margin-left:14px;">Status</span>${statusBtns}
     </div>
     <div class="evh-tablewrap"><table class="evh-table"><thead><tr>
