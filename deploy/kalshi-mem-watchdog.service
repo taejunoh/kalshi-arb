@@ -1,0 +1,19 @@
+[Unit]
+Description=EC2 memory-pressure watchdog (Telegram alert on low available RAM)
+After=network.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+# Stdlib-only script -> system python3 (leanest, most likely to run under memory pressure;
+# needs no venv packages).
+ExecStart=/usr/bin/python3 scripts/mem_watchdog.py
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+# Hardening (same pattern as kalshi-data-quality.service). Writes only the state file under logs/.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/logs
