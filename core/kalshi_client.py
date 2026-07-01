@@ -213,20 +213,30 @@ class KalshiClient:
 
         Side conversion (caller): Kalshi's yes_price is always the YES contract
         reference. For side='no', caller must pass (100 - no_ask_cents)."""
+        # 2026-07-01: v1 market order (POST /portfolio/orders type=market) was
+        # deprecated (410). Migrated to the v2 single-book endpoint as a
+        # marketable fill_or_kill limit at yes_price (fill-fully-immediately-or-
+        # kill == market semantics; `price` is the per-contract cap, replacing
+        # the old buy_max_cost). NOTE: no LIVE strategy routes here (all live
+        # strategies are in LIMIT_TTL_STRATEGIES -> place_limit_order), so the
+        # caller-side fill parsing in _live_market_order still reads legacy
+        # taker_fill_* fields and is untested against a v2 fill.
+        book_side = "bid" if side == "yes" else "ask"
         payload = {
-            "ticker": ticker, "action": "buy", "side": side,
-            "count": count, "type": "market",
-            "yes_price": int(yes_price_cents),
+            "ticker": ticker,
+            "side": book_side,
+            "count": str(int(count)),
+            "price": f"{int(yes_price_cents) / 100:.4f}",
+            "time_in_force": "fill_or_kill",
+            "self_trade_prevention_type": "taker_at_cross",
         }
-        if buy_max_cost_cents is not None:
-            payload["buy_max_cost"] = int(buy_max_cost_cents)
         try:
-            data = self._post("/trade-api/v2/portfolio/orders", payload)
+            data = self._post("/trade-api/v2/portfolio/events/orders", payload)
             if data is None:
                 return None
-            logger.info(f"Market order placed: {side} {count}x {ticker} "
-                        f"yes_price={yes_price_cents}¢ max={buy_max_cost_cents}¢")
-            return data.get("order", {})
+            logger.info(f"Market(FOK) order placed: {side}->{book_side} {count}x "
+                        f"{ticker} @ {yes_price_cents}c")
+            return data
         except httpx.HTTPStatusError as e:
             # Surface Kalshi's error body so we know which field is wrong
             body = ""
@@ -241,15 +251,30 @@ class KalshiClient:
             return None
 
     def place_limit_order(self, ticker: str, side: str, price_cents: int, count: int):
+        # 2026-07-01: Kalshi deprecated (410 Gone) the v1 order endpoint
+        # POST /portfolio/orders {action:"buy", side:"yes"/"no", yes_price}.
+        # Migrated to the v2 single-book endpoint POST /portfolio/events/orders
+        # which uses side=bid/ask + fixed-point dollar price. Mapping: bid=buy
+        # YES, ask=sell YES (== buy NO). `price_cents` is already the YES-terms
+        # price (the caller bakes aggression AND the no-side inversion into
+        # yes_price_cents), so it maps directly for both sides.
+        book_side = "bid" if side == "yes" else "ask"
         try:
-            data = self._post("/trade-api/v2/portfolio/orders", {
-                "ticker": ticker, "action": "buy", "side": side,
-                "count": count, "type": "limit", "yes_price": price_cents,
+            data = self._post("/trade-api/v2/portfolio/events/orders", {
+                "ticker": ticker,
+                "side": book_side,
+                "count": str(int(count)),
+                "price": f"{price_cents / 100:.4f}",
+                "time_in_force": "good_till_canceled",
+                "self_trade_prevention_type": "taker_at_cross",
             })
             if data is None:
                 return None
-            logger.info(f"Limit order placed: {side} {count}x {ticker} @ {price_cents}c")
-            return data.get("order", {})
+            logger.info(
+                f"Limit order placed: {side}->{book_side} {count}x {ticker} "
+                f"@ {price_cents}c (order={(data.get('order_id') or '?')[:12]})"
+            )
+            return data  # v2 returns order_id at top level (no 'order' wrapper)
         except Exception as e:
             logger.error(f"Limit order failed: {e}")
             return None
@@ -268,7 +293,11 @@ class KalshiClient:
 
     def cancel_order(self, order_id: str) -> bool:
         try:
-            self._delete(f"/trade-api/v2/portfolio/orders/{order_id}")
+            # 2026-07-01: v1 cancel (DELETE /portfolio/orders/{id}) was also
+            # deprecated (410). v2 cancel path is /portfolio/events/orders/{id}.
+            # (Status polling GET /portfolio/orders/{id} is still live — see
+            # get_order — so only create + cancel moved.)
+            self._delete(f"/trade-api/v2/portfolio/events/orders/{order_id}")
             logger.info(f"Order cancelled: {order_id}")
             return True
         except Exception as e:
