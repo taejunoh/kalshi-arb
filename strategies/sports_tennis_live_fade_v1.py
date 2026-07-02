@@ -88,14 +88,18 @@ class SportsTennisLiveFadeV1Strategy(SportsTraderStrategy):
 
     # 2026-07-01: bankroll fraction 2%→4% and $4 flat cap removed (user call,
     # paper n=156 WR84.6%). 2026-07-02: 4%→6% (user call) paired with
-    # PAIR_FIRE_DEDUP above — per-event cap first, then size. Size floats
+    # PAIR_FIRE_DEDUP above. 2026-07-02 (later): 6%→4% ROLLBACK (user call) —
+    # the paper ledger justifying the size-ups was found inflated by
+    # fair-price instant-fill bookkeeping + 4 mirror orientation-flipped rows
+    # (+$181.5 of +$192.8/30d); honest ask-fill replay puts the rule below BE
+    # (see memory tennis_live_fade_paper_pnl_artifact_2026-07-02). Size floats
     # with real free balance; global MAX_SINGLE_TRADE_PCT / MAX_DAILY_LOSS
     # guards still apply upstream. Next re-eval at n>=50 real settled:
     # 2-prop z consistency vs paper-twin (band-matched) -> pool -> pooled
     # Wilson-LB vs BE (NOT live-subset Wilson-LB > BE — unpassable at this
     # price band, see feedback_oos_wilson_lb_over_conservative).
     def _get_trade_size(self, signal: dict) -> float:
-        return self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.06
+        return self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.04
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,

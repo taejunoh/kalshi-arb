@@ -762,6 +762,17 @@ class SportsTraderStrategy:
     # in observed scans — without this gate a 2-book "consensus" could trigger
     # a trade with sub-noise alpha.
     MIN_N_BOOKS: Optional[int] = None
+    # Junk-quote guard: skip markets where EITHER side's ask is below this
+    # floor, BEFORE matching/evaluate. 2026-07-02: made per-class (was a
+    # hardcoded 0.05). Since Kalshi no_ask = 1 - yes_bid, na < 0.05 means
+    # yes_bid >= 0.96 — the default floor silently blocks tight-book heavy
+    # favorites (both the fav ticker via na AND its dog mirror via ya), which
+    # truncates the deepest sub-band of chalk-fade cohorts. The observer has
+    # no such floor, so odds_observations replays INCLUDE those rows — deep
+    # chalk strategies (kbo_live_fade_tight/ufc_live_fade) override to 0.01
+    # so their forward paper cohort reproduces the replay cohort. Default
+    # 0.05 preserves every other strategy's behavior.
+    MIRROR_ASK_FLOOR: float = 0.05
 
     def __init__(self, config, order_manager, kalshi_client):
         self.config = config
@@ -1715,7 +1726,7 @@ class SportsTraderStrategy:
                 title = market.get("title", "")
                 ya = float(market.get("yes_ask_dollars", "0"))
                 na = float(market.get("no_ask_dollars", "0"))
-                if ya < 0.05 or na < 0.05:
+                if ya < self.MIRROR_ASK_FLOOR or na < self.MIRROR_ASK_FLOOR:
                     continue
 
                 # Match to odds data. Individual sports (tennis/MMA) carry the
