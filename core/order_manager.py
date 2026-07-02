@@ -181,6 +181,23 @@ def _aggression_cents_for(strategy: str) -> int:
 LIMIT_TTL_SECONDS_BY_STRATEGY = {
     "atm_hold_v1": 20,
     "deribit_tail_fade_high_v1": 180,
+    #   sports_tennis_live_fade_v1 = 90s. 2026-07-02: raise fill rate on
+    #   illiquid live-tennis heavy-favorite books. Post-410-fix (7/01+) fill
+    #   rate ~67% (18/27); cancels are TTL-expiry with no counterparty trading
+    #   the resting bid within 60s (GTC limit, aggression=15 default — does NOT
+    #   chase price). TTL is the ONLY lever that lifts fill rate WITHOUT adding
+    #   slippage: same +15c price cap, fills still land at best-available; a
+    #   longer horizon just accrues more resting-bid maker fills. Aggression-up
+    #   was rejected — realized slip already ~7c (signal 0.83 -> fill 0.90),
+    #   lifting break-even WR from 83% to ~90%; each +1c aggression = +1pp BE
+    #   one-for-one on a ~5c/trade edge. Kept MODEST (90 not 120/180): unlike
+    #   the stale-IMMUNE deribit tails, live tennis is stale-SENSITIVE (Kalshi
+    #   reprices on game state faster than Pinnacle), so the maker fills a
+    #   longer TTL adds are an adverse-selection-prone cohort. 90s is a probe.
+    #   Re-eval at n>=50 settled fills: realized WR (losers incl.) Wilson LB vs
+    #   ~90% BE + filled-vs-cancelled price-band split (in-play adverse-sel).
+    #   Reversible: delete this key to revert to the 60s default.
+    "sports_tennis_live_fade_v1": 90,
 }
 
 
