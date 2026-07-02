@@ -2,8 +2,16 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timedelta, timezone
 
 import pytest
+
+
+def _recent_day(days_ago: int) -> str:
+    """ISO-T timestamp N days back — daily_pnl_series filters to a rolling
+    'now'-relative window, so test rows must not use hardcoded dates."""
+    dt = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    return dt.strftime("%Y-%m-%dT12:00:00")
 
 from core.cohort_decomp import auto_decompose, decompose, driver_summary, format_decomp
 from core.strategy_correlation import correlation_matrix, daily_pnl_series, pearson
@@ -92,7 +100,7 @@ class TestCorrelation:
         conn = self._make_db_with_pnl()
         # Two strategies with perfectly correlated daily PnL
         for d in range(10):
-            day = f"2026-05-{d+1:02d}T12:00:00"
+            day = _recent_day(9 - d)
             conn.execute("INSERT INTO trades VALUES ('s1', ?, ?, 'settled')",
                          (day, d * 1.0))
             conn.execute("INSERT INTO trades VALUES ('s2', ?, ?, 'settled')",
@@ -107,11 +115,14 @@ class TestCorrelation:
         pnl_a = [0.1, -0.2, 0.3, -0.1, 0.2, -0.3, 0.05, -0.05, 0.15, -0.15]
         pnl_b = [-0.3, 0.1, -0.15, 0.25, -0.2, 0.05, 0.3, -0.05, -0.1, 0.2]
         for d in range(10):
-            day = f"2026-05-{d+1:02d}T12:00:00"
+            day = _recent_day(9 - d)
             conn.execute("INSERT INTO trades VALUES ('s1', ?, ?, 'settled')",
                          (day, pnl_a[d]))
             conn.execute("INSERT INTO trades VALUES ('s2', ?, ?, 'settled')",
                          (day, pnl_b[d]))
         report = correlation_matrix(conn, ["s1", "s2"], days_back=30)
+        # Rows must actually land in the window (guards against the
+        # vacuous-pass failure mode of the old hardcoded dates)
+        assert report["days_overlap"][("s1", "s2")] == 10
         # Correlation should be modest (not >0.7)
         assert len(report["flagged_pairs"]) == 0

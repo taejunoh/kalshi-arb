@@ -878,7 +878,13 @@ class OrderManager:
                 )
             return {"status": "failed"}
         self._client.invalidate_balance_cache()
-        order_id = resp.get("id", "unknown")
+        # 2026-07-02: same v2 field-name fix as the limit paths — read order_id
+        # first (v2 body has no 'order' wrapper and no top-level 'id'). NOTE:
+        # this path is dead-in-practice (no LIVE strategy routes to market
+        # orders — all live strategies are in LIMIT_TTL_STRATEGIES) AND the
+        # taker_fill_* fill-parsing below is still legacy v1 and untested
+        # against a real v2 fill; see place_market_order's header comment.
+        order_id = resp.get("order_id") or resp.get("id") or "unknown"
         # Extract realized fill price from Kalshi response if available
         realized = None
         fill_cost = resp.get("taker_fill_cost")  # cents (legacy market-order resp)
@@ -1239,7 +1245,13 @@ class OrderManager:
         if resp is None:
             return {"status": "failed"}
         self._client.invalidate_balance_cache()
-        order_id = resp.get("id", "unknown")
+        # 2026-07-02: v2 order endpoint returns order_id at top level (no 'order'
+        # wrapper). Read order_id first — the legacy resp.get("id") is None on a
+        # v2 body, which silently recorded order_id="unknown" and broke
+        # cancel/requote for the re-enter strategies on this non-TTL path
+        # (mentions/market_maker/spread/econ/maker_preorder). Mirrors the TTL
+        # path's read (_live_limit_ttl_order).
+        order_id = resp.get("order_id") or resp.get("id") or "unknown"
         fee = self.config.real_fee(count, yes_price_cents)
         self.bankroll -= (size_usdc + fee)
         await self._persist_bankroll()

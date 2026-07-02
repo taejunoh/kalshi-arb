@@ -78,26 +78,59 @@ def test_preflight_check_failure():
 
 
 def test_place_market_order():
+    # 2026-07-01 v1→v2 migration: response is the v2 body returned as-is
+    # (order_id at top level, no 'order' wrapper), sent as a fill_or_kill
+    # limit to the v2 single-book endpoint with side=bid/ask.
     client = _make_client()
     client._http.post.return_value = MagicMock(
         status_code=200,
-        json=lambda: {"order": {"id": "ord_123", "status": "executed"}},
+        json=lambda: {"order_id": "ord_123", "status": "executed"},
         raise_for_status=lambda: None,
     )
     resp = client.place_market_order("KXBTC-25MAR20-T70000", "yes", 10,
                                       yes_price_cents=35, buy_max_cost_cents=35)
-    assert resp["id"] == "ord_123"
+    assert resp["order_id"] == "ord_123"
+    args, kwargs = client._http.post.call_args
+    assert args[0] == "/trade-api/v2/portfolio/events/orders"
+    payload = kwargs["json"]
+    assert payload["side"] == "bid"  # yes → bid
+    assert payload["price"] == "0.3500"  # cents → fixed-point dollars
+    assert payload["count"] == "10"
+    assert payload["time_in_force"] == "fill_or_kill"
 
 
 def test_place_limit_order():
     client = _make_client()
     client._http.post.return_value = MagicMock(
         status_code=200,
-        json=lambda: {"order": {"id": "ord_456", "status": "resting"}},
+        json=lambda: {"order_id": "ord_456", "status": "resting"},
         raise_for_status=lambda: None,
     )
     resp = client.place_limit_order("KXBTC-25MAR20-T70000", "yes", 48, 5)
-    assert resp["id"] == "ord_456"
+    assert resp["order_id"] == "ord_456"
+    args, kwargs = client._http.post.call_args
+    assert args[0] == "/trade-api/v2/portfolio/events/orders"
+    payload = kwargs["json"]
+    assert payload["side"] == "bid"  # yes → bid
+    assert payload["price"] == "0.4800"
+    assert payload["count"] == "5"
+    assert payload["time_in_force"] == "good_till_canceled"
+
+
+def test_place_limit_order_no_side_maps_to_ask():
+    # side='no' → ask on the YES book; price_cents arrives already inverted
+    # to yes-terms by the caller, so it passes through unchanged.
+    client = _make_client()
+    client._http.post.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {"order_id": "ord_789", "status": "resting"},
+        raise_for_status=lambda: None,
+    )
+    resp = client.place_limit_order("KXBTC-25MAR20-T70000", "no", 52, 5)
+    assert resp["order_id"] == "ord_789"
+    payload = client._http.post.call_args.kwargs["json"]
+    assert payload["side"] == "ask"
+    assert payload["price"] == "0.5200"
 
 
 def test_cancel_order():
