@@ -171,8 +171,9 @@ def test_v32_scales_size_by_payoff():
     from strategies.sports_midshot_v32 import SportsMidshotV32Strategy
     from strategies.sports_underdog_v32 import SportsUnderdogV32Strategy
 
-    # Base size synced to current v31 parents: 2026-05-25 bump 12→20
-    # (min(20.0, bankroll*0.02); at bankroll 1000 the cap is hit → base $20).
+    # Base size synced to current v31 parents: longshot/midshot cap $20
+    # (2026-05-25 bump 12→20; min(20.0, bankroll*0.02), hit at bankroll 1000).
+    # underdog cap frozen 30→$5 on 2026-06-07 (W23 size freeze) → base $5.
     ls = _make(SportsLongshotV32Strategy)
     ls._order_manager.bankroll = 1000.0
     # At threshold (3.0x), multiplier == 1.0 → base $20
@@ -192,9 +193,9 @@ def test_v32_scales_size_by_payoff():
 
     ud = _make(SportsUnderdogV32Strategy)
     ud._order_manager.bankroll = 1000.0
-    # Underdog threshold 2.0
-    assert ud._get_trade_size({"edge": 2.0}) == 20.0
-    assert ud._get_trade_size({"edge": 4.0}) == 40.0
+    # Underdog threshold 2.0; base $5 (frozen cap), scaled 1.0×/2.0×
+    assert ud._get_trade_size({"edge": 2.0}) == 5.0
+    assert ud._get_trade_size({"edge": 4.0}) == 10.0
 
 
 def test_v32_inherits_v31_entry_price_gates():
