@@ -66,6 +66,13 @@ class SportsTennisLiveFadeV1Strategy(SportsTraderStrategy):
     # (set on most v3 family). This trader needs in-play observations.
     PRE_GAME_ONLY = False
 
+    # 2026-07-02: per-event cascade cap (prerequisite for 6% sizing). Real
+    # fills showed mirror-leg double-fire: 7/01 MERMED-MER (yes@0.82) AND
+    # MERMED-MED (no@0.85) = 2× correlated exposure on ONE match — a single
+    # comeback loses both legs at ~0.9× prices. game_key dedup caps fires
+    # at 1 per match; cascade-cap > entry-cap on clustered wipes.
+    PAIR_FIRE_DEDUP = True
+
     # Minimum signed gap between Kalshi favorite-price and Pinnacle implied.
     # 0.05 = grid-sim threshold where 100% WR cohort starts. Tighter (0.10)
     # would cut samples by ~50% but preserve quality. Start loose at 0.05.
@@ -80,10 +87,15 @@ class SportsTennisLiveFadeV1Strategy(SportsTraderStrategy):
     MAX_PIN_AGE_S = 600
 
     # 2026-07-01: bankroll fraction 2%→4% and $4 flat cap removed (user call,
-    # paper n=156 WR84.6%). Size floats with real free balance; global
-    # MAX_SINGLE_TRADE_PCT / MAX_DAILY_LOSS guards still apply upstream.
+    # paper n=156 WR84.6%). 2026-07-02: 4%→6% (user call) paired with
+    # PAIR_FIRE_DEDUP above — per-event cap first, then size. Size floats
+    # with real free balance; global MAX_SINGLE_TRADE_PCT / MAX_DAILY_LOSS
+    # guards still apply upstream. Next re-eval at n>=50 real settled:
+    # 2-prop z consistency vs paper-twin (band-matched) -> pool -> pooled
+    # Wilson-LB vs BE (NOT live-subset Wilson-LB > BE — unpassable at this
+    # price band, see feedback_oos_wilson_lb_over_conservative).
     def _get_trade_size(self, signal: dict) -> float:
-        return self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.04
+        return self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.06
 
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
