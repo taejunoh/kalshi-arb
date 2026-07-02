@@ -93,6 +93,10 @@ Claude 가 추천할 때 confidence 같이 줌:
 3. **Paper 가 LIVE demote 후에도 계속 firing** — sports_underdog_v32 -$184 / 7d, mothball 필요했음
 4. **Memory 가 historical** — 3주 전 "X 가 best" 메모가 regime shift 로 뒤집힐 수 있음. 항상 현재 DB 재검증
 5. **Small-sample +EV 는 variance** — n<20 alpha 는 "watch" 만, "act" 금지
+6. **Paper PnL 부기 아티팩트** (7/02) — live_fade 페이퍼 +$193 중 $181.5 가 부기 버그 4행이었음. 페이퍼 헤드라인 인용 전 톱행 게이트 정합 + 부기가격 실재성 + 정직 리플레이 대조
+7. **Lifetime 이 게이트 변경일 걸침** (7/02) — tennis_underdog WTA -23% 가 은퇴 밴드 유령이었음. 분해는 현행-게이트 조건 + era-split 필수
+8. **"멀티윈도우 일관" = 표본 중복 착시** (7/02) — n 작으면 30d = 전체 코호트, 14d = 부분집합. 창별 n 병기 필수
+9. **집중도 논리는 대칭 적용** (7/02) — 지는 서브셋을 집중도로 깎으면 이기는 서브셋도 같은 검사 (WTA 손실도 ATP 수익도 둘 다 윔블던 집중이었음)
 
 ---
 
