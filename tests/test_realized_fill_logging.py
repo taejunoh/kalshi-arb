@@ -328,3 +328,56 @@ async def test_ttl_limit_default_aggression_for_non_overridden_strategy(tmp_path
     await om._live_limit_ttl_order("KX-T1", "yes", 3.0, 0.30, "sports_underdog_v31", "KX-T1")
     args = client.place_limit_order.call_args[0]
     assert args[2] == 30 + LIMIT_AGGRESSION_CENTS, f"underdog_v31 should use default {LIMIT_AGGRESSION_CENTS}¢, got yes_price={args[2]}"
+
+
+@pytest.mark.asyncio
+async def test_live_limit_order_reads_v2_order_id(tmp_path):
+    """2026-07-02 regression: the non-TTL _live_limit_order path must read the
+    v2 response's top-level `order_id`, not the legacy `id`. Pre-fix it did
+    `resp.get("id", "unknown")`; against a v2 body (order_id only, no 'id')
+    that recorded order_id="unknown", breaking cancel/requote for the
+    re-enter strategies (mentions/market_maker/spread/econ/maker_preorder)
+    the moment any is live-promoted. Mirrors the already-correct TTL path.
+    Uses strategy 'mentions_trader' so the sports_/ladder_/macro_ dedup guard
+    is skipped."""
+    db = Database(str(tmp_path / "t.db"))
+    await db.initialize()
+    config = MagicMock()
+    config.INITIAL_BANKROLL = 2000.0
+    config.LIVE_STRATEGIES = set()
+    config.estimate_fee = MagicMock(return_value=0.07)
+    config.real_fee = MagicMock(
+        side_effect=lambda count, price_cents, maker=False: min(
+            (0.0175 if maker else 0.07) * max(0.0, min(1.0, price_cents / 100.0))
+            * (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+            max(0.0, min(1.0, price_cents / 100.0)) * count,
+            (1.0 - max(0.0, min(1.0, price_cents / 100.0))) * count,
+        )
+    )
+    config.KALSHI_FEE_PER_CONTRACT = 0.07
+    config.MAX_DAILY_LOSS = 200
+    config.MAX_DAILY_LOSS_LIVE = 200
+    config.MAX_CONSECUTIVE_LOSSES = 1000
+    client = MagicMock()
+    client.get_balance = MagicMock(return_value=100.0)
+    client.invalidate_balance_cache = MagicMock()
+    # v2 response shape: order_id at top level, NO legacy 'id' key.
+    client.place_limit_order = MagicMock(
+        return_value={"order_id": "ord-v2-abc123", "status": "resting"}
+    )
+    om = OrderManager(config, kalshi_client=client, database=db, notifier=None)
+    await om.hydrate_bankroll()
+    result = await om._live_limit_order(
+        "KX-T1", "yes", 0.40, 3.0, "mentions_trader", "KX-T1"
+    )
+    # Returned + persisted order_id must be the real v2 id, not "unknown".
+    assert result["order_id"] == "ord-v2-abc123"
+    import aiosqlite
+    async with aiosqlite.connect(db.db_path) as conn:
+        conn.row_factory = aiosqlite.Row
+        cur = await conn.execute(
+            "SELECT order_id FROM orders WHERE market_id=? AND strategy=?",
+            ("KX-T1", "mentions_trader"),
+        )
+        row = await cur.fetchone()
+    assert row is not None and row["order_id"] == "ord-v2-abc123"
