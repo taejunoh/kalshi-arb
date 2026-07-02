@@ -51,6 +51,9 @@ from strategies.sports_ufc_chalk_fade_v1 import SportsUfcChalkFadeV1Strategy
 from strategies.sports_tennis_surface_skew_v1 import SportsTennisSurfaceSkewV1Strategy
 from strategies.sports_tennis_underdog_v1 import SportsTennisUnderdogV1Strategy
 from strategies.sports_tennis_live_fade_v1 import SportsTennisLiveFadeV1Strategy
+from strategies.sports_mlb_live_pin_follow_v1 import SportsMlbLivePinFollowV1Strategy
+from strategies.sports_kbo_live_fade_tight_v1 import SportsKboLiveFadeTightV1Strategy
+from strategies.sports_ufc_live_fade_v1 import SportsUfcLiveFadeV1Strategy
 from strategies.sports_tennis_chalk_v1 import SportsTennisChalkV1Strategy
 from strategies.sports_tennis_pinnacle_fade_v1 import SportsTennisPinnacleFadeV1Strategy
 from strategies.sports_npb_sharp_follow_v1 import SportsNpbSharpFollowV1Strategy
@@ -311,6 +314,26 @@ class Bot:
         # on n=209 trades. Paper-only at launch — measure forward WR vs sim
         # WR (sim has selection bias toward near-decided states).
         self.sports_tennis_live_fade_v1 = SportsTennisLiveFadeV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # 2026-07-02 — MLB live FOLLOW-Pinnacle mid-band (paper-only). Honest
+        # ask-fill replay 30d: 0.50-0.75 band, pin-gap>=0.12 → n=47 WR 63.8%
+        # ROI +11.7%, gap-monotone (0.05 −7.6% / 0.08 +5.2% / 0.12 +11.7%).
+        # Inverse axis of the (refuted) live_fade thesis; books at signal ask
+        # via _get_limit_price override — see module docstring.
+        self.sports_mlb_live_pin_follow_v1 = SportsMlbLivePinFollowV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # 2026-07-02 — KBO live fade-Pinnacle TIGHT corner (paper-only).
+        # Honest replay 30d: ask>=0.93 + gap>=0.12 → n=69 WR 98.6% +2.2%,
+        # monotone on both grid axes. ★2 corner cell — forward-validate only.
+        self.sports_kbo_live_fade_tight_v1 = SportsKboLiveFadeTightV1Strategy(
+            self.config, self.order_manager, self.kalshi_client
+        )
+        # 2026-07-02 — UFC live fade-Pinnacle (paper-only). Honest replay
+        # 30d: ask>=0.85 + gap>=0.05 → n=33 WR 100% +5.8% (only sport whose
+        # live-fade cohort survived honest ask fills). ★2 — event-sparse.
+        self.sports_ufc_live_fade_v1 = SportsUfcLiveFadeV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
         # 2026-05-26 — tennis pre-game chalk-buy (paper-only). Observer
@@ -656,6 +679,15 @@ class Bot:
             ),
             asyncio.create_task(
                 self.sports_tennis_live_fade_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_mlb_live_pin_follow_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_kbo_live_fade_tight_v1.scan_loop(scan_interval_secs=1.0)
+            ),
+            asyncio.create_task(
+                self.sports_ufc_live_fade_v1.scan_loop(scan_interval_secs=1.0)
             ),
             asyncio.create_task(
                 self.sports_tennis_chalk_v1.scan_loop(scan_interval_secs=1.0)

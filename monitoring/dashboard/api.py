@@ -167,6 +167,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_mlb_pitcher_edge_v2",
             "sports_mlb_pitcher_edge_v2_1",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
+            # 2026-07-02 additions — paper-only, honest ask-booking cohorts
+            "sports_mlb_live_pin_follow_v1",
+            "sports_kbo_live_fade_tight_v1",
+            "sports_ufc_live_fade_v1",
             # 2026-05-27 CRYPTO ARCHIVED — all 10 Phase 1 strategies + ladder_crypto
             # collapsed into single summary entry. Lifetime LIVE PnL: -$458 across
             # 248 fills. See [[crypto_full_freeze_2026-05-27]].
@@ -627,6 +631,10 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "sports_mlb_pitcher_edge_v2",
             "sports_mlb_pitcher_edge_v2_1",
             "sports_pinnacle_edge", "sports_v4_edge", "sports_chalk_shadow",
+            # 2026-07-02 additions — paper-only, honest ask-booking cohorts
+            "sports_mlb_live_pin_follow_v1",
+            "sports_kbo_live_fade_tight_v1",
+            "sports_ufc_live_fade_v1",
             # 2026-05-27 CRYPTO ARCHIVED — 10 Phase 1 strategies + ladder_crypto +
             # crypto_fair_value pair collapsed into single summary entry.
             # Lifetime LIVE PnL: -$458 across 248 fills. See
