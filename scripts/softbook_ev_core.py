@@ -122,10 +122,24 @@ def soon(ct):
     return h is not None and 0 < h <= MAX_HOURS
 
 
+# Non-regular-season NBA events the Odds API serves under DEDICATED sport keys
+# (separate from basketball_nba). active_sports() auto-pulls EVERY "active" sport,
+# so when the Odds API flips these on (Summer League every July, etc.) they flow
+# straight into +EV alerts. Blocked because BOTH hold: (a) they are not on NY's
+# approved wagering catalog -> not placeable on NY-geo DK/FD apps even though the
+# national book catalog quotes them (verified 2026-07-07: OKC@UTA Summer League
+# alerted but un-bettable in NY), and (b) the is_bet first-entry edge was validated
+# on REGULAR-SEASON data only, so the EV number does not transfer to these thin,
+# high-variance, roster-unknown slates. (2026-07-07)
+SPORT_BLOCKLIST = {"basketball_nba_summer_league", "basketball_nba_preseason",
+                   "basketball_nba_all_stars"}
+
+
 def active_sports(key):
     try:
         d = json.loads(urllib.request.urlopen(f"{B}/?apiKey={key}", timeout=20).read())
-        return [s["key"] for s in d if s.get("active") and not s.get("has_outrights")]
+        return [s["key"] for s in d if s.get("active")
+                and not s.get("has_outrights") and s["key"] not in SPORT_BLOCKLIST]
     except Exception:
         return ["baseball_mlb", "basketball_wnba"]
 
