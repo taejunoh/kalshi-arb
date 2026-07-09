@@ -95,18 +95,20 @@ def test_caesars_state_placeholder_substituted_in_betslip_link():
     assert "/us/ny/bet/betslip" in out["url"]
 
 
-def test_betmgm_stays_event_betslip_link_drops_selection_on_redirect():
-    # Verified 2026-06-15: BetMGM's options= betslip link 301-redirects sports.{state}.betmgm
-    # -> www.betmgm.com which DROPS the ?options= param -> homepage (selection lost), and its
-    # AASA is broken — prefill is not achievable. Stay event-tier; the event link survives the
-    # redirect to the right game page, and its {state} placeholder is still substituted.
-    out = dl.build("betmgm",
-                   {"betslip": "https://sports.{state}.betmgm.com/en/sports?options=X&type=Single",
-                    "event": "https://sports.{state}.betmgm.com/en/sports/events/foo-19684635"}, PICK)
-    assert out["tier"] == "event"
-    assert "options=" not in (out["url"] or "")
-    assert "{state}" not in out["url"]
-    assert out["url"] == "https://sports.ny.betmgm.com/en/sports/events/foo-19684635"
+def test_betmgm_is_copy_only_never_emits_a_url():
+    # 2026-07-08: BetMGM is COPY-ONLY, same shape as BetRivers. Verified 2026-06-15: the
+    # options= betslip link 301-redirects sports.{state}.betmgm.com -> www.betmgm.com, which
+    # DROPS the ?options= param -> homepage (selection lost); BetMGM's AASA is itself broken
+    # (redirect + malformed appIDs) and no custom URL scheme exists, so even the surviving
+    # EVENT link only ever opens Safari, never the app. Emit NONE so the app never launches
+    # Safari and shows the honest "복사 · 앱에서 검색" label instead of the old, false
+    # "복사 + 직접 앱 열기".
+    links = {"betslip": "https://sports.{state}.betmgm.com/en/sports?options=X&type=Single",
+             "event": "https://sports.{state}.betmgm.com/en/sports/events/foo-19684635"}
+    out = dl.build("betmgm", links, PICK)
+    assert out["url"] is None            # never opens Safari
+    assert out["tier"] == "home"
+    assert out["copy_text"] == "Brandon Nimmo"   # still the search entity to paste
 
 
 def test_betrivers_is_copy_only_never_emits_a_url():
