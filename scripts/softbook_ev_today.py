@@ -88,9 +88,9 @@ def main():
         now_iso = datetime.now(timezone.utc).isoformat()
         rdb = rec.init_db()
         rn = rec.record(rdb, bets_all, now_iso)
-        # wake-up requote BEFORE alert_new_high: still-in-band overnight lines get
-        # marked alerted by the requote push, suppressing a same-scan duplicate.
-        # Own try: a requote failure must never cost the scan its High alerts.
+        # wake-up summary: once/day at WAKE_UTC, re-surface overnight picks still
+        # High in THIS scan (reads the rows record() just wrote; no high_alerted
+        # side effects). Own try: a failure must never cost the scan its High alerts.
         rw = 0
         try:
             rw = rec.wakeup_requote(rdb, key, now_iso)
