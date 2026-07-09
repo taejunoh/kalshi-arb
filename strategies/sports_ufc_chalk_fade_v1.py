@@ -42,7 +42,15 @@ class SportsUfcChalkFadeV1Strategy(SportsTraderStrategy):
     PRE_GAME_ONLY = True
     MAX_MTS_AT_ENTRY = 4320.0
     MIN_DEPTH_USDC = 20.0
-    MIN_ENTRY_PRICE = 0.78
+
+    # 2026-07-09 never-fired fix. This attr used to be MIN_ENTRY_PRICE=0.78,
+    # which the base class also reads as the entry-price FLOOR — but our
+    # entry is the NO side at ~0.05-0.22, so the floor rejected 100% of
+    # signals since the 2026-05-15 launch. The 0.78 chalk threshold gates
+    # the favorite's YES price inside evaluate(); the base floor stays at
+    # its None default (evaluate() + MIRROR_ASK_FLOOR already bound the
+    # NO band).
+    MIN_FAVORITE_YES = 0.78
 
     MIN_PINNACLE_CONFIRM = 0.78
     MAX_PINNACLE_AGE_S = 600
@@ -50,7 +58,7 @@ class SportsUfcChalkFadeV1Strategy(SportsTraderStrategy):
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
                  ticker: str = "") -> Optional[dict]:
-        if kalshi_yes < self.MIN_ENTRY_PRICE:
+        if kalshi_yes < self.MIN_FAVORITE_YES:
             return None
         pin = self._last_pinnacle_yes_prob
         age = self._last_pinnacle_age_s
@@ -68,3 +76,10 @@ class SportsUfcChalkFadeV1Strategy(SportsTraderStrategy):
 
     def _get_trade_size(self, signal: dict) -> float:
         return min(2.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
+
+    def _get_limit_price(self, signal: dict, fair_prob: float) -> float:
+        # Honest booking at the NO ask the signal saw — the parent default
+        # books fair-derived prices that never existed on the book for
+        # fade-style entries (same override as sports_ufc_live_fade_v1;
+        # see feedback_paper_ledger_booking_integrity_2026-07-02).
+        return signal["price"]
