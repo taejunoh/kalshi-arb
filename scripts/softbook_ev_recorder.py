@@ -13,6 +13,9 @@ import softbook_ev_core as core
 
 OUT = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
 QUIET_UTC = core.QUIET_UTC         # 22:00-05:00 NYC: no pushes while user sleeps
+# Daily wake-summary fires at the first scan >= WAKE_UTC. Default 08:30 UTC =
+# 04:30 America/New_York (EDT). DST: set to 09:30 in EST (Nov-Mar). Env-overridable.
+WAKE_UTC = os.getenv("SOFTBOOK_WAKE_UTC", "08:30")
 # Flat per-bet stake ($) shown on BET picks — mirrors the app's unit (build#11
 # eb7fcac: DEFAULT_UNIT_STAKE=20, "bet small / NO size-up, SAME unit on every
 # pick", NOT EV-scaled). Env-overridable so this channel tracks the app default.
@@ -342,102 +345,108 @@ def _et(iso):
         return iso[11:16] + " UTC"
 
 
-def wakeup_requote(db, key, now):
-    """One push at the first scan after the quiet window: lines whose FIRST-ever
-    High snapshot fell inside today's quiet hours never got an instant alert
-    (sleep suppression) and the ledger/dashboard still shows the stale trigger
-    quote — so re-quote each still-pre-game line at CURRENT best book/odds and
-    let the user act on a live price. Lines still in band are marked in
-    high_alerted (this push IS their alert — suppresses the same-scan dup from
-    alert_new_high); dead lines stay unmarked so a later return to High
-    re-alerts normally. Runs once per UTC day (wakeup_sent guard)."""
-    now_dt = datetime.fromisoformat(now)
-    if now_dt.hour in QUIET_UTC:
+def _wake_app_push(bet_survivors, tokens=None, send=None):
+    """Wake-time companion-app push: ONE Expo notification summarizing the
+    still-live should_bet survivors, deep-linking to the top pick via the app's
+    EXISTING high_pick handler (data={'pick_id': ...}) — no app-side change.
+    push_token is read READ-ONLY from the app db (never write it as the recorder
+    user). Best-effort: any failure must never break the Telegram re-quote.
+    bet_survivors: EV-sorted list of is_bet dicts (event_id/market/side/point/
+    player/label/book/odds/ev)."""
+    if not bet_survivors:
+        return 0
+    try:
+        import softbook_push as push, softbook_app_feed as feed
+        if tokens is None:
+            paper = os.getenv("SOFTBOOK_PAPER_DB",
+                              "/home/ubuntu/kalshi-arb/data/softbook_paper.db")
+            pdb = sqlite3.connect(f"file:{paper}?mode=ro", uri=True, timeout=15)
+            try:
+                tokens = [r[0] for r in pdb.execute(
+                    "SELECT token FROM push_token WHERE active=1")]
+            finally:
+                pdb.close()
+        if not tokens:
+            return 0
+        top = bet_survivors[0]
+        pid = feed._encode_id((top["event_id"], top["market"], top["side"],
+                               top["point"] or 0, top["player"] or ""))
+        n = len(bet_survivors)
+        title = f"🌅 밤사이 +EV — 아직 유효 {n}건"
+        body = (f"지금 베팅 가능: {top['label']}" + (f" 외 {n-1}건" if n > 1 else "")
+                + f" · {top['book']} {_american(top['odds'])} (EV {top['ev']*100:+.1f}%)")
+        msgs = [push.build_message(t, title, body, data={"pick_id": pid},
+                                   category="high_pick") for t in tokens]
+        (send or push.send)(msgs)
+        return len(msgs)
+    except Exception as e:
+        print("wake app-push err:", e)
+        return 0
+
+
+def wakeup_requote(db, key, now, *, app_push=None):
+    """Once per day, just after the user's wake time (WAKE_UTC, default 04:30 ET),
+    summarize the OVERNIGHT +EV picks that are STILL LIVE so the user, asleep when
+    they first fired, can act at a fresh price. 'Still live' = the pick is High in
+    the LATEST scan (odds already refreshed every 10 min — no re-fetch), pre-game,
+    and its FIRST-ever High fell in the overnight window. NOT filtered by
+    high_alerted: the 24/7 3am alert already marks every overnight High, so the old
+    'not-yet-alerted' filter made this a permanent no-op. Sends ONE Telegram summary
+    (should_bet picks to bet + props/late-crossers as context) and one companion-app
+    push of the should_bet set. Touches only wakeup_sent (once/day guard) — no
+    high_alerted / message_id side effects (alert_new_high owns that)."""
+    if now[11:16] < WAKE_UTC:                    # before wake time (HH:MM UTC) → not yet
         return 0
     db.execute(WAKEUP_SCHEMA)
-    _ensure_alert_cols(db)
     day = now[:10]
     if db.execute("SELECT 1 FROM wakeup_sent WHERE day=?", (day,)).fetchone():
         return 0
-    w0, w1 = f"{day}T{min(QUIET_UTC):02d}:00:00", f"{day}T{max(QUIET_UTC)+1:02d}:00:00"
-    firsts = {}                      # exact line -> its FIRST-ever High snapshot
-    for r in db.execute("""SELECT event_id, sport, home, away, market, side,
-            COALESCE(point, 0), COALESCE(player, ''), commence_time, recorded_at,
-            best_soft_book, best_soft_price, snapshot_ev
-            FROM softbook_ev WHERE tier='High' ORDER BY recorded_at"""):
-        firsts.setdefault((r[0], r[4], r[5], r[6], r[7]), r)
-    cand = [(k, r) for k, r in firsts.items() if w0 <= r[9] < w1 and not db.execute(
-        "SELECT 1 FROM high_alerted WHERE event_id=? AND market=? AND side=?"
-        " AND point=? AND player=?", k).fetchone()]
-    if not cand:
-        db.execute("INSERT OR IGNORE INTO wakeup_sent VALUES (?)", (day,))
-        db.commit()
-        return 0
-    cand.sort(key=lambda kr: -kr[1][12])               # by trigger EV, like alerts
-    odds_cache, lines, missed, valid = {}, [], [], 0
-    for k, (eid, sport, home, away, market, side, point, player, ct, rec_at,
-            tbook, todds, tev) in cand:
-        lbl = core.label(market, side, None if market == "h2h" else point, player or None)
-        head = (f"• {away[:16]} @ {home[:16]}\n   {lbl}\n"
-                f"   밤 {_et(rec_at)} High: {tbook} {_american(todds)} (EV {tev*100:+.1f}%)")
+    now_dt = datetime.fromisoformat(now)
+    w0, w1 = f"{day}T{min(QUIET_UTC):02d}:00:00", f"{day}T{WAKE_UTC}:00"   # overnight window
+    firsts = {}                      # exact line -> its FIRST-ever High timestamp (when it appeared)
+    for eid, market, side, pt, pl, first_at in db.execute(
+            "SELECT event_id, market, side, COALESCE(point,0), COALESCE(player,''),"
+            " MIN(recorded_at) FROM softbook_ev WHERE tier='High'"
+            " GROUP BY event_id, market, side, COALESCE(point,0), COALESCE(player,'')"):
+        firsts[(eid, market, side, pt, pl)] = first_at
+    latest = db.execute("SELECT MAX(recorded_at) FROM softbook_ev").fetchone()[0]
+    bet, other = [], []              # still-live overnight picks, split by the bet rule
+    for eid, home, away, market, side, pt, pl, ct, book, odds, ev in db.execute(
+            "SELECT event_id, home, away, market, side, COALESCE(point,0),"
+            " COALESCE(player,''), commence_time, best_soft_book, best_soft_price,"
+            " snapshot_ev FROM softbook_ev WHERE recorded_at=? AND tier='High'", (latest,)):
+        first_at = firsts.get((eid, market, side, pt, pl))
+        if not first_at or not (w0 <= first_at < w1):
+            continue                 # not an overnight pick (user was awake, or older day)
         try:
-            started = datetime.fromisoformat(ct.replace("Z", "+00:00")) <= now_dt
+            if datetime.fromisoformat(ct.replace("Z", "+00:00")) <= now_dt:
+                continue             # game already started — unbettable
         except Exception:
-            started = True
-        if started:
-            missed.append(f"• 경기 시작돼 패스: {away[:16]} @ {home[:16]} — {lbl}"
-                          f" (밤 {_et(rec_at)} High {tbook} {_american(todds)})")
             continue
-        ck = (sport, eid)
-        if ck not in odds_cache:
-            try:
-                odds_cache[ck] = core.event_odds(sport, eid, key, core.markets_for(sport))[0]
-            except Exception:
-                odds_cache[ck] = None
-        data = odds_cache[ck]
-        fair, quotes = (core.line_quotes(data, market, side,
-                                         None if market == "h2h" else point,
-                                         player or None) if data else (None, []))
-        if fair is None or not quotes:
-            lines.append(head + "\n   ⛔ 현재 호가/기준가 없음 → 스킵")
-            continue
-        bbook, bpx = max(quotes, key=lambda q: q[1])
-        evv = fair * bpx - 1
-        if core.ODDS_MIN <= bpx <= core.ODDS_MAX and core.EV_MIN <= evv <= core.EV_MAX:
-            db.execute(
-                "INSERT OR IGNORE INTO high_alerted(event_id,market,side,point,player,alerted_at)"
-                " VALUES (?,?,?,?,?,?)", (*k, now))
-            if valid < 8:        # per-bet cap, like alert_new_high (flood guard)
-                # actionable → own message so a fill reply maps to exactly this bet
-                _send_bet_alert(db, {
-                    "event_id": eid, "market": market, "side": side, "point": point,
-                    "player": player, "home": home, "away": away, "label": lbl,
-                    "book": bbook, "odds": bpx, "ev": evv, "n_books": len(quotes),
-                    "n_ev": sum(1 for _, px in quotes if fair * px - 1 >= core.EV_MIN),
-                    "books_all": [{"book": bl, "odds": px} for bl, px in quotes]},
-                    "🌅 기상 재호가 — 밤사이 High, 아직 유효",
-                    extra=f"\n   🌙 밤 {_et(rec_at)} 트리거: {tbook} {_american(todds)} (EV {tev*100:+.1f}%)")
-            else:                # overflow: batch line (no fill tracking)
-                lines.append(head + f"\n   ✅ 아직 유효: {bbook} {_american(bpx)}"
-                                    f" (EV {evv*100:+.1f}%)"
-                                    + (f" · 💵 ${UNIT_STAKE:.0f}"
-                                       if _is_bet(db, eid, market, side, player) else ""))
-            valid += 1
-        elif evv > core.EV_MAX:
-            lines.append(head + f"\n   ⚠️ 현재 {bbook} {_american(bpx)} EV {evv*100:+.1f}% > 8% 상한"
-                                " — 라인 급변/의심 호가, 직접 확인")
-        else:
-            lines.append(head + f"\n   ⛔ 엣지 소멸: 현재 최선 {bbook} {_american(bpx)}"
-                                f" (EV {evv*100:+.1f}%) → 스킵 (밴드 재진입시 재알림)")
-    body = lines[:10] + ([f"…+{len(lines)-10} more"] if len(lines) > 10 else []) + missed[:5]
-    if body:
-        send_telegram(f"🌅 기상 재호가 — 밤사이 신규 High {len(cand)}건"
-                      + (f" (유효 {valid}건은 개별 알림으로)" if valid else "") + ":\n\n"
-                      + "\n\n".join(body)
-                      + "\n\npre-game only · bet small · 대쉬보드 +EV 탭 확인")
+        lbl = core.label(market, side, None if market == "h2h" else pt, pl or None)
+        entry = {"event_id": eid, "market": market, "side": side, "point": pt,
+                 "player": pl, "label": lbl, "book": book, "odds": odds, "ev": ev,
+                 "home": home, "away": away}
+        (bet if _is_bet(db, eid, market, side, pl) else other).append(entry)
+    bet.sort(key=lambda b: -b["ev"])
+    other.sort(key=lambda b: -b["ev"])
+    if bet or other:
+        msg = "🌅 밤사이 +EV — 아직 유효 (04:30 ET 기준)"
+        if bet:
+            msg += f"\n\n💵 지금 베팅 ({len(bet)}건):\n\n" + "\n\n".join(
+                f"• {b['away'][:16]} @ {b['home'][:16]}\n   {b['label']}\n"
+                f"   {b['book']} {_american(b['odds'])} (EV {b['ev']*100:+.1f}%) · 💵 ${UNIT_STAKE:.0f}"
+                for b in bet[:12])
+            if len(bet) > 12:
+                msg += f"\n\n…+{len(bet)-12}건 더 (대쉬보드 +EV 탭)"
+        if other:
+            msg += f"\n\n⚪ 참고 {len(other)}건 (프랍/late-cross — 베팅 X)"
+        msg += "\n\npre-game only · bet small · 앱 열어서 원탭"
+        send_telegram(msg)
+        (app_push or _wake_app_push)(bet)
     db.execute("INSERT OR IGNORE INTO wakeup_sent VALUES (?)", (day,))
     db.commit()
-    return len(cand)
+    return len(bet) + len(other)
 
 
 def init_db():
