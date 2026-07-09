@@ -79,3 +79,19 @@ def test_price_band_bounds():
     """Observer-derived: no_ask 0.30-0.45 fade-favorite band."""
     assert SportsMLSFadeFavoriteV1Strategy.MIN_ENTRY_PRICE == 0.30
     assert SportsMLSFadeFavoriteV1Strategy.MAX_ENTRY_PRICE == 0.45
+
+
+def test_honest_booking_at_observed_no_ask():
+    """Fade-style bookkeeping honesty (2026-07-09 audit): booking must be
+    the observed NO ask, never the base-class fair-complement default
+    (round(1-fair)) — the mechanism behind the tennis live_fade paper-PnL
+    artifact. Today this holds via the inherited
+    SportsUnderdogStrategy._get_limit_price -> signal["price"]; this pin
+    catches any future fair-based override slipped into v31 or this class.
+    Empirically verified on all 3 ledger rows (booked == observed no_ask;
+    the fair default would have booked 0.36/0.38 on two of them)."""
+    s = _make_strategy()
+    sig = s.evaluate(kalshi_yes=0.64, kalshi_no=0.37, fair_prob=0.62,
+                     ticker="KXMLSGAME-X-CLB")
+    # fair-complement default would book round(1-0.62) = 0.38, not 0.37.
+    assert s._get_limit_price(sig, fair_prob=0.62) == 0.37
