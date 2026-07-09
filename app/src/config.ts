@@ -24,8 +24,12 @@ export const SPORT_LABELS: Record<string, string> = {
 // "prefill"-tier link is shown as plain "복사 + 직접 앱 열기", never "✓ 슬립 프리필". See
 // DEEPLINK_VERIFICATION.md.
 // On-device verified (NY iPhone): these open the native app to a PRE-FILLED slip.
-//   • BetMGM / theScore — prefill structurally NOT achievable (host redirect drops the
-//     selection / native router ignores the web param). Stay out; honest "복사 + 직접 앱 열기".
+//   • theScore — prefill structurally NOT achievable (native router ignores the web param).
+//     Stay out; honest "복사 + 직접 앱 열기" (its event link genuinely opens the app, AASA=["*"]).
+//   • BetMGM — COPY-ONLY as of 2026-07-08 (do not re-promote), same reasoning as BetRivers
+//     below: AASA is broken (redirect + malformed appIDs) and no custom URL scheme exists, so
+//     the event link only ever opened Safari, never the app — the old "복사 + 직접 앱 열기"
+//     label was lying. Server now emits no url (COPY_ONLY_BOOKS); row shows "복사 · 앱에서 검색".
 //   • BetRivers — COPY-ONLY as of 2026-07-01 (do not re-promote). No applinks AASA AND no
 //     custom URL scheme (on-device verified: betrivers://, rushstreet://, rsi://, … all
 //     unregistered), so there is NO way to open its native app — https only launches Safari.

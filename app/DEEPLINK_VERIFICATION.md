@@ -34,11 +34,17 @@ Research (2026): FanDuel's `addToBetslip` universal link is confirmed but best-e
   the server emits `url=None`, tapping it copies only the search entity and opens nothing (no
   Safari), and the row shows "복사 · 앱에서 검색". The user opens the BetRivers app manually
   and pastes. If a future BetRivers app version adds an AASA or a scheme, re-test then.
-- **BetMGM** — prefill NOT achievable (do not re-chase). The `options=` betslip link
-  301-redirects `sports.{state}.betmgm.com → www.betmgm.com`, which DROPS the `?options=`
-  param → homepage (selection lost, before any app/AASA matters); BetMGM's AASA is also broken
-  (redirect + malformed appIDs) and no custom URL scheme exists. Server keeps it at `event`
-  tier — the event link survives the redirect to the correct game page. Leave OUT.
+- **BetMGM** — **COPY-ONLY as of 2026-07-08 (do not re-promote, do not re-chase a link).**
+  Prefill NOT achievable: the `options=` betslip link 301-redirects
+  `sports.{state}.betmgm.com → www.betmgm.com`, which DROPS the `?options=` param → homepage
+  (selection lost, before any app/AASA matters). The event-tier fallback survived the redirect
+  to the correct game page but, like BetRivers' event link, only ever opened Safari — BetMGM's
+  AASA is broken (redirect + malformed appIDs) and no custom URL scheme exists, so there is no
+  way to open the native app. This meant the row's "복사 + 직접 앱 열기" label was lying (it
+  never opened the app, only Safari). BetMGM is now in `COPY_ONLY_BOOKS`
+  (`scripts/softbook_deeplink.py`): the server emits `url=None`, tapping it copies only the
+  search entity and opens nothing (no Safari), and the row shows "복사 · 앱에서 검색". If a
+  future BetMGM app version adds an AASA or a scheme, re-test then.
 - **theScore (espnbet)** — prefill NOT achievable (do not re-chase). AASA `["*"]` so the app
   DOES open, but `market_selection_id[0]=…` is theScore's WEB SPA quick-bet format the native
   in-app router ignores; no custom scheme, and the real external path (Branch.io) isn't
