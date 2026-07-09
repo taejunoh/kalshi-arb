@@ -34,8 +34,8 @@ import softbook_ev_core as core
 #  - BetMGM (betmgm): the options= betslip link 301-redirects sports.{state}.betmgm.com ->
 #    www.betmgm.com, which DROPS the ?options= param -> homepage (selection lost, before any
 #    app/AASA matters); BetMGM's AASA is itself broken (redirect + malformed appIDs) and no
-#    custom URL scheme exists. The EVENT link survives the redirect to the right game page,
-#    so betmgm stays event-tier (best achievable).
+#    custom URL scheme exists. Even the surviving EVENT link only ever opens Safari, never the
+#    app -> COPY-ONLY as of 2026-07-08, same reasoning as BetRivers below.
 #  - theScore (espnbet): AASA components ["*"] so the app DOES open, but market_selection_id[0]
 #    =... is theScore's WEB SPA quick-bet format the native in-app router ignores; no custom
 #    scheme, and the real external path (Branch.io) isn't constructable from a raw sid. The
@@ -50,7 +50,12 @@ PREFILL_BOOKS = {"fanduel", "draftkings", "williamhill_us"}
 #    rushstreet://, rushstreetinteractive://, rsi://, playsugarhouse:// are all unregistered.
 #    So even the event link only opened a Safari tab. Copy the search entity; user opens the
 #    BetRivers app manually and pastes. (BallyBet is already copy-only via HOME_URL=None.)
-COPY_ONLY_BOOKS = {"betrivers"}
+#  - BetMGM (betmgm): same shape as BetRivers — AASA is broken (redirect + malformed appIDs)
+#    and no custom URL scheme exists, so the surviving event link (see PREFILL_BOOKS bullet
+#    above) only ever opens Safari, never the app. Moved to copy-only 2026-07-08 (was
+#    event-tier, which mislabeled itself "복사 + 직접 앱 열기" in the companion app despite
+#    never opening the native app).
+COPY_ONLY_BOOKS = {"betrivers", "betmgm"}
 
 # US state for {state} host/path placeholders (NY user).
 STATE = "ny"
