@@ -248,6 +248,18 @@ class Bot:
         # MLS observer n=14, WR 57.1%, ROI +18.57% at fade-fav band.
         # Paper-twin only at launch. Promotion gate: n>=25 + ROI>=+10% +
         # drop-top-3 > 0 by ~6/22.
+        # 2026-07-09 MOTHBALL: promotion gate failed on the full observer
+        # counterfactual (honest-ask first-crossing replay, current gate,
+        # n=24 settled): lifetime ROI +6.1% < +10%, drop-top-3 -3.39 < 0,
+        # and the promo evidence didn't survive OOS — 5/02-5/15 (promo)
+        # n=15 WR 60% +37% vs 5/15+ (OOS) n=9 WR 22% -45.5% (last 6
+        # candidates all lost). Paper trader adds no evidence over the
+        # observer (booking == observed ask, PR #24), so paper fires are
+        # dashboard noise. MLS WC break 5/25-7/09 explains the silence,
+        # not the retirement. RELAUNCH CONDITION: post-World-Cup observer
+        # cohort at this gate reaches n>=25 with ROI>=+10% AND
+        # drop-top-3 > 0 AND era-consistent (~Aug 2026 data). Instance
+        # kept (dashboard visibility); scan_loop launch commented in run().
         self.sports_mls_fade_favorite_v1 = SportsMLSFadeFavoriteV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
@@ -769,9 +781,11 @@ class Bot:
             asyncio.create_task(
                 self.sports_underdog_v35.scan_loop(scan_interval_secs=1.0)
             ),
-            asyncio.create_task(
-                self.sports_mls_fade_favorite_v1.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-07-09 MOTHBALL (see __init__): promotion gate failed on
+            # observer counterfactual (OOS era -45.5%, drop-top-3 < 0).
+            # asyncio.create_task(
+            #     self.sports_mls_fade_favorite_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
             asyncio.create_task(
                 self.sports_npb_underdog_v1.scan_loop(scan_interval_secs=1.0)
             ),
