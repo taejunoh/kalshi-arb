@@ -39,6 +39,16 @@ TEAM_MAP = {
     143: "PHI", 144: "ATL", 145: "CWS", 146: "MIA", 147: "NYY", 158: "MIL",
 }
 
+# Non-tradeable exhibition gameTypes to skip BEFORE the team-id lookup. The
+# All-Star Game (gameType 'A') fields AL/NL All-Star squads (team ids 159/160)
+# that aren't real franchises — mapping them would pollute observations with a
+# game that has no KXMLBGAME ticker and a meaningless ERA-diff, and leaving
+# them unmapped fired a false "UNKNOWN TEAM IDS" alert every 30 min through the
+# 2026-07 break. Spring ('S') and exhibition ('E'/'I') are the same story.
+# Regular season ('R') and postseason ('F'/'D'/'L'/'W') flow through unchanged,
+# so a genuinely unknown id in a real game still alerts.
+SKIP_GAME_TYPES = frozenset({"A", "S", "E", "I"})
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS mlb_pitcher_observations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,6 +143,11 @@ def run():
             continue
         for date_obj in sched.get("dates", []):
             for g in date_obj.get("games", []):
+                # Skip exhibition games (All-Star / spring / exhibition) before
+                # the team-id lookup so their non-franchise ids never reach the
+                # unknown-id alert. See SKIP_GAME_TYPES.
+                if g.get("gameType") in SKIP_GAME_TYPES:
+                    continue
                 away = g["teams"]["away"]
                 home = g["teams"]["home"]
                 away_id, home_id = away["team"]["id"], home["team"]["id"]
