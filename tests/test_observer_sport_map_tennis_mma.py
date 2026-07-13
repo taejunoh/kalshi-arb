@@ -21,9 +21,16 @@ def test_kxatpmatch_maps_to_tennis_atp_endpoints():
 
 
 def test_kxwtamatch_maps_to_tennis_wta_endpoints():
+    # Like KXATPMATCH, the WTA tuple may legitimately be EMPTY between
+    # tournaments — e.g. 2026-07-13, the post-Wimbledon gap when Wimbledon
+    # ended and the Odds API had not yet published the mid-July swing (no
+    # active WTA endpoint of any kind). When non-empty, every slug must follow
+    # the tennis_wta_* pattern. The unmapped-active rotation alert covers the
+    # empty window. (Was `len >= 1` until 7/13 — that invariant hard-failed on
+    # the legitimate between-tournaments state.)
     slugs = SPORT_MAP.get("KXWTAMATCH")
     assert slugs is not None
-    assert isinstance(slugs, tuple) and len(slugs) >= 1
+    assert isinstance(slugs, tuple)
     for slug in slugs:
         assert slug.startswith("tennis_wta_"), (
             f"Expected tennis_wta_* slug, got {slug!r}"

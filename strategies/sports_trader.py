@@ -303,15 +303,20 @@ INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
 # (Berlin, WTA 500 grass) — all surfaced active by the rotation cron's
 # unmapped-active alert. ATP is no longer empty; the prior empty window
 # (6/08, no ATP grass slug published yet) is now closed.
-TENNIS_ATP_SLUGS: tuple[str, ...] = (
-    "tennis_atp_wimbledon",           # Grand Slam grass, Wimbledon (~6/29–7/12)
-)
-TENNIS_WTA_SLUGS: tuple[str, ...] = (
-    # 2026-06-30 rotation: Bad Homburg ended (~6/28) and is now stale in the
-    # Odds API (confirmed 0 active via /sports). During the Wimbledon
-    # fortnight it is the only WTA tour event — tuple collapses to Wimbledon.
-    "tennis_wta_wimbledon",           # Grand Slam grass, Wimbledon (~6/29–7/12)
-)
+# 2026-07-13 post-Wimbledon gap: Wimbledon ended (~7/12); both
+# tennis_atp_wimbledon and tennis_wta_wimbledon went to 0 events and inactive
+# in the Odds API. Authoritatively confirmed via /v4/sports?all=true: ZERO
+# active tennis endpoints right now, and the API has NOT yet published the
+# mid-July swing (ATP Bastad/Gstaad/Hamburg, WTA Bucharest/Palermo/Hamburg) —
+# those slugs aren't even listed inactive. Per the 2026-06-08 precedent, both
+# tuples collapse to EMPTY rather than pointing at a dead slug or guessing an
+# unpublished one; the rotation cron's unmapped-active alert will surface the
+# next tournament the moment the API activates it (likely tennis_atp_hamburg_
+# open late July, then the North-American hard-court swing → Canadian Open
+# early Aug). Wimbledon TENNIS_SLUG_META entries kept for historical
+# odds_observations analysis. All tennis = paper.
+TENNIS_ATP_SLUGS: tuple[str, ...] = ()
+TENNIS_WTA_SLUGS: tuple[str, ...] = ()
 
 # Single source of truth for Kalshi series → Odds API sport key(s). Tennis
 # values are tuples (multi-slug fan-out); single-tournament sports are str.
