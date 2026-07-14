@@ -1,4 +1,5 @@
 """Tennis endpoint rotation cron — added 2026-05-11."""
+import logging
 from unittest.mock import MagicMock, patch
 import pytest
 
@@ -7,7 +8,54 @@ from scripts.tennis_endpoint_rotation import (
     detect_stale_endpoints,
     mapped_tennis_slugs,
     unmapped_active_tennis,
+    _redact_api_key,
+    _RedactApiKeyFilter,
 )
+
+
+# --- API-key redaction in logs (2026-07-13) --------------------------------
+# httpx logs the full request URL at INFO ("HTTP Request: GET
+# https://...?apiKey=XXX ...") and embeds it in exception strings, so without
+# scrubbing, the Odds API key lands in journald/stdout.
+
+_SECRET = "80c1c0063d19f8c75bd60b611bfa48d6"
+
+
+def test_redact_masks_apikey_in_url():
+    line = (f'HTTP Request: GET https://api.the-odds-api.com/v4/sports'
+            f'?apiKey={_SECRET}&all=true "HTTP/1.1 200 OK"')
+    out = _redact_api_key(line)
+    assert _SECRET not in out
+    assert "apiKey=***" in out
+    assert "all=true" in out          # rest of the URL is preserved
+
+
+def test_redact_masks_apikey_at_url_end():
+    """The /events endpoint puts apiKey last (no trailing &)."""
+    out = _redact_api_key(f"events_count failed: GET .../events?apiKey={_SECRET}")
+    assert _SECRET not in out
+    assert out.endswith("apiKey=***")
+
+
+def test_redact_leaves_key_free_text_untouched():
+    assert _redact_api_key("No stale tennis endpoints.") == "No stale tennis endpoints."
+
+
+def test_filter_redacts_httpx_style_record():
+    """httpx logs via msg+args (url is in args) — the filter must format then
+    scrub so the key never reaches the handler's output."""
+    filt = _RedactApiKeyFilter()
+    rec = logging.LogRecord(
+        name="httpx", level=logging.INFO, pathname=__file__, lineno=1,
+        msg='HTTP Request: %s "%s"',
+        args=(f"GET https://api.the-odds-api.com/v4/sports?apiKey={_SECRET}&all=true",
+              "HTTP/1.1 200 OK"),
+        exc_info=None,
+    )
+    assert filt.filter(rec) is True
+    formatted = rec.getMessage()
+    assert _SECRET not in formatted
+    assert "apiKey=***" in formatted
 
 
 def test_detect_stale_endpoints_zero_events_two_days_triggers():

@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -26,8 +27,52 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.config import Config
 from strategies.sports_scan_observer import SPORT_MAP
 
+
+# Odds API key redaction. httpx logs the full request URL at INFO
+# ("HTTP Request: GET https://...?apiKey=XXX ...") and embeds it in exception
+# strings that this script logs via `{e}`, so without scrubbing the key lands
+# in journald/stdout. Mask the query-param value anywhere it appears.
+_API_KEY_RE = re.compile(r"(api[_-]?key=)[^&\s\"'}]+", re.IGNORECASE)
+
+
+def _redact_api_key(text: str) -> str:
+    """Replace apiKey=<value> query values with apiKey=***."""
+    return _API_KEY_RE.sub(r"\1***", text)
+
+
+class _RedactApiKeyFilter(logging.Filter):
+    """Scrub apiKey=... from every log record before it reaches a handler.
+    Formats msg%args first because httpx carries the URL in record.args."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return True
+        redacted = _redact_api_key(msg)
+        if redacted != msg:
+            record.msg = redacted
+            record.args = ()
+        return True
+
+
+def _install_log_redaction() -> None:
+    """Scrub apiKey=... from logs. Attach the filter at the LOGGER level for
+    the two sources that carry the key — httpx (full request URL at INFO) and
+    this script's own logger (exception messages via `{e}`) — because
+    logger-level filters run in Logger.handle before propagation, independent
+    of which handler basicConfig ends up installing on root. Root handlers get
+    it too as a catch-all for any other library that echoes the URL."""
+    filt = _RedactApiKeyFilter()
+    for name in ("httpx", "httpcore", "tennis_endpoint_rotation"):
+        logging.getLogger(name).addFilter(filt)
+    for h in logging.getLogger().handlers:
+        h.addFilter(filt)
+
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("tennis_endpoint_rotation")
+_install_log_redaction()
 
 STATE_PATH = Path("data/tennis_rotation_state.json")
 TENNIS_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH"})
