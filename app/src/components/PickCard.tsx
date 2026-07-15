@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import type { Pick } from "../api/types";
 import { color, radius, space, font } from "../theme";
-import { countdown, countdownUrgent, americanOdds, evPct, matchup } from "../format";
+import { countdown, countdownUrgent, americanOdds, evPct, matchup, minBreakevenOdds } from "../format";
 
 export function PickCard({
   pick,
@@ -29,6 +29,9 @@ export function PickCard({
   // The bet label alone ("Over 167.5") doesn't say which game it is — show the
   // matchup so a totals/spread pick is identifiable at a glance.
   const game = matchup(pick.away, pick.home);
+  // Floor/breakeven odds bars (same numbers as the Telegram alert): bet at any
+  // book as long as its price beats 최소. Null (hidden) when ev/price is unknown.
+  const mb = minBreakevenOdds(pick.ev, pick.odds);
   // Swipe-left reveals 관심없음; same onDismiss as the inline button (kept as fallback).
   const renderRightActions = () => (
     <Pressable testID="swipe-dismiss" onPress={() => onDismiss(pick)} style={s.swipeAction}>
@@ -56,6 +59,7 @@ export function PickCard({
         <Text style={s.metaDim}>{pick.n_books ?? 0}북</Text>
         <Text style={[s.metaDim, countdownUrgent(pick.commence_time) && s.metaUrgent]}>{countdown(pick.commence_time)}</Text>
       </View>
+      {mb && <Text style={s.floor}>✂️ 최소 {mb.min} · 본전 {mb.be}</Text>}
       <View style={s.actions}>
         <Pressable testID="bet-button" style={[s.btn, s.bet]} onPress={() => onBet(pick)}><Text style={s.betText}>{betLabel}</Text></Pressable>
         <Pressable testID="inline-dismiss" style={[s.btn, s.dismiss]} onPress={() => onDismiss(pick)}><Text style={s.dismissText}>관심없음</Text></Pressable>
@@ -83,6 +87,7 @@ const s = StyleSheet.create({
   metaBook: { color: color.text, fontSize: 13, fontWeight: "500" },
   metaDim: { color: color.muted, fontSize: 13 },
   metaUrgent: { color: color.urgent },
+  floor: { color: color.muted, fontSize: 12, marginTop: 7 },
   actions: { flexDirection: "row", marginTop: space.lg, gap: space.sm },
   btn: { paddingVertical: 11, borderRadius: radius.button, alignItems: "center" },
   bet: { flex: 3, backgroundColor: color.accent },
