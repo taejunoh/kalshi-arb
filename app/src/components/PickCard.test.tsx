@@ -30,6 +30,17 @@ test("renders label, book@odds and EV", async () => {
   expect(screen.getByText("+7.4%")).toBeOnTheScreen();
 });
 
+test("shows the 최소/본전 odds bars so you can shop any book (mirrors the Telegram alert)", async () => {
+  await render(<PickCard pick={PICK} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  // ev=0.074, odds=2.2 → 최소 +107 · 본전 +105 (see format.minBreakevenOdds).
+  expect(screen.getByText(/최소 \+107 · 본전 \+105/)).toBeOnTheScreen();
+});
+
+test("omits the 최소/본전 line when ev or price is unknown", async () => {
+  await render(<PickCard pick={{ ...PICK, ev: null }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(screen.queryByText(/본전/)).toBeNull();
+});
+
 test("shows the matchup so you can tell which game it is", async () => {
   await render(<PickCard pick={PICK} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
   expect(screen.getByText("NYM @ MIA")).toBeOnTheScreen();

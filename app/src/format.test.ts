@@ -1,5 +1,5 @@
 // app/src/format.test.ts
-import { americanOdds, parseOddsToDecimal, evPct, countdown, countdownUrgent, matchup } from "./format";
+import { americanOdds, parseOddsToDecimal, evPct, countdown, countdownUrgent, matchup, minBreakevenOdds } from "./format";
 
 test("americanOdds shows the US-book number (+underdog / -favorite)", () => {
   expect(americanOdds(3.9)).toBe("+290");
@@ -19,6 +19,17 @@ test("parseOddsToDecimal accepts american or decimal (mirrors the Telegram parse
   expect(parseOddsToDecimal("")).toBeNull();
   expect(parseOddsToDecimal("+50")).toBeNull();            // |american| < 100 is invalid
   expect(parseOddsToDecimal("abc")).toBeNull();
+});
+
+test("minBreakevenOdds: 최소(ROI≥1% floor) and 본전(breakeven) american odds from ev+decimal price", () => {
+  // Mirrors softbook_ev_recorder._min_odds_line: fair=(1+ev)/odds; 본전=1/fair; 최소=(1+EV_MIN)/fair.
+  // ev=0.074, odds=2.2 → fair≈0.4882 → 본전 +105, 최소 +107 (need ≥+107 to clear the 1% bar).
+  expect(minBreakevenOdds(0.074, 2.2)).toEqual({ min: "+107", be: "+105" });
+  // Favorite side: ev=0.05, odds=1.91 → 본전 -122, 최소 -119.
+  expect(minBreakevenOdds(0.05, 1.91)).toEqual({ min: "-119", be: "-122" });
+  expect(minBreakevenOdds(null, 2.2)).toBeNull();
+  expect(minBreakevenOdds(0.05, null)).toBeNull();
+  expect(minBreakevenOdds(0.05, 1.0)).toBeNull(); // no valid price
 });
 
 test("evPct shows a signed percentage", () => {

@@ -107,7 +107,9 @@ export function CaptureSheet({ route }: Props) {
       <Text style={s.field}>스테이크</Text>
       <TextInput style={s.input} placeholder="스테이크 ($)" placeholderTextColor={color.faint} keyboardType="decimal-pad" value={stake} onChangeText={setStake} />
       <Text style={s.field}>실제 체결 배당</Text>
-      <TextInput style={s.input} placeholder="실배당" placeholderTextColor={color.faint} keyboardType="decimal-pad" value={fillOdds} onChangeText={setFillOdds} />
+      {/* numbers-and-punctuation (not decimal-pad) so the +/- keys exist — a
+          favorite like -110 is otherwise impossible to type. Matches scan mode. */}
+      <TextInput style={s.input} placeholder="실배당 (예: -110)" placeholderTextColor={color.faint} keyboardType="numbers-and-punctuation" value={fillOdds} onChangeText={setFillOdds} />
       {error && <Text style={s.err}>{error}</Text>}
       <View style={s.actions}>
         <Pressable style={[s.btn, s.cancel]} onPress={() => nav.goBack()}><Text style={s.btnText}>취소</Text></Pressable>

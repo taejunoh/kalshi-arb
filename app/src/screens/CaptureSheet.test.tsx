@@ -41,6 +41,15 @@ test("prefills american and saves an american-entered fill as decimal", async ()
   expect(body.fill_odds).toBeCloseTo(1.9091, 3);                // -110 -> decimal
 });
 
+test("the fill-odds input offers +/- keys so a favorite like -110 is typable", async () => {
+  // decimal-pad has no minus/plus key — the user literally can't enter -110.
+  // numbers-and-punctuation (same as scan mode) exposes both signs.
+  await render(<CaptureSheet route={route} />);
+  await waitFor(() => expect(screen.getByText("NYM ML")).toBeOnTheScreen());
+  const fillInput = screen.getByDisplayValue("+110");
+  expect(fillInput.props.keyboardType).toBe("numbers-and-punctuation");
+});
+
 test("scan mode prefills from the draft and posts with source=scan", async () => {
   (api.getPick as jest.Mock).mockClear();
   (api.postBet as jest.Mock).mockClear();
