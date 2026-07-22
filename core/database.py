@@ -351,6 +351,11 @@ class Database:
             await self._add_column_if_missing(conn, "odds_observations", "tournament_slug", "TEXT")
             await self._add_column_if_missing(conn, "odds_observations", "starter_home", "TEXT")
             await self._add_column_if_missing(conn, "odds_observations", "starter_away", "TEXT")
+            # Phase-1 match-mismatch instrumentation, observer side. This is
+            # the full-population sample (one row per ticker per scan), so the
+            # phase-label contamination rate is measured from here, not from
+            # the much sparser trades table.
+            await self._add_column_if_missing(conn, "odds_observations", "match_delta_s", "REAL")
             await self._add_column_if_missing(conn, "clv_snapshots", "us_consensus_prob", "REAL")
             await self._add_column_if_missing(conn, "trades", "realized_fill_price", "REAL")
             await self._add_column_if_missing(conn, "clv_snapshots", "eu_consensus_prob", "REAL")
@@ -387,6 +392,16 @@ class Database:
             # ticker_settlements.settled_at. Old rows stay NULL → consumers fall
             # back to entry timestamp.
             await self._add_column_if_missing(conn, "trades", "settled_at", "TEXT")
+            # Phase-1 instrumentation for the matched_game mismatch
+            # (investigation 2026-07-22). Signed seconds between the odds-API
+            # game we actually matched and the ticker's own scheduled start;
+            # NULL when it could not be computed. Nullable with no DEFAULT, so
+            # ADD COLUMN is an O(1) metadata-only rewrite even on the 8.9GB
+            # production DB (SQLite only rewrites rows when a non-NULL default
+            # is supplied). Not present in the CREATE TABLE above by design —
+            # same pattern as realized_fill_price / is_playoff / settled_at, so
+            # fresh and existing DBs converge through this one ALTER path.
+            await self._add_column_if_missing(conn, "trades", "match_delta_s", "REAL")
             await conn.commit()
 
     async def close(self):
@@ -471,6 +486,26 @@ class Database:
             )
             await conn.commit()
             return cursor.lastrowid
+
+    async def record_match_delta(self, trade_id: int,
+                                 match_delta_s: Optional[float]) -> None:
+        """Stamp phase-1 match-mismatch instrumentation onto an existing trade.
+
+        Deliberately a post-hoc UPDATE rather than a new record_trade()
+        parameter: the value is only needed for offline analysis, and threading
+        it through market_order/limit_order/_live_*/_paper_* would add a
+        parameter to six real-money order paths for no runtime benefit. A
+        failure here must never affect the trade, so callers wrap it — the
+        trade is already committed by the time this runs.
+        """
+        if match_delta_s is None:
+            return
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            await conn.execute(
+                "UPDATE trades SET match_delta_s = ? WHERE id = ?",
+                (match_delta_s, trade_id),
+            )
+            await conn.commit()
 
     async def record_order(self, order_id, market_id, strategy, side, price, size, order_type, status):
         now = datetime.now(timezone.utc).isoformat()
@@ -1217,6 +1252,7 @@ class Database:
         tournament_slug: Optional[str] = None,
         starter_home: Optional[str] = None,
         starter_away: Optional[str] = None,
+        match_delta_s: Optional[float] = None,
     ):
         now = datetime.now(timezone.utc).isoformat()
         playoff = is_playoff(kalshi_ticker, now)
@@ -1237,9 +1273,9 @@ class Database:
                     kalshi_yes_bid_size, kalshi_yes_ask_size,
                     kalshi_no_bid_size, kalshi_no_ask_size,
                     kalshi_volume_24h, kalshi_open_interest,
-                    tournament_slug, starter_home, starter_away)
+                    tournament_slug, starter_home, starter_away, match_delta_s)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (now, kalshi_ticker, series, sport, phase, minutes_to_start,
                  home_team, away_team, yes_sub_title, is_yes_home_int, is_yes_draw_int,
                  kalshi_yes_ask, kalshi_no_ask,
@@ -1250,7 +1286,7 @@ class Database:
                  kalshi_yes_bid_size, kalshi_yes_ask_size,
                  kalshi_no_bid_size, kalshi_no_ask_size,
                  kalshi_volume_24h, kalshi_open_interest,
-                 tournament_slug, starter_home, starter_away),
+                 tournament_slug, starter_home, starter_away, match_delta_s),
             )
             await conn.commit()
 
