@@ -7,6 +7,7 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Union
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -165,6 +166,151 @@ def _parse_kalshi_ticker_datetime(ticker: str) -> Optional[datetime]:
         return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
     except (ValueError, KeyError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# PHASE 1 INSTRUMENTATION ONLY — measures the matched_game mismatch, does NOT
+# change which game gets matched. See investigation 2026-07-22.
+#
+# `_match_kalshi_to_odds` picks the temporally nearest same-matchup candidate
+# and NEVER asks whether any candidate is actually this ticker's game. Because
+# the Odds API publishes MLB games only ~27h ahead, a T-3d ticker often sees
+# exactly ONE candidate — the currently-live earlier game in the same series —
+# and the `len(candidates) == 1` short-circuit returns it unconditionally.
+# Measured on the EC2 ledger: ~31% of all rows and ~32% of real-money
+# (settled/filled) rows were matched to the wrong game.
+#
+# Three defects feed it. The functions below encode the CORRECTED reference
+# time (all three fixed) purely so we can record how far off the live matcher
+# is. Phase 2 will feed this into the selection path; phase 1 must not.
+#   A. no absolute distance cap  (dominant; the short-circuit above)
+#   B. `_parse_kalshi_ticker_datetime` stamps tzinfo=utc, but Kalshi tickers
+#      encode US/Eastern — 4h (EDT) / 5h (EST) early. core/clv_tracker.py has
+#      always parsed them as ET and is the reference implementation.
+#   C. date-only tickers anchor at 12:00 UTC (= 08:00 ET); real starts cluster
+#      around 18:00-19:00 ET, biasing "closest" onto the PREVIOUS day's game.
+# ---------------------------------------------------------------------------
+
+# Kalshi sports tickers encode the scheduled start in US/Eastern, not UTC.
+# zoneinfo handles the EDT/EST transition, matching core/clv_tracker.py.
+_KALSHI_TICKER_TZ = ZoneInfo("America/New_York")
+# Date-only tickers (NBA/NHL/WNBA/MLS/ATP/WTA/UFC) carry no HHMM. 18:00 ET sits
+# near the median start, so the residual error is bounded by a few hours rather
+# than the ~11h that the 12:00-UTC anchor produced.
+_DATE_ONLY_ANCHOR_ET = (18, 0)
+# Absolute sanity caps used ONLY to decide whether to log a warning in phase 1.
+# HHMM tickers pin the start exactly, so tolerance only needs to absorb
+# doubleheaders and schedule slop. Date-only tickers inherit the anchor's
+# uncertainty and need a full evening's worth of slack.
+_MATCH_MAX_DELTA_S_PRECISE = 6 * 3600
+_MATCH_MAX_DELTA_S_DATE_ONLY = 20 * 3600
+
+# Fixed, greppable prefix for the phase-1 warning. Phase 2 flips these rows
+# from "logged" to "skipped", so the weekly journalctl count is the exact
+# forecast of the behaviour change.
+_MATCH_DELTA_LOG_PREFIX = "MATCH_DELTA_OVER_CAP"
+
+_TICKER_CLOCK_RE = re.compile(r"^KX[A-Z]+-\d{2}[A-Z]{3}\d{2}(\d{4})")
+
+
+def _ticker_has_clock(ticker: str) -> bool:
+    """True when the ticker carries an HHMM start time (MLB/NPB/KBO), False for
+    date-only tickers (NBA/NHL/WNBA/MLS/ATP/WTA/UFC) and unparseable input."""
+    m = _TICKER_CLOCK_RE.match(ticker or "")
+    return bool(m and m.group(1))
+
+
+def _ticker_scheduled_utc(ticker: str) -> Optional[datetime]:
+    """CORRECTED scheduled-start reference for a Kalshi sports ticker.
+
+    Fixes defects B and C relative to `_parse_kalshi_ticker_datetime`:
+    the ticker clock is read as US/Eastern, and date-only tickers anchor at
+    18:00 ET instead of 12:00 UTC.
+
+    For HHMM tickers this agrees exactly with
+    `core.clv_tracker.parse_game_start_utc`, which is locked by a regression
+    test. INSTRUMENTATION ONLY — never call this from the matching path in
+    phase 1; doing so would change which game gets selected.
+    """
+    m = re.match(r"^KX[A-Z]+-(\d{2})([A-Z]{3})(\d{2})(\d{4})?", ticker or "")
+    if not m:
+        return None
+    yy, mmm, dd, hhmm = m.groups()
+    month = _MONTH_MAP.get(mmm)
+    if not month:
+        return None
+    try:
+        if hhmm and len(hhmm) == 4:
+            hour, minute = int(hhmm[:2]), int(hhmm[2:])
+        else:
+            hour, minute = _DATE_ONLY_ANCHOR_ET
+        local = datetime(2000 + int(yy), month, int(dd), hour, minute,
+                         tzinfo=_KALSHI_TICKER_TZ)
+    except (ValueError, KeyError):
+        return None
+    return local.astimezone(timezone.utc)
+
+
+def _match_cap_seconds(ticker: str) -> float:
+    """Absolute delta beyond which the matched game is not this ticker's game."""
+    return (_MATCH_MAX_DELTA_S_PRECISE if _ticker_has_clock(ticker)
+            else _MATCH_MAX_DELTA_S_DATE_ONLY)
+
+
+def _match_delta_seconds(ticker: str,
+                         matched_game: Optional[dict]) -> Optional[float]:
+    """Signed seconds between the matched game's commence_time and the
+    ticker's own corrected scheduled start.
+
+    Positive = matched a LATER game than the ticker's; negative = an EARLIER
+    one (the observed failure mode, 92.7% of mismatches). Returns None when
+    either side is missing or unparseable, which is recorded as NULL rather
+    than being conflated with a zero delta.
+    """
+    if not matched_game:
+        return None
+    expected = _ticker_scheduled_utc(ticker)
+    if expected is None:
+        return None
+    ct = matched_game.get("commence_time")
+    if not ct:
+        return None
+    try:
+        game_dt = datetime.fromisoformat(str(ct).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if game_dt.tzinfo is None:
+        game_dt = game_dt.replace(tzinfo=timezone.utc)
+    return (game_dt - expected).total_seconds()
+
+
+def measure_match_delta(ticker: str, matched_game: Optional[dict],
+                        strategy_name: str = "", warn: bool = True
+                        ) -> Optional[float]:
+    """Compute the match delta and, when over cap, log it for weekly triage.
+
+    Returns the signed delta in seconds (None when it cannot be computed).
+    Has no effect on matching — callers record the return value and otherwise
+    proceed exactly as before.
+
+    `warn=False` suppresses the log line for high-frequency callers (the
+    scan observer writes one row per ticker per scan; its population-level
+    numbers come from the DB column, not from journalctl).
+    """
+    delta = _match_delta_seconds(ticker, matched_game)
+    if delta is None or not warn:
+        return delta
+    cap = _match_cap_seconds(ticker)
+    if abs(delta) > cap:
+        logger.warning(
+            f"{_MATCH_DELTA_LOG_PREFIX} strategy={strategy_name or '-'} "
+            f"ticker={ticker} delta_h={delta / 3600:.2f} "
+            f"cap_h={cap / 3600:.0f} "
+            f"matched_commence={matched_game.get('commence_time')} "
+            f"expected={_ticker_scheduled_utc(ticker).isoformat()} "
+            f"phase1=logged_only"
+        )
+    return delta
 
 
 def _match_individual_sport_to_odds(
@@ -1123,14 +1269,20 @@ class SportsTraderStrategy:
         sport: str,
         pinnacle_prob: Optional[float],
         is_yes_home: Optional[bool] = None,
+        booking_price: Optional[float] = None,
     ):
         """Place the order and record CLV in the background so the scanner
-        loop isn't blocked by a v31 limit+TTL poll (can be up to 60s)."""
+        loop isn't blocked by a v31 limit+TTL poll (can be up to 60s).
+
+        `limit_price` is the ORDER price (what Kalshi receives).
+        `booking_price` is the PAPER ledger price; None = book at limit_price.
+        See `_get_booking_price`.
+        """
         try:
             order_result = await self._order_manager.market_order(
                 ticker=ticker, side=side, size_usdc=size,
                 price=limit_price, strategy=self.STRATEGY_NAME, market_id=ticker,
-                minutes_to_start=minutes_to_start,
+                minutes_to_start=minutes_to_start, booking_price=booking_price,
             ) or {}
             status = order_result.get("status")
             reason = order_result.get("reason")
@@ -1154,6 +1306,22 @@ class SportsTraderStrategy:
                 return
             trade_id = order_result.get("trade_id")
             if trade_id is not None and status in ("paper_filled", "filled"):
+                # Phase-1 instrumentation. Runs AFTER the order is placed and
+                # recorded, so a failure here cannot affect the trade; the
+                # try/except keeps a DB hiccup from also killing the CLV
+                # snapshot below.
+                try:
+                    delta_s = measure_match_delta(
+                        ticker, matched_game, self.STRATEGY_NAME,
+                    )
+                    await self._order_manager._db.record_match_delta(
+                        trade_id, delta_s,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"[{self.STRATEGY_NAME}] match-delta record failed for "
+                        f"{ticker}: {type(e).__name__}: {e}"
+                    )
                 await self._record_entry_clv(
                     trade_id=trade_id,
                     ticker=ticker,
@@ -1492,11 +1660,44 @@ class SportsTraderStrategy:
         return self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.05
 
     def _get_limit_price(self, signal: dict, fair_prob: float) -> float:
-        """Default: limit at adjusted fair value."""
+        """Default: limit at adjusted fair value.
+
+        LOAD-BEARING for real money. This value is clamped, then judged by
+        MIN_ENTRY_PRICE / MAX_ENTRY_PRICE / ENTRY_PRICE_DEAD_ZONE (which decide
+        whether the trade fires at all), then converted into the cents we send
+        to Kalshi (order_manager._live_limit_ttl_order). It is NOT a
+        bookkeeping knob — to fix a dishonest paper price, override
+        `_get_booking_price` instead.
+        """
         adj = signal.get("adj_prob", fair_prob)
         if signal["side"] == "yes":
             return round(adj, 2)
         return round(1 - adj, 2)
+
+    def _get_booking_price(self, signal: dict, fair_prob: float,
+                           limit_price: float) -> float:
+        """Price the PAPER ledger books this entry at. Default = `limit_price`.
+
+        Split from `_get_limit_price` on 2026-07-22. A strategy whose default
+        limit rests BELOW the ask (the inherited "adjusted fair value") cannot
+        book its paper twin honestly by changing `_get_limit_price` — that
+        method also sets the live Kalshi limit and drives the entry-price
+        gates, so touching it moves real money and changes which trades fire.
+
+        This hook is booking-only:
+          * it is read AFTER every entry gate has already run on `limit_price`,
+            so it can never change what fires;
+          * it reaches ONLY `OrderManager._paper_market_order` (the paper twin
+            of a live strategy, and the pure-paper path) — never
+            `_live_market_order` / `_live_limit_ttl_order`.
+
+        Default is the identity so no existing strategy changes behavior.
+        Override it (returning `signal["price"]`, the ask the signal actually
+        saw) in any strategy that limits below the ask, otherwise the paper
+        twin books instant fills at a price that never existed on the book.
+        See memory tennis_live_fade_paper_pnl_artifact_2026-07-02.
+        """
+        return limit_price
 
     def _format_log(self, ticker: str, title: str, signal: dict,
                     ya: float, na: float, fair_prob: float, size: float,
@@ -2073,6 +2274,20 @@ class SportsTraderStrategy:
                         continue
                     spend[game_id] = current + size
 
+                # Booking price — PAPER ledger only. Computed HERE, after every
+                # entry gate has already been decided on `limit_price`, so it
+                # structurally cannot change what fires. `limit_price` remains
+                # the sole input to the live Kalshi order. See
+                # `_get_booking_price`.
+                booking_price = self._get_booking_price(
+                    signal, fair_prob, limit_price
+                )
+                if abs(booking_price - limit_price) >= 0.005:
+                    logger.info(
+                        f"[{self.STRATEGY_NAME}] {ticker}: paper books "
+                        f"@{booking_price:.3f} (live limit {limit_price:.3f})"
+                    )
+
                 log_msg = self._format_log(
                     ticker=ticker, title=title, signal=signal,
                     ya=ya, na=na, fair_prob=fair_prob, size=size,
@@ -2092,6 +2307,7 @@ class SportsTraderStrategy:
                     matched_game=matched_game, sport=sport_key,
                     pinnacle_prob=pin_prob_for_side,
                     is_yes_home=is_yes_home,
+                    booking_price=booking_price,
                 ))
                 self._pending_entry_tasks.add(task)
                 task.add_done_callback(self._pending_entry_tasks.discard)
