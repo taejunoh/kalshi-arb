@@ -186,25 +186,24 @@ def test_alert_game_first_entry_bets_with_no_header_bet_small(monkeypatch):
     assert "(pre-game)" in cap["t"] and "pre-game · bet small" not in cap["t"]
 
 
-def test_alert_prop_is_skip_no_bet_small(monkeypatch):
-    # any prop must read SKIP, and the whole message must carry NO 'bet small'.
+def test_alert_prop_first_entry_not_sent(monkeypatch):
+    # a prop — even first-entry High — must NOT push to Telegram. Only game
+    # first-entry BETs message now (user, 2026-07-22: "prop ... 보내지마").
     db = db_()
     b = prop_bet()
     snap(db, b, "2026-06-13T20:00:00+00:00", "High")
     cap = _capture(monkeypatch)
-    rec.alert_new_high(db, [b], "2026-06-13T21:00:00+00:00")
-    assert "SKIP" in cap["t"] and "prop" in cap["t"]
-    assert "bet small" not in cap["t"]
+    sent = rec.alert_new_high(db, [b], "2026-06-13T21:00:00+00:00")
+    assert "t" not in cap and sent == 0                   # no Telegram message
 
 
-def test_alert_prop_late_crosser_also_skips(monkeypatch):
+def test_alert_prop_late_crosser_not_sent(monkeypatch):
     db = db_()
     b = prop_bet()
-    snap(db, b, "2026-06-13T14:00:00+00:00", "Med")
+    snap(db, b, "2026-06-13T14:00:00+00:00", "Med")       # late-crosser prop
     cap = _capture(monkeypatch)
-    rec.alert_new_high(db, [b], "2026-06-13T20:00:00+00:00")
-    assert "SKIP" in cap["t"] and "prop" in cap["t"]
-    assert "bet small" not in cap["t"]
+    sent = rec.alert_new_high(db, [b], "2026-06-13T20:00:00+00:00")
+    assert "t" not in cap and sent == 0
 
 
 # ---------- flat unit stake on BET picks only (app parity, build#11) ----------
@@ -233,25 +232,54 @@ def test_alert_unit_stake_is_flat_not_kelly(monkeypatch):
     assert "💵 $25" in cap["t"]
 
 
-def test_alert_skip_prop_shows_no_stake(monkeypatch):
-    # SKIP picks must show NO $ amount — a stake would contradict SKIP (the app
-    # hides it on non-BET picks too).
-    db = db_()
-    b = prop_bet()
-    snap(db, b, "2026-06-13T20:00:00+00:00", "High")
-    cap = _capture(monkeypatch)
-    rec.alert_new_high(db, [b], "2026-06-13T21:00:00+00:00")
-    assert "SKIP" in cap["t"] and "💵" not in cap["t"]
-
-
-def test_alert_skip_late_crosser_game_shows_no_stake(monkeypatch):
-    # a game that only crossed into High after the line moved = late-crosser = SKIP.
+def test_alert_late_crosser_game_not_sent(monkeypatch):
+    # a game that only crossed into High after the line moved = late-crosser = SKIP,
+    # and SKIP no longer messages Telegram (user, 2026-07-22).
     db = db_()
     b = game_bet()
     snap(db, b, "2026-06-13T14:00:00+00:00", "Med")      # not High at first sight
     cap = _capture(monkeypatch)
-    rec.alert_new_high(db, [b], "2026-06-13T20:00:00+00:00")
-    assert "SKIP" in cap["t"] and "💵" not in cap["t"]
+    sent = rec.alert_new_high(db, [b], "2026-06-13T20:00:00+00:00")
+    assert "t" not in cap and sent == 0
+
+
+def test_skip_pick_still_recorded_despite_no_send(monkeypatch):
+    # SKIP picks are silent on Telegram but STILL written to high_alerted so
+    # dedup / dup-note / opposite-note context and the CLV/ledger trail survive.
+    # message_id stays NULL: no fill is ever expected on a pick we don't bet.
+    db = db_()
+    b = prop_bet()
+    snap(db, b, "2026-06-13T20:00:00+00:00", "High")
+    _capture(monkeypatch)
+    rec.alert_new_high(db, [b], "2026-06-13T21:00:00+00:00")
+    row = db.execute("SELECT event_id, market, side, message_id"
+                     " FROM high_alerted").fetchone()
+    assert row == (b["event_id"], b["market"], b["side"], None)   # recorded, unsent
+
+
+def test_alert_untagged_transient_miss_still_sends(monkeypatch):
+    # a lookup miss (no snapshot yet) yields an untagged note ("") — the alert must
+    # still fire: never silence a possible bet on a transient blip.
+    db = db_()                                           # no snapshot for this pick
+    b = game_bet()
+    cap = _capture(monkeypatch)
+    sent = rec.alert_new_high(db, [b], "2026-06-13T21:00:00+00:00")
+    assert "t" in cap and sent == 1 and "SKIP" not in cap["t"]
+
+
+def test_alert_mixed_scan_sends_only_the_bet(monkeypatch):
+    # a scan mixing a BET (game first-entry) and a SKIP (prop) sends ONLY the BET.
+    db = db_()
+    bet, skip = game_bet(), prop_bet()
+    snap(db, bet, "2026-06-13T20:00:00+00:00", "High")
+    snap(db, skip, "2026-06-13T20:00:00+00:00", "High")
+    sent_texts = []
+    monkeypatch.setattr(rec, "send_telegram",
+                        lambda t: sent_texts.append(t) or len(sent_texts))
+    monkeypatch.setattr(rec.time, "sleep", lambda *a: None)
+    sent = rec.alert_new_high(db, [bet, skip], "2026-06-13T21:00:00+00:00")
+    assert sent == 1 and len(sent_texts) == 1
+    assert "🟣 BET" in sent_texts[0] and "SKIP" not in sent_texts[0]
 
 
 # ---------- odds shown in American (matches the US sportsbook screen) ----------
