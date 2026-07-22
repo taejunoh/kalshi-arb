@@ -25,6 +25,13 @@ export interface Pick {
   // BET verdict = FIRST-ENTRY GAME ONLY (core.is_bet: h2h/spread/total & first-entry;
   // props and late-crossers are false). Drives the card badge and the bet filter.
   should_bet?: boolean;
+  // Advisory overlay on a BET verdict (core.is_ev_watch, 2026-07-22): ML at stated
+  // EV >= 5% is under forward review — that cell ran 4-21 (-60.8%) in both June and
+  // July, while the same band was fine on spread/total. should_bet stays TRUE (the
+  // rule did not change, so the paper ledger keeps scoring these and the forward
+  // sample accrues); this flag only swaps the badge and hides the stake so the card
+  // says hold. Optional: a pre-deploy API omits it.
+  ev_watch?: boolean;
 }
 
 export interface PicksResponse {

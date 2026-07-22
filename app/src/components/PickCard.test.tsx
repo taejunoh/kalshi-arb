@@ -77,6 +77,42 @@ test("shows no BET/SKIP badge when the flag is absent", async () => {
   expect(screen.queryByText(/🟣 BET|⚪ SKIP/)).toBeNull();
 });
 
+// ---- ev_watch: a BET the backend asks us to hold (core.is_ev_watch, 2026-07-22) ----
+// should_bet stays TRUE — the bet rule did not change, so these keep scoring in the
+// paper ledger. The card only has to make the hold visible and drop the stake.
+
+test("shows the 🟡 관찰 badge instead of BET when ev_watch is set", async () => {
+  await render(<PickCard pick={{ ...PICK, should_bet: true, ev_watch: true }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  // anchored on the emoji: the explainer line below also contains "관찰"
+  expect(await screen.findByText(/🟡 관찰/)).toBeOnTheScreen();
+  expect(screen.queryByText(/🟣 BET/)).toBeNull();
+  expect(screen.queryByText(/SKIP/)).toBeNull();          // held, NOT demoted to skip
+});
+
+test("explains why a watched pick is held", async () => {
+  await render(<PickCard pick={{ ...PICK, should_bet: true, ev_watch: true }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(await screen.findByText(/ML EV≥5%/)).toBeOnTheScreen();
+});
+
+test("does NOT show a stake on watched picks ('$20' would contradict '보류')", async () => {
+  await render(<PickCard pick={{ ...PICK, should_bet: true, ev_watch: true }} unitStake={20} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(screen.getByTestId("bet-button")).toHaveTextContent("베팅");
+  expect(screen.queryByText("베팅 $20")).toBeNull();
+});
+
+test("ev_watch on a SKIP pick changes nothing (a skip is already not recommended)", async () => {
+  await render(<PickCard pick={{ ...PICK, should_bet: false, ev_watch: true }} unitStake={20} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(await screen.findByText(/SKIP/)).toBeOnTheScreen();
+  expect(screen.queryByText(/🟡 관찰/)).toBeNull();
+});
+
+test("a plain BET is unaffected when ev_watch is false or absent", async () => {
+  await render(<PickCard pick={{ ...PICK, should_bet: true, ev_watch: false }} unitStake={20} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(await screen.findByText(/🟣 BET/)).toBeOnTheScreen();
+  expect(screen.getByText("베팅 $20")).toBeOnTheScreen();
+  expect(screen.queryByText(/🟡 관찰/)).toBeNull();
+});
+
 // Gesture simulation isn't reliable in jest, so we press the revealed swipe
 // action directly to lock the wiring. onDismiss takes the Pick (same as the
 // inline button), so we assert it's called with the pick.

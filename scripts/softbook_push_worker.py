@@ -121,8 +121,12 @@ def _high_messages(ev, pdb, tokens, now):
         head = f"{game} · {label}" if game else label
         body = (f"{head} · {r['best_soft_book']} {rec._american(r['best_soft_price'])}"
                 f" · EV {(r['snapshot_ev'] or 0)*100:+.1f}%" + _opp_note(rows, r))
+        # Advisory only (core.is_ev_watch) — the pick still pushes; the title just
+        # says hold. Same single source as the Telegram tag / app ev_watch flag.
+        watch = core.is_ev_watch(r["market"], r["snapshot_ev"])
+        title = "🟡 관찰 · ML EV≥5% (보류 권장)" if watch else "🟣 First-entry game +EV"
         for tok in tokens:
-            msgs.append(push.build_message(tok, "🟣 First-entry game +EV", body,
+            msgs.append(push.build_message(tok, title, body,
                                            data={"pick_id": pid}, category="high_pick"))
     pdb.commit()
     return msgs
