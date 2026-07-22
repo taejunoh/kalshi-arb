@@ -99,3 +99,25 @@ class SportsTennisUnderdogV1Strategy(SportsTraderStrategy):
         # Conservative paper sizing — matches v31 family base ($4 micro) so
         # any live promotion has a familiar reference point.
         return min(4.0, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
+
+    # BOOKKEEPING (2026-07-22) — same fair-price artifact as tennis_live_fade.
+    # This strategy selects on the ASK (`MIN_ENTRY_PRICE <= kalshi_yes <=
+    # MAX_ENTRY_PRICE` in evaluate) but inherits `_get_limit_price`, which
+    # limits at consensus fair — so the paper twin was booking at a price the
+    # book never showed. Unlike live_fade the sign is not one-directional here
+    # (the Pinnacle veto only bounds pin, not consensus fair, so fair can land
+    # either side of the ask), which makes the twin's PnL noise rather than a
+    # clean inflation — dishonest either way.
+    #
+    # `signal["price"]` is `kalshi_yes`, i.e. `yes_ask_dollars`, and the signal
+    # is always side="yes", so the ask IS the honest taker price.
+    #
+    # ONLY the booking price changes. `_get_limit_price` stays inherited: this
+    # is a LIVE strategy and that method sets the real Kalshi limit and feeds
+    # the entry-price gates. DO NOT convert this into a `_get_limit_price`
+    # override — note in particular that MIN/MAX_ENTRY_PRICE (0.25/0.29)
+    # currently gate on the fair-value limit, so such a change would silently
+    # rewrite this strategy's fire set.
+    def _get_booking_price(self, signal: dict, fair_prob: float,
+                           limit_price: float) -> float:
+        return signal["price"]
