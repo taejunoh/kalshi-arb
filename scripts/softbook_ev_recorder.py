@@ -21,6 +21,9 @@ WAKE_UTC = os.getenv("SOFTBOOK_WAKE_UTC", "08:30")
 # pick", NOT EV-scaled). Env-overridable so this channel tracks the app default.
 # SKIP picks (props / late-crossers) show NO amount — the app hides it too; the
 # BET/SKIP tag (_first_entry_note) is the single source of which picks we stake.
+# Since 2026-07-22 SKIP picks are ALSO silent on Telegram (alert_new_high skips the
+# send) — only game first-entry BETs (incl. WATCH advisories) message; SKIPs stay
+# recorded for dedup/context/ledger. A transient note miss ("") still sends.
 UNIT_STAKE = float(os.getenv("SOFTBOOK_UNIT_STAKE", "20"))
 BET_TAG = "🟣 BET · first-entry game — 베팅 (bet small)"
 # Advisory overlay on a BET verdict (core.is_ev_watch) — the bet rule is unchanged,
@@ -29,6 +32,9 @@ BET_TAG = "🟣 BET · first-entry game — 베팅 (bet small)"
 # drops out (it would contradict "보류 권장"), same as a SKIP.
 WATCH_TAG = ("🟡 BET(관찰) · ML EV≥5% — 베팅 보류 권장\n"
              "   페이퍼 4승 21패 −60.8% (6·7월 모두 음수) · 7/22~ 전진관찰 중")
+PROP_SKIP_TAG = "⚪ SKIP · prop (게임 first-entry만 베팅)"
+LATE_CROSSER_SKIP_TAG = "⚪ SKIP · late-crosser game (라인 이동 후)"
+SKIP_TAGS = (PROP_SKIP_TAG, LATE_CROSSER_SKIP_TAG)
 
 
 def _is_bet(db, event_id, market, side, player):
@@ -166,20 +172,23 @@ def _first_entry_note(db, b):
         # Advisory only — the verdict above is still BET (core.is_ev_watch never gates).
         return WATCH_TAG if core.is_ev_watch(b["market"], b.get("ev")) else BET_TAG
     if b["market"] in core.PROP_SHORT:
-        return "⚪ SKIP · prop (게임 first-entry만 베팅)"
-    return "⚪ SKIP · late-crosser game (라인 이동 후)"
+        return PROP_SKIP_TAG
+    return LATE_CROSSER_SKIP_TAG
 
 
-def _send_bet_alert(db, b, prefix, extra="", batch=()):
+def _send_bet_alert(db, b, prefix, extra="", batch=(), fe=None):
     """One Telegram message per bet (NOT batched: a reply must identify exactly
     one bet) and stamp book/odds/message_id onto its high_alerted row.
     On a failed send the dedup row is DELETED so the next 20-min scan retries —
     otherwise one transient Telegram error would silence that bet forever AND
     leave message_id NULL (untrackable fill). Commits per bet: the write txn
     must not span the next send's HTTP round-trip (refresh + digest units can
-    overlap on this root-owned db at digest hours)."""
+    overlap on this root-owned db at digest hours).
+    fe: precomputed BET/SKIP tag (alert_new_high passes it after gating so it is
+    not looked up twice); recomputed here when the caller omits it."""
     pk = (b["event_id"], b["market"], b["side"], b["point"] or 0, b.get("player") or "")
-    fe = _first_entry_note(db, b)
+    if fe is None:
+        fe = _first_entry_note(db, b)
     stake_seg = f" · 💵 ${UNIT_STAKE:.0f}" if fe == BET_TAG else ""   # bet picks only (app parity)
     text = (f"{prefix}\n{fe}\n\n" if fe else f"{prefix}\n\n") + (
             f"• {b['away'][:16]} @ {b['home'][:16]}\n"
@@ -339,12 +348,19 @@ def alert_new_high(db, bets, now):
     if not new:
         return 0
     new.sort(key=lambda b: -b["ev"])
-    for b in new[:8]:
-        _send_bet_alert(db, b, "🟣 High +EV 즉시 알림 (pre-game)", batch=new)
-    if len(new) > 8:
-        send_telegram(f"…+{len(new)-8} more new High — 대쉬보드 +EV 탭 확인")
+    # Telegram only the BET picks (first-entry game; WATCH is a BET advisory and still
+    # sends). SKIP picks (props, late-crossers) stay recorded above — dedup, dup/opposite
+    # context, and the CLV/ledger trail — but no longer message (user, 2026-07-22). A
+    # transient note miss ("") is NOT a SKIP tag, so it still sends: never silence a
+    # possible bet on a lookup blip.
+    to_send = [(b, fe) for b, fe in ((b, _first_entry_note(db, b)) for b in new)
+               if fe not in SKIP_TAGS]
+    for b, fe in to_send[:8]:
+        _send_bet_alert(db, b, "🟣 High +EV 즉시 알림 (pre-game)", batch=new, fe=fe)
+    if len(to_send) > 8:
+        send_telegram(f"…+{len(to_send)-8} more new High — 대쉬보드 +EV 탭 확인")
     db.commit()
-    return len(new)
+    return len(to_send)
 
 
 def _et(iso):
