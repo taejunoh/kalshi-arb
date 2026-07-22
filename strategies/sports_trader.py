@@ -1269,14 +1269,20 @@ class SportsTraderStrategy:
         sport: str,
         pinnacle_prob: Optional[float],
         is_yes_home: Optional[bool] = None,
+        booking_price: Optional[float] = None,
     ):
         """Place the order and record CLV in the background so the scanner
-        loop isn't blocked by a v31 limit+TTL poll (can be up to 60s)."""
+        loop isn't blocked by a v31 limit+TTL poll (can be up to 60s).
+
+        `limit_price` is the ORDER price (what Kalshi receives).
+        `booking_price` is the PAPER ledger price; None = book at limit_price.
+        See `_get_booking_price`.
+        """
         try:
             order_result = await self._order_manager.market_order(
                 ticker=ticker, side=side, size_usdc=size,
                 price=limit_price, strategy=self.STRATEGY_NAME, market_id=ticker,
-                minutes_to_start=minutes_to_start,
+                minutes_to_start=minutes_to_start, booking_price=booking_price,
             ) or {}
             status = order_result.get("status")
             reason = order_result.get("reason")
@@ -1654,11 +1660,44 @@ class SportsTraderStrategy:
         return self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.05
 
     def _get_limit_price(self, signal: dict, fair_prob: float) -> float:
-        """Default: limit at adjusted fair value."""
+        """Default: limit at adjusted fair value.
+
+        LOAD-BEARING for real money. This value is clamped, then judged by
+        MIN_ENTRY_PRICE / MAX_ENTRY_PRICE / ENTRY_PRICE_DEAD_ZONE (which decide
+        whether the trade fires at all), then converted into the cents we send
+        to Kalshi (order_manager._live_limit_ttl_order). It is NOT a
+        bookkeeping knob — to fix a dishonest paper price, override
+        `_get_booking_price` instead.
+        """
         adj = signal.get("adj_prob", fair_prob)
         if signal["side"] == "yes":
             return round(adj, 2)
         return round(1 - adj, 2)
+
+    def _get_booking_price(self, signal: dict, fair_prob: float,
+                           limit_price: float) -> float:
+        """Price the PAPER ledger books this entry at. Default = `limit_price`.
+
+        Split from `_get_limit_price` on 2026-07-22. A strategy whose default
+        limit rests BELOW the ask (the inherited "adjusted fair value") cannot
+        book its paper twin honestly by changing `_get_limit_price` — that
+        method also sets the live Kalshi limit and drives the entry-price
+        gates, so touching it moves real money and changes which trades fire.
+
+        This hook is booking-only:
+          * it is read AFTER every entry gate has already run on `limit_price`,
+            so it can never change what fires;
+          * it reaches ONLY `OrderManager._paper_market_order` (the paper twin
+            of a live strategy, and the pure-paper path) — never
+            `_live_market_order` / `_live_limit_ttl_order`.
+
+        Default is the identity so no existing strategy changes behavior.
+        Override it (returning `signal["price"]`, the ask the signal actually
+        saw) in any strategy that limits below the ask, otherwise the paper
+        twin books instant fills at a price that never existed on the book.
+        See memory tennis_live_fade_paper_pnl_artifact_2026-07-02.
+        """
+        return limit_price
 
     def _format_log(self, ticker: str, title: str, signal: dict,
                     ya: float, na: float, fair_prob: float, size: float,
@@ -2235,6 +2274,20 @@ class SportsTraderStrategy:
                         continue
                     spend[game_id] = current + size
 
+                # Booking price — PAPER ledger only. Computed HERE, after every
+                # entry gate has already been decided on `limit_price`, so it
+                # structurally cannot change what fires. `limit_price` remains
+                # the sole input to the live Kalshi order. See
+                # `_get_booking_price`.
+                booking_price = self._get_booking_price(
+                    signal, fair_prob, limit_price
+                )
+                if abs(booking_price - limit_price) >= 0.005:
+                    logger.info(
+                        f"[{self.STRATEGY_NAME}] {ticker}: paper books "
+                        f"@{booking_price:.3f} (live limit {limit_price:.3f})"
+                    )
+
                 log_msg = self._format_log(
                     ticker=ticker, title=title, signal=signal,
                     ya=ya, na=na, fair_prob=fair_prob, size=size,
@@ -2254,6 +2307,7 @@ class SportsTraderStrategy:
                     matched_game=matched_game, sport=sport_key,
                     pinnacle_prob=pin_prob_for_side,
                     is_yes_home=is_yes_home,
+                    booking_price=booking_price,
                 ))
                 self._pending_entry_tasks.add(task)
                 task.add_done_callback(self._pending_entry_tasks.discard)

@@ -71,6 +71,33 @@ class SportsMlbPitcherEdgeV21Strategy(SportsMlbPitcherEdgeV2Strategy):
             base = self.SIZE_TIER_LOW
         return min(base, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
+    # BOOKKEEPING (2026-07-22) — same fair-price artifact as tennis_live_fade.
+    # The signal comes from `super().evaluate()` (v2), which is unconditionally
+    # side="yes" with `"price": kalshi_yes` = `yes_ask_dollars` and is gated on
+    # the ASK (`MIN_KALSHI_PRICE <= kalshi_yes <= MAX_KALSHI_PRICE`, 0.40-0.75);
+    # v2_1 only adds a book-depth veto and relabels, it never rewrites `price`.
+    # So the ask IS the honest taker price. The inherited `_get_limit_price`
+    # limits at consensus fair, which the paper twin was booking as an instant
+    # fill — a price the book never showed. As with v1 the edge is an ERA
+    # differential, not a price-vs-fair gap, so the artifact is bidirectional.
+    #
+    # DELIBERATELY ON v2_1, NOT ON THE PARENT `SportsMlbPitcherEdgeV2Strategy`.
+    # The parent runs as its own strategy (`sports_mlb_pitcher_edge_v2`,
+    # instantiated + scan-looped in main.py) and is PAPER-ONLY — it is not in
+    # LIVE_STRATEGIES and not in PAPER_TWIN_STRATEGIES. Overriding on the
+    # parent would silently re-base a fifth ledger that is outside the approved
+    # scope of this fix and would put an unannotated structural break in its
+    # paper series. v2 has the same artifact and should get the same override
+    # in a follow-up, with its own cutoff annotation.
+    #
+    # ONLY the booking price changes here. `_get_limit_price` stays inherited —
+    # this is a LIVE strategy and that method sets the real Kalshi limit and
+    # feeds the entry-price gates. DO NOT convert this into a
+    # `_get_limit_price` override without an explicit live-behavior decision.
+    def _get_booking_price(self, signal: dict, fair_prob: float,
+                           limit_price: float) -> float:
+        return signal["price"]
+
     def _check_books_deep(self, ticker: str) -> bool:
         """True iff latest odds_observations row for ticker has
         n_books_eu + n_books_us ≥ MIN_BOOKS_TOTAL.

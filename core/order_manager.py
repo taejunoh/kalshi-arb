@@ -583,7 +583,22 @@ class OrderManager:
         return strategy in self.config.LIVE_STRATEGIES
 
     async def market_order(self, ticker, side, size_usdc, price, strategy, market_id,
-                           minutes_to_start: Optional[float] = None):
+                           minutes_to_start: Optional[float] = None,
+                           booking_price: Optional[float] = None):
+        """`price` is the ORDER price — it is what we send to Kalshi.
+
+        `booking_price` (optional, 2026-07-22) is the price the PAPER ledger
+        records. It never reaches the live dispatchers. Default None => book at
+        `price` (identity; historical behavior for every caller that doesn't
+        pass it).
+
+        Needed because some sports strategies rest their live limit BELOW the
+        ask: booking the paper twin at that resting limit fabricates fills at a
+        price that never existed on the book (tennis_live_fade 30d: paper avg
+        entry 0.736 / +$212.80 n=160 vs real avg fill 0.822 / -$7.97 n=43).
+        See SportsTraderStrategy._get_booking_price.
+        """
+        book_px = price if booking_price is None else max(0.01, min(0.99, booking_price))
         if self._is_live(strategy):
             logger.info(f"[LIVE] {strategy} {side} {ticker} ${size_usdc:.2f} @ {price:.3f}")
             # Paper twin: same signal, same strategy name, idealized fill.
@@ -593,8 +608,10 @@ class OrderManager:
             # the live order on paper bankroll: real Kalshi balance is
             # verified inside _live_market_order and _live_limit_ttl_order.
             if strategy in PAPER_TWIN_STRATEGIES:
+                # Twin books at `book_px` (honest ask when the strategy
+                # supplies one); the live order below still uses `price`.
                 asyncio.create_task(self._paper_market_order(
-                    ticker, side, size_usdc, price, strategy, market_id,
+                    ticker, side, size_usdc, book_px, strategy, market_id,
                     minutes_to_start=minutes_to_start,
                 ))
             if strategy in LIMIT_TTL_STRATEGIES:
@@ -638,7 +655,7 @@ class OrderManager:
         if self.bankroll < size_usdc:
             logger.warning(f"Insufficient bankroll: ${self.bankroll:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
             return {"status": "skipped", "reason": "insufficient_bankroll"}
-        return await self._paper_market_order(ticker, side, size_usdc, price, strategy, market_id,
+        return await self._paper_market_order(ticker, side, size_usdc, book_px, strategy, market_id,
                                               minutes_to_start=minutes_to_start)
 
     async def limit_order(self, ticker, side, price, size_usdc, strategy, market_id,

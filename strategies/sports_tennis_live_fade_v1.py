@@ -101,6 +101,27 @@ class SportsTennisLiveFadeV1Strategy(SportsTraderStrategy):
     def _get_trade_size(self, signal: dict) -> float:
         return self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.04
 
+    # BOOKKEEPING (2026-07-22) — the live_fade lesson, finally applied to
+    # live_fade itself. This strategy only fires when the ask sits >=5pp ABOVE
+    # consensus fair, while the inherited `_get_limit_price` limits AT fair, so
+    # the paper twin was booking instant fills ~9c below any price that existed
+    # on the book (30d: paper avg entry 0.736 / +$212.80 n=160 vs real avg fill
+    # 0.822 / -$7.97 n=43 on the same signal). `signal["price"]` is the observed
+    # ask (evaluate() is fed yes_ask_dollars / no_ask_dollars) on BOTH the yes
+    # and no branch, so it is the honest taker price for either side.
+    #
+    # We fix ONLY the booking price. `_get_limit_price` is deliberately NOT
+    # overridden here (unlike the paper-only siblings mlb_live_pin_follow_v1 /
+    # kbo_live_fade_tight_v1 / ufc_live_fade_v1, which override it): this
+    # strategy is LIVE, and that method sets the real Kalshi limit AND drives
+    # the MIN/MAX_ENTRY_PRICE + dead-zone gates. Changing it would cross the
+    # spread with real money and alter which trades fire. DO NOT "simplify"
+    # this into a `_get_limit_price` override without an explicit
+    # live-behavior decision.
+    def _get_booking_price(self, signal: dict, fair_prob: float,
+                           limit_price: float) -> float:
+        return signal["price"]
+
     def evaluate(self, kalshi_yes: float, kalshi_no: float, fair_prob: float,
                  line_movement: float = 0.0, home_adj: float = 0.0,
                  ticker: str = "") -> Optional[dict]:
