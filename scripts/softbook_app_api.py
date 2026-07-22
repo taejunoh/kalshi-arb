@@ -135,6 +135,10 @@ def _enrich_first_entry(picks):
             # should_bet = the BET verdict (first-entry GAME only); named distinctly
             # from the pick lifecycle status 'bet' (user-marked-as-placed).
             p["should_bet"] = core.is_bet(p["first_entry"], p["market"])
+            # Advisory overlay (2026-07-22): should_bet stays True, but this cell is
+            # under forward review — see core.is_ev_watch. Same flag the Telegram tag
+            # and the push worker read, so the three surfaces can't drift apart.
+            p["ev_watch"] = core.is_ev_watch(p["market"], p.get("ev"))
     finally:
         c.close()
     return picks
