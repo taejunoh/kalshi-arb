@@ -23,6 +23,12 @@ WAKE_UTC = os.getenv("SOFTBOOK_WAKE_UTC", "08:30")
 # BET/SKIP tag (_first_entry_note) is the single source of which picks we stake.
 UNIT_STAKE = float(os.getenv("SOFTBOOK_UNIT_STAKE", "20"))
 BET_TAG = "🟣 BET · first-entry game — 베팅 (bet small)"
+# Advisory overlay on a BET verdict (core.is_ev_watch) — the bet rule is unchanged,
+# so these still record to the paper ledger and still push; we just ask the user to
+# hold while the cell re-measures. Distinct from BET_TAG so the "💵 $N" stake segment
+# drops out (it would contradict "보류 권장"), same as a SKIP.
+WATCH_TAG = ("🟡 BET(관찰) · ML EV≥5% — 베팅 보류 권장\n"
+             "   페이퍼 4승 21패 −60.8% (6·7월 모두 음수) · 7/22~ 전진관찰 중")
 
 
 def _is_bet(db, event_id, market, side, player):
@@ -139,6 +145,11 @@ def _first_entry_note(db, b):
     BONUSES, not the picks; these ≈BE game bets are the low-variance vehicle to clear
     them. No size increase until forward CLV confirms an edge.
 
+    Since 2026-07-22 a BET may come back as WATCH_TAG instead: same verdict, plus a
+    "hold" advisory for the one cell under forward review (core.is_ev_watch = ML with
+    EV>=5%). It does NOT gate anything — the pick still pushes and still books to the
+    paper ledger, which is what makes the forward re-measure possible.
+
     Looks up the High sides at the (event, market, player)'s earliest snapshot, then
     matches THIS side; record() persists this scan's snapshot before alert_new_high.
     Non-critical: any lookup error / missing snapshot → "" (the alert still fires untagged
@@ -152,7 +163,8 @@ def _first_entry_note(db, b):
         return ""
     first_entry = b["side"] in sides                      # side-aware (single source)
     if core.is_bet(first_entry, b["market"]):        # game + first-entry (single source)
-        return BET_TAG
+        # Advisory only — the verdict above is still BET (core.is_ev_watch never gates).
+        return WATCH_TAG if core.is_ev_watch(b["market"], b.get("ev")) else BET_TAG
     if b["market"] in core.PROP_SHORT:
         return "⚪ SKIP · prop (게임 first-entry만 베팅)"
     return "⚪ SKIP · late-crosser game (라인 이동 후)"
