@@ -33,6 +33,7 @@ from strategies.sports_trader import (
     _individual_yes_is_home,
     _match_individual_sport_to_odds,
     _name_overlap_score,
+    measure_match_delta,
 )
 
 logger = logging.getLogger("sports_scan_observer")
@@ -260,6 +261,15 @@ class SportsScanObserver(SportsTraderStrategy):
 
                 mts = _commence_time_to_minutes(matched_game.get("commence_time"))
                 phase = "pre" if (mts is not None and mts > 0) else "live"
+                # Phase-1 instrumentation: how far the matched game is from
+                # this ticker's own scheduled start. This is the full-
+                # population sample, so it is what quantifies the `phase`
+                # label contamination. warn=False — one row per ticker per
+                # scan would flood journalctl at the observed ~31% rate; the
+                # aggregate comes from the DB column instead.
+                match_delta_s = measure_match_delta(
+                    ticker, matched_game, "observer", warn=False,
+                )
 
                 # Capture starting pitcher/goalie for MLB/NHL (None for other sports).
                 # Uses the game's commence_time date in UTC (game day in API's calendar).
@@ -308,6 +318,7 @@ class SportsScanObserver(SportsTraderStrategy):
                         tournament_slug=sport_key,
                         starter_home=starter_home_name,
                         starter_away=starter_away_name,
+                        match_delta_s=match_delta_s,
                     )
                 except Exception as e:
                     logger.warning(

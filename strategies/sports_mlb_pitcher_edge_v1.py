@@ -96,6 +96,25 @@ class SportsMlbPitcherEdgeV1Strategy(SportsTraderStrategy):
     def _get_trade_size(self, signal: dict) -> float:
         return min(self.BASE_SIZE_USDC, self._order_manager.sizing_bankroll(self.STRATEGY_NAME) * 0.02)
 
+    # BOOKKEEPING (2026-07-22) — same fair-price artifact as tennis_live_fade.
+    # v1 selects on the ASK (`MIN_YES_PRICE <= kalshi_yes <= MAX_YES_PRICE`,
+    # band 0.40-0.75) but inherits `_get_limit_price`, which limits at
+    # consensus fair — so the paper twin booked at a price the book never
+    # showed. The signal is unconditionally side="yes" with
+    # `"price": kalshi_yes` = `yes_ask_dollars`, so the ask IS the honest
+    # taker price. Note v1's edge is an ERA differential, NOT a
+    # price-vs-fair gap: fair can sit on either side of the ask, so the
+    # artifact is bidirectional noise rather than a clean inflation.
+    #
+    # ONLY the booking price changes. `_get_limit_price` stays inherited —
+    # this is a LIVE strategy and that method sets the real Kalshi limit and
+    # feeds the MIN/MAX_ENTRY_PRICE + dead-zone gates. DO NOT convert this
+    # into a `_get_limit_price` override without an explicit live-behavior
+    # decision.
+    def _get_booking_price(self, signal: dict, fair_prob: float,
+                           limit_price: float) -> float:
+        return signal["price"]
+
     def _load_pitcher_cache(self):
         """Refresh ticker→(era_diff, better_team) cache from DB."""
         now = time.time()
