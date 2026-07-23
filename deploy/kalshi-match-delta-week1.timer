@@ -1,0 +1,10 @@
+[Unit]
+Description=matched_game instrumentation week-1 report (one-shot, 2026-07-29 22:30 UTC)
+
+[Timer]
+OnCalendar=2026-07-29 22:30:00 UTC
+Persistent=true
+AccuracySec=60s
+
+[Install]
+WantedBy=timers.target
