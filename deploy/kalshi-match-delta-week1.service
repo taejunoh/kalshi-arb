@@ -1,0 +1,10 @@
+[Unit]
+Description=matched_game mismatch week-1 Telegram report (one-shot)
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python3 scripts/match_delta_week1_report.py
+RuntimeMaxSec=120
