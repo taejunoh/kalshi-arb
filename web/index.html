@@ -143,7 +143,7 @@
       </div>
       <div class="card">
         <div class="k">Tracking window</div>
-        <div class="v mono" style="font-size:22px;padding-top:6px">Jun 7–25</div>
+        <div class="v mono" id="c-win" style="font-size:22px;padding-top:6px">Jun 7–25</div>
         <div class="s">2026 · auto-graded daily</div>
       </div>
     </div>
@@ -350,6 +350,7 @@ function render(){
   document.getElementById('c-rec').textContent = DATA.w+"–"+DATA.l;
   document.getElementById('c-wr').textContent  = DATA.win.toFixed(0)+"%";
   document.getElementById('c-pnl').textContent = u(DATA.pnl);
+  document.getElementById('c-win').textContent = (DATA.since||'Jun 7')+"–"+(DATA.until||'Jun 25');
   document.getElementById('eq-final').textContent = u(DATA.pnl);
 
 document.getElementById('bymkt').innerHTML = DATA.byMarket.map(m=>{
