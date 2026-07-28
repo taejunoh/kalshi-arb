@@ -19,6 +19,13 @@ export interface Pick {
   odds: number | null;
   conf: number | null;
   n_books: number | null;
+  // 최소/본전 bars in DECIMAL odds, computed server-side by core.odds_bars (the
+  // same call the Telegram alert makes) and served on /picks. They encode EV_MIN
+  // — a policy constant — so the app must not derive them locally; optional
+  // because a payload predating the field, or an unknown ev/price, omits them and
+  // the card then hides the line.
+  min_odds?: number | null;
+  be_odds?: number | null;
   // True when this (event,market,player)'s earliest snapshot was already High
   // (first-entry). Informational; the actionable verdict is should_bet.
   first_entry?: boolean;

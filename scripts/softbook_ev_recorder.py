@@ -112,9 +112,13 @@ def _american(dec):
 
 def _min_odds_line(ev, odds):
     """Floor odds for taking this bet at ANY book: EV scales ~1:1 with the odds,
-    so below min the user's ROI>=1% bar is gone even though the alert said +EV."""
-    fair = (1 + ev) / odds
-    return (f"   ✂️ 최소 {_american((1 + core.EV_MIN) / fair)} · 본전 {_american(1 / fair)}"
+    so below min the user's ROI>=1% bar is gone even though the alert said +EV.
+    Bars come from core.odds_bars so the alert and the app card can't drift."""
+    bars = core.odds_bars(ev, odds)
+    if bars is None:
+        return ""
+    mn, be = bars
+    return (f"   ✂️ 최소 {_american(mn)} · 본전 {_american(be)}"
             " (어느 북이든 최소 위면 OK)")
 
 

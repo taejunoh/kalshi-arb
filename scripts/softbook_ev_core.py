@@ -34,6 +34,33 @@ MAX_HOURS = 72
 QUIET_UTC = range(2, 9)     # 22:00-05:00 NYC sleep — no Telegram pushes in this window
 B = "https://api.the-odds-api.com/v4/sports"
 
+def odds_bars(ev, odds):
+    """The two prices a user shops books against, from a pick's stated EV and the
+    decimal price it was quoted at. Recover the sharp fair win-probability
+    (fair = (1+ev)/odds), then return DECIMAL odds:
+
+      be  (본전) = 1/fair            — breakeven; the price where EV hits 0.
+      min (최소) = (1+EV_MIN)/fair   — floor; the worst price still clearing the
+                                       ROI>=1% policy bar. 어느 북이든 최소 위면 OK.
+
+    Returns (min, be) or None when ev/odds are missing or the quoted price is not
+    a valid decimal (>1).
+
+    SINGLE SOURCE for every surface that shows these bars. EV_MIN is policy, and
+    a surface that hard-codes its own copy will keep showing the old floor after
+    the policy moves — the app used to mirror this formula and the constant in
+    TypeScript, which is exactly the drift this function exists to prevent.
+    Consumers: the Telegram alert (softbook_ev_recorder._min_odds_line) and the
+    app card (softbook_app_api serves min_odds/be_odds on /picks).
+    """
+    if ev is None or odds is None or odds <= 1:
+        return None
+    fair = (1 + ev) / odds
+    if fair <= 0:
+        return None
+    return (1 + EV_MIN) / fair, 1 / fair
+
+
 GAME_MARKETS = ("h2h,spreads,totals,alternate_spreads,alternate_totals,"
                 "team_totals,alternate_team_totals")
 # Player-prop markets to scan, per sport — ONLY ones Pinnacle reliably quotes

@@ -21,6 +21,10 @@ const PICK: Pick = {
   odds: 2.2,
   conf: 60,
   n_books: 9,
+  // Served by /picks (core.odds_bars), not derived in the app. These are that
+  // function's actual output for the seeded ev=0.074 @ 2.2 (fair≈0.4882).
+  min_odds: 2.068901,
+  be_odds: 2.048417,
 };
 
 test("renders label, book@odds and EV", async () => {
@@ -30,15 +34,22 @@ test("renders label, book@odds and EV", async () => {
   expect(screen.getByText("+7.4%")).toBeOnTheScreen();
 });
 
-test("shows the 최소/본전 odds bars so you can shop any book (mirrors the Telegram alert)", async () => {
+test("shows the 최소/본전 odds bars so you can shop any book (same numbers as the Telegram alert)", async () => {
   await render(<PickCard pick={PICK} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
-  // ev=0.074, odds=2.2 → 최소 +107 · 본전 +105 (see format.minBreakevenOdds).
   expect(screen.getByText(/최소 \+107 · 본전 \+105/)).toBeOnTheScreen();
 });
 
-test("omits the 최소/본전 line when ev or price is unknown", async () => {
-  await render(<PickCard pick={{ ...PICK, ev: null }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+test("omits the 최소/본전 line when the API sent no bars (unknown ev/price, or an older payload)", async () => {
+  await render(<PickCard pick={{ ...PICK, min_odds: null, be_odds: null }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
   expect(screen.queryByText(/본전/)).toBeNull();
+});
+
+test("does NOT derive the bars from ev/odds — a payload without them shows nothing", async () => {
+  // Guards the whole point of serving them: if the app ever recomputes locally it
+  // reintroduces a second copy of EV_MIN that can silently drift from the policy.
+  const { min_odds, be_odds, ...noBars } = PICK;
+  await render(<PickCard pick={noBars} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(screen.queryByText(/최소/)).toBeNull();
 });
 
 test("shows the matchup so you can tell which game it is", async () => {
