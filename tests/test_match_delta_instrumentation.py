@@ -59,33 +59,35 @@ DETTEX_TITLE = "Detroit at Texas"
 # BEHAVIOUR INVARIANCE LOCK — phase 1 must not change any match outcome.
 # ---------------------------------------------------------------------------
 
-def test_lone_wrong_candidate_is_still_returned():
-    """THE phase-1 safety property.
+def test_lone_wrong_candidate_is_now_rejected():
+    """THE property phase 2 flips (2026-07-28).
 
     This is the dominant production failure: only the (wrong) currently-live
-    game is in the feed, so `len(candidates) == 1` short-circuits and returns
-    it with no distance check. Phase 2 will return None here. Phase 1 must
-    keep returning the wrong game, or live strategies change behaviour.
+    game is in the feed, so `len(candidates) == 1` short-circuits. Phase 1
+    deliberately kept returning the wrong game so that live behaviour stayed
+    invariant while the rate was measured. Six days and 939,610 observations
+    later the rate is known, and the gate is live — a lone candidate a full
+    day away is now skipped, not traded.
     """
     strat = _make_strategy()
     matched = strat._match_kalshi_to_odds(
         DETTEX_TITLE, [DETTEX_JUL02_GAME], kalshi_ticker=DETTEX_JUL04_TICKER,
     )
-    assert matched is DETTEX_JUL02_GAME, (
-        "phase 1 changed a match outcome — live trading behaviour is NOT "
-        "invariant; this must stay broken until phase 2"
+    assert matched is None, (
+        "phase 2 gate is not wired into the team matcher — the wrong game is "
+        "still being traded"
     )
 
 
-def test_lone_wrong_candidate_still_returned_for_individual_sports():
-    """Same lock for the tennis/MMA matcher (a duplicate of the same code)."""
+def test_lone_wrong_candidate_now_rejected_for_individual_sports():
+    """Same flip for the tennis/MMA matcher (a duplicate of the same code)."""
     two_weeks_later = _game("Carlos Alcaraz", "Jannik Sinner",
                             "2026-06-01T13:00:00Z")
     matched = _match_individual_sport_to_odds(
         "Carlos Alcaraz", [two_weeks_later],
         kalshi_ticker="KXATPMATCH-26MAY18ALCSIN-ALC",
     )
-    assert matched is two_weeks_later
+    assert matched is None
 
 
 def test_multi_candidate_selection_unchanged():
