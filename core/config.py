@@ -100,6 +100,25 @@ class Config:
         # added 2026-07-28 after it booked 63 entries over 2.5 months and
         # settled ZERO — it had been entering meetings out to 28JAN (18 months),
         # so no leg could return a result while $750 stayed locked.
+        # Paper-bankroll write-off (2026-07-28). shutdown_fade's 66 open paper
+        # legs — $11,000, all on KXNUMSHUTDOWNS-27JAN01-T2, which does not
+        # settle until 2027-01-01 — were credited back to the paper tracker by
+        # hand: the strategy is deprecated (main.py), its capital was 93% of
+        # everything locked, and that lock had frozen paper research entirely
+        # (every strategy skipping on `size < $1.00`). The ledger rows stay
+        # open because bet records are never deleted, so when they finally
+        # settle the normal `bankroll += payout` would return the same capital
+        # twice. Settlement suppresses the credit for trades of these
+        # strategies entered before the cutoff. Scope is per-strategy on
+        # purpose: ladder_fed's $750 was NOT written off.
+        self.BANKROLL_WRITEOFF_STRATEGIES = frozenset(
+            s.strip() for s in
+            os.getenv("BANKROLL_WRITEOFF_STRATEGIES", "shutdown_fade").split(",")
+            if s.strip()
+        )
+        self.BANKROLL_WRITEOFF_BEFORE = os.getenv(
+            "BANKROLL_WRITEOFF_BEFORE", "2026-07-28T11:50:00+00:00"
+        )
         self.LADDER_FED_HORIZON_MEETINGS = int(os.getenv("LADDER_FED_HORIZON_MEETINGS", "2"))
         self.LADDER_FED_MAX_OPEN_EXPOSURE_USDC = float(
             os.getenv("LADDER_FED_MAX_OPEN_EXPOSURE_USDC", "100")
