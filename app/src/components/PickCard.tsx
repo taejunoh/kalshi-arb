@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import type { Pick } from "../api/types";
 import { color, radius, space, font } from "../theme";
-import { countdown, countdownUrgent, americanOdds, evPct, matchup, minBreakevenOdds } from "../format";
+import { countdown, countdownUrgent, americanOdds, evPct, matchup, oddsBars } from "../format";
 
 export function PickCard({
   pick,
@@ -29,9 +29,10 @@ export function PickCard({
   // The bet label alone ("Over 167.5") doesn't say which game it is — show the
   // matchup so a totals/spread pick is identifiable at a glance.
   const game = matchup(pick.away, pick.home);
-  // Floor/breakeven odds bars (same numbers as the Telegram alert): bet at any
-  // book as long as its price beats 최소. Null (hidden) when ev/price is unknown.
-  const mb = minBreakevenOdds(pick.ev, pick.odds);
+  // Floor/breakeven odds bars (same numbers as the Telegram alert — both read
+  // core.odds_bars server-side): bet at any book as long as its price beats 최소.
+  // Hidden when the API didn't send them (ev/price unknown, or an older payload).
+  const mb = oddsBars(pick.min_odds, pick.be_odds);
   // Swipe-left reveals 관심없음; same onDismiss as the inline button (kept as fallback).
   const renderRightActions = () => (
     <Pressable testID="swipe-dismiss" onPress={() => onDismiss(pick)} style={s.swipeAction}>
