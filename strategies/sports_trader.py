@@ -198,17 +198,35 @@ _KALSHI_TICKER_TZ = ZoneInfo("America/New_York")
 # near the median start, so the residual error is bounded by a few hours rather
 # than the ~11h that the 12:00-UTC anchor produced.
 _DATE_ONLY_ANCHOR_ET = (18, 0)
-# Absolute sanity caps used ONLY to decide whether to log a warning in phase 1.
-# HHMM tickers pin the start exactly, so tolerance only needs to absorb
-# doubleheaders and schedule slop. Date-only tickers inherit the anchor's
-# uncertainty and need a full evening's worth of slack.
+# Absolute sanity caps. PHASE 2 (2026-07-28): these now REJECT the match, not
+# just log it. HHMM tickers pin the start exactly, so tolerance only needs to
+# absorb doubleheaders and schedule slop. Date-only tickers inherit the
+# anchor's uncertainty and need a full evening's worth of slack.
+#
+# Chosen from 6 days / 939,610 instrumented observations. The bug's mass sits
+# in the 20-48h band — an adjacent-day game in a series — and the sign is
+# decisive: of MLB's 124,886 observations there, 99.7% matched an EARLIER game
+# (NPB 100%, WNBA 100%, KBO 97.7%), which is exactly "the Odds API has not
+# published tomorrow's game yet, so take yesterday's". ATP/WTA invert it —
+# 99.7% match a LATER game, because a finished match drops off the feed and
+# only the next round remains. Same root cause, opposite sign, so the cap is
+# applied to |delta| and catches both.
+#
+# These caps reject 34.1% of matches. The April 2026 attempt (39cc333, reverted
+# without a stated reason) used 48h, which rejects 2.19% — it sat just above the
+# bug's mass and would have caught almost nothing. Do not "restore" that value.
+# Negative controls stay clean at these caps: KXMLSGAME 250,425 obs and
+# KXUFCFIGHT 129,430 obs are 0.0% over cap, and neither sport can have a
+# candidate collision (no repeat matchups).
 _MATCH_MAX_DELTA_S_PRECISE = 6 * 3600
 _MATCH_MAX_DELTA_S_DATE_ONLY = 20 * 3600
 
-# Fixed, greppable prefix for the phase-1 warning. Phase 2 flips these rows
-# from "logged" to "skipped", so the weekly journalctl count is the exact
-# forecast of the behaviour change.
+# Fixed, greppable prefix for the phase-1 warning, kept so the weekly count
+# stays comparable across the phase-1/phase-2 boundary.
 _MATCH_DELTA_LOG_PREFIX = "MATCH_DELTA_OVER_CAP"
+# Phase-2 skips log under their own prefix so "how often does the gate fire"
+# is one grep, separate from the phase-1 measurement history.
+_MATCH_SKIP_LOG_PREFIX = "MATCH_DELTA_SKIP"
 
 _TICKER_CLOCK_RE = re.compile(r"^KX[A-Z]+-\d{2}[A-Z]{3}\d{2}(\d{4})")
 
@@ -229,8 +247,11 @@ def _ticker_scheduled_utc(ticker: str) -> Optional[datetime]:
 
     For HHMM tickers this agrees exactly with
     `core.clv_tracker.parse_game_start_utc`, which is locked by a regression
-    test. INSTRUMENTATION ONLY — never call this from the matching path in
-    phase 1; doing so would change which game gets selected.
+    test.
+
+    Phase 2 (2026-07-28) promotes this from instrumentation to the matching
+    path via `enforce_match_cap` — it is now load-bearing for which games get
+    traded, so the clv_tracker agreement test is the guard on it.
     """
     m = re.match(r"^KX[A-Z]+-(\d{2})([A-Z]{3})(\d{2})(\d{4})?", ticker or "")
     if not m:
@@ -313,10 +334,44 @@ def measure_match_delta(ticker: str, matched_game: Optional[dict],
     return delta
 
 
+def enforce_match_cap(ticker: Optional[str], matched_game: Optional[dict],
+                      *, context: str = "", warn: bool = True) -> Optional[dict]:
+    """PHASE 2 gate: drop a match whose distance from the ticker's own
+    scheduled start exceeds the cap. Returns the game, or None to skip it.
+
+    Applied inside both matchers, so every caller — trader and observer alike —
+    inherits it. The observer losing the row is the point, not collateral: when
+    the match is wrong, the consensus and Pinnacle prices on that row are the
+    WRONG GAME's prices, so the row is not partly bad, it is entirely bad.
+    Keeping it with a blanked `phase` would preserve the garbage that put ~30%
+    of the ALLOWED_CELLS matrix on mislabelled data in the first place.
+
+    Fails OPEN when the delta cannot be computed — we skip matches we can prove
+    are wrong, not ones we merely cannot check. That branch is close to dead in
+    practice: 0 of 939,610 instrumented observations had a null delta.
+    """
+    if matched_game is None:
+        return None
+    delta = _match_delta_seconds(ticker or "", matched_game)
+    if delta is None:
+        return matched_game
+    cap = _match_cap_seconds(ticker or "")
+    if abs(delta) <= cap:
+        return matched_game
+    msg = (f"{_MATCH_SKIP_LOG_PREFIX} {context or '-'} ticker={ticker} "
+           f"delta_h={delta / 3600:+.2f} cap_h={cap / 3600:.0f} "
+           f"matched_commence={matched_game.get('commence_time')} skipped")
+    # The observer sees one row per ticker per scan; at the observed ~34% rate
+    # an INFO here would flood journalctl (the phase-1 lesson).
+    logger.info(msg) if warn else logger.debug(msg)
+    return None
+
+
 def _match_individual_sport_to_odds(
     yes_sub_title: str,
     odds_games: list[dict],
     kalshi_ticker: Optional[str] = None,
+    warn: bool = False,
 ) -> Optional[dict]:
     """Match a Kalshi individual-sport market to Odds API game data.
 
@@ -358,10 +413,12 @@ def _match_individual_sport_to_odds(
     if not candidates:
         return None
     if len(candidates) == 1 or not kalshi_ticker:
-        return candidates[0]
+        return enforce_match_cap(kalshi_ticker, candidates[0],
+                                 context="individual", warn=warn)
     ticker_dt = _parse_kalshi_ticker_datetime(kalshi_ticker)
     if not ticker_dt:
-        return candidates[0]
+        return enforce_match_cap(kalshi_ticker, candidates[0],
+                                 context="individual", warn=warn)
 
     def _delta_seconds(g: dict) -> float:
         ct = g.get("commence_time")
@@ -373,7 +430,8 @@ def _match_individual_sport_to_odds(
             return float("inf")
         return abs((game_dt - ticker_dt).total_seconds())
 
-    return min(candidates, key=_delta_seconds)
+    return enforce_match_cap(kalshi_ticker, min(candidates, key=_delta_seconds),
+                             context="individual", warn=warn)
 
 
 def _odds_cache_ttl(region: str) -> float:
@@ -1559,7 +1617,8 @@ class SportsTraderStrategy:
         }
 
     def _match_kalshi_to_odds(self, kalshi_title: str, odds_games: list[dict],
-                              kalshi_ticker: Optional[str] = None) -> Optional[dict]:
+                              kalshi_ticker: Optional[str] = None,
+                              warn: bool = False) -> Optional[dict]:
         """Match a Kalshi market title to odds API game data.
 
         Kalshi uses city names ("Phoenix at Charlotte"), while Odds API uses
@@ -1601,10 +1660,12 @@ class SportsTraderStrategy:
         if not candidates:
             return None
         if len(candidates) == 1 or not kalshi_ticker:
-            return candidates[0]
+            return enforce_match_cap(kalshi_ticker, candidates[0],
+                                     context="team", warn=warn)
         ticker_dt = _parse_kalshi_ticker_datetime(kalshi_ticker)
         if not ticker_dt:
-            return candidates[0]
+            return enforce_match_cap(kalshi_ticker, candidates[0],
+                                     context="team", warn=warn)
         def _delta_seconds(g: dict) -> float:
             ct = g.get("commence_time")
             if not ct:
@@ -1614,7 +1675,9 @@ class SportsTraderStrategy:
             except (ValueError, TypeError):
                 return float("inf")
             return abs((game_dt - ticker_dt).total_seconds())
-        return min(candidates, key=_delta_seconds)
+        return enforce_match_cap(kalshi_ticker,
+                                 min(candidates, key=_delta_seconds),
+                                 context="team", warn=warn)
 
     def _stash_market_context(self, market: dict, game: Optional[dict]) -> None:
         """Stash per-market context attributes used by subclasses' evaluate().
@@ -1958,10 +2021,11 @@ class SportsTraderStrategy:
                 if is_individual:
                     matched_game = _match_individual_sport_to_odds(
                         yes_sub_for_match, odds_games, kalshi_ticker=ticker,
+                        warn=True,
                     )
                 else:
                     matched_game = self._match_kalshi_to_odds(
-                        title, odds_games, kalshi_ticker=ticker,
+                        title, odds_games, kalshi_ticker=ticker, warn=True,
                     )
                 if not matched_game:
                     continue
