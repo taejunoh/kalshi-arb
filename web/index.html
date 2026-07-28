@@ -50,8 +50,12 @@
   .lede{font-size:16.5px;color:var(--muted);max-width:640px}
 
   .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:34px 0 8px}
+  .cards3{grid-template-columns:repeat(3,1fr)}
+  .cards+.cards{margin-top:14px}
   .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
     border-radius:14px;padding:18px 18px 16px}
+  .card.sub{background:var(--panel2)}
+  .seg-lede{font-size:12.5px;color:var(--muted2);margin:14px 2px 0}
   .card .k{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2)}
   .card .v{font-size:30px;font-weight:700;margin:9px 0 4px;letter-spacing:-.02em}
   .card .s{font-size:12px;color:var(--muted)}
@@ -125,36 +129,36 @@
     <p class="lede">We bet soft US sportsbooks only when the price beats the sharp Pinnacle line.
       Below is the complete record of every first-entry game pick — not a highlight reel.</p>
 
-    <div class="cards">
-      <div class="card hl">
-        <div class="k">Return on investment</div>
-        <div class="v mono pos" id="c-roi">+8.0%</div>
-        <div class="s"><span id="c-n">96</span> graded picks · ML / Spread / O/U</div>
+    <div class="cards cards3" id="c-split"></div>
+
+    <div class="cards cards3">
+      <div class="card sub hl">
+        <div class="k">Blended · all markets</div>
+        <div class="v mono" id="c-roi">+8.0%</div>
+        <div class="s"><span id="c-n">96</span> graded picks · <span id="c-rec">49–47</span> · <span id="c-wr">51%</span> win</div>
       </div>
-      <div class="card">
-        <div class="k">Record</div>
-        <div class="v mono" id="c-rec">49–47</div>
-        <div class="s"><span id="c-wr">51%</span> win · value wins ~50% by design</div>
-      </div>
-      <div class="card">
+      <div class="card sub">
         <div class="k">Net profit</div>
-        <div class="v mono pos" id="c-pnl">+8.9u</div>
-        <div class="s">net units · across 96 graded picks</div>
+        <div class="v mono" id="c-pnl">+8.9u</div>
+        <div class="s">net units · across <span id="c-n2">96</span> graded picks</div>
       </div>
-      <div class="card">
+      <div class="card sub">
         <div class="k">Tracking window</div>
         <div class="v mono" id="c-win" style="font-size:22px;padding-top:6px">Jun 7–25</div>
         <div class="s">2026 · auto-graded daily</div>
       </div>
     </div>
+
+    <p class="seg-lede">Reported per market, not as one number — moneyline, spread and totals are priced
+      differently and have not behaved the same in this sample.</p>
   </header>
 
   <section>
     <div class="h2">Cumulative profit</div>
     <div class="chartcard">
       <div class="chart-top">
-        <div class="big mono pos" id="eq-final">+8.9u</div>
-        <div class="lbl">96 picks · Jun 7 → Jun 25, 2026</div>
+        <div class="big mono" id="eq-final">+8.9u</div>
+        <div class="lbl"><span id="eq-n">96</span> picks · <span id="eq-win">Jun 7 → Jun 25</span>, 2026</div>
       </div>
       <svg class="equity" id="equity" preserveAspectRatio="none" aria-label="Cumulative profit curve"></svg>
     </div>
@@ -199,7 +203,8 @@
 
   <section>
     <div class="h2">Read this before you judge the numbers</div>
-    <div class="note"><b>This is a model record.</b> Every qualifying pick is graded at the price it was posted (no slippage assumed) and settled automatically — wins, losses, pushes and all. A 96-pick sample over 19 days is enough to be transparent, not enough to be certain.</div>
+    <div class="note"><b>This is a model record.</b> Every qualifying pick is graded at the price it was posted (no slippage assumed) and settled automatically — wins, losses, pushes and all. A <span id="nt-n">96</span>-pick sample over <span id="nt-d">19</span> days is enough to be transparent, not enough to be certain.</div>
+    <div class="note"><b>Read each market on its own.</b> Moneyline, spread and totals are set by different desks and have diverged in this sample. A single blended ROI can average away a segment that is losing money, so the headline is split by market and the full breakdown is in the table above. No pick is ever removed or re-priced after the fact — when the rules change, the record is segmented by date instead.</div>
     <div class="note"><b>Past performance does not guarantee future results.</b> Variance is real and these figures can and will swing. This page is informational / entertainment content — not betting advice or a promise of profit.</div>
   </section>
 
@@ -344,14 +349,35 @@ const cls  = n => n>0?"pos":(n<0?"neg":"neu");
 
 const UNIT = 2;
 const u = n => (n>=0?"+":"") + (n/UNIT).toFixed(1) + "u";
+const set = (id,txt) => { const e=document.getElementById(id); if(e) e.textContent = txt; };
+const setv = (id,txt,n) => { const e=document.getElementById(id); if(!e) return;
+  e.textContent = txt; e.className = e.className.replace(/\b(pos|neg|neu)\b/g,'').trim()+' '+cls(n); };
+const MKTORDER = ['h2h','spread','total'];
+
 function render(){
-  document.getElementById('c-roi').textContent = pct(DATA.roi);
-  document.getElementById('c-n').textContent   = DATA.n;
-  document.getElementById('c-rec').textContent = DATA.w+"–"+DATA.l;
-  document.getElementById('c-wr').textContent  = DATA.win.toFixed(0)+"%";
-  document.getElementById('c-pnl').textContent = u(DATA.pnl);
-  document.getElementById('c-win').textContent = (DATA.since||'Jun 7')+"–"+(DATA.until||'Jun 25');
-  document.getElementById('eq-final').textContent = u(DATA.pnl);
+  setv('c-roi', pct(DATA.roi), DATA.roi);
+  set('c-n',   DATA.n);
+  set('c-n2',  DATA.n);
+  set('c-rec', DATA.w+"–"+DATA.l);
+  set('c-wr',  DATA.win.toFixed(0)+"%");
+  setv('c-pnl', u(DATA.pnl), DATA.pnl);
+  set('c-win', (DATA.since||'Jun 7')+"–"+(DATA.until||'Jun 25'));
+  setv('eq-final', u(DATA.pnl), DATA.pnl);
+  set('eq-n', DATA.n);
+  set('eq-win', (DATA.since||'Jun 7')+" → "+(DATA.until||'Jun 25'));
+  set('nt-n', DATA.n);
+  set('nt-d', new Set(DATA.ledger.map(r=>r.d)).size);
+
+  document.getElementById('c-split').innerHTML = MKTORDER.map(k=>{
+    const m = DATA.byMarket.find(x=>x.market===k);
+    if(!m) return '';
+    const n = m.w+m.l, win = n ? (100*m.w/n).toFixed(0) : '0';
+    return `<div class="card">
+      <div class="k">${MKTNAME[k]}</div>
+      <div class="v mono ${cls(m.roi)}">${pct(m.roi)}</div>
+      <div class="s"><span class="mono">${n}</span> picks · ${m.w}–${m.l} · ${win}% win</div>
+    </div>`;
+  }).join('');
 
 document.getElementById('bymkt').innerHTML = DATA.byMarket.map(m=>{
   const win=(100*m.w/(m.w+m.l)).toFixed(1);
