@@ -57,28 +57,46 @@ class SettlementChecker:
         # Insertion-ordered dict → oldest entry is evicted first when cap reached.
         self._settled_cache: dict[str, tuple[str, Optional[float], Optional[float]]] = {}
 
-    def _is_written_off(self, trade: dict) -> bool:
-        """True when this paper trade's stake was already returned to the paper
-        tracker by a manual write-off, so settling it must NOT credit again.
+    def _is_written_off(self, trade: dict) -> Optional[str]:
+        """Reason this paper trade's stake was never charged against the CURRENT
+        bankroll baseline — so settling it must not credit the tracker. None
+        when the trade is ordinary and should credit normally.
 
-        See `Config.BANKROLL_WRITEOFF_STRATEGIES` for the 2026-07-28 case.
-        Suppression requires positive proof the entry predates the write-off:
-        no config, no cutoff, or an unreadable entry time all fail OPEN and
+        Two independent rules, OR'd:
+
+        * ``baseline-epoch`` — the position was already open when the tracker
+          was last resynced. A resync overwrites the value, so the stake was
+          charged to a number that no longer exists.
+        * ``strategy-writeoff`` — a specific strategy's open legs had their
+          stake handed back by hand (see `Config.BANKROLL_WRITEOFF_STRATEGIES`).
+
+        The epoch rule is the broader one and normally subsumes the other; both
+        are kept so a future write-off that is not a full resync stays
+        expressible on its own.
+
+        Suppression requires positive proof the entry predates the boundary:
+        no config, no boundary, or an unreadable entry time all fail OPEN and
         credit normally. Wrongly suppressing every future credit is a worse
         failure mode than one stale credit, and real rows always carry a
         parseable timestamp (`trades.timestamp` is NOT NULL).
         """
         cfg = getattr(self._order_manager, "config", None)
         if cfg is None:
-            return False
-        strategies = getattr(cfg, "BANKROLL_WRITEOFF_STRATEGIES", None) or frozenset()
-        if trade.get("strategy") not in strategies:
-            return False
-        cutoff = _parse_ts(getattr(cfg, "BANKROLL_WRITEOFF_BEFORE", None))
+            return None
         entered = _parse_ts(trade.get("timestamp"))
-        if cutoff is None or entered is None:
-            return False
-        return entered < cutoff
+        if entered is None:
+            return None
+
+        epoch = _parse_ts(getattr(cfg, "BANKROLL_BASELINE_EPOCH", None))
+        if epoch is not None and entered < epoch:
+            return "baseline-epoch"
+
+        strategies = getattr(cfg, "BANKROLL_WRITEOFF_STRATEGIES", None) or frozenset()
+        if trade.get("strategy") in strategies:
+            cutoff = _parse_ts(getattr(cfg, "BANKROLL_WRITEOFF_BEFORE", None))
+            if cutoff is not None and entered < cutoff:
+                return "strategy-writeoff"
+        return None
 
     def _remember_settled(self, ticker: str, result: str,
                           yes_ask: Optional[float], no_ask: Optional[float]) -> None:
@@ -238,10 +256,11 @@ class SettlementChecker:
                 # true outcome, and the breaker counters below still see it —
                 # only the bankroll credit is suppressed.
                 if not is_live and trade["direction"] == result:
-                    if self._is_written_off(trade):
+                    writeoff_reason = self._is_written_off(trade)
+                    if writeoff_reason:
                         logger.info(
                             f"[SETTLE] {ticker}: {trade['strategy']} win NOT credited "
-                            f"to paper bankroll — position was written off "
+                            f"to paper bankroll — {writeoff_reason} "
                             f"(entered {trade.get('timestamp')}, "
                             f"payout ${trade['size'] / trade['price']:.2f} suppressed)"
                         )
