@@ -227,6 +227,28 @@ _MATCH_DELTA_LOG_PREFIX = "MATCH_DELTA_OVER_CAP"
 # Phase-2 skips log under their own prefix so "how often does the gate fire"
 # is one grep, separate from the phase-1 measurement history.
 _MATCH_SKIP_LOG_PREFIX = "MATCH_DELTA_SKIP"
+# ...but throttled per ticker. The dedicated scan_loops poll ~1s, so a skipped
+# ticker re-enters the gate every second for as long as its market is open:
+# the unthrottled version produced 586 of 850 journal lines in 10 minutes
+# (69%) on 2026-07-28. One line per ticker per hour keeps the signal without
+# burying everything else. The full-population count lives in the DB column.
+_MATCH_SKIP_LOG_INTERVAL_S = 3600.0
+_MATCH_SKIP_LOG_MAX_KEYS = 5000
+_match_skip_last_logged: dict[str, float] = {}
+
+
+def _should_log_match_skip(ticker: Optional[str]) -> bool:
+    """True at most once per ticker per `_MATCH_SKIP_LOG_INTERVAL_S`."""
+    key = ticker or "-"
+    now = time.monotonic()
+    last = _match_skip_last_logged.get(key)
+    if last is not None and (now - last) < _MATCH_SKIP_LOG_INTERVAL_S:
+        return False
+    # Tickers retire constantly; drop the whole map rather than grow forever.
+    if len(_match_skip_last_logged) >= _MATCH_SKIP_LOG_MAX_KEYS:
+        _match_skip_last_logged.clear()
+    _match_skip_last_logged[key] = now
+    return True
 
 _TICKER_CLOCK_RE = re.compile(r"^KX[A-Z]+-\d{2}[A-Z]{3}\d{2}(\d{4})")
 
@@ -362,8 +384,13 @@ def enforce_match_cap(ticker: Optional[str], matched_game: Optional[dict],
            f"delta_h={delta / 3600:+.2f} cap_h={cap / 3600:.0f} "
            f"matched_commence={matched_game.get('commence_time')} skipped")
     # The observer sees one row per ticker per scan; at the observed ~34% rate
-    # an INFO here would flood journalctl (the phase-1 lesson).
-    logger.info(msg) if warn else logger.debug(msg)
+    # an INFO here would flood journalctl (the phase-1 lesson). The trading
+    # path is no better — it rescans the same ticker every second — so INFO is
+    # throttled per ticker too.
+    if warn and _should_log_match_skip(ticker):
+        logger.info(msg)
+    else:
+        logger.debug(msg)
     return None
 
 
