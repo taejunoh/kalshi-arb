@@ -1,8 +1,12 @@
 import aiosqlite
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Sequence
 
 from core.season import is_playoff
+
+# Trade statuses that still tie up capital. Shared by the exposure helpers so
+# "open" means one thing everywhere.
+OPEN_TRADE_STATUSES = ("paper_filled", "paper_open", "filled", "open")
 
 
 class Database:
@@ -1296,13 +1300,42 @@ class Database:
         Open = status in ('paper_filled', 'paper_open', 'filled', 'open').
         Excludes settled / closed / failed trades.
         """
-        OPEN_STATUSES = ("paper_filled", "paper_open", "filled", "open")
+        OPEN_STATUSES = OPEN_TRADE_STATUSES
         async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
             cur = await conn.execute(
                 f"SELECT COALESCE(SUM(size), 0.0) FROM trades "
                 f"WHERE market_id = ? AND status IN ({','.join('?' * len(OPEN_STATUSES))})",
                 (market_id, *OPEN_STATUSES),
             )
+            row = await cur.fetchone()
+            return float(row[0]) if row else 0.0
+
+    async def strategy_open_exposure(
+        self, strategy: str, market_ids: Optional[Sequence[str]] = None,
+    ) -> float:
+        """Sum of `size` across OPEN trades for one strategy.
+
+        Open = `OPEN_TRADE_STATUSES` (same set as `total_open_exposure`).
+
+        `market_ids` narrows the sum to specific tickers. ladder_fed uses it to
+        cap exposure on just the meetings it is currently allowed to trade:
+        counting its legacy long-dated legs (FOMC meetings out to 2028, which
+        cannot settle for years) would freeze the strategy permanently instead
+        of bounding it. `None` = every ticker; `[]` = nothing in scope → 0.0.
+        """
+        if market_ids is not None and not market_ids:
+            return 0.0
+        status_ph = ",".join("?" * len(OPEN_TRADE_STATUSES))
+        sql = (
+            f"SELECT COALESCE(SUM(size), 0.0) FROM trades "
+            f"WHERE strategy = ? AND status IN ({status_ph})"
+        )
+        params: list = [strategy, *OPEN_TRADE_STATUSES]
+        if market_ids is not None:
+            sql += f" AND market_id IN ({','.join('?' * len(market_ids))})"
+            params.extend(market_ids)
+        async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+            cur = await conn.execute(sql, params)
             row = await cur.fetchone()
             return float(row[0]) if row else 0.0
 
