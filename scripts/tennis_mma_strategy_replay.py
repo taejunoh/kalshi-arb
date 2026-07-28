@@ -29,6 +29,10 @@ logger = logging.getLogger("tennis_mma_strategy_replay")
 
 KALSHI_FEE_PCT = 0.07  # matches core.config default
 
+# Comfortably under SQLite's SQLITE_MAX_VARIABLE_NUMBER (32,766 since 3.32,
+# 999 on older builds). Kept low enough that an old sqlite3 still works.
+_SQL_VAR_CHUNK = 900
+
 
 def load_observations(
     conn: sqlite3.Connection, *, sports: tuple[str, ...],
@@ -72,22 +76,37 @@ def resolve_settled_outcomes(
     `core/database.py` schema. `result` is the lowercase string "yes" or
     "no"; this maps to 1.0 / 0.0. Any other value is treated as unsettled
     and omitted.
+
+    Callers pass one ticker per observation ROW, so the list arrives with
+    massive duplication — a single month of UFC is ~640k rows over ~100
+    distinct tickers. Binding one SQL variable per row blew SQLite's
+    SQLITE_MAX_VARIABLE_NUMBER (32,766) and raised "too many SQL variables",
+    which made this replay unusable for any window bigger than a few days
+    (2026-07-28: hit on the first month of a ufc_chalk_fade replay). So
+    deduplicate first, and chunk what remains — dedupe alone still breaks on a
+    long tennis window, where distinct tickers legitimately run into the tens
+    of thousands.
     """
-    if not tickers:
+    unique = {t for t in tickers if t}
+    if not unique:
         return {}
-    placeholders = ",".join(["?"] * len(tickers))
-    sql = f"""
-        SELECT kalshi_ticker, result
-          FROM ticker_settlements
-         WHERE kalshi_ticker IN ({placeholders})
-           AND result IN ('yes', 'no')
-    """
+    out: dict[str, float] = {}
+    ordered = sorted(unique)
     cur = conn.cursor()
-    cur.execute(sql, tickers)
-    return {
-        row[0]: (1.0 if row[1] == "yes" else 0.0)
-        for row in cur.fetchall()
-    }
+    for i in range(0, len(ordered), _SQL_VAR_CHUNK):
+        chunk = ordered[i:i + _SQL_VAR_CHUNK]
+        placeholders = ",".join(["?"] * len(chunk))
+        cur.execute(
+            f"""SELECT kalshi_ticker, result
+                  FROM ticker_settlements
+                 WHERE kalshi_ticker IN ({placeholders})
+                   AND result IN ('yes', 'no')""",
+            chunk,
+        )
+        out.update(
+            {row[0]: (1.0 if row[1] == "yes" else 0.0) for row in cur.fetchall()}
+        )
+    return out
 
 
 def simulate_tennis_pinnacle_arb_v1(
