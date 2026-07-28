@@ -1,5 +1,5 @@
 // app/src/format.test.ts
-import { americanOdds, parseOddsToDecimal, evPct, countdown, countdownUrgent, matchup, minBreakevenOdds } from "./format";
+import { americanOdds, parseOddsToDecimal, evPct, countdown, countdownUrgent, matchup, oddsBars } from "./format";
 
 test("americanOdds shows the US-book number (+underdog / -favorite)", () => {
   expect(americanOdds(3.9)).toBe("+290");
@@ -21,15 +21,17 @@ test("parseOddsToDecimal accepts american or decimal (mirrors the Telegram parse
   expect(parseOddsToDecimal("abc")).toBeNull();
 });
 
-test("minBreakevenOdds: 최소(ROI≥1% floor) and 본전(breakeven) american odds from ev+decimal price", () => {
-  // Mirrors softbook_ev_recorder._min_odds_line: fair=(1+ev)/odds; 본전=1/fair; 최소=(1+EV_MIN)/fair.
-  // ev=0.074, odds=2.2 → fair≈0.4882 → 본전 +105, 최소 +107 (need ≥+107 to clear the 1% bar).
-  expect(minBreakevenOdds(0.074, 2.2)).toEqual({ min: "+107", be: "+105" });
-  // Favorite side: ev=0.05, odds=1.91 → 본전 -122, 최소 -119.
-  expect(minBreakevenOdds(0.05, 1.91)).toEqual({ min: "-119", be: "-122" });
-  expect(minBreakevenOdds(null, 2.2)).toBeNull();
-  expect(minBreakevenOdds(0.05, null)).toBeNull();
-  expect(minBreakevenOdds(0.05, 1.0)).toBeNull(); // no valid price
+test("oddsBars formats the server-computed 최소/본전 decimals, and derives nothing", () => {
+  // The API sends decimals from core.odds_bars; this only picks the notation.
+  // Decimals below are core.odds_bars' actual output, not hand-rounded:
+  // ev=0.074 @ 2.2 → min 2.068901 / be 2.048417.
+  expect(oddsBars(2.068901, 2.048417)).toEqual({ min: "+107", be: "+105" });
+  // Favorite side, ev=0.05 @ 1.91 → min 1.837238 / be 1.819048.
+  expect(oddsBars(1.837238, 1.819048)).toEqual({ min: "-119", be: "-122" });
+  // Absent bars hide the line — old payloads, or ev/price unknown server-side.
+  expect(oddsBars(null, 2.0484)).toBeNull();
+  expect(oddsBars(2.0689, null)).toBeNull();
+  expect(oddsBars(undefined, undefined)).toBeNull();
 });
 
 test("evPct shows a signed percentage", () => {

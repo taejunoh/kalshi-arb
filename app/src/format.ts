@@ -27,26 +27,19 @@ export function parseOddsToDecimal(input: string | null | undefined): number | n
   return v > 1.0 && v < 100 ? v : null;
 }
 
-// Floor bar of the softbook pipeline (softbook_ev_core.EV_MIN). A pick is "+EV
-// enough" for the ROI≥1% policy only while priced at or above this EV. Mirrored
-// locally so the card can show the same 최소/본전 the Telegram alert does.
-const EV_MIN = 0.01;
-
-// From a pick's EV and the decimal price it was quoted at, recover the sharp fair
-// win-probability and return the two american-odds bars the Telegram alert shows:
-//   • be  (본전)  — breakeven: the price where EV hits 0 (1/fair).
-//   • min (최소)  — floor: the worst price that still clears the ROI≥1% bar
-//                  ((1+EV_MIN)/fair). "어느 북이든 최소 위면 OK."
-// Mirrors softbook_ev_recorder._min_odds_line. Returns null when ev/odds are
-// missing or the price isn't a valid (>1) decimal.
-export function minBreakevenOdds(
-  ev: number | null | undefined,
-  odds: number | null | undefined,
+// Format the 최소/본전 bars the API serves on a pick (decimal odds) for display.
+// The NUMBERS are not computed here on purpose: they encode EV_MIN, which is
+// policy owned by softbook_ev_core.odds_bars. This file used to mirror both that
+// constant and the formula, which meant a server-side policy change would leave
+// the card quietly showing a stale floor. Now the server sends the bars and the
+// app only picks the notation. Null (line hidden) whenever either bar is absent —
+// old pick payloads, or ev/price unknown.
+export function oddsBars(
+  min: number | null | undefined,
+  be: number | null | undefined,
 ): { min: string; be: string } | null {
-  if (ev == null || odds == null || odds <= 1) return null;
-  const fair = (1 + ev) / odds; // sharp fair win probability implied by the EV
-  if (!(fair > 0)) return null;
-  return { min: americanOdds((1 + EV_MIN) / fair), be: americanOdds(1 / fair) };
+  if (min == null || be == null) return null;
+  return { min: americanOdds(min), be: americanOdds(be) };
 }
 
 export function evPct(ev: number | null | undefined): string {

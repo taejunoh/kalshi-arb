@@ -55,6 +55,10 @@ def test_picks_returns_active_high(client):
     p = picks[0]
     assert p["status"] == "active" and p["player"] == "Brandon Nimmo"
     assert p["id"] == "E1|batter_total_bases|Over|1.5|Brandon Nimmo"
+    # 최소/본전 bars ride along on the pick so the card never derives them (they
+    # encode EV_MIN, which is policy). Seeded ev=0.074 @ 2.2 -> fair≈0.4882.
+    import softbook_ev_core as core
+    assert (p["min_odds"], p["be_odds"]) == core.odds_bars(0.074, 2.2)
 
 
 def test_picks_first_entry_flag(client):
