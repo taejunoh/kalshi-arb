@@ -9,8 +9,20 @@
 
 | 프롬프트 | 발동 단계 | 결과 |
 |---|---|---|
-| `성능 확인해` / `전략 분석` / `돈 벌고 있어?` | Step 1+2 | 7/14/30d portfolio 표 + 분류 (winner / watch / demote / dormant) |
+| `성능 확인해` / `전략 분석` / `돈 벌고 있어?` | Step 1+2 | 포트폴리오 표 + 분류 (winner / watch / demote / dormant) |
 | `paper 도 봐` / `전체 봐` / `다 봐` | Step 3 추가 | LIVE+paper 전체 + dormant 사유까지 |
+
+> **Step 2 는 이제 스크립트로 고정** (2026-07-28):
+> ```bash
+> venv/bin/python scripts/portfolio_performance.py            # paper, 6주
+> venv/bin/python scripts/portfolio_performance.py --book live
+> ```
+> 손으로 7/14/30d SQL 을 짜지 말 것. 그 방식이 2026-07-28 에 존재하지도 않는
+> "단조 하락"(+9.8% → −19.6%)을 만들어냈다. 세 창은 **중첩**(7d ⊂ 14d ⊂ 30d)
+> 이라 "세 창 모두 음수"는 독립 확증이 아니라 한 표본을 세 번 센 것이고,
+> 스테이크 가중 풀링은 건당 $24 짜리 `xvenue_polymarket` 3건이 건당 $2~4 짜리
+> 스포츠 수백 건을 덮어버린다(2주 손실 $85 중 $44). 전략 구성을 고정하면
+> 그 추세는 통째로 사라졌다.
 
 ## 의사결정 트리거 (중요)
 
