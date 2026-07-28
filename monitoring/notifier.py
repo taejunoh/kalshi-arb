@@ -25,6 +25,13 @@ QUIET_HOURS_UTC_END   = 9
 CRITICAL_MSG_TYPES = frozenset({
     "cap_trip", "balance_low", "balance_reject", "dispatch_failure",
     "circuit_breaker", "live_audit",  # daily audit is at 13 UTC anyway
+    # 2026-07-28 — live_fade post-fix gate. Fires only on a verdict change, and
+    # its EARLY-KILL verdict means a LIVE strategy is provably past rescue.
+    # Suppressing that for the 7-hour quiet window would keep real money on a
+    # position we already know cannot reach breakeven. The oneshot timer also
+    # advances its state file after send(), so a suppressed message would be
+    # lost outright rather than retried.
+    "livefade_gate",
 })
 
 # Hourly digest for LIVE settlements (2026-05-25). Buffered + flushed once/h

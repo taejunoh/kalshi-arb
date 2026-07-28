@@ -1,0 +1,19 @@
+[Unit]
+Description=tennis_live_fade_v1 post-booking-fix cohort tracker + promotion gate
+After=kalshi-bot.service
+Wants=kalshi-bot.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python3 scripts/livefade_postfix_gate.py
+Environment=PYTHONUNBUFFERED=1
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/kalshi-arb/data /home/ubuntu/kalshi-arb/logs
+
+[Install]
+WantedBy=multi-user.target
