@@ -139,6 +139,14 @@ def _enrich_first_entry(picks):
             # under forward review — see core.is_ev_watch. Same flag the Telegram tag
             # and the push worker read, so the three surfaces can't drift apart.
             p["ev_watch"] = core.is_ev_watch(p["market"], p.get("ev"))
+            # 최소/본전 bars, served rather than recomputed client-side: EV_MIN is
+            # policy and the app had been mirroring both it and the formula in TS,
+            # so a server-side change would have left the card showing a stale
+            # floor with nothing to catch it. Decimal odds; the app formats them
+            # with its own americanOdds. None when ev/price is unknown -> the app
+            # hides the line. Same core.odds_bars the Telegram alert uses.
+            bars = core.odds_bars(p.get("ev"), p.get("odds"))
+            p["min_odds"], p["be_odds"] = bars if bars else (None, None)
     finally:
         c.close()
     return picks
