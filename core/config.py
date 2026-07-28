@@ -119,6 +119,19 @@ class Config:
         self.BANKROLL_WRITEOFF_BEFORE = os.getenv(
             "BANKROLL_WRITEOFF_BEFORE", "2026-07-28T11:50:00+00:00"
         )
+        # Bankroll baseline epoch — the general form of the same problem. A
+        # manual resync OVERWRITES the tracker, so every position already open
+        # at that instant had its stake charged to a value that no longer
+        # exists. Crediting such a position's payout later would hand the
+        # baseline capital it never staked. Default = the 2026-07-28 11:56:37Z
+        # resync (tracker set to $274.60); at that moment 85 unguarded legs
+        # were open, worth $9,179.58 of payout had they all won — including 3
+        # midshot_v31 legs sized $80 against its $3.57 30-day average, an
+        # artifact of the 6-minute window when the tracker briefly read $11k.
+        # Set this to the instant of the most recent resync. Empty disables.
+        self.BANKROLL_BASELINE_EPOCH = os.getenv(
+            "BANKROLL_BASELINE_EPOCH", "2026-07-28T11:56:37+00:00"
+        )
         self.LADDER_FED_HORIZON_MEETINGS = int(os.getenv("LADDER_FED_HORIZON_MEETINGS", "2"))
         self.LADDER_FED_MAX_OPEN_EXPOSURE_USDC = float(
             os.getenv("LADDER_FED_MAX_OPEN_EXPOSURE_USDC", "100")
