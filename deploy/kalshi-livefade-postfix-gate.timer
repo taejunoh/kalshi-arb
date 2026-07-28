@@ -1,0 +1,13 @@
+[Unit]
+Description=Run the live_fade post-fix gate hourly
+
+[Timer]
+# Hourly is plenty: the script is silent unless the verdict changes or the
+# cohort crosses another 10 real fills. live_fade fires a handful of times a
+# day at most, so a tighter cadence would only add noise.
+OnCalendar=hourly
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target
