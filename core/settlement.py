@@ -21,6 +21,23 @@ def _safe_float(v) -> float | None:
         return None
 
 
+def _parse_ts(v) -> Optional[datetime]:
+    """Parse a ledger timestamp to an aware UTC datetime, else None.
+
+    Ledger timestamps appear both ISO-T and space-separated, with and without
+    a `Z` suffix — a string compare across those forms silently misorders, so
+    everything goes through here. Naive values are read as UTC (that is what
+    the writers emit).
+    """
+    if not isinstance(v, str) or not v:
+        return None
+    try:
+        dt = datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
 class SettlementChecker:
     """Check settled markets and calculate PnL for paper and live trades.
     Paper fills transition paper_filled → paper_settled and credit the
@@ -39,6 +56,29 @@ class SettlementChecker:
         # across multiple check_and_settle() calls on the same ticker.
         # Insertion-ordered dict → oldest entry is evicted first when cap reached.
         self._settled_cache: dict[str, tuple[str, Optional[float], Optional[float]]] = {}
+
+    def _is_written_off(self, trade: dict) -> bool:
+        """True when this paper trade's stake was already returned to the paper
+        tracker by a manual write-off, so settling it must NOT credit again.
+
+        See `Config.BANKROLL_WRITEOFF_STRATEGIES` for the 2026-07-28 case.
+        Suppression requires positive proof the entry predates the write-off:
+        no config, no cutoff, or an unreadable entry time all fail OPEN and
+        credit normally. Wrongly suppressing every future credit is a worse
+        failure mode than one stale credit, and real rows always carry a
+        parseable timestamp (`trades.timestamp` is NOT NULL).
+        """
+        cfg = getattr(self._order_manager, "config", None)
+        if cfg is None:
+            return False
+        strategies = getattr(cfg, "BANKROLL_WRITEOFF_STRATEGIES", None) or frozenset()
+        if trade.get("strategy") not in strategies:
+            return False
+        cutoff = _parse_ts(getattr(cfg, "BANKROLL_WRITEOFF_BEFORE", None))
+        entered = _parse_ts(trade.get("timestamp"))
+        if cutoff is None or entered is None:
+            return False
+        return entered < cutoff
 
     def _remember_settled(self, ticker: str, result: str,
                           yes_ask: Optional[float], no_ask: Optional[float]) -> None:
@@ -192,10 +232,23 @@ class SettlementChecker:
                 # Live wins/losses settle directly on Kalshi's real balance
                 # — crediting the paper bankroll here would inflate it with
                 # live winnings and mix the two modes' accounting.
+                # A written-off leg's stake was already returned to the tracker
+                # by hand, so crediting the payout here would hand back the
+                # same capital twice. The ledger row above still records the
+                # true outcome, and the breaker counters below still see it —
+                # only the bankroll credit is suppressed.
                 if not is_live and trade["direction"] == result:
-                    payout = trade["size"] / trade["price"]
-                    self._order_manager.bankroll += payout
-                    await self._order_manager._persist_bankroll()
+                    if self._is_written_off(trade):
+                        logger.info(
+                            f"[SETTLE] {ticker}: {trade['strategy']} win NOT credited "
+                            f"to paper bankroll — position was written off "
+                            f"(entered {trade.get('timestamp')}, "
+                            f"payout ${trade['size'] / trade['price']:.2f} suppressed)"
+                        )
+                    else:
+                        payout = trade["size"] / trade["price"]
+                        self._order_manager.bankroll += payout
+                        await self._order_manager._persist_bankroll()
                 # Circuit-breaker counters fire on both paper & live so a
                 # losing streak anywhere pauses all entries (see order_manager
                 # docstring). Daily loss cap is split per-mode via _is_live,
