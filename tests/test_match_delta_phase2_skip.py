@@ -142,3 +142,51 @@ def test_negative_control_soccer_style_intraday_spread_survives():
         out = SportsTraderStrategy._match_kalshi_to_odds(
             strat, "Inter Miami at Columbus", g, kalshi_ticker=tk)
         assert out is not None, off
+
+
+# ── log throttle ──────────────────────────────────────────────────────
+
+def test_skip_logging_is_throttled_per_ticker(caplog):
+    """The dedicated scan_loops poll ~1s, so a skipped ticker re-enters the
+    gate every second. Unthrottled, this was 586 of 850 journal lines in ten
+    minutes (69%) on 2026-07-28."""
+    import logging
+
+    from strategies import sports_trader as st
+
+    st._match_skip_last_logged.clear()
+    far = _game(CLOCK_TICKER, -24)
+    with caplog.at_level(logging.INFO, logger="sports_trader"):
+        for _ in range(50):
+            assert enforce_match_cap(CLOCK_TICKER, far, warn=True) is None
+    hits = [r for r in caplog.records if "MATCH_DELTA_SKIP" in r.getMessage()]
+    assert len(hits) == 1, f"expected 1 throttled INFO, got {len(hits)}"
+
+
+def test_throttle_is_per_ticker_not_global():
+    from strategies import sports_trader as st
+
+    st._match_skip_last_logged.clear()
+    enforce_match_cap(CLOCK_TICKER, _game(CLOCK_TICKER, -24), warn=True)
+    enforce_match_cap(DATE_TICKER, _game(DATE_TICKER, -30), warn=True)
+    assert set(st._match_skip_last_logged) == {CLOCK_TICKER, DATE_TICKER}
+
+
+def test_throttle_map_is_bounded():
+    """Tickers retire constantly; the map must not grow without bound."""
+    from strategies import sports_trader as st
+
+    st._match_skip_last_logged.clear()
+    for i in range(st._MATCH_SKIP_LOG_MAX_KEYS + 10):
+        st._should_log_match_skip(f"KXMLBGAME-26JUL28{i:04d}AAABBB-AAA")
+    assert len(st._match_skip_last_logged) <= st._MATCH_SKIP_LOG_MAX_KEYS
+
+
+def test_throttle_never_suppresses_the_skip_itself():
+    """Only the log line is throttled — the gate must still reject."""
+    from strategies import sports_trader as st
+
+    st._match_skip_last_logged.clear()
+    far = _game(CLOCK_TICKER, -24)
+    assert all(enforce_match_cap(CLOCK_TICKER, far, warn=True) is None
+               for _ in range(20))
