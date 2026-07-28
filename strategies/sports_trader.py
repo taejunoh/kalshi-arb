@@ -461,8 +461,20 @@ INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
 # open late July, then the North-American hard-court swing → Canadian Open
 # early Aug). Wimbledon TENNIS_SLUG_META entries kept for historical
 # odds_observations analysis. All tennis = paper.
-TENNIS_ATP_SLUGS: tuple[str, ...] = ()
-TENNIS_WTA_SLUGS: tuple[str, ...] = ()
+# 2026-07-28 gap closed — North-American hard-court swing: the rotation cron's
+# unmapped-active alert surfaced tennis_atp_washington_open and
+# tennis_wta_washington_open (Mubadala Citi DC Open, combined ATP 500 / WTA 500
+# hard). Confirmed via /v4/sports?all=true: these are the ONLY two active
+# tennis endpoints — the mid-July clay swing (Bastad/Gstaad/Hamburg,
+# Bucharest/Palermo) was never published by the Odds API, so the 7/13 empty
+# window ran to Washington. Both tuples go single-slug. Next up: Canadian Open
+# (~early Aug), then Cincinnati → US Open, all already in TENNIS_SLUG_META.
+TENNIS_ATP_SLUGS: tuple[str, ...] = (
+    "tennis_atp_washington_open",     # ATP 500 hard, Washington DC (~7/27–8/2)
+)
+TENNIS_WTA_SLUGS: tuple[str, ...] = (
+    "tennis_wta_washington_open",     # WTA 500 hard, Washington DC (~7/27–8/2)
+)
 
 # Single source of truth for Kalshi series → Odds API sport key(s). Tennis
 # values are tuples (multi-slug fan-out); single-tournament sports are str.
@@ -573,6 +585,9 @@ TENNIS_SLUG_META = {
     "tennis_atp_queens_club_champ":   {"tier": "ATP500",  "surface": "grass", "format": "BO3"},
     "tennis_wta_german_open":         {"tier": "WTA500",  "surface": "grass", "format": "BO3"},
     "tennis_wta_bad_homburg_open":    {"tier": "WTA500",  "surface": "grass", "format": "BO3"},
+    # North-American hard-court swing (added 2026-07-28 rotation)
+    "tennis_atp_washington_open":     {"tier": "ATP500",  "surface": "hard",  "format": "BO3"},
+    "tennis_wta_washington_open":     {"tier": "WTA500",  "surface": "hard",  "format": "BO3"},
 }
 
 # Regex for extracting round from a Kalshi tennis market title.
