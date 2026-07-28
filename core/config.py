@@ -95,6 +95,15 @@ class Config:
         self.LADDER_MIN_DEPTH_USDC = float(os.getenv("LADDER_MIN_DEPTH_USDC", "30"))
         self.LADDER_MAX_POSITION_PER_GROUP = float(os.getenv("LADDER_MAX_POSITION_PER_GROUP", "50"))
         self.LADDER_STALE_ORDERBOOK_SEC = float(os.getenv("LADDER_STALE_ORDERBOOK_SEC", "10"))
+        # ladder_fed only: how many of the nearest still-open FOMC meetings it
+        # may trade, and how much open capital it may hold across them. Both
+        # added 2026-07-28 after it booked 63 entries over 2.5 months and
+        # settled ZERO — it had been entering meetings out to 28JAN (18 months),
+        # so no leg could return a result while $750 stayed locked.
+        self.LADDER_FED_HORIZON_MEETINGS = int(os.getenv("LADDER_FED_HORIZON_MEETINGS", "2"))
+        self.LADDER_FED_MAX_OPEN_EXPOSURE_USDC = float(
+            os.getenv("LADDER_FED_MAX_OPEN_EXPOSURE_USDC", "100")
+        )
 
         # Ladder Phase 0 resurrection (2026-05-19). Paper-only walked-edge
         # logging; phantom-quote defense via orderbook walk. Spec:
