@@ -9,6 +9,13 @@ Cell + price band gates revised 2026-04-26 (live promotion 1-week eval):
   - <10¢ bands kept under observation (MLB pre-fix +280% n=7 → live -100%
     n=26; user opted to keep both NHL and MLB <10¢ for sample accumulation).
   - All pre-game cells kept broad (5-35¢) — fires <2/week, +131% n=6 paper.
+
+Live cells removed 2026-07-28. The "alpha cell" that motivated the whole
+2026-04-26 revision (MLB live 20-30¢, +25.2% on n=30) replays to -20.54% on
+n=317 with its Wilson upper bound below breakeven. The NHL live cells, set on
+n=4, have produced 3 signals lifetime. Real money agreed all along: the
+live-cell slice is n=59 / -14.65%. Pre cells stand — they were not part of
+this re-derivation. See ALLOWED_CELLS below for the full numbers.
 """
 import logging
 from typing import Optional
@@ -57,8 +64,25 @@ class SportsV4EdgeStrategy(SportsTraderStrategy):
     # global ENTRY_PRICE_DEAD_ZONE = (0.10, 0.20). PRICE_MIN/MAX above are
     # kept as a wide initial filter inside evaluate(); CELL_PRICE_BANDS
     # narrows per cell after ALLOWED_CELLS passes (in base scan_and_execute).
+    # 2026-07-28: both live cells REMOVED. They were set on 2026-04-26 from a
+    # one-week eval — MLB live 20-30¢ "+25.2% n=30", NHL live "both n=4". A
+    # full-history replay of this exact gate stack, deduped to one signal per
+    # game, says otherwise:
+    #     MLB live 20-29¢  n=317  WR 22.4% vs breakeven 27.7%  ROI -20.54%
+    #                             Wilson [18.2, 27.3] — upper bound BELOW
+    #                             breakeven, i.e. decisively -EV at 10x the
+    #                             sample the cell was created on
+    #     MLB live 05-09¢  n=24   ROI -0.62% (breakeven, uninformative)
+    #     NHL live 30-35¢  n=3    lifetime. NHL live 05-09¢: zero signals.
+    # Real money agrees: the live-cell slice of this strategy's `settled` rows
+    # is n=59 / -14.65%. Only the paper twin dissented (+4.22% n=168) and the
+    # replay fires 2x as often, so paper sampled a luckier subset.
+    # NOT a match-contamination artifact — the contaminated and clean replays
+    # differ by 2pp (-18.27% vs -20.54%), because MLB live phase labels were
+    # 86.9% correct. The cells were simply built on n=30 and n=4.
+    # Pre cells are untouched: unaffected by that bug (pre labels ~99% correct)
+    # and NOT re-derived here, so there is no evidence either way on them.
     ALLOWED_CELLS = frozenset({
-        ("MLB", "live"), ("NHL", "live"),
         ("MLB", "pre"), ("NBA", "pre"), ("NHL", "pre"),
     })
     # Bands are inclusive on both ends. Kalshi prices come in integer-cent
@@ -69,8 +93,6 @@ class SportsV4EdgeStrategy(SportsTraderStrategy):
     #   (0.20, 0.35) = cents 20-35     — pre-game broad allow
     # 0.10 is intentionally NOT in any band (preserves original DEAD_ZONE).
     CELL_PRICE_BANDS = {
-        ("MLB", "live"): [(0.05, 0.09), (0.20, 0.29)],
-        ("NHL", "live"): [(0.05, 0.09), (0.30, 0.35)],
         ("MLB", "pre"):  [(0.05, 0.09), (0.20, 0.35)],
         ("NBA", "pre"):  [(0.05, 0.09), (0.20, 0.35)],
         ("NHL", "pre"):  [(0.05, 0.09), (0.20, 0.35)],

@@ -108,3 +108,39 @@ def test_v4_edge_has_depth_and_dead_zone_gates():
         for lo, hi in ranges:
             assert not (lo <= 0.10 <= hi), f"{cell} band {lo}-{hi} re-admits dead-zone 0.10"
             assert hi <= SportsV4EdgeStrategy.PRICE_MAX
+
+
+def test_live_cells_are_gone_and_stay_gone():
+    """Removed 2026-07-28 after a full-history replay of this gate stack.
+
+    The MLB live 20-29¢ "alpha cell" was created on n=30 (+25.2%). Replayed on
+    n=317 with one signal per game it is -20.54%, WR 22.4% against a 27.7%
+    breakeven, Wilson [18.2, 27.3] — the upper bound sits below breakeven, so
+    this is not a wide-error-bars situation. NHL live was set on n=4 and
+    produced 3 signals lifetime.
+
+    Re-adding either cell needs new evidence, not the April numbers.
+    """
+    cells = SportsV4EdgeStrategy.ALLOWED_CELLS
+    assert ("MLB", "live") not in cells
+    assert ("NHL", "live") not in cells
+    assert not any(phase == "live" for _, phase in cells), (
+        "a live cell came back — the April eval that justified them was n=30 "
+        "and n=4, and the full-history replay says -20.54%"
+    )
+
+
+def test_pre_cells_survive_untouched():
+    """The re-derivation covered live cells only. Pre cells were not tested
+    either way, so removing them here would be unevidenced."""
+    assert SportsV4EdgeStrategy.ALLOWED_CELLS == frozenset({
+        ("MLB", "pre"), ("NBA", "pre"), ("NHL", "pre"),
+    })
+
+
+def test_every_allowed_cell_still_has_a_price_band():
+    """A cell with no band entry would fall through the per-cell gate."""
+    for cell in SportsV4EdgeStrategy.ALLOWED_CELLS:
+        assert cell in SportsV4EdgeStrategy.CELL_PRICE_BANDS, cell
+    assert set(SportsV4EdgeStrategy.CELL_PRICE_BANDS) == set(
+        SportsV4EdgeStrategy.ALLOWED_CELLS), "orphaned band entry"
