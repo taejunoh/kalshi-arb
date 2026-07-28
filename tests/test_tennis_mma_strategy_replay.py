@@ -129,6 +129,64 @@ def test_resolve_settled_outcomes_returns_dict():
     assert out == {"KXATPMATCH-1": 1.0, "KXATPMATCH-2": 0.0}
 
 
+def _settlements_db(pairs):
+    conn = sqlite3.connect(":memory:")
+    conn.execute("""
+        CREATE TABLE ticker_settlements (
+            kalshi_ticker TEXT PRIMARY KEY,
+            result TEXT NOT NULL,
+            close_yes_ask REAL,
+            close_no_ask REAL,
+            settled_at TEXT,
+            fetched_at TEXT NOT NULL
+        )
+    """)
+    conn.executemany(
+        "INSERT INTO ticker_settlements (kalshi_ticker, result, fetched_at) "
+        "VALUES (?, ?, '2026-05-15T00:00:00+00:00')",
+        pairs,
+    )
+    conn.commit()
+    return conn
+
+
+def test_resolve_settled_outcomes_survives_row_level_duplication():
+    """Callers pass one ticker per observation ROW. A single month of UFC is
+    ~640k rows over ~100 distinct tickers; binding one SQL variable per row
+    raised "too many SQL variables" and made the replay unusable for any
+    window bigger than a few days."""
+    conn = _settlements_db([("KXUFCFIGHT-1", "yes"), ("KXUFCFIGHT-2", "no")])
+    tickers = ["KXUFCFIGHT-1", "KXUFCFIGHT-2"] * 25_000  # 50k rows, 2 distinct
+    out = resolve_settled_outcomes(conn, tickers)
+    assert out == {"KXUFCFIGHT-1": 1.0, "KXUFCFIGHT-2": 0.0}
+
+
+def test_resolve_settled_outcomes_chunks_past_the_variable_limit():
+    """Dedupe alone is not enough — a long tennis window legitimately has tens
+    of thousands of DISTINCT tickers, which would blow the same limit."""
+    pairs = [(f"KXATPMATCH-{i}", "yes" if i % 2 == 0 else "no")
+             for i in range(5_000)]
+    conn = _settlements_db(pairs)
+    out = resolve_settled_outcomes(conn, [t for t, _ in pairs])
+    assert len(out) == 5_000
+    assert out["KXATPMATCH-0"] == 1.0
+    assert out["KXATPMATCH-1"] == 0.0
+    assert out["KXATPMATCH-4999"] == 0.0
+
+
+def test_resolve_settled_outcomes_ignores_empty_ticker_values():
+    conn = _settlements_db([("KXATPMATCH-1", "yes")])
+    assert resolve_settled_outcomes(conn, ["", None, "KXATPMATCH-1"]) == {
+        "KXATPMATCH-1": 1.0
+    }
+
+
+def test_resolve_settled_outcomes_empty_input():
+    conn = _settlements_db([("KXATPMATCH-1", "yes")])
+    assert resolve_settled_outcomes(conn, []) == {}
+    assert resolve_settled_outcomes(conn, ["", None]) == {}
+
+
 def test_simulate_tennis_pinnacle_arb_fires_on_gap():
     rows = [
         # Should fire — 0.10 gap, fresh pin, eu within 3pp of pin
