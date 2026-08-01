@@ -554,8 +554,16 @@ INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
 # Bucharest/Palermo) was never published by the Odds API, so the 7/13 empty
 # window ran to Washington. Both tuples go single-slug. Next up: Canadian Open
 # (~early Aug), then Cincinnati → US Open, all already in TENNIS_SLUG_META.
+# 2026-08-01 rotation: the cron unmapped-active alert surfaced
+# tennis_atp_canadian_open (Masters 1000 hard, Toronto, ~7/31-8/7). Verified
+# via /v4/sports?all=true: 13 events live. Washington is in its final weekend
+# (2 events left on each tour) and stays mapped until the cron flags it
+# stale - ATP fans out across both, the designed multi-slug case. WTA
+# unchanged (wta_canadian_open not yet published by the Odds API; the
+# unmapped-active alert will surface it when it appears).
 TENNIS_ATP_SLUGS: tuple[str, ...] = (
     "tennis_atp_washington_open",     # ATP 500 hard, Washington DC (~7/27–8/2)
+    "tennis_atp_canadian_open",       # M1000 hard, Toronto (~7/31-8/7)
 )
 TENNIS_WTA_SLUGS: tuple[str, ...] = (
     "tennis_wta_washington_open",     # WTA 500 hard, Washington DC (~7/27–8/2)
