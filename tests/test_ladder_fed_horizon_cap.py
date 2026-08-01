@@ -17,7 +17,13 @@ from core.database import Database
 from strategies.ladder_fed import LadderFedStrategy
 
 
-NOW = datetime(2026, 7, 28, 12, 0, 0, tzinfo=timezone.utc)
+# Anchored to the real clock, not a fixed date: the gate-wiring tests drive the
+# REAL scan_and_execute, which calls datetime.now() internally, so a hardcoded
+# NOW rots as real time passes it (this exact test broke 4 days after it was
+# written - the fixture 26JUL meeting closed and fell out of the horizon).
+# The pure-function tests pass NOW explicitly, so a moving anchor is safe for
+# them too: only the offsets matter. See feedback_test_date_bomb_rolling_window.
+NOW = datetime.now(timezone.utc)
 
 
 def _cfg(horizon=2, cap=100.0):
