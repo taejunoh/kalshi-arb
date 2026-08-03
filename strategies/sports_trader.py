@@ -554,19 +554,24 @@ INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
 # Bucharest/Palermo) was never published by the Odds API, so the 7/13 empty
 # window ran to Washington. Both tuples go single-slug. Next up: Canadian Open
 # (~early Aug), then Cincinnati → US Open, all already in TENNIS_SLUG_META.
-# 2026-08-01 rotation: the cron unmapped-active alert surfaced
-# tennis_atp_canadian_open (Masters 1000 hard, Toronto, ~7/31-8/7). Verified
-# via /v4/sports?all=true: 13 events live. Washington is in its final weekend
-# (2 events left on each tour) and stays mapped until the cron flags it
-# stale - ATP fans out across both, the designed multi-slug case. WTA
-# unchanged (wta_canadian_open not yet published by the Odds API; the
-# unmapped-active alert will surface it when it appears).
+# 2026-08-03 rotation: WTA hands off, ATP still fanned out. Live event counts
+# from /v4/sports/<slug>/events at 12:0x UTC:
+#     tennis_wta_canadian_open   30   <- newly published, wired here
+#     tennis_atp_canadian_open   30
+#     tennis_atp_washington_open  1   <- the final, still to play: KEEP
+#     tennis_wta_washington_open  0   <- draw complete: DROPPED
+# The WTA slug is swapped rather than appended because Washington's women's
+# draw is finished; the endpoint still reports active:true but has no events
+# left to match, so keeping it would only burn a fetch per scan. The 2026-08-01
+# note predicted the unmapped-active alert would surface wta_canadian_open once
+# the API published it, and that is exactly what happened two days later.
+# ATP keeps both: Washington's final has not been played yet.
 TENNIS_ATP_SLUGS: tuple[str, ...] = (
     "tennis_atp_washington_open",     # ATP 500 hard, Washington DC (~7/27–8/2)
     "tennis_atp_canadian_open",       # M1000 hard, Toronto (~7/31-8/7)
 )
 TENNIS_WTA_SLUGS: tuple[str, ...] = (
-    "tennis_wta_washington_open",     # WTA 500 hard, Washington DC (~7/27–8/2)
+    "tennis_wta_canadian_open",       # WTA 1000 hard, Montreal (~7/31-8/7)
 )
 
 # Single source of truth for Kalshi series → Odds API sport key(s). Tennis
