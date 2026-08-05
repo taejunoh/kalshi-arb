@@ -1,5 +1,5 @@
 // app/src/format.test.ts
-import { americanOdds, parseOddsToDecimal, evPct, countdown, countdownUrgent, matchup, oddsBars, evTrail, hhmm, watchNote } from "./format";
+import { americanOdds, parseOddsToDecimal, evPct, countdown, countdownUrgent, matchup, oddsBars, evTrail, hhmm } from "./format";
 
 test("americanOdds shows the US-book number (+underdog / -favorite)", () => {
   expect(americanOdds(3.9)).toBe("+290");
@@ -101,16 +101,3 @@ test("hhmm renders device-local time and survives junk", () => {
   expect(hhmm("nonsense")).toBe("?");
 });
 
-test("watchNote reads the live record instead of a frozen literal", () => {
-  // 2026-08-05: the card said 4승 21패 (in-sample, 07-22) while the cell was
-  // actually 7-23. A hard-coded count cannot be kept honest.
-  const n = watchNote({ w: 7, l: 23, wr: 23.3, be: 42.1 });
-  expect(n).toContain("7승 23패");
-  expect(n).not.toContain("4승 21패");
-  expect(n).toContain("본전 42%");
-});
-
-test("watchNote states the reason without a count when the API sends none", () => {
-  expect(watchNote(null)).toBe("ML EV≥5% — 전진관찰 중");
-  expect(watchNote(undefined)).toBe("ML EV≥5% — 전진관찰 중");
-});

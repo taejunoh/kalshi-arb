@@ -21,7 +21,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 sys.path.insert(0, os.path.dirname(__file__))                  # sibling test helpers
 import softbook_ev_core as core                                # noqa: E402
-import softbook_ev_recorder as rec                             # noqa: E402
+import softbook_ev_recorder as rec
+import softbook_push_worker as push                             # noqa: E402
 
 from test_softbook_first_entry import db_, game_bet, prop_bet, snap   # noqa: E402
 
@@ -63,18 +64,19 @@ def test_is_bet_is_unchanged_by_ev():
         assert core.is_ev_watch("h2h", ev) == (ev >= core.EV_WATCH_MIN)
 
 
-def test_watched_pick_still_reads_as_a_bet_not_a_skip():
+def test_ml_in_the_watch_band_now_gets_the_plain_bet_tag():
+    """The hold advisory is retired (user, 2026-08-05). ML at EV>=5% carried
+    "베팅 보류 권장" from 7/22 because HIGH ML in that band ran 4-21 (-60.8%).
+    High ML is no longer bet at all, and on the cohort we do bet the pathology
+    does not reproduce: Med, n=32, WR 50.0% vs BE 42.0%, +$22.23 on $89.95.
+    n=32 decides nothing either way — the band is 6.4% of Med ML volume, is not
+    negative, and would need ~8 months to become decidable, so it rides with the
+    rest rather than carrying a warning nobody can act on."""
     db = db_()
     b = game_bet(market="h2h", side="Detroit Tigers", point=None, ev=0.06)
-    snap(db, b, OPEN)                              # first-entry ML at EV 6%
-    note = rec._first_entry_note(db, b)
-    assert "BET" in note                                   # still a BET verdict
-    assert "SKIP" not in note                              # NOT demoted to skip
-    assert "보류" in note                                   # but flagged to hold
-    assert "bet small" not in note                         # and no stake instruction
+    snap(db, b, OPEN)
+    assert rec._first_entry_note(db, b) == rec.BET_TAG
 
-
-# ---------- the Telegram tag ----------
 
 def test_ml_below_threshold_gets_the_plain_bet_tag():
     db = db_()
@@ -111,7 +113,16 @@ def test_prop_at_high_ev_still_skips_as_prop():
 
 # ---------- the stake segment ----------
 
-def test_stake_segment_is_suppressed_for_watched_picks():
-    """'💵 $N' next to '보류 권장' would contradict itself — the alert body keys the
-    stake off the exact BET_TAG, so a watched pick drops it like a SKIP does."""
-    assert rec.WATCH_TAG != rec.BET_TAG
+def test_no_hold_tag_survives_anywhere():
+    """The retirement has to be total: a leftover WATCH_TAG would still reach
+    Telegram, and a leftover is_ev_watch call would still swap the push title."""
+    assert not hasattr(rec, "WATCH_TAG")
+    for mod, name in ((rec, "softbook_ev_recorder"), (push, "softbook_push_worker")):
+        src = open(mod.__file__).read()
+        assert "is_ev_watch" not in src, name
+
+
+def test_the_band_survives_as_an_analysis_cell():
+    """core.is_ev_watch stays so the band can still be re-measured on demand —
+    it just no longer drives any user-facing surface."""
+    assert core.is_ev_watch("h2h", 0.06) is True
