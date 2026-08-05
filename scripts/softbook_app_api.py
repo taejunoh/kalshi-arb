@@ -78,6 +78,75 @@ def _ev_conn():
     return sqlite3.connect(f"file:{ev_db}?mode=ro", uri=True, timeout=15)
 
 
+def _latest_scan_at():
+    """Newest recorded_at across ALL tiers = when the scanner last ran.
+
+    The active/cooled split keys off this rather than off the newest High row,
+    so a scan that produced no High pick anywhere still retires the previous
+    scan's picks. See softbook_app_feed.compose for the failure it prevents.
+    """
+    c = _ev_conn()
+    try:
+        row = c.execute(
+            "SELECT MAX(recorded_at) FROM softbook_ev WHERE"
+            " datetime(recorded_at) >= datetime('now','-2 days')").fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        c.close()
+    return row[0] if row else None
+
+
+def _alert_and_now(picks):
+    """Annotate each pick with the snapshot it was ALERTED on and the CURRENT
+    one, so the card can show "alerted +1.1%, now +0.4%" instead of a single
+    number whose age is invisible.
+
+    alert_* = this pick's EARLIEST High snapshot — the scan that triggered the
+    Telegram/push. now_* = its LATEST snapshot at ANY tier, which is the part
+    the High-only feed cannot see: once a pick drops out of High it stops
+    producing High rows, so its last High row is not its current price.
+    """
+    if not picks:
+        return picks
+    c = _ev_conn()
+    try:
+        for p in picks:
+            args = (p["event_id"], p["market"], p["side"],
+                    p.get("player") or "", p.get("point"))
+            where = ("event_id=? AND market=? AND side=? AND IFNULL(player,'')=?"
+                     " AND IFNULL(point,-999)=IFNULL(?,-999)")
+            try:
+                a = c.execute(
+                    "SELECT recorded_at, snapshot_ev, best_soft_price, best_soft_book"
+                    f" FROM softbook_ev WHERE {where} AND tier='High'"
+                    " ORDER BY recorded_at ASC LIMIT 1", args).fetchone()
+                n = c.execute(
+                    "SELECT recorded_at, snapshot_ev, best_soft_price,"
+                    f" best_soft_book, tier FROM softbook_ev WHERE {where}"
+                    " ORDER BY recorded_at DESC LIMIT 1", args).fetchone()
+            except sqlite3.OperationalError:
+                a = n = None
+            if a:
+                p["alerted_at"], p["alert_ev"] = a[0], a[1]
+                p["alert_odds"], p["alert_book"] = a[2], a[3]
+            if n:
+                p["now_at"], p["now_ev"] = n[0], n[1]
+                p["now_odds"], p["now_book"], p["now_tier"] = n[2], n[3], n[4]
+            # Why a cooled pick is cooled. Measured 2026-08-05: of 17 cooled
+            # picks, 9 had never actually cooled — their last snapshot was
+            # still High, they simply stopped appearing (book pulled the
+            # market, or the line moved and became a different pick). Lumping
+            # those in with genuinely re-priced ones told the user "this went
+            # cold" about a bet whose last known EV was unchanged.
+            if p.get("status") == "cooled":
+                p["cooled_reason"] = ("faded" if p.get("now_tier") not in (None, "High")
+                                      else "gone")
+    finally:
+        c.close()
+    return picks
+
+
 def _latest_high_rows():
     """High snapshots from the most recent ~2 days of scans (enough to classify
     cooled vs active without scanning the whole table)."""
@@ -176,10 +245,12 @@ def get_picks(_=Depends(require_auth)):
     pdb = adb.connect()
     try:
         picks = feed.compose(_latest_high_rows(), adb.pick_states(pdb),
-                             _prefs(pdb), now, adb.active_mute_rules(pdb))
+                             _prefs(pdb), now, adb.active_mute_rules(pdb),
+                             latest_scan=_latest_scan_at())
     finally:
         pdb.close()
     _enrich_first_entry(picks)
+    _alert_and_now(picks)
     active = [p for p in picks if p["status"] == "active"]
     counts = {}
     for p in picks:

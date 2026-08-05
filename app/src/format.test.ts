@@ -1,5 +1,5 @@
 // app/src/format.test.ts
-import { americanOdds, parseOddsToDecimal, evPct, countdown, countdownUrgent, matchup, oddsBars } from "./format";
+import { americanOdds, parseOddsToDecimal, evPct, countdown, countdownUrgent, matchup, oddsBars, evTrail, hhmm } from "./format";
 
 test("americanOdds shows the US-book number (+underdog / -favorite)", () => {
   expect(americanOdds(3.9)).toBe("+290");
@@ -60,4 +60,43 @@ test("matchup is Away @ Home, degrades gracefully when a side is missing", () =>
   expect(matchup(null, "Celtics")).toBe("Celtics");
   expect(matchup(null, null)).toBeNull();
   expect(matchup("  ", "  ")).toBeNull(); // whitespace-only counts as missing
+});
+
+test("evTrail shows the decay when the pick was re-priced", () => {
+  const t = evTrail({
+    alerted_at: "2026-08-05T09:10:00Z", alert_ev: 0.013,
+    now_at: "2026-08-05T09:50:00Z", now_ev: 0.004,
+  });
+  expect(t).toContain("+1.3%");
+  expect(t).toContain("+0.4%");
+  expect(t).toContain("→");
+});
+
+test("evTrail says the price vanished rather than inventing a decay", () => {
+  // 9 of 17 cooled picks on 2026-08-05: last snapshot still High, pick simply
+  // stopped appearing. Its EV never moved, so a "→" arrow would be a lie.
+  const t = evTrail({
+    alerted_at: "2026-08-05T09:40:00Z", alert_ev: 0.0105,
+    now_at: "2026-08-05T09:40:00Z", now_ev: 0.0105, cooled_reason: "gone",
+  });
+  expect(t).toContain("호가 사라짐");
+  expect(t).toContain("+1.1%");
+  expect(t).not.toContain("→");
+});
+
+test("evTrail is silent when nothing has changed yet", () => {
+  expect(evTrail({
+    alerted_at: "2026-08-05T09:40:00Z", alert_ev: 0.0105,
+    now_at: "2026-08-05T09:40:00Z", now_ev: 0.0105,
+  })).toBeNull();
+});
+
+test("evTrail is silent on a payload that predates the fields", () => {
+  expect(evTrail({})).toBeNull();
+  expect(evTrail({ alerted_at: "2026-08-05T09:40:00Z", alert_ev: 0.01 })).toBeNull();
+});
+
+test("hhmm renders device-local time and survives junk", () => {
+  expect(hhmm("2026-08-05T09:40:00Z")).toMatch(/^\d{2}:\d{2}$/);
+  expect(hhmm("nonsense")).toBe("?");
 });
