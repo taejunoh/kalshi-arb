@@ -108,6 +108,20 @@ export function PicksScreen() {
   // the "BET만" chip this replaced would have been a no-op.
   const visiblePicks = data?.picks ?? [];
 
+  // An empty feed used to say only "활성 픽 없음", which reads as "nothing was
+  // found" when the usual cause is that the picks are accounted for. Twice on
+  // 2026-08-05 a Telegram alert arrived and the pick was not in the app — both
+  // times it was one the user had already marked bet, and the app gave no way to
+  // see that. counts already came down with every response; it just was not shown.
+  //
+  // bet/dismissed only: cooled and expired have their own sections right below,
+  // and naming them twice reads as two different things.
+  const c = data?.counts ?? {};
+  const whereTheyWent = ([["bet", "표시함"], ["dismissed", "무시함"]] as const)
+    .filter(([k]) => (c[k] ?? 0) > 0)
+    .map(([k, label]) => `${label} ${c[k]}`)
+    .join(" · ");
+
   // Collapsed sections under the active feed: 식은 픽 (cooled — gone from the
   // latest scan) and 지나간 픽 (expired — game started). Same card + handlers.
   // Open the book/deeplink detail, passing the matchup so the detail header shows
@@ -180,7 +194,10 @@ export function PicksScreen() {
         )}
         ListEmptyComponent={
           loading ? <ActivityIndicator style={{ marginTop: 40 }} />
-            : <Text style={s.empty}>활성 픽 없음</Text>
+            : <View>
+                <Text style={s.empty}>활성 픽 없음</Text>
+                {whereTheyWent ? <Text style={s.emptyWhy}>{whereTheyWent}</Text> : null}
+              </View>
         }
         ListFooterComponent={
           <>
@@ -218,6 +235,7 @@ const s = StyleSheet.create({
   err: { color: color.negative, textAlign: "center", marginBottom: space.md },
   retry: { backgroundColor: color.accent, paddingHorizontal: space.lg, paddingVertical: 10, borderRadius: radius.sm },
   retryText: { color: color.onAccent, fontWeight: "600" },
+  emptyWhy: { color: color.muted, fontSize: 12.5, textAlign: "center", marginTop: space.xs },
   empty: { color: color.faint, textAlign: "center", marginTop: 40 },
   cooledHeader: { padding: space.lg },
   cooledText: { color: color.muted, fontWeight: "600" },
