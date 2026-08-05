@@ -323,11 +323,11 @@ def _opposite_note(db, b, batch=()):
         lbl = core.label(m, s, None if m == "h2h" else p, pl or None)
         quote = f" {bk_} {_american(od)}" if od else ""
         if ev_o is None:
-            notes.append(f"\n   ⚖️ 같은 경기 반대방향 High: {lbl}{quote}"
+            notes.append(f"\n   ⚖️ 같은 경기 반대방향 +EV: {lbl}{quote}"
                          " — 동시적중 불가(접전이면 둘 다 패), 둘 중 하나만 권장")
         else:
             pick = "이쪽" if b["ev"] >= ev_o else "반대쪽"
-            notes.append(f"\n   ⚖️ 같은 경기 반대방향 High: {lbl}{quote}"
+            notes.append(f"\n   ⚖️ 같은 경기 반대방향 +EV: {lbl}{quote}"
                          f" (EV {ev_o*100:+.1f}%) — 동시적중 불가(접전이면 둘 다 패),"
                          f" EV 높은 쪽만: {pick}")
     return "".join(notes[:2])
@@ -364,9 +364,11 @@ def alert_new_high(db, bets, now):
     to_send = [(b, fe) for b, fe in ((b, _first_entry_note(db, b)) for b in new)
                if fe not in SKIP_TAGS]
     for b, fe in to_send[:8]:
-        _send_bet_alert(db, b, "🟣 High +EV 즉시 알림 (pre-game)", batch=new, fe=fe)
+        # Header names the pick's OWN tier — ML alerts at Med since 2026-08-05,
+        # and a Med pick announcing itself as "High" is simply false.
+        _send_bet_alert(db, b, f"🟣 {b['tier']} +EV 즉시 알림 (pre-game)", batch=new, fe=fe)
     if len(to_send) > 8:
-        send_telegram(f"…+{len(to_send)-8} more new High — 대쉬보드 +EV 탭 확인")
+        send_telegram(f"…+{len(to_send)-8} more new +EV — 대쉬보드 +EV 탭 확인")
     db.commit()
     return len(to_send)
 
