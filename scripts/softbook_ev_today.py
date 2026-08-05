@@ -83,6 +83,7 @@ def main():
     # drift — tier flickers at the Med/High boundary made tab and ledger disagree
     # before). The +EV tab shows the High subset (== the alerted set); ev.db keeps
     # ALL tiers (bets_all) so CLV-by-tier re-tuning still has Med/Low to learn from.
+    rec = rdb = None
     try:
         import softbook_ev_recorder as rec
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -101,18 +102,38 @@ def main():
     except Exception as e:
         print("record err:", e)
 
-    # --json : dashboard +EV tab feed (one entry per +EV market bet; keeps legacy
-    # fields). HIGH-TIER ONLY — Med/Low are never actionable (the bet rule is
-    # first-entry High game-only) and were just noise on the live "bet now" list, so
-    # the user dropped them from the tab (2026-06-23). They still live in ev.db (all
-    # tiers, recorded above) for CLV-by-tier re-tuning and in the +EV History tab.
+    # --json : dashboard +EV tab feed. THE BETS WE ACTUALLY PLACE — the tab tells the
+    # user "place each at the named sportsbook", so anything else on it is an
+    # instruction to bet something the rule skips.
+    #
+    # It filtered on tier=='High' from 2026-06-23, which was the bet rule at the time.
+    # It stopped being the bet rule twice over: props never qualified (they are
+    # skipped at every tier), and on 2026-08-05 ML moved to Med — so the tab was
+    # showing High ML, which we no longer bet, while hiding Med ML, which we do. It
+    # was displaying the exact complement of the truth for moneyline.
+    #
+    # Now it asks the recorder, the same single source as the Telegram tag and the
+    # app: rec._is_bet == core.is_bet over the first-entry snapshot. Needs the scan
+    # already recorded, which the block above just did.
+    #
+    # No recorder (its try failed) => no bets listed. Same policy as _is_bet's own
+    # error path: never claim a stake on an unverified pick. An empty tab is honest;
+    # a tab of unverified picks is not.
+    #
+    # ev.db still holds ALL tiers for CLV re-tuning and the +EV History tab.
     if "--json" in sys.argv:
         i = sys.argv.index("--json")
         path = sys.argv[i + 1] if i + 1 < len(sys.argv) else "data/ev_bets_latest.json"
         out = {"generated_at": datetime.now(timezone.utc).isoformat(),
                "bankroll": bankroll, "api_credits": credits, "bets": []}
-        high = [b for b in bets if b["tier"] == "High"]
-        for b in high[:JSON_CAP]:
+        if rdb is None:
+            bettable = []
+            print("json: no recorder db — listing no bets rather than unverified ones")
+        else:
+            bettable = [b for b in bets
+                        if rec._is_bet(rdb, b["event_id"], b["market"], b["side"],
+                                       b.get("player"), b["tier"])]
+        for b in bettable[:JSON_CAP]:
             out["bets"].append({
                 "team": b["label"], "matchup": f"{b['away']} @ {b['home']}",
                 "sport": b["sport"].replace("_", " ").upper(),
