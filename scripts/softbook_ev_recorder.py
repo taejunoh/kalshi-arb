@@ -321,6 +321,38 @@ def _opposite_note(db, b, batch=()):
     return "".join(notes[:2])
 
 
+def actioned_picks():
+    """{(event_id, market, side, point, player)} the user has already marked bet or
+    dismissed in the app. READ-ONLY on the app db, like the push-token read below.
+
+    Telegram and push know what the bet RULE says but not what the USER did, and
+    on 2026-08-05 that gap surfaced: a Med ML line the user marked bet at 20:37
+    alerted at 21:50 telling them to bet it. Not a dedup failure — it was that
+    line's first alert (Med only started qualifying at ~19:00, so nothing earlier
+    was ever recorded). Two channels each correct on their own rules, one wrong
+    outcome. Moving ML to Med quadrupled alert volume, which is why it showed up
+    now; the gap predates it.
+
+    Any failure returns an empty set: an alert that should have been suppressed
+    is a nuisance, a swallowed alert is a missed bet.
+    """
+    paper = os.getenv("SOFTBOOK_PAPER_DB",
+                      "/home/ubuntu/kalshi-arb/data/softbook_paper.db")
+    try:
+        pdb = sqlite3.connect(f"file:{paper}?mode=ro", uri=True, timeout=15)
+    except sqlite3.Error:
+        return frozenset()
+    try:
+        return frozenset(
+            (e, m, sd, float(pt or 0), pl or "") for e, m, sd, pt, pl in pdb.execute(
+                "SELECT event_id, market, side, point, player FROM pick_state"
+                " WHERE state IN ('bet','dismissed')"))
+    except sqlite3.Error:
+        return frozenset()
+    finally:
+        pdb.close()
+
+
 def alert_new_high(db, bets, now):
     """Push NEW High-tier bets to Telegram as they appear (the 4x/day digest's
     fixed times miss them — High clusters near game start). Dedup per exact bet
@@ -349,8 +381,13 @@ def alert_new_high(db, bets, now):
     # context, and the CLV/ledger trail — but no longer message (user, 2026-07-22). A
     # transient note miss ("") is NOT a SKIP tag, so it still sends: never silence a
     # possible bet on a lookup blip.
+    # Nothing the user has already acted on: they marked it bet (telling them to
+    # bet it again invites a double stake) or dismissed it (they said no once).
+    done = actioned_picks()
     to_send = [(b, fe) for b, fe in ((b, _first_entry_note(db, b)) for b in new)
-               if fe not in SKIP_TAGS]
+               if fe not in SKIP_TAGS
+               and (b["event_id"], b["market"], b["side"], float(b["point"] or 0),
+                    b.get("player") or "") not in done]
     for b, fe in to_send[:8]:
         # Header names the pick's OWN tier — ML alerts at Med since 2026-08-05,
         # and a Med pick announcing itself as "High" is simply false.
