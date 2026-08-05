@@ -8,6 +8,18 @@ existing pipeline tables (paper_bet / paper_bet_high).
 PnL uses fill_odds (the odds the user actually got at fill time).
 Legacy rows migrated from real_fill (sport IS NULL) are skipped — can't grade
 without sport/home/away.
+
+A bet that cannot be graded is retried on the next run, forever, in silence.
+That is right for a few hours and wrong after a few days, because both result
+sources have a horizon: the Odds API /scores call asks for daysFrom=3, and the
+ESPN/Naver graders behind softbook_results stop returning old fixtures too. Past
+it, the bet is not "not settled yet", it is unsettleable — and it keeps its place
+in every open-bet query. Found 2026-08-05: a KBO bet from 07-21 had been retried
+every 15 minutes for 15 days, alongside a boxing and two WNBA bets from 07-17/18.
+
+So anything still open STUCK_AFTER_H past its start gets reported once. It is not
+auto-resolved: grading a bet from a guess would put a wrong number in a ledger of
+real money, and the ledger rule is that rows are records, not estimates.
 """
 import os
 import json
@@ -124,6 +136,58 @@ def settle_app_bets(db, key=None, fetch_scores=_fetch_scores,
     return done
 
 
+STUCK_AFTER_H = 72          # both result sources are dry by ~3 days
+_STUCK_STATE = "/home/ubuntu/kalshi-arb/data/.app_settle_stuck"
+
+
+def stuck_bets(db, hours=STUCK_AFTER_H):
+    """Open bets whose game started more than `hours` ago — past every source's
+    horizon, so retrying will not help."""
+    return [dict(zip(("id", "sport", "label", "book", "stake", "commence_time"), r))
+            for r in db.execute(
+                "SELECT id, sport, label, book, stake, commence_time FROM app_bet"
+                " WHERE settled=0 AND sport IS NOT NULL AND commence_time IS NOT NULL"
+                "   AND datetime(replace(commence_time,'Z','')) < datetime('now', ?)"
+                " ORDER BY commence_time", (f"-{int(hours)} hours",))]
+
+
+def report_stuck(db, notify=None, state_path=_STUCK_STATE, hours=STUCK_AFTER_H):
+    """Report newly-stuck bets once each. Returns the ids reported.
+
+    Once each: this runs every 15 minutes and the condition never clears on its
+    own, so reporting every time would be a permanent alarm — which is the same
+    as no alarm.
+    """
+    rows = stuck_bets(db, hours)
+    if not rows:
+        return []
+    try:
+        with open(state_path) as f:
+            seen = {int(x) for x in f.read().split() if x.strip()}
+    except (OSError, ValueError):
+        seen = set()
+    fresh = [r for r in rows if r["id"] not in seen]
+    if not fresh:
+        return []
+    lines = "\n".join(
+        f"   • {r['label']} ({r['sport']}) {r['book']} ${r['stake'] or 0:.0f}"
+        f" — {(r['commence_time'] or '')[:10]}" for r in fresh[:10])
+    msg = (f"⚠️ 정산 불가 {len(fresh)}건 (시작 후 {hours}시간 경과)\n\n{lines}\n\n"
+           "결과 소스 조회 한계를 넘겼습니다 — 앱에서 직접 정산해 주세요.")
+    (notify or _notify)(msg)
+    try:
+        with open(state_path, "w") as f:
+            f.write(" ".join(str(r["id"]) for r in rows))
+    except OSError:
+        pass                      # reporting already happened; a lost state file
+    return [r["id"] for r in fresh]   # just means one repeat, not a missed alert
+
+
+def _notify(msg):
+    import softbook_ev_recorder as rec
+    rec.send_telegram(msg)
+
+
 def main():
     key = core.read_key()
     if not key:
@@ -131,7 +195,9 @@ def main():
         return
     db = adb.connect()
     n = settle_app_bets(db, key)
-    print(f"[softbook-app-settle] settled {n} app bets")
+    stuck = report_stuck(db)
+    print(f"[softbook-app-settle] settled {n} app bets"
+          + (f", reported {len(stuck)} unsettleable" if stuck else ""))
     db.close()
 
 
