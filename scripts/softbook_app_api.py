@@ -163,10 +163,12 @@ def _alert_and_now(picks):
             where = ("event_id=? AND market=? AND side=? AND IFNULL(player,'')=?"
                      " AND IFNULL(point,-999)=IFNULL(?,-999)")
             try:
+                tiers = sorted(core.bet_tiers(p["market"]))
                 a = c.execute(
                     "SELECT recorded_at, snapshot_ev, best_soft_price, best_soft_book"
-                    f" FROM softbook_ev WHERE {where} AND tier='High'"
-                    " ORDER BY recorded_at ASC LIMIT 1", args).fetchone()
+                    f" FROM softbook_ev WHERE {where}"
+                    f" AND tier IN ({','.join('?' * len(tiers))})"
+                    " ORDER BY recorded_at ASC LIMIT 1", (*args, *tiers)).fetchone()
                 n = c.execute(
                     "SELECT recorded_at, snapshot_ev, best_soft_price,"
                     f" best_soft_book, tier FROM softbook_ev WHERE {where}"
@@ -198,12 +200,14 @@ def _latest_high_rows():
     cooled vs active without scanning the whole table)."""
     cols = ("recorded_at, sport, event_id, commence_time, home, away, market,"
             " side, point, player, best_soft_book, best_soft_price, snapshot_ev,"
-            " n_books, conf")
+            " n_books, conf, tier")
+    tier_sql, tier_params = core.alertable_tiers_sql()
     c = _ev_conn()
     try:
         rows = c.execute(
-            f"SELECT {cols} FROM softbook_ev WHERE tier='High' AND"
-            " datetime(recorded_at) >= datetime('now','-2 days')").fetchall()
+            f"SELECT {cols} FROM softbook_ev WHERE {tier_sql} AND"
+            " datetime(recorded_at) >= datetime('now','-2 days')",
+            tier_params).fetchall()
     except sqlite3.OperationalError:
         rows = []
     finally:
@@ -212,6 +216,8 @@ def _latest_high_rows():
     out = []
     for r in rows:
         d = dict(zip(keys, r))
+        if d["tier"] not in core.bet_tiers(d["market"]):
+            continue                 # not the tier this market is bet at
         d["label"] = core.label(d["market"], d["side"],
                                  None if d["market"] == "h2h" else d["point"],
                                  d["player"] or None)
@@ -249,7 +255,9 @@ def _enrich_first_entry(picks):
             p["first_entry"] = p["side"] in cache[key][1]
             # should_bet = the BET verdict (first-entry GAME only); named distinctly
             # from the pick lifecycle status 'bet' (user-marked-as-placed).
-            p["should_bet"] = core.is_bet(p["first_entry"], p["market"])
+            # .get: a row missing its tier degrades to SKIP rather than raising —
+            # same policy as a missing snapshot, never mislabel on a transient miss.
+            p["should_bet"] = core.is_bet(p["first_entry"], p["market"], p.get("tier"))
             # Advisory overlay (2026-07-22): should_bet stays True, but this cell is
             # under forward review — see core.is_ev_watch. Same flag the Telegram tag
             # and the push worker read, so the three surfaces can't drift apart.

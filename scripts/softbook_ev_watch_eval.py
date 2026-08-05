@@ -75,11 +75,16 @@ def cohort(db, since, until=None):
     supplies the date bound, so a threshold change in core cannot silently
     desynchronise the alert from its own evaluation.
     """
+    # Tier follows core.bet_tiers, not a literal 'High': on 2026-08-05 ML moved
+    # to Med, and a watch that kept measuring High would be reporting a cohort we
+    # no longer bet. The date bound is unchanged (whole period, user 2026-08-05),
+    # so the record re-bases onto Med retroactively rather than restarting at n=0.
+    tiers = sorted(core.bet_tiers("h2h"))
     rows = db.execute(
         "SELECT market, ev, odds, stake, pnl, won, completed, substr(placed_at,1,10)"
-        " FROM paper_bet WHERE tier='High' AND placed_at >= ?"
+        f" FROM paper_bet WHERE tier IN ({','.join('?' * len(tiers))}) AND placed_at >= ?"
         + (" AND placed_at < ?" if until else ""),
-        (since, until) if until else (since,)).fetchall()
+        (*tiers, since, until) if until else (*tiers, since)).fetchall()
     sel = [r for r in rows if core.is_ev_watch(r[0], r[1])]
     graded = [r for r in sel if r[6] and r[5] is not None]
     return graded, len(sel) - len(graded)

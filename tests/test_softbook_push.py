@@ -69,7 +69,7 @@ def _worker_dbs():
     ev.execute("INSERT INTO softbook_ev VALUES (datetime('now'),"
                "'baseball_mlb','E1','2099-01-01T00:00:00Z','MIA','NYM',"
                "'h2h','NYM',0,'',0.45,2.0,"
-               "'theScore',2.2,0.074,9,5,60,'High')")
+               "'theScore',2.2,0.074,9,5,60,'Med')")
     ev.commit()
     pdb = sqlite3.connect(":memory:")
     import softbook_app_db as adb
@@ -105,11 +105,11 @@ def test_worker_alerts_first_entry_game_only():
     # E1: GAME first-entry (single High snapshot) -> SHOULD alert.
     ev.execute(q, (latest, "baseball_mlb", "E1", "2099-01-01T00:00:00Z", "MIA", "NYM",
                    "spread", "NYM", -1.5, "", 0.45, 2.0, "theScore", 2.2, 0.074, 9, 5, 60, "High"))
-    # E2: GAME late-crosser (earliest Med) -> should NOT alert.
+    # E2: GAME late-crosser (earliest below ML's bet tier) -> should NOT alert.
     ev.execute(q, (earlier, "baseball_mlb", "E2", "2099-01-01T00:00:00Z", "MIA", "NYM",
-                   "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "Med"))
+                   "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "Low"))
     ev.execute(q, (latest, "baseball_mlb", "E2", "2099-01-01T00:00:00Z", "MIA", "NYM",
-                   "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "High"))
+                   "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "Med"))
     # E3: PROP first-entry (single High) -> should NOT alert (props skip).
     ev.execute(q, (latest, "baseball_mlb", "E3", "2099-01-01T00:00:00Z", "MIA", "NYM",
                    "batter_total_bases", "Over", 1.5, "Brandon Nimmo", 0.45, 2.0,

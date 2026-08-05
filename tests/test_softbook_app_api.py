@@ -76,11 +76,11 @@ def test_picks_first_entry_flag(client):
     ev.execute(q, (latest, "baseball_mlb", "E1", "2099-01-01T00:00:00Z", "MIA", "NYM",
                    "batter_total_bases", "Over", 1.5, "Brandon Nimmo", 0.45, 2.0,
                    "theScore", 2.2, 0.074, 9, 5, 60, "High"))
-    # E2: earliest snapshot was Med (late-crosser), only later crossed into High.
+    # E2: earliest snapshot was below ML's bet tier -> late-crosser.
     ev.execute(q, (earlier, "baseball_mlb", "E2", "2099-01-01T00:00:00Z", "MIA", "NYM",
-                   "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "Med"))
+                   "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "Low"))
     ev.execute(q, (latest, "baseball_mlb", "E2", "2099-01-01T00:00:00Z", "MIA", "NYM",
-                   "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "High"))
+                   "h2h", "NYM", 0, "", 0.4, 2.0, "FanDuel", 2.1, 0.03, 8, 5, 55, "Med"))
     # E3: GAME first-entry (single High snapshot) -> first_entry AND should_bet True.
     ev.execute(q, (latest, "baseball_mlb", "E3", "2099-01-01T00:00:00Z", "MIA", "NYM",
                    "spread", "NYM", -1.5, "", 0.45, 2.0, "theScore", 2.1, 0.05, 9, 5, 60, "High"))
@@ -109,10 +109,10 @@ def test_picks_returns_recently_expired(client):
     long_ago = ev.execute("SELECT strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 hours')").fetchone()[0]
     # E1: started 2h ago -> expired AND inside the 24h window -> in the list.
     ev.execute(q, (now, "baseball_kbo", "E1", started, "Kiwoom Heroes", "Lotte Giants",
-                   "h2h", "Lotte Giants", 0, "", 0.42, 2.0, "BetMGM", 2.35, 0.071, 8, 5, 60, "High"))
+                   "h2h", "Lotte Giants", 0, "", 0.42, 2.0, "BetMGM", 2.35, 0.071, 8, 5, 60, "Med"))
     # E2: started 30h ago -> expired but OUTSIDE the window -> counted, not listed.
     ev.execute(q, (now, "baseball_mlb", "E2", long_ago, "MIA", "NYM",
-                   "h2h", "NYM", 0, "", 0.45, 2.0, "FanDuel", 2.1, 0.05, 8, 5, 60, "High"))
+                   "h2h", "NYM", 0, "", 0.45, 2.0, "FanDuel", 2.1, 0.05, 8, 5, 60, "Med"))
     ev.commit(); ev.close()
     r = client.get("/picks", headers={"Authorization": "Bearer secret"}).json()
     assert r["picks"] == []                          # neither is active (both commenced)

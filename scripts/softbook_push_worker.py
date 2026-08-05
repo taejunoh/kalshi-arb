@@ -55,10 +55,11 @@ def _now():
 def _latest_high(ev):
     cols = ("recorded_at, sport, event_id, commence_time, home, away, market,"
             " side, point, player, best_soft_book, best_soft_price, snapshot_ev,"
-            " n_books, conf")
+            " n_books, conf, tier")
+    tier_sql, tier_params = core.alertable_tiers_sql()
     rows = ev.execute(
-        f"SELECT {cols} FROM softbook_ev WHERE tier='High' AND"
-        " datetime(recorded_at) >= datetime('now','-1 day')").fetchall()
+        f"SELECT {cols} FROM softbook_ev WHERE {tier_sql} AND"
+        " datetime(recorded_at) >= datetime('now','-1 day')", tier_params).fetchall()
     keys = cols.replace(" ", "").split(",")
     return [dict(zip(keys, r)) for r in rows]
 
@@ -109,7 +110,9 @@ def _high_messages(ev, pdb, tokens, now):
             "INSERT OR IGNORE INTO pushed_high VALUES (?,?,?,?,?,?)", (*pk, now))
         if not cur.rowcount:
             continue
-        if not core.is_bet(_is_first_entry(ev, r), r["market"]):   # first-entry GAME only
+        if r["tier"] not in core.bet_tiers(r["market"]):
+            continue                                 # not the tier this market is bet at
+        if not core.is_bet(_is_first_entry(ev, r), r["market"], r["tier"]):
             continue
         label = core.label(r["market"], r["side"],
                            None if r["market"] == "h2h" else r["point"],

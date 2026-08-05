@@ -36,7 +36,7 @@ def db_():
 
 
 def add(db, i, *, market="h2h", ev_=0.06, placed=None, won=1, odds=2.40,
-        completed=1, tier="High"):
+        completed=1, tier="Med"):
     """One graded bet. odds 2.40 -> breakeven 41.7%, i.e. the real cell's BE."""
     pnl = (odds - 1) * 2.0 if won else -2.0
     db.execute("INSERT INTO paper_bet (event_id, market, side, odds, ev, stake,"
