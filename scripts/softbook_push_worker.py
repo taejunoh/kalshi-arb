@@ -102,10 +102,16 @@ def _high_messages(ev, pdb, tokens, now):
     rows = _latest_high(ev)
     latest = max((r["recorded_at"] for r in rows), default=None)
     msgs = []
+    # Same suppression as the Telegram tag: nothing the user already marked bet or
+    # dismissed in the app. See rec.actioned_picks — single source, so the two
+    # channels cannot disagree about what the user has already done.
+    done = rec.actioned_picks()
     for r in rows:
         if r["recorded_at"] != latest:
             continue
         pk = (r["event_id"], r["market"], r["side"], r["point"] or 0, r["player"] or "")
+        if (pk[0], pk[1], pk[2], float(pk[3] or 0), pk[4]) in done:
+            continue
         cur = pdb.execute(
             "INSERT OR IGNORE INTO pushed_high VALUES (?,?,?,?,?,?)", (*pk, now))
         if not cur.rowcount:
