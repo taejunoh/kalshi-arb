@@ -554,20 +554,15 @@ INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
 # Bucharest/Palermo) was never published by the Odds API, so the 7/13 empty
 # window ran to Washington. Both tuples go single-slug. Next up: Canadian Open
 # (~early Aug), then Cincinnati → US Open, all already in TENNIS_SLUG_META.
-# 2026-08-03 rotation: WTA hands off, ATP still fanned out. Live event counts
-# from /v4/sports/<slug>/events at 12:0x UTC:
-#     tennis_wta_canadian_open   30   <- newly published, wired here
-#     tennis_atp_canadian_open   30
-#     tennis_atp_washington_open  1   <- the final, still to play: KEEP
-#     tennis_wta_washington_open  0   <- draw complete: DROPPED
-# The WTA slug is swapped rather than appended because Washington's women's
-# draw is finished; the endpoint still reports active:true but has no events
-# left to match, so keeping it would only burn a fetch per scan. The 2026-08-01
-# note predicted the unmapped-active alert would surface wta_canadian_open once
-# the API published it, and that is exactly what happened two days later.
-# ATP keeps both: Washington's final has not been played yet.
+# 2026-08-05 rotation: Washington is over. The cron flagged
+# tennis_atp_washington_open stale (0 events for 2+ days) and it has
+# dropped off /v4/sports entirely; the Canadian Open is the only tennis
+# left (ATP 26 events, WTA 24). Both tuples collapse to single-slug.
+# The 08-01/08-03 fan-out did its job — ATP carried Washington and
+# Toronto together through the overlap, and this retires the finished
+# half. Washington's TENNIS_SLUG_META entries stay for odds_observations
+# analysis. Next: Cincinnati (~mid-Aug), then the US Open.
 TENNIS_ATP_SLUGS: tuple[str, ...] = (
-    "tennis_atp_washington_open",     # ATP 500 hard, Washington DC (~7/27–8/2)
     "tennis_atp_canadian_open",       # M1000 hard, Toronto (~7/31-8/7)
 )
 TENNIS_WTA_SLUGS: tuple[str, ...] = (
