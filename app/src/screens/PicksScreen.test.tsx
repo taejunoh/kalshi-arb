@@ -59,6 +59,41 @@ test("the feed shows what the API sends — SKIP filtering now lives server-side
   expect(screen.queryByText(/BET만/)).toBeNull();   // the chip is gone
 });
 
+test("an empty feed says where the picks went, not just that there are none", async () => {
+  // Twice on 2026-08-05 a Telegram alert arrived and the pick was not in the app.
+  // Both times it was one the user had already marked bet — the feed said only
+  // "활성 픽 없음", which reads as "nothing found" rather than "already handled".
+  (api.getPicks as jest.Mock).mockResolvedValueOnce({
+    picks: [], counts: { bet: 26, dismissed: 3, expired: 25 }, cooled: [],
+  });
+  await render(<PicksScreen />);
+  await waitFor(() => expect(screen.getByText("활성 픽 없음")).toBeOnTheScreen());
+  expect(screen.getByText("표시함 26 · 무시함 3")).toBeOnTheScreen();
+});
+
+test("expired is left to its own section rather than named twice", async () => {
+  (api.getPicks as jest.Mock).mockResolvedValueOnce({
+    picks: [], counts: { bet: 2, expired: 25 }, cooled: [],
+  });
+  await render(<PicksScreen />);
+  await waitFor(() => expect(screen.getByText("표시함 2")).toBeOnTheScreen());
+});
+
+test("a status with no picks is left out of the explanation", async () => {
+  (api.getPicks as jest.Mock).mockResolvedValueOnce({
+    picks: [], counts: { bet: 4 }, cooled: [],
+  });
+  await render(<PicksScreen />);
+  await waitFor(() => expect(screen.getByText("표시함 4")).toBeOnTheScreen());
+});
+
+test("a genuinely empty day says nothing extra", async () => {
+  (api.getPicks as jest.Mock).mockResolvedValueOnce({ picks: [], counts: {}, cooled: [] });
+  await render(<PicksScreen />);
+  await waitFor(() => expect(screen.getByText("활성 픽 없음")).toBeOnTheScreen());
+  expect(screen.queryByText(/표시함|무시함/)).toBeNull();
+});
+
 test("지나간 픽 (expired) section reveals an alerted pick the user missed after game start", async () => {
   (api.getPicks as jest.Mock).mockResolvedValueOnce({
     picks: [],
