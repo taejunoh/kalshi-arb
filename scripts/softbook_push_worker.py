@@ -74,7 +74,7 @@ def _opp_note(rows, pick):
         other = {"market": r["market"], "side": r["side"], "point": r["point"] or 0,
                  "player": r["player"] or "", "home": r["home"], "away": r["away"]}
         if rec._no_both_win(this, other):
-            return " ⚖️ 반대방향 High 있음 (동시적중 불가)"
+            return " ⚖️ 반대방향 +EV 있음 (동시적중 불가)"
     return ""
 
 
