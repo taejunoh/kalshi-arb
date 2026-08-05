@@ -498,6 +498,16 @@ def init_db():
     if cols and "tier" not in cols:          # one-time migrate (adds consensus/confidence)
         c.execute("DROP TABLE softbook_ev")
     c.execute(SCHEMA)
+    # The table's only other index is the autoindex behind UNIQUE(recorded_at, ...),
+    # which leads with recorded_at — useless to the app API, whose hot queries are
+    # keyed on (event_id, market): market_first_entry_sides and the pick card's
+    # alert-vs-now lookup both run ONCE PER PICK. Without this they scanned all
+    # 310k rows each time, and /picks took 26s for 203 picks — the app's "fetch
+    # failed". Measured 2026-08-05: 26s -> 0.18s. It got bad enough to notice only
+    # after ML moved to Med and roughly doubled the candidate set, but the scan was
+    # always there.
+    c.execute("CREATE INDEX IF NOT EXISTS idx_sbev_event_market"
+              " ON softbook_ev(event_id, market, recorded_at)")
     c.commit()
     return c
 
