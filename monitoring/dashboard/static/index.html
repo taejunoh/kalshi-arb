@@ -781,7 +781,6 @@
       letter-spacing: 0.5px;
     }
     .schedule-tag-sports { background: rgba(244, 114, 182, 0.15); color: #f472b6; }
-    .schedule-tag-crypto { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
     .schedule-tag-other  { background: rgba(168, 162, 158, 0.15); color: #a8a29e; }
     .schedule-item {
       padding: 10px 0;
@@ -1154,13 +1153,6 @@
             <span id="schedule-sports-count" style="color:var(--text-dim);font-size:11px;">—</span>
           </div>
           <div id="schedule-sports-list"></div>
-        </div>
-        <div class="schedule-col">
-          <div class="schedule-col-title">
-            <span class="schedule-tag schedule-tag-crypto">Crypto</span>
-            <span id="schedule-crypto-count" style="color:var(--text-dim);font-size:11px;">—</span>
-          </div>
-          <div id="schedule-crypto-list"></div>
         </div>
         <div class="schedule-col" id="schedule-other-col" style="display:none;">
           <div class="schedule-col-title">
@@ -3028,31 +3020,30 @@ async function renderEvHistory() {
 // ─────────────────────────────────────────────
 async function renderSchedule() {
   const sportsList = document.getElementById('schedule-sports-list');
-  const cryptoList = document.getElementById('schedule-crypto-list');
   const otherList  = document.getElementById('schedule-other-list');
   const otherCol   = document.getElementById('schedule-other-col');
   sportsList.innerHTML = '<div class="schedule-empty">Loading…</div>';
-  cryptoList.innerHTML = '<div class="schedule-empty">Loading…</div>';
   let data;
   try {
     const r = await fetch('/api/schedule');
     data = await r.json();
   } catch (e) {
     sportsList.innerHTML = '<div class="schedule-empty">Failed to load schedule.</div>';
-    cryptoList.innerHTML = '';
     return;
   }
   const byCategory = data.by_category || {sports: [], crypto: [], other: []};
+  // The Crypto column is gone (all crypto strategies mothballed 2026-05-27, so it
+  // read "(0)" forever). Its gates fold into Other rather than being dropped —
+  // if crypto ever comes back, a gate surfaces instead of silently vanishing.
+  const other = [...(byCategory.other || []), ...(byCategory.crypto || [])];
   document.getElementById('schedule-meta').textContent =
     `${(data.gates||[]).length} upcoming · today UTC ${data.today_utc}`;
   document.getElementById('schedule-sports-count').textContent = `(${byCategory.sports.length})`;
-  document.getElementById('schedule-crypto-count').textContent = `(${byCategory.crypto.length})`;
-  document.getElementById('schedule-other-count').textContent  = `(${byCategory.other.length})`;
+  document.getElementById('schedule-other-count').textContent  = `(${other.length})`;
   sportsList.innerHTML = renderScheduleList(byCategory.sports, data.today_utc);
-  cryptoList.innerHTML = renderScheduleList(byCategory.crypto, data.today_utc);
-  if (byCategory.other && byCategory.other.length) {
+  if (other.length) {
     otherCol.style.display = '';
-    otherList.innerHTML = renderScheduleList(byCategory.other, data.today_utc);
+    otherList.innerHTML = renderScheduleList(other, data.today_utc);
   } else {
     otherCol.style.display = 'none';
   }
