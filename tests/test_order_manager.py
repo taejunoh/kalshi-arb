@@ -32,10 +32,15 @@ async def test_paper_market_order(paper_manager):
         price=0.50, strategy="sum_arb", market_id="KXBTC-25MAR20-T70000",
     )
     assert result["status"] == "paper_filled"
-    assert result["size_usdc"] == 100.0
+    # PAPER books one flat unit (config.PAPER_FLAT_STAKE_USDC) regardless of the
+    # size asked for — 2026-08-05, so every paper row is comparable across the
+    # 20 strategies sharing the book. The 100.0 request is deliberately ignored.
+    stake = paper_manager.paper_stake()
+    assert result["size_usdc"] == stake
     # fee-fix 993a1a8: real Kalshi taker fee is 0.07*p*(1-p)*count, not flat $0.07*count.
-    # bankroll = 1000 - 100 (size) - 3.50 (fee: 0.07 * 0.50 * 0.50 * 200 contracts) = 896.50
-    assert paper_manager.bankroll == 896.50
+    count = max(1, int(stake / 0.50))
+    fee = paper_manager.config.real_fee(count, 50)
+    assert paper_manager.bankroll == pytest.approx(1000.0 - stake - fee)
 
 
 @pytest.mark.asyncio
@@ -61,32 +66,39 @@ async def test_paper_limit_order(paper_manager):
 
 @pytest.mark.asyncio
 async def test_paper_limit_order_skips_when_bankroll_insufficient(paper_manager):
-    """_paper_limit_order must reject orders larger than current bankroll.
-    Previously missing this check allowed market_maker to drain bankroll
-    into deeply negative territory (observed -$817) since limit_order placed
-    quotes every 30 seconds with no balance guard. Symmetry with market_order
-    which already has this check."""
-    paper_manager.bankroll = 10.0
+    """A dry paper book is TOPPED UP, not refused (2026-08-05).
+
+    This used to assert a skip, added because market_maker drained paper to
+    -$817 through a 30-second quoting loop. But rationing a research ledger
+    starves whichever strategies share the pool with the spender: the same guard
+    fired 2,010 times in 24 hours on 08-05, discarding signal. The runaway
+    protection moved to PAPER_MAX_REPLENISH_PER_DAY, which stops a loop without
+    penalising everyone else — see test_paper_flat_stake.py."""
+    paper_manager.bankroll = 1.0
     result = await paper_manager.limit_order(
         ticker="KXBTC-25MAR20-T70000", side="BUY", price=0.48,
         size_usdc=50.0, strategy="maker_preorder", market_id="KXBTC-25MAR20-T70000",
     )
-    assert result["status"] == "skipped"
-    assert result["reason"] == "insufficient_bankroll"
-    # Bankroll unchanged — no placement happened
-    assert paper_manager.bankroll == 10.0
+    assert result["status"] == "paper_open"
+    assert paper_manager.bankroll > 1.0, "book should have been replenished"
 
 
 @pytest.mark.asyncio
-async def test_paper_limit_order_skips_when_bankroll_negative(paper_manager):
-    """Even with a tiny size_usdc, negative bankroll must block new orders."""
+async def test_paper_limit_order_recovers_from_a_negative_book(paper_manager):
+    """A negative book is a research outage, not a state to preserve.
+
+    Previously this asserted the order was blocked and the -$100 left standing.
+    That is exactly the 2026-08-05 failure: the tracker sat at -$34.58 and every
+    strategy went silent behind it. The book is now restored to its notional and
+    the bet is recorded; a genuine runaway is caught by the per-day replenish
+    cap instead (test_paper_flat_stake.py)."""
     paper_manager.bankroll = -100.0
     result = await paper_manager.limit_order(
         ticker="KXBTC-25MAR20-T70000", side="BUY", price=0.48,
         size_usdc=0.50, strategy="market_maker", market_id="KXBTC-25MAR20-T70000",
     )
-    assert result["status"] == "skipped"
-    assert paper_manager.bankroll == -100.0
+    assert result["status"] == "paper_open"
+    assert paper_manager.bankroll > 0
 
 
 @pytest.mark.asyncio

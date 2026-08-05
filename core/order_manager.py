@@ -3,6 +3,7 @@ import logging
 import os
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger("order_manager")
@@ -250,6 +251,8 @@ class OrderManager:
         self.bankroll = config.INITIAL_BANKROLL
         self._daily_loss_paper = 0.0
         self._daily_loss_live = 0.0
+        self._replenish_day = None
+        self._replenish_count = 0
         self._consecutive_losses = 0
         self._pause_until = 0.0
         # 2026-05-22: one-shot Telegram alert per UTC day per bucket when the
@@ -334,6 +337,51 @@ class OrderManager:
             if real is not None and real > 0:
                 return real
         return self.bankroll
+
+    def paper_stake(self) -> float:
+        """Flat unit stake for every PAPER entry (config.PAPER_FLAT_STAKE_USDC).
+
+        Applied inside the _paper_* dispatchers only, so a LIVE strategy's real
+        order keeps the size its own _get_trade_size computed — the same split
+        as _get_booking_price, where the paper twin books honestly without
+        moving real money. Its paper twin is then directly comparable to every
+        other paper row, which percent-of-bankroll sizing never was.
+        """
+        return float(self.config.PAPER_FLAT_STAKE_USDC)
+
+    def _ensure_paper_funds(self, stake: float, strategy: str) -> bool:
+        """Top the paper book back up instead of refusing the bet.
+
+        The old behaviour skipped when bankroll < stake, which turns a research
+        ledger into a rationing system: on 2026-08-05 it fired 2,010 times in 24
+        hours, so the bot was discarding signal rather than recording it — and
+        the strategies it starved were whoever shared a pool with the spender,
+        not the ones performing badly.
+
+        Bounded by PAPER_MAX_REPLENISH_PER_DAY so the runaway this guard
+        originally caught (market_maker, -$817 via a 30s quoting loop) still
+        stops.
+        """
+        if self.bankroll >= stake:
+            return True
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if self._replenish_day != today:
+            self._replenish_day, self._replenish_count = today, 0
+        if self._replenish_count >= self.config.PAPER_MAX_REPLENISH_PER_DAY:
+            logger.warning(
+                f"[PAPER] replenish cap hit ({self._replenish_count}/day) - "
+                f"skipping {strategy}. A strategy is looping; this is the "
+                f"market_maker backstop, not normal operation."
+            )
+            return False
+        self._replenish_count += 1
+        before = self.bankroll
+        self.bankroll = float(self.config.PAPER_NOTIONAL_USDC)
+        logger.info(
+            f"[PAPER] bankroll replenished {before:.2f} -> {self.bankroll:.2f} "
+            f"(#{self._replenish_count} today, triggered by {strategy})"
+        )
+        return True
 
     def calculate_position_size(self, net_edge: float, strategy: Optional[str] = None) -> float:
         # Live strategies size off the real Kalshi balance (see sizing_bankroll);
@@ -652,9 +700,8 @@ class OrderManager:
         # Paper path: gate on paper bankroll. Mirrors limit_order's pattern
         # so paper bankroll can't constrain live orders (live uses real
         # Kalshi balance inside the live dispatchers).
-        if self.bankroll < size_usdc:
-            logger.warning(f"Insufficient bankroll: ${self.bankroll:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
-            return {"status": "skipped", "reason": "insufficient_bankroll"}
+        if not self._ensure_paper_funds(self.paper_stake(), strategy):
+            return {"status": "skipped", "reason": "replenish_cap"}
         return await self._paper_market_order(ticker, side, size_usdc, book_px, strategy, market_id,
                                               minutes_to_start=minutes_to_start)
 
@@ -681,9 +728,8 @@ class OrderManager:
         # market_maker's 30-second quoting loop drains bankroll indefinitely
         # into negative territory (observed -$817) because _paper_limit_order
         # only deducts without checking.
-        if self.bankroll < size_usdc:
-            logger.warning(f"Insufficient bankroll: ${self.bankroll:.2f} < ${size_usdc:.2f}, skipping {strategy} {ticker}")
-            return {"status": "skipped", "reason": "insufficient_bankroll"}
+        if not self._ensure_paper_funds(self.paper_stake(), strategy):
+            return {"status": "skipped", "reason": "replenish_cap"}
         return await self._paper_limit_order(ticker, side, price, size_usdc, strategy, market_id)
 
     async def cancel_order(self, order_id):
@@ -730,6 +776,13 @@ class OrderManager:
 
     async def _paper_market_order(self, ticker, side, size_usdc, price, strategy, market_id,
                                    minutes_to_start: Optional[float] = None):
+        # PAPER sizing is a flat unit, overriding whatever
+        # _get_trade_size computed. A LIVE strategy's real order is
+        # unaffected — the live dispatcher already used that size; this
+        # only rewrites what the paper twin books, so every paper row
+        # across all 20 strategies is one comparable unit. Same split as
+        # _get_booking_price. See paper_stake().
+        size_usdc = self.paper_stake()
         # DB-side dedup applies to:
         #   sports_* — single game has one outcome, re-entry is always a bug.
         #   ladder_* — single Kalshi event ladder leg has one outcome; V1
@@ -773,6 +826,13 @@ class OrderManager:
     # limit_order, persist minutes_to_start on the orders row so settlement can
     # forward it.
     async def _paper_limit_order(self, ticker, side, price, size_usdc, strategy, market_id):
+        # PAPER sizing is a flat unit, overriding whatever
+        # _get_trade_size computed. A LIVE strategy's real order is
+        # unaffected — the live dispatcher already used that size; this
+        # only rewrites what the paper twin books, so every paper row
+        # across all 20 strategies is one comparable unit. Same split as
+        # _get_booking_price. See paper_stake().
+        size_usdc = self.paper_stake()
         # DB-side dedup guard (sports_* + ladder_* + macro_* + crypto_* + xvenue_*) — see _paper_market_order.
         if (strategy.startswith("sports_") or strategy.startswith("ladder_") or
                 strategy.startswith("macro_") or strategy.startswith("crypto_") or
