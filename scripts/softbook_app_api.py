@@ -188,7 +188,13 @@ def _alert_and_now(picks):
             # those in with genuinely re-priced ones told the user "this went
             # cold" about a bet whose last known EV was unchanged.
             if p.get("status") == "cooled":
-                p["cooled_reason"] = ("faded" if p.get("now_tier") not in (None, "High")
+                # "faded" = re-priced out of the tier this market is bet at;
+                # "gone" = no later snapshot at all. bet_tiers, not a literal
+                # 'High': an ML pick now sitting at High has left Med, which is
+                # a fade, and one sitting at Med has not.
+                nt = p.get("now_tier")
+                p["cooled_reason"] = ("gone" if nt is None
+                                      else "faded" if nt not in core.bet_tiers(p["market"])
                                       else "gone")
     finally:
         c.close()
@@ -307,6 +313,16 @@ def get_picks(_=Depends(require_auth)):
     finally:
         pdb.close()
     _enrich_first_entry(picks)
+    # SKIP picks (props, late-crossers) leave the app feed entirely (user,
+    # 2026-08-05). Telegram has suppressed them since 7/22; the app was the last
+    # surface still showing a card that says "do not bet this". They stay
+    # recorded — the ledger, the CLV trail and /picks/{id} are untouched, so an
+    # existing deep link still resolves; only the feed hides them.
+    # ...but only from the FEED. A pick the user marked bet or dismissed is a
+    # record of what they did, and our verdict does not get to erase it — it
+    # keeps its place in counts and in MyBets.
+    picks = [p for p in picks if p.get("should_bet") is not False
+             or p.get("status") in ("bet", "dismissed")]
     _alert_and_now(picks)
     active = [p for p in picks if p["status"] == "active"]
     counts = {}
