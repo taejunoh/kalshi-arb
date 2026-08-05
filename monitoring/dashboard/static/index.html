@@ -638,6 +638,7 @@
     .evh-table .pos, .evh-sum-roi.pos, .evh-sum-pnl.pos, .evh-count .pos { color:#4ade80; }
     .evh-table .neg, .evh-sum-roi.neg, .evh-sum-pnl.neg, .evh-count .neg { color:#f87171; }
     .evh-filters { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-bottom:10px; }
+    .evh-cap { font-size:11.5px; color:var(--text-dim,#8a8a93); margin:0 0 8px; }
     .evh-flabel { font-size:11px; color:var(--text-dim,#8a8a93); text-transform:uppercase; letter-spacing:.04em; margin-right:3px; }
     .evh-fbtn {
       background: rgba(255,255,255,.04); color: var(--text-dim,#9aa);
@@ -2815,6 +2816,8 @@ async function renderEvBets() {
 }
 
 // ── +EV History tab: every PAPER bet, split + filterable by confidence tier ──
+const EVH_ROW_CAP = 500;   // rendered rows; filters/summary still see everything
+let evhCache = {};         // strategy -> bets, so chips filter in memory
 let evhFilter = { tier: 'High', status: 'all', strategy: 'first', market: 'all', sport: 'all' };   // default = First-entry High (the +ROI core; mirrors the First-entry button's tier=High)
 let evhSort = { key: 'date', dir: -1 };          // dir -1 = descending
 const _EVH_ORDER = { High: 0, Med: 1, Low: 2, '?': 3 };
@@ -2849,26 +2852,37 @@ function _evhWire() {                              // delegated listener, attach
   });
 }
 
-async function renderEvHistory() {
+async function renderEvHistory(force) {
+  // force: the periodic refresh, which must actually go back to the server.
+  // Chip clicks and tab switches reuse the cached ledger.
+  if (force) evhCache = {};
   _evhWire();
   const sumEl = document.getElementById('evhist-summary');
   const bodyEl = document.getElementById('evhist-body');
   if (!bodyEl) return;
-  let bets;
-  try {
-    const r = await fetch('/api/ev-history' + (evhFilter.strategy !== 'first' ? '?strategy=' + evhFilter.strategy : ''),
-                          { cache: 'no-store' });
-    bets = (await r.json()).bets || [];
-  } catch (e) {
-    bodyEl.innerHTML = '<div class="ev-empty">Failed to load history.</div>';
-    return;
+  // Only `strategy` is a server-side filter — tier/status/market/sport all narrow
+  // client-side. Refetching on every chip meant re-downloading the whole ledger
+  // (7.5 MB on the first-entry payload) to run an in-memory .filter(). Cache per
+  // ledger; the tab's own refresh drops it so the data still goes stale on time.
+  let bets = evhCache[evhFilter.strategy];
+  if (!bets) {
+    bodyEl.innerHTML = '<div class="ev-empty">Loading…</div>';
+    try {
+      const r = await fetch('/api/ev-history' + (evhFilter.strategy !== 'first' ? '?strategy=' + evhFilter.strategy : ''),
+                            { cache: 'no-store' });
+      bets = (await r.json()).bets || [];
+      bets.forEach(b => { b._tier = b.tier || '?'; });
+      evhCache[evhFilter.strategy] = bets;
+    } catch (e) {
+      bodyEl.innerHTML = '<div class="ev-empty">Failed to load history.</div>';
+      return;
+    }
   }
   if (!bets.length) {
     if (sumEl) sumEl.innerHTML = '';
     bodyEl.innerHTML = '<div class="ev-empty">No paper bets recorded yet.</div>';
     return;
   }
-  bets.forEach(b => { b._tier = b.tier || '?'; });
 
   // broad sport category for the Sport filter: 'baseball_mlb' → 'baseball'
   // basketball is split by league so NBA and WNBA filter separately
@@ -2968,7 +2982,14 @@ async function renderEvHistory() {
     : b.result === 'win' ? '<span class="evh-won">WON</span>'
     : b.result === 'lose' ? '<span class="evh-lost">lost</span>'
     : `<span class="evh-push">${b.result || '—'}</span>`;
-  const body = rows.map(b => `<tr>
+  // The ledger runs to ~15k bets and every one used to become a <tr>. The summary
+  // cards and every filter still run over the FULL set — only the table is capped,
+  // and it says so, because a silently truncated table reads as the whole ledger.
+  const shown = rows.slice(0, EVH_ROW_CAP);
+  const capNote = rows.length > EVH_ROW_CAP
+    ? `<div class="evh-cap">최신 ${EVH_ROW_CAP.toLocaleString()}건 표시 · 필터 결과 ${rows.length.toLocaleString()}건 (요약 카드는 전체 기준)</div>`
+    : '';
+  const body = shown.map(b => `<tr>
     <td class="evh-dim">${fmtDate(b.commence_time)}</td>
     <td><span class="ev-tier" data-tier="${b._tier}">${b._tier === '?' ? '—' : b._tier}</span></td>
     <td class="evh-dim">${sport(b.sport)}</td>
@@ -2990,6 +3011,7 @@ async function renderEvHistory() {
       <span class="evh-flabel" style="margin-left:14px;">Sport</span>${sportBtns}
       <span class="evh-flabel" style="margin-left:14px;">Status</span>${statusBtns}
     </div>
+    ${capNote}
     <div class="evh-tablewrap"><table class="evh-table"><thead><tr>
       <th data-sk="date" class="sortable">Date${arrow('date')}</th>
       <th data-sk="tier" class="sortable">Tier${arrow('tier')}</th>
@@ -3195,7 +3217,7 @@ async function slowRefresh() {
     renderPmGap(),      // 10 Kalshi /markets calls per fire
     renderClvTrend(),   // DB-heavy CLV join
     (viewMode === 'ev') ? renderEvBets() : Promise.resolve(),  // keep +EV tab fresh
-    (viewMode === 'evhist') ? renderEvHistory() : Promise.resolve(),  // keep History tab fresh
+    (viewMode === 'evhist') ? renderEvHistory(true) : Promise.resolve(),  // keep History tab fresh
   ]);
   markRefresh('slow');
 }
