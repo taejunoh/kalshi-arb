@@ -218,10 +218,12 @@ def test_kbo_cancel_void():
 # ---- tests: dispatch ----
 
 def test_handles():
+    # WNBA joined on 2026-08-05: the Odds API does carry it, but only through
+    # /scores?daysFrom=3, so a bet older than three days could never settle.
     for s in ("tennis_atp_halle_open", "tennis_wta_german_open", "baseball_kbo",
-              "baseball_ncaa", "mma_mixed_martial_arts"):
+              "baseball_ncaa", "mma_mixed_martial_arts", "basketball_wnba"):
         assert R.handles(s)
-    for s in ("baseball_mlb", "basketball_wnba", "soccer_fifa_world_cup",
+    for s in ("baseball_mlb", "soccer_fifa_world_cup",
               "boxing_boxing", "baseball_npb"):
         assert not R.handles(s)
 
