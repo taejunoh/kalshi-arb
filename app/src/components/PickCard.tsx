@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import type { Pick } from "../api/types";
 import { color, radius, space, font } from "../theme";
-import { countdown, countdownUrgent, americanOdds, evPct, matchup, oddsBars } from "../format";
+import { countdown, countdownUrgent, americanOdds, evPct, matchup, oddsBars, evTrail } from "../format";
 
 export function PickCard({
   pick,
@@ -33,6 +33,10 @@ export function PickCard({
   // core.odds_bars server-side): bet at any book as long as its price beats 최소.
   // Hidden when the API didn't send them (ev/price unknown, or an older payload).
   const mb = oddsBars(pick.min_odds, pick.be_odds);
+  // "알림 09:10 +1.3% → 지금 +0.4%" — the age of the number on the pill. Null
+  // (line hidden) when the pick has only ever had one snapshot, or when the
+  // API predates the fields. See format.evTrail.
+  const trail = evTrail(pick);
   // Swipe-left reveals 관심없음; same onDismiss as the inline button (kept as fallback).
   const renderRightActions = () => (
     <Pressable testID="swipe-dismiss" onPress={() => onDismiss(pick)} style={s.swipeAction}>
@@ -61,6 +65,7 @@ export function PickCard({
         <Text style={[s.metaDim, countdownUrgent(pick.commence_time) && s.metaUrgent]}>{countdown(pick.commence_time)}</Text>
       </View>
       {mb && <Text style={s.floor}>✂️ 최소 {mb.min} · 본전 {mb.be}</Text>}
+      {trail && <Text style={s.trail}>{trail}</Text>}
       <View style={s.actions}>
         <Pressable testID="bet-button" style={[s.btn, s.bet]} onPress={() => onBet(pick)}><Text style={s.betText}>{betLabel}</Text></Pressable>
         <Pressable testID="inline-dismiss" style={[s.btn, s.dismiss]} onPress={() => onDismiss(pick)}><Text style={s.dismissText}>관심없음</Text></Pressable>
@@ -73,6 +78,7 @@ export function PickCard({
 const s = StyleSheet.create({
   card: { backgroundColor: color.surface, borderRadius: radius.card, padding: space.lg, marginVertical: 6, marginHorizontal: space.md },
   cardMuted: { opacity: 0.5 },
+  trail: { color: color.muted, fontSize: 12, marginTop: 4 },
   head: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   betBadge: { color: color.accentText, backgroundColor: color.accentDim, fontSize: 12, fontWeight: "500", paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, overflow: "hidden" },
   skipBadge: { color: color.muted, backgroundColor: color.surfaceRaised, fontSize: 12, fontWeight: "500", paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, overflow: "hidden" },
