@@ -112,16 +112,3 @@ export function hhmm(iso: string): string {
 
 // The note under the 🟡 관찰 badge. Reads the live record the API sends.
 //
-// This used to be the string literal "ML EV≥5% — 페이퍼 4승 21패 · 전진관찰 중",
-// frozen at the in-sample figure from 2026-07-22. It could not change, so the
-// card kept asserting 4-21 while the actual cell had moved to 7-23. Anything
-// the user reads as a live number has to come from the API.
-//
-// Falls back to the bare reason when the API sends nothing, rather than
-// inventing a count.
-export function watchNote(
-  r?: { w: number; l: number; wr: number; be: number } | null,
-): string {
-  if (!r) return "ML EV≥5% — 전진관찰 중";
-  return `ML EV≥5% — 페이퍼 ${r.w}승 ${r.l}패 (WR ${r.wr.toFixed(0)}% vs 본전 ${r.be.toFixed(0)}%) · 전진관찰 중`;
-}
