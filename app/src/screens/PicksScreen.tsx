@@ -24,7 +24,6 @@ export function PicksScreen() {
   const [prefs, setPrefs] = useState<Settings>({ min_ev: 0, sports: null, muted_books: null, sort: "ev" });
   const [showCooled, setShowCooled] = useState(false);
   const [showExpired, setShowExpired] = useState(false);
-  const [betOnly, setBetOnly] = useState(false);
   const [unitStake, setUnitStake] = useState<number>(DEFAULT_UNIT_STAKE);
   const [sortOpen, setSortOpen] = useState(false);
 
@@ -105,9 +104,9 @@ export function PicksScreen() {
     );
   }
 
-  const allActive = data?.picks ?? [];
-  const visiblePicks = betOnly ? allActive.filter((p) => p.should_bet) : allActive;
-  const betCount = allActive.filter((p) => p.should_bet).length;
+  // The API no longer serves SKIP picks, so there is nothing left to filter to —
+  // the "BET만" chip this replaced would have been a no-op.
+  const visiblePicks = data?.picks ?? [];
 
   // Collapsed sections under the active feed: 식은 픽 (cooled — gone from the
   // latest scan) and 지나간 픽 (expired — game started). Same card + handlers.
@@ -134,10 +133,6 @@ export function PicksScreen() {
         <View style={s.actionRow}>
           <Pressable testID="scan-capture-library" onPress={() => void onCapture("library")} style={s.scanChip}>
             <Feather name="camera" size={17} color={color.accentText} />
-          </Pressable>
-          <Pressable onPress={() => setBetOnly((v) => !v)} style={[s.feChip, betOnly && s.feChipOn]}>
-            <Feather name="zap" size={13} color={betOnly ? color.onAccent : color.accentText} />
-            <Text style={[s.feText, betOnly && s.feTextOn]}>BET만{betCount ? ` · ${betCount}` : ""}</Text>
           </Pressable>
         </View>
         <View style={s.filterRow}>
@@ -185,7 +180,7 @@ export function PicksScreen() {
         )}
         ListEmptyComponent={
           loading ? <ActivityIndicator style={{ marginTop: 40 }} />
-            : <Text style={s.empty}>{betOnly ? "BET 픽 없음 (게임 first-entry만 베팅)" : "활성 픽 없음"}</Text>
+            : <Text style={s.empty}>활성 픽 없음</Text>
         }
         ListFooterComponent={
           <>
@@ -204,10 +199,6 @@ const s = StyleSheet.create({
   actionRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   filterRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 },
   scanChip: { backgroundColor: color.surfaceRaised, width: 34, height: 30, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
-  feChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: color.accentDim },
-  feChipOn: { backgroundColor: color.accent },
-  feText: { color: color.accentText, fontSize: 13, fontWeight: "500" },
-  feTextOn: { color: color.onAccent },
   filterLabel: { color: color.faint, fontSize: 11, letterSpacing: 0.4 },
   chip: { paddingHorizontal: 11, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: color.surfaceRaised },
   chipOn: { backgroundColor: color.accent },
