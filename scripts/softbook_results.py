@@ -39,15 +39,25 @@ KBO_TEAMS = {
 
 def handles(sport):
     """True iff this module can source results for the sport (Odds API can't)."""
-    return (sport in ("baseball_ncaa", "baseball_kbo")
+    return (sport in ("baseball_ncaa", "baseball_kbo", "basketball_wnba")
             or sport.startswith("tennis_")
             or sport.startswith("mma_"))
 
 
 def _http_json(url, timeout=20):
-    req = urllib.request.Request(url, headers={
-        "User-Agent": "Mozilla/5.0",
-        "Referer": "https://sports.news.naver.com/"})
+    """Naver needs a browser UA + its own Referer; ESPN 403s on ANY User-Agent.
+
+    One header set served both, so every ESPN call had been returning 403 —
+    silently, because the fetchers swallow exceptions and return []. handles()
+    claims tennis and MMA, and both had simply stopped settling: 12 tennis bets
+    were sitting unsettled when this was found on 2026-08-05. Verified against
+    the live host that hour: with a UA (any of four tried, with and without a
+    Referer) ESPN returns 403; with no headers at all it returns the scoreboard.
+    """
+    headers = ({} if "espn.com" in url else
+               {"User-Agent": "Mozilla/5.0",
+                "Referer": "https://sports.news.naver.com/"})
+    req = urllib.request.Request(url, headers=headers)
     return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
 
 
@@ -218,8 +228,12 @@ def _fetch_kbo(dt, fetch_json, cache):
             home = KBO_TEAMS.get(g.get("homeTeamName"), g.get("homeTeamName"))
             asc, bsc = g.get("awayTeamScore"), g.get("homeTeamScore")
             winner = None
-            if st == "final" and asc is not None and bsc is not None and asc != bsc:
-                winner = "a" if asc > bsc else "b"
+            if st == "final" and asc is not None and bsc is not None:
+                # KBO plays ties. Leaving winner=None on an equal score made a
+                # finished game indistinguishable from one with no result yet, so
+                # it was retried forever: the 07-21 KT Wiz-Doosan 2-2 was still
+                # unsettled 15 days later. grade_bet already maps "draw" -> push.
+                winner = "draw" if asc == bsc else ("a" if asc > bsc else "b")
             out.append(_rec(away, home, asc, bsc, winner, st))   # a=away, b=home
     except Exception:
         out = []
@@ -241,6 +255,14 @@ def _results_for(sport, commence_iso, fetch_json, cache):
         recs = []
         for dd in (d, d - timedelta(days=1)):
             recs += _fetch_espn_team("baseball", "college-baseball", dd, fetch_json, cache)
+        return recs
+    if sport == "basketball_wnba":
+        # The Odds API does carry WNBA, but only via /scores?daysFrom=3 — past
+        # that a bet can never settle. ESPN is addressed by date, so it has no
+        # horizon; two 07-17 bets were stuck behind exactly that window.
+        recs = []
+        for dd in (d, d - timedelta(days=1)):            # late tip-offs bucket back
+            recs += _fetch_espn_team("basketball", "wnba", dd, fetch_json, cache)
         return recs
     if sport.startswith("mma_"):
         recs = []
