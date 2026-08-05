@@ -19,6 +19,7 @@ import sqlite3
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+import softbook_ev_core as core                                # noqa: E402
 import softbook_ev_recorder as rec                             # noqa: E402
 
 HOME, AWAY = "Detroit Tigers", "Seattle Mariners"
@@ -34,12 +35,19 @@ def prop_bet(market="pitcher_strikeouts", side="Over", point=5.5,
             "label": f"{player} {side} {point}"}
 
 
+def _bet_tier(market):
+    """The tier this market is actually bet at — High for most, Med for ML since
+    2026-08-05. Fixtures follow core so a policy change does not require editing
+    every test that merely wants "a bettable pick"."""
+    return sorted(core.bet_tiers(market))[0]
+
+
 def game_bet(market="spread", side=HOME, point=-1.5, ev=0.03, book="FanDuel",
-             odds=2.05, eid="G1"):
+             odds=2.05, eid="G1", tier=None):
     return {"event_id": eid, "sport": "baseball_mlb", "commence_time": CT,
             "home": HOME, "away": AWAY, "market": market, "side": side,
             "point": point, "player": "", "book": book, "odds": odds,
-            "ev": ev, "n_books": 8, "n_ev": 6, "tier": "High",
+            "ev": ev, "n_books": 8, "n_ev": 6, "tier": tier or _bet_tier(market),
             "label": f"{side} {point}"}
 
 
@@ -51,11 +59,12 @@ def db_():
     return db
 
 
-def snap(db, b, rec_at, tier):
+def snap(db, b, rec_at, tier=None):
     db.execute("INSERT INTO softbook_ev VALUES (" + ",".join("?" * 19) + ")",
                (rec_at, b["sport"], b["event_id"], b["commence_time"], b["home"],
                 b["away"], b["market"], b["side"], b["point"], b.get("player") or "",
-                0.5, 2.0, b["book"], b["odds"], b["ev"], 8, 6, 61.0, tier))
+                0.5, 2.0, b["book"], b["odds"], b["ev"], 8, 6, 61.0,
+                tier or b["tier"]))
 
 
 # ---------- the 2×2 diagonal ----------

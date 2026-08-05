@@ -59,14 +59,14 @@ def test_is_bet_is_unchanged_by_ev():
     """is_bet takes no ev at all — the bet rule did not move. If this ever fails,
     the forward sample stops accruing and the whole observation is void."""
     for ev in (0.01, 0.05, 0.08):
-        assert core.is_bet(True, "h2h") is True             # verdict independent of ev
+        assert core.is_bet(True, "h2h", "Med") is True      # verdict independent of ev
         assert core.is_ev_watch("h2h", ev) == (ev >= core.EV_WATCH_MIN)
 
 
 def test_watched_pick_still_reads_as_a_bet_not_a_skip():
     db = db_()
     b = game_bet(market="h2h", side="Detroit Tigers", point=None, ev=0.06)
-    snap(db, b, OPEN, "High")                              # first-entry ML at EV 6%
+    snap(db, b, OPEN)                              # first-entry ML at EV 6%
     note = rec._first_entry_note(db, b)
     assert "BET" in note                                   # still a BET verdict
     assert "SKIP" not in note                              # NOT demoted to skip
@@ -79,14 +79,14 @@ def test_watched_pick_still_reads_as_a_bet_not_a_skip():
 def test_ml_below_threshold_gets_the_plain_bet_tag():
     db = db_()
     b = game_bet(market="h2h", side="Detroit Tigers", point=None, ev=0.04)
-    snap(db, b, OPEN, "High")
+    snap(db, b, OPEN)
     assert rec._first_entry_note(db, b) == rec.BET_TAG
 
 
 def test_spread_at_high_ev_gets_the_plain_bet_tag():
     db = db_()
     b = game_bet(market="spread", ev=0.07)
-    snap(db, b, OPEN, "High")
+    snap(db, b, OPEN)
     assert rec._first_entry_note(db, b) == rec.BET_TAG
 
 
@@ -95,8 +95,8 @@ def test_late_crosser_ml_at_high_ev_still_skips():
     and stay out, whatever their EV."""
     db = db_()
     b = game_bet(market="h2h", side="Detroit Tigers", point=None, ev=0.07)
-    snap(db, b, OPEN, "Med")
-    snap(db, b, "2026-06-13T18:40:00+00:00", "High")
+    snap(db, b, OPEN, "Low")                   # below ML's bet tier at the open
+    snap(db, b, "2026-06-13T18:40:00+00:00")   # crosses into it only after the move
     note = rec._first_entry_note(db, b)
     assert "SKIP" in note and "late-crosser" in note
 
@@ -104,7 +104,7 @@ def test_late_crosser_ml_at_high_ev_still_skips():
 def test_prop_at_high_ev_still_skips_as_prop():
     db = db_()
     b = prop_bet(ev=0.07)
-    snap(db, b, OPEN, "High")
+    snap(db, b, OPEN)
     note = rec._first_entry_note(db, b)
     assert "SKIP" in note and "prop" in note
 

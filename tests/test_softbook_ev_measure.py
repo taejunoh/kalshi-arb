@@ -7,8 +7,9 @@ single source for the Telegram tag / app /picks flag / push worker). These tests
 pin both the pure CLV arithmetic and the measure↔recorder agreement so the two
 can never silently drift.
 
-first-entry = THIS SIDE was High at the (event, market, player)'s EARLIEST recorded
-snapshot (side-aware: the opposite side that crosses High after a steam is a
+first-entry = THIS SIDE was at its market's BET TIER (core.bet_tiers — High for
+most, Med for ML since 2026-08-05) at the (event, market, player)'s EARLIEST
+recorded snapshot (side-aware: the opposite side that crosses in after a steam is a
 late-crosser, not a first-entry); core.is_bet then drops props + late-crossers.
 """
 import os
@@ -26,7 +27,7 @@ def row(eid, market, side, point, player, ts, fair, tier, px=2.0):
     return (eid, market, side, point, player, ts, fair, px, tier)
 
 
-# ---------- first_entry_map: side-aware High-sides-at-open ----------
+# ---------- first_entry_map: side-aware bet-tier-sides-at-open ----------
 
 def test_first_entry_map_earliest_tier_wins():
     rows = [
@@ -41,15 +42,15 @@ def test_first_entry_map_earliest_tier_wins():
 
 
 def test_first_entry_map_side_aware_opposite_crosser_excluded():
-    # side-aware: the side High at the market's earliest snapshot (Home) is the
-    # first-entry; the OPPOSITE side that crosses into High only later (Away, after a
+    # side-aware: the side at the bet tier at the market's earliest snapshot (Home)
+    # is the first-entry; the OPPOSITE side that crosses in only later (Away, after a
     # line move) is a LATE-CROSSER, NOT a first-entry.
     rows = [
-        row("E1", "h2h", "Home", 0, "", "2026-06-13T14:00:00+00:00", 0.55, "High"),
-        row("E1", "h2h", "Away", 0, "", "2026-06-13T18:00:00+00:00", 0.45, "High"),
+        row("E1", "h2h", "Home", 0, "", "2026-06-13T14:00:00+00:00", 0.55, "Med"),
+        row("E1", "h2h", "Away", 0, "", "2026-06-13T18:00:00+00:00", 0.45, "Med"),
     ]
     fe = mz.first_entry_map(rows)
-    assert fe[("E1", "h2h", "")] == frozenset({"Home"})          # only the open-High side
+    assert fe[("E1", "h2h", "")] == frozenset({"Home"})       # only the open-tier side
 
 
 # ---------- measure(): bet-rule subset selection ----------
@@ -91,8 +92,8 @@ def test_measure_prop_excluded_even_if_first_entry():
 
 def test_measure_fallback_close_when_no_true_close():
     rows = [
-        row("G3", "h2h", "Home", 0, "", "2026-06-13T14:00:00+00:00", 0.50, "High"),
-        row("G3", "h2h", "Home", 0, "", "2026-06-13T20:00:00+00:00", 0.53, "High"),
+        row("G3", "h2h", "Home", 0, "", "2026-06-13T14:00:00+00:00", 0.50, "Med"),
+        row("G3", "h2h", "Home", 0, "", "2026-06-13T20:00:00+00:00", 0.53, "Med"),
     ]
     r = mz.measure(rows, {})                            # no closing_line -> fallback last in-band
     assert len(r["bet_clvs"]) == 1
@@ -112,8 +113,8 @@ def test_measure_bet_true_subset_excludes_fallback():
     rows = [
         row("T1", "spread", "Home", -1.5, "", "2026-06-13T14:00:00+00:00", 0.40, "High"),
         row("T1", "spread", "Home", -1.5, "", "2026-06-13T18:00:00+00:00", 0.41, "High"),
-        row("F1", "h2h", "Home", 0, "", "2026-06-13T14:00:00+00:00", 0.50, "High"),
-        row("F1", "h2h", "Home", 0, "", "2026-06-13T20:00:00+00:00", 0.55, "High"),
+        row("F1", "h2h", "Home", 0, "", "2026-06-13T14:00:00+00:00", 0.50, "Med"),
+        row("F1", "h2h", "Home", 0, "", "2026-06-13T20:00:00+00:00", 0.55, "Med"),
     ]
     r = mz.measure(rows, _close_at("T1", "spread", "Home", -1.5, "", 0.48))
     assert len(r["bet_clvs"]) == 2 and r["bet_true"] == 1
@@ -131,21 +132,22 @@ def _rows_from_db(db):
 
 
 def test_measure_tie_same_recorded_at_split_tier_matches_recorder():
-    # h2h Home=High + Away=Med at the SAME opening recorded_at (one scan). Side-aware:
-    # only the side that was High at the open (Home) is first-entry; Away is a
+    # h2h Home=Med + Away=Low at the SAME opening recorded_at (one scan) — Med is
+    # ML's bet tier. Side-aware: only the side at the bet tier at the open (Home)
+    # is first-entry; Away crosses in at ts1 and is a
     # late-crosser. measure's bet-subset membership and the recorder tag must agree
     # PER SIDE — deterministic, no SQLite tie-break dependence.
     ts0, ts1 = "2026-06-13T14:00:00+00:00", "2026-06-13T18:00:00+00:00"
-    snaps = [("h2h", "Home", 0, "", ts0, "High"), ("h2h", "Away", 0, "", ts0, "Med"),
-             ("h2h", "Home", 0, "", ts1, "High"), ("h2h", "Away", 0, "", ts1, "Med")]
+    snaps = [("h2h", "Home", 0, "", ts0, "Med"), ("h2h", "Away", 0, "", ts0, "Low"),
+             ("h2h", "Home", 0, "", ts1, "Med"), ("h2h", "Away", 0, "", ts1, "Med")]
     db = _snap_db(snaps)
     rows = _rows_from_db(db)
     r = mz.measure(rows, {})
     rec_bet_sides = [s for s in ("Home", "Away")
                      if "BET" in rec._first_entry_note(
                          db, {"event_id": "E1", "market": "h2h", "side": s, "point": 0,
-                              "player": "", "sport": "baseball_mlb"})]
-    assert rec_bet_sides == ["Home"]                     # only the open-High side bets
+                              "player": "", "sport": "baseball_mlb", "tier": "Med"})]
+    assert rec_bet_sides == ["Home"]                  # only the open-bet-tier side
     assert len(r["bet_clvs"]) == len(rec_bet_sides) == 1  # measure agrees, no drift
 
 
@@ -182,7 +184,7 @@ def test_measure_bet_subset_agrees_with_recorder_tag():
         # recorder single source
         db = _snap_db([(market, side, point, player, ts, tier) for ts, tier in snaps])
         b = {"event_id": "E1", "market": market, "side": side, "point": point,
-             "player": player, "sport": "baseball_mlb"}
+             "player": player, "sport": "baseball_mlb", "tier": snaps[-1][1]}
         rec_bets = "BET" in rec._first_entry_note(db, b)
         # measure subset (needs >=2 snaps OR a true close to be measurable; add a
         # 2nd snap so single-High cases are measurable without inventing a close)

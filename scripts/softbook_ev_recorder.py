@@ -37,7 +37,7 @@ LATE_CROSSER_SKIP_TAG = "⚪ SKIP · late-crosser game (라인 이동 후)"
 SKIP_TAGS = (PROP_SKIP_TAG, LATE_CROSSER_SKIP_TAG)
 
 
-def _is_bet(db, event_id, market, side, player):
+def _is_bet(db, event_id, market, side, player, tier):
     """True iff (game first-entry) — the only picks we stake. Mirrors core.is_bet
     over market_first_entry_sides; missing snapshot / lookup error → False (never
     claim a stake on an unverified pick)."""
@@ -45,7 +45,7 @@ def _is_bet(db, event_id, market, side, player):
         seen, sides = core.market_first_entry_sides(db, event_id, market, player or "")
     except sqlite3.Error:
         return False
-    return bool(seen) and core.is_bet(side in sides, market)
+    return bool(seen) and core.is_bet(side in sides, market, tier)
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS softbook_ev(
     recorded_at TEXT, sport TEXT, event_id TEXT, commence_time TEXT,
@@ -172,7 +172,9 @@ def _first_entry_note(db, b):
     if not seen:
         return ""
     first_entry = b["side"] in sides                      # side-aware (single source)
-    if core.is_bet(first_entry, b["market"]):        # game + first-entry (single source)
+    # .get: a bet dict missing its tier degrades to SKIP rather than raising —
+    # same policy as a missing snapshot, never mislabel on a transient miss.
+    if core.is_bet(first_entry, b["market"], b.get("tier")):   # single source
         # Advisory only — the verdict above is still BET (core.is_ev_watch never gates).
         return WATCH_TAG if core.is_ev_watch(b["market"], b.get("ev")) else BET_TAG
     if b["market"] in core.PROP_SHORT:
@@ -300,11 +302,13 @@ def _opposite_note(db, b, batch=()):
             "SELECT market, side, COALESCE(point,0), player, book, odds"
             " FROM high_alerted WHERE event_id=? AND market != ?",
             (b["event_id"], b["market"])):
+        tiers = sorted(core.bet_tiers(m))            # the tier THAT market alerts at
         ev_row = db.execute(
             "SELECT snapshot_ev FROM softbook_ev WHERE event_id=? AND market=?"
             " AND side=? AND COALESCE(point,0)=? AND COALESCE(player,'')=?"
-            " AND tier='High' ORDER BY recorded_at DESC LIMIT 1",
-            (b["event_id"], m, s, p, pl)).fetchone()
+            f" AND tier IN ({','.join('?' * len(tiers))})"
+            " ORDER BY recorded_at DESC LIMIT 1",
+            (b["event_id"], m, s, p, pl, *tiers)).fetchone()
         others[(m, s, p, pl)] = (bk_, od, ev_row[0] if ev_row else None)
     for o in batch:
         if o["event_id"] == b["event_id"] and o["market"] != b["market"]:
@@ -339,8 +343,8 @@ def alert_new_high(db, bets, now):
     _ensure_alert_cols(db)
     new = []
     for b in bets:
-        if b["tier"] != "High":
-            continue
+        if b["tier"] not in core.bet_tiers(b["market"]):
+            continue    # tier this market is bet at (single source; ML=Med, rest=High)
         cur = db.execute(
             "INSERT OR IGNORE INTO high_alerted(event_id,market,side,point,player,alerted_at)"
             " VALUES (?,?,?,?,?,?)",
@@ -436,17 +440,22 @@ def wakeup_requote(db, key, now, *, app_push=None):
     now_dt = datetime.fromisoformat(now)
     w0, w1 = f"{day}T{min(QUIET_UTC):02d}:00:00", f"{day}T{WAKE_UTC}:00"   # overnight window
     firsts = {}                      # exact line -> its FIRST-ever High timestamp (when it appeared)
+    tier_sql, tier_params = core.alertable_tiers_sql()
     for eid, market, side, pt, pl, first_at in db.execute(
             "SELECT event_id, market, side, COALESCE(point,0), COALESCE(player,''),"
-            " MIN(recorded_at) FROM softbook_ev WHERE tier='High'"
-            " GROUP BY event_id, market, side, COALESCE(point,0), COALESCE(player,'')"):
+            f" MIN(recorded_at) FROM softbook_ev WHERE {tier_sql}"
+            " GROUP BY event_id, market, side, COALESCE(point,0), COALESCE(player,'')",
+            tier_params):
         firsts[(eid, market, side, pt, pl)] = first_at
     latest = db.execute("SELECT MAX(recorded_at) FROM softbook_ev").fetchone()[0]
     bet, other = [], []              # still-live overnight picks, split by the bet rule
-    for eid, home, away, market, side, pt, pl, ct, book, odds, ev in db.execute(
+    for eid, home, away, market, side, pt, pl, ct, book, odds, ev, tier in db.execute(
             "SELECT event_id, home, away, market, side, COALESCE(point,0),"
             " COALESCE(player,''), commence_time, best_soft_book, best_soft_price,"
-            " snapshot_ev FROM softbook_ev WHERE recorded_at=? AND tier='High'", (latest,)):
+            f" snapshot_ev, tier FROM softbook_ev WHERE recorded_at=? AND {tier_sql}",
+            (latest, *tier_params)):
+        if tier not in core.bet_tiers(market):
+            continue                 # not the tier this market is bet at
         first_at = firsts.get((eid, market, side, pt, pl))
         if not first_at or not (w0 <= first_at < w1):
             continue                 # not an overnight pick (user was awake, or older day)
@@ -459,7 +468,7 @@ def wakeup_requote(db, key, now, *, app_push=None):
         entry = {"event_id": eid, "market": market, "side": side, "point": pt,
                  "player": pl, "label": lbl, "book": book, "odds": odds, "ev": ev,
                  "home": home, "away": away}
-        (bet if _is_bet(db, eid, market, side, pl) else other).append(entry)
+        (bet if _is_bet(db, eid, market, side, pl, tier) else other).append(entry)
     bet.sort(key=lambda b: -b["ev"])
     other.sort(key=lambda b: -b["ev"])
     if bet or other:
