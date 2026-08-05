@@ -168,3 +168,19 @@ test("card hides the line on a payload predating the fields", async () => {
   await render(<PickCard pick={PICK} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
   expect(screen.queryByText(/지금 |호가 사라짐/)).toBeNull();
 });
+
+test("watch note shows the live record, not a frozen 4승 21패", async () => {
+  // watch = should_bet && ev_watch, so both must be set for the note to show.
+  await render(<PickCard pick={{ ...PICK, market: "h2h", ev: 0.07,
+    should_bet: true, ev_watch: true,
+    watch_record: { n: 30, w: 7, l: 23, wr: 23.3, be: 42.1, roi: -42.8 },
+  }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(await screen.findByText(/7승 23패/)).toBeTruthy();
+  expect(screen.queryByText(/4승 21패/)).toBeNull();
+});
+
+test("watch note degrades to the bare reason without a record", async () => {
+  await render(<PickCard pick={{ ...PICK, market: "h2h", ev: 0.07,
+    should_bet: true, ev_watch: true }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(await screen.findByText(/ML EV≥5% — 전진관찰 중/)).toBeTruthy();
+});

@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import type { Pick } from "../api/types";
 import { color, radius, space, font } from "../theme";
-import { countdown, countdownUrgent, americanOdds, evPct, matchup, oddsBars, evTrail } from "../format";
+import { countdown, countdownUrgent, americanOdds, evPct, matchup, oddsBars, evTrail, watchNote } from "../format";
 
 export function PickCard({
   pick,
@@ -58,7 +58,7 @@ export function PickCard({
       </View>
       {game && <Text style={s.matchup} numberOfLines={1}>{game}</Text>}
       <Text style={[s.label, game && s.labelTight]} numberOfLines={2}>{pick.label}</Text>
-      {watch && <Text style={s.watchNote}>ML EV≥5% — 페이퍼 4승 21패 · 전진관찰 중</Text>}
+      {watch && <Text style={s.watchNote}>{watchNote(pick.watch_record)}</Text>}
       <View style={s.meta}>
         <Text style={s.metaBook}>{pick.book ?? "—"} {americanOdds(pick.odds)}</Text>
         <Text style={s.metaDim}>{pick.n_books ?? 0}북</Text>
