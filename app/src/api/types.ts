@@ -39,6 +39,32 @@ export interface Pick {
   // sample accrues); this flag only swaps the badge and hides the stake so the card
   // says hold. Optional: a pre-deploy API omits it.
   ev_watch?: boolean;
+  // What this pick looked like when it ALERTED vs what it is worth NOW.
+  //
+  // `ev`/`odds` above are the pick's last HIGH snapshot, which is not the same
+  // thing as its current price: once a pick drops out of High it stops
+  // producing High rows, so that number silently freezes. These fields close
+  // that gap — alert_* is the first High snapshot (the one that fired the
+  // Telegram/push), now_* is the latest snapshot at ANY tier.
+  //
+  // All optional: a pre-deploy API omits them and the card falls back to the
+  // single ev/odds line.
+  alerted_at?: string | null;
+  alert_ev?: number | null;
+  alert_odds?: number | null;
+  alert_book?: string | null;
+  now_at?: string | null;
+  now_ev?: number | null;
+  now_odds?: number | null;
+  now_book?: string | null;
+  now_tier?: string | null;
+  // Why a cooled pick is in the cooled bucket. "faded" = re-priced below High.
+  // "gone" = it stopped appearing while its last snapshot was still High —
+  // the book pulled the market, or the line moved and it became a different
+  // pick. Measured 2026-08-05: 9 of 17 cooled picks were "gone", not "faded",
+  // so a single "cooled" label was telling the user a bet had gone cold when
+  // its last known EV had not moved at all.
+  cooled_reason?: "faded" | "gone";
 }
 
 export interface PicksResponse {

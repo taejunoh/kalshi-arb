@@ -144,3 +144,27 @@ test("the swipe dismiss action calls onDismiss with the pick", async () => {
   await fireEvent.press(screen.getByTestId("swipe-dismiss"));
   expect(onDismiss).toHaveBeenCalledWith(PICK);
 });
+
+test("card shows how stale the EV pill is", async () => {
+  // The pill reads the last HIGH snapshot, which freezes once a pick drops out
+  // of High. Without this line a card can state +1.3% forever.
+  await render(<PickCard pick={{ ...PICK,
+    alerted_at: "2026-08-05T09:10:00Z", alert_ev: 0.013,
+    now_at: "2026-08-05T09:50:00Z", now_ev: 0.004,
+  }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(await screen.findByText(/→ 지금 \+0\.4%/)).toBeTruthy();
+});
+
+test("card says the price vanished instead of faking a decay", async () => {
+  await render(<PickCard pick={{ ...PICK,
+    alerted_at: "2026-08-05T09:40:00Z", alert_ev: 0.0105,
+    now_at: "2026-08-05T09:40:00Z", now_ev: 0.0105,
+    cooled_reason: "gone" as const,
+  }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(await screen.findByText(/호가 사라짐/)).toBeTruthy();
+});
+
+test("card hides the line on a payload predating the fields", async () => {
+  await render(<PickCard pick={PICK} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(screen.queryByText(/지금 |호가 사라짐/)).toBeNull();
+});

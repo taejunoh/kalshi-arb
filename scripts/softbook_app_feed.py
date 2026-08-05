@@ -49,14 +49,27 @@ def _is_muted_row(row, rules):
     return False
 
 
-def compose(rows, states, prefs, now, mute_rules=()):
+def compose(rows, states, prefs, now, mute_rules=(), latest_scan=None):
     """rows: High-tier softbook_ev snapshots (any scans). states: {key->state}.
-    prefs: filter_prefs row dict or None. Returns picks with a 'status' field."""
+    prefs: filter_prefs row dict or None. Returns picks with a 'status' field.
+
+    `latest_scan` is the newest recorded_at across ALL tiers — i.e. when the
+    scanner last ran. A pick is active when it was still High in that scan.
+
+    Passing it matters. Deriving the reference from the High rows alone (the
+    old behaviour, kept as the fallback) means a scan that produces no High
+    pick anywhere does not advance the reference, so every pick from the last
+    High-producing scan keeps reporting "active" even after later scans
+    re-priced it downward. Observed 2026-08-05: Atmane@Khachanov h2h was High
+    at 08:40 (EV 6.77%), re-scanned Med at 08:50 (EV 1.99%), and the 08:50 and
+    09:00 scans happened to produce zero High picks — so the app showed it
+    active, at its stale 6.77%, for 20+ minutes after the system knew better.
+    """
     if mute_rules:
         rows = [r for r in rows if not _is_muted_row(r, mute_rules)]
     if not rows:
         return []
-    latest = max(r["recorded_at"] for r in rows)
+    latest = latest_scan or max(r["recorded_at"] for r in rows)
     # Keep one row per pick: prefer the latest-scan row, else its most recent.
     best = {}
     for r in rows:
