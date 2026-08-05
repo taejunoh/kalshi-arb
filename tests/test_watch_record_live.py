@@ -22,7 +22,7 @@ def _paper_db(path, rows):
         stake REAL, pnl REAL, won INT, completed INT)""")
     c.executemany(
         "INSERT INTO paper_bet (placed_at, tier, market, ev, odds, stake, pnl,"
-        " won, completed) VALUES (?,'High',?,?,?,?,?,?,?)", rows)
+        " won, completed) VALUES (?,'Med',?,?,?,?,?,?,?)", rows)
     c.commit()
     c.close()
 
