@@ -73,3 +73,39 @@ export function countdownUrgent(commenceISO: string, now: Date = new Date()): bo
   const diffMs = new Date(commenceISO).getTime() - now.getTime();
   return diffMs > 0 && diffMs < 60 * 60000;
 }
+
+// The one line that answers "is this still the bet I was alerted about?".
+//
+// `pick.ev` is the LAST HIGH snapshot, which freezes the moment a pick drops
+// out of High — so a card showing only that number can state a stale EV with
+// no hint of its age. The API now also sends the first-High snapshot (what
+// fired the alert) and the latest snapshot at any tier (what it is worth now);
+// this renders the difference, or null when there is nothing to say.
+//
+// Measured 2026-08-05: 9 of 17 cooled picks had never actually cooled — their
+// last snapshot was still High, they had simply stopped appearing. Those get
+// "호가 사라짐" rather than a fake decay, because we do not know the current
+// price, only that we lost sight of it.
+export function evTrail(
+  p: {
+    alerted_at?: string | null; alert_ev?: number | null;
+    now_at?: string | null; now_ev?: number | null;
+    cooled_reason?: "faded" | "gone";
+  },
+): string | null {
+  const at = p.alerted_at, nt = p.now_at;
+  if (!at || !nt) return null;
+  if (p.cooled_reason === "gone") {
+    return `호가 사라짐 · 마지막 ${hhmm(nt)} ${evPct(p.now_ev)}`;
+  }
+  if (at === nt) return null;              // one snapshot only: nothing moved
+  return `알림 ${hhmm(at)} ${evPct(p.alert_ev)} → 지금 ${evPct(p.now_ev)}`;
+}
+
+// UTC ISO -> device-local HH:MM. The user reads the app in their own timezone,
+// so the alert time has to match the clock they saw the Telegram on.
+export function hhmm(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "?";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
