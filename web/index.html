@@ -205,6 +205,7 @@
     <div class="h2">Read this before you judge the numbers</div>
     <div class="note"><b>This is a model record.</b> Every qualifying pick is graded at the price it was posted (no slippage assumed) and settled automatically — wins, losses, pushes and all. A <span id="nt-n">96</span>-pick sample over <span id="nt-d">19</span> days is enough to be transparent, not enough to be certain.</div>
     <div class="note"><b>Read each market on its own.</b> Moneyline, spread and totals are set by different desks and have diverged in this sample. A single blended ROI can average away a segment that is losing money, so the headline is split by market and the full breakdown is in the table above. No pick is ever removed or re-priced after the fact — when the rules change, the record is segmented by date instead.</div>
+    <div class="note" id="rulechg" style="display:none"></div>
     <div class="note"><b>Past performance does not guarantee future results.</b> Variance is real and these figures can and will swing. This page is informational / entertainment content — not betting advice or a promise of profit.</div>
   </section>
 
@@ -390,6 +391,17 @@ document.getElementById('bymkt').innerHTML = DATA.byMarket.map(m=>{
     <td class="num mono ${cls(m.pnl)}">${sign(m.pnl)}</td>
   </tr>`;
 }).join('');
+
+// The note above promises the record is segmented by date when the rules change.
+// These are those dates. Every pick is scored under the rule live on the day it
+// was placed, so nothing above is restated when a rule moves.
+if (DATA.ruleChanges && DATA.ruleChanges.length) {
+  const el = document.getElementById('rulechg');
+  el.style.display = '';
+  el.innerHTML = '<b>Rule changes.</b> Picks are always graded under the rule in force on the day they were placed — a change never restates earlier results.<ul style="margin:8px 0 0;padding-left:18px">'
+    + DATA.ruleChanges.map(c => `<li><span class="mono">${c.date}</span> — ${c.en}</li>`).join('')
+    + '</ul>';
+}
 
 document.getElementById('ledger').innerHTML = DATA.ledger.slice().reverse().map(r=>{
   const b = r.result==="win"?"w":(r.result==="lose"?"l":"p");

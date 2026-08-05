@@ -104,8 +104,33 @@ ALL_PROPS = {m for v in PROP_MARKETS.values() for m in v}
 #
 # Other markets are unchanged at High — this evidence is ML-specific and says
 # nothing about spread/total.
-BET_TIERS = {"h2h": frozenset({"Med"})}
+# Newest first. The FIRST entry is the current policy — BET_TIERS is literally it,
+# so there is one place to edit and no copy to drift. The older entries exist so a
+# public track record can be scored under the rule that was live AT THE TIME.
+#
+# That matters more than it sounds. keepmypick.com regenerates its whole record
+# daily from this module. Re-scoring history under today's rule would have moved
+# the published record from 140-160 / +2.13% to 332-316 / +13.90% overnight,
+# without a single bet settling — and the ML->Med decision was made by looking at
+# that same history, so the "improvement" would have been an in-sample fit
+# presented as realised performance. Under any rule change, that direction is the
+# default: you change the rule because the new one looks better on the data you
+# have. So the record is frozen per era and the change is disclosed by date.
+BET_TIER_ERAS = (
+    ("2026-08-05", {"h2h": frozenset({"Med"})}),   # ML -> Med
+    ("0000-00-00", {}),                            # everything at High
+)
+BET_TIERS = BET_TIER_ERAS[0][1]
 BET_TIERS_DEFAULT = frozenset({"High"})
+
+
+def bet_tiers_at(market, day):
+    """Tiers `market` was bet at on `day` (YYYY-MM-DD). Use for historical
+    scoring; use bet_tiers() for anything about right now."""
+    for start, table in BET_TIER_ERAS:
+        if day >= start:
+            return table.get(market, BET_TIERS_DEFAULT)
+    return BET_TIERS_DEFAULT
 
 
 def bet_tiers(market):
@@ -118,8 +143,9 @@ def alertable_tiers():
     """Union of every tier any market is bet at — the prefetch set for the SQL
     that pulls candidates. Per-market narrowing is is_bet's job."""
     out = set(BET_TIERS_DEFAULT)
-    for t in BET_TIERS.values():
-        out |= set(t)
+    for _start, table in BET_TIER_ERAS:      # every era, not just the current one
+        for t in table.values():
+            out |= set(t)
     return frozenset(out)
 
 
@@ -182,7 +208,7 @@ def is_ev_watch(market, ev):
     return market == "h2h" and ev is not None and ev >= EV_WATCH_MIN
 
 
-def market_first_entry_sides(db, event_id, market, player):
+def market_first_entry_sides(db, event_id, market, player, as_of=None):
     """(seen, sides): `sides` = frozenset of the sides that were at this market's
     BET TIER (core.bet_tiers — High for most, Med for ML since 2026-08-05) at this
     (event, market, player)'s EARLIEST softbook_ev snapshot. A pick is first-entry iff
@@ -203,7 +229,8 @@ def market_first_entry_sides(db, event_id, market, player):
         (event_id, market, player or "")).fetchone()
     if not opn or opn[0] is None:
         return (False, frozenset())
-    tiers = sorted(bet_tiers(market))    # the tier THIS market is bet at, not literal High
+    # as_of=None means "the rule now"; a date scores under the rule live that day.
+    tiers = sorted(bet_tiers_at(market, as_of) if as_of else bet_tiers(market))
     return (True, frozenset(s for (s,) in db.execute(
         "SELECT side FROM softbook_ev WHERE event_id=? AND market=?"
         " AND COALESCE(player,'')=? AND recorded_at=?"

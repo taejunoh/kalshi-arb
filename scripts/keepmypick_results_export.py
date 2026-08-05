@@ -5,6 +5,15 @@ The public track-record page (web/index.html) fetches this file. It contains the
 FIRST-ENTRY GAME record only (core.is_bet — the actual product / single source),
 per-market + a graded ledger, mirroring exactly what the app reports.
 
+Each bet is scored under the rule that was live ON THE DAY IT WAS PLACED
+(core.bet_tiers_at), never under today's. This script re-derives the entire
+record from scratch every morning, so scoring it with the current rule would
+silently rewrite history: the 2026-08-05 ML High->Med change alone would have
+moved the published record from 140-160 / +2.13% to 332-316 / +13.90% overnight
+with no bet settling. A rule is changed because it looks better on the data you
+already have, so re-scoring always flatters — that is an in-sample fit, not a
+track record. The changes themselves ship in `ruleChanges` for the page to show.
+
 Usage (run on EC2, cwd = scripts/ so it can import softbook_ev_core):
     venv/bin/python keepmypick_results_export.py [OUTPUT_PATH]
 Writes JSON to OUTPUT_PATH if given, else prints to stdout.
@@ -12,6 +21,14 @@ Writes JSON to OUTPUT_PATH if given, else prints to stdout.
 import sqlite3, json, sys
 from datetime import datetime, timezone
 import softbook_ev_core as core
+
+# Human-readable companion to core.BET_TIER_ERAS — what changed, and when, for the
+# public page. Keep in step with that tuple.
+RULE_CHANGES = [
+    {"date": "2026-08-05",
+     "en": "Moneyline picks moved from the High to the Med confidence tier.",
+     "ko": "머니라인 기준을 High → Med 신뢰등급으로 변경."},
+]
 
 EV_DB = "/home/ubuntu/kalshi-arb/data/softbook_ev.db"
 PAPER_DB = "/home/ubuntu/kalshi-arb/data/softbook_paper.db"
@@ -22,11 +39,13 @@ def main():
     pp = sqlite3.connect(PAPER_DB)
     cache = {}
 
-    def is_fe(eid, market, side, player):
-        k = (eid, market, player or "")
+    def is_fe(eid, market, side, player, day):
+        # keyed on the era, not the day: two bets under the same rule share a lookup
+        era = next(st for st, _ in core.BET_TIER_ERAS if day >= st)
+        k = (eid, market, player or "", era)
         if k not in cache:
             try:
-                cache[k] = core.market_first_entry_sides(ev, *k)
+                cache[k] = core.market_first_entry_sides(ev, *k[:3], as_of=day)
             except Exception:
                 cache[k] = (False, frozenset())
         seen, sides = cache[k]
@@ -43,7 +62,7 @@ def main():
           for m in ("h2h", "spread", "total")}
     ledger = []
     for eid, d, sport, label, market, side, player, book, odds, stake, result, pnl in rows:
-        if not is_fe(eid, market, side, player):
+        if not is_fe(eid, market, side, player, d):
             continue
         ledger.append({"d": d, "sport": sport, "label": label, "market": market,
                        "book": book, "odds": odds, "result": result, "pnl": pnl})
@@ -84,6 +103,9 @@ def main():
         "until": fmt(max(dates)) if dates else "",
         "updated": datetime.now(timezone.utc).strftime("%b %-d, %Y"),
         "byMarket": byMarket, "ledger": ledger,
+        # Disclosed on the page. The record above is scored per era, so these are
+        # what a reader needs to know the rule did not stay still.
+        "ruleChanges": RULE_CHANGES,
     }
     js = json.dumps(out, ensure_ascii=False)
     if len(sys.argv) > 1:
