@@ -14,6 +14,8 @@ Run: uvicorn softbook_app_api:app --host 127.0.0.1 --port 8000
 import json
 import os
 import sqlite3
+import sys
+import time
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 
@@ -95,6 +97,50 @@ def _latest_scan_at():
     finally:
         c.close()
     return row[0] if row else None
+
+
+_WATCH_CACHE = {"at": 0.0, "val": None}
+_WATCH_TTL_S = 300.0
+
+
+def _watch_record():
+    """Lifetime record of the ML+EV>=5% watch cell, for the card's note.
+
+    The card used to hard-code "페이퍼 4승 21패" — the in-sample number as of
+    2026-07-22. It could never change, so by 08-05 the app was still quoting a
+    2-week-old figure while the forward sample had gone the other way (3-2).
+
+    Cohort selection is delegated to softbook_ev_watch_eval, which delegates the
+    cell definition to core.is_ev_watch. Deliberately not reimplemented here:
+    that module's own docstring warns that a threshold change in core must not
+    silently desynchronise the alert from its evaluation, and a second copy of
+    the SQL is exactly how that happens.
+
+    Whole period, not the forward window — the card states the total record.
+    The PROMOTE/HOLD decision still runs on the forward window in the weekly
+    eval; this is display only. Cached briefly since /picks is a hot path.
+    """
+    now = time.time()
+    if _WATCH_CACHE["val"] is not None and now - _WATCH_CACHE["at"] < _WATCH_TTL_S:
+        return _WATCH_CACHE["val"]
+    out = None
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import softbook_ev_watch_eval as ev_watch
+        db = sqlite3.connect(f"file:{ev_watch.PAPER_DB}?mode=ro", uri=True)
+        try:
+            graded, _pending = ev_watch.cohort(db, "0000-00-00")   # no lower bound
+            st = ev_watch.stats(graded)
+        finally:
+            db.close()
+        if st:
+            out = {"n": st["n"], "w": st["w"], "l": st["l"],
+                   "wr": round(st["wr"], 1), "be": round(st["be"], 1),
+                   "roi": round(st["roi"], 1)}
+    except Exception:
+        out = None                      # never let the note break the feed
+    _WATCH_CACHE.update(at=now, val=out)
+    return out
 
 
 def _alert_and_now(picks):
@@ -208,6 +254,9 @@ def _enrich_first_entry(picks):
             # under forward review — see core.is_ev_watch. Same flag the Telegram tag
             # and the push worker read, so the three surfaces can't drift apart.
             p["ev_watch"] = core.is_ev_watch(p["market"], p.get("ev"))
+            # Live record for the note, so the card stops quoting a frozen one.
+            if p["ev_watch"]:
+                p["watch_record"] = _watch_record()
             # 최소/본전 bars, served rather than recomputed client-side: EV_MIN is
             # policy and the app had been mirroring both it and the formula in TS,
             # so a server-side change would have left the card showing a stale

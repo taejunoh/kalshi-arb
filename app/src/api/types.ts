@@ -39,6 +39,16 @@ export interface Pick {
   // sample accrues); this flag only swaps the badge and hides the stake so the card
   // says hold. Optional: a pre-deploy API omits it.
   ev_watch?: boolean;
+  // Live record of the watch cell, for the note under the badge. The note used
+  // to hard-code "페이퍼 4승 21패" — the in-sample figure as of 2026-07-22 —
+  // which by construction could never change, so the card kept quoting it
+  // while the real number moved (7-23 by 08-05). Whole period, not the forward
+  // window: the card states the total, while the PROMOTE/HOLD decision still
+  // runs on the forward window in the weekly eval. Optional — a pre-deploy API
+  // omits it and the note falls back to no figure.
+  watch_record?: {
+    n: number; w: number; l: number; wr: number; be: number; roi: number;
+  } | null;
   // What this pick looked like when it ALERTED vs what it is worth NOW.
   //
   // `ev`/`odds` above are the pick's last HIGH snapshot, which is not the same
