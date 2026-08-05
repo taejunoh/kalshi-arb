@@ -83,15 +83,73 @@ PROP_SHORT = {"pitcher_strikeouts": "K", "batter_total_bases": "TB",
 ALL_PROPS = {m for v in PROP_MARKETS.values() for m in v}
 
 
-def is_bet(first_entry, market):
-    """THE bet rule = FIRST-ENTRY GAME ONLY (user, 2026-06-16): bet iff the pick was
-    High from its earliest snapshot (first_entry) AND it is a game market — h2h /
-    spread / total (props, incl. team_total, and late-crossers skip). SINGLE SOURCE
-    OF TRUTH for the Telegram tag, the app /picks 'bet' flag, and the push worker —
-    change the policy here, once (the Telegram↔app divergence on 6/16 is why). No
-    confirmed pick edge (6/15 re-measure ≈BE, Pikkit −4.6%); ≈BE bonus-clearing
-    vehicle, bet small, no size increase until forward CLV confirms an edge."""
-    return bool(first_entry) and market not in PROP_SHORT
+# Which confidence tier each market is bet at (user, 2026-08-05). Everything
+# was High-only until now; ML moves to Med and leaves High entirely.
+#
+# ML by tier, first-entry paper ledger, Jun-Aug:
+#     High  n=151  WR 41.1% vs BE 42.7%  -6.1%   Jun +15.9 / Jul -36.1 / Aug +51.1
+#     Med   n=497  WR 50.9% vs BE 43.9%  +16.7%  Jun +11.9 / Jul +20.6 / Aug +23.3
+#     Low   n=399  WR 44.6% vs BE 44.6%  +0.6%
+# High sits BELOW its own breakeven and is the tier that produced the July
+# collapse the 07-28 review called an "ML era break" — split by tier, the break
+# is High's alone; Med is positive in all three months (2-prop z -1.06, +0.36).
+# Med clears the gate at n=497 (Wilson LB 46.5% > BE 43.9%), survives dropping
+# its best day and its best three days, and still clears with Wimbledon removed
+# (n=423, LB 44.4% > BE 44.2%) — Wimbledon being the one chunk that genuinely
+# cannot recur, at 43% of Med's PnL.
+#
+# Mechanism this fits, hypothesised 07-22: EV_MAX caps at 8%, so High (5-8%) is
+# the top of the allowed range, where a soft price that far off Pinnacle more
+# likely means OUR fair is stale than that we found an edge.
+#
+# Other markets are unchanged at High — this evidence is ML-specific and says
+# nothing about spread/total.
+BET_TIERS = {"h2h": frozenset({"Med"})}
+BET_TIERS_DEFAULT = frozenset({"High"})
+
+
+def bet_tiers(market):
+    """Tiers at which `market` is bet. Single source for the tag, the alert
+    gate, the app flag and the push worker."""
+    return BET_TIERS.get(market, BET_TIERS_DEFAULT)
+
+
+def alertable_tiers():
+    """Union of every tier any market is bet at — the prefetch set for the SQL
+    that pulls candidates. Per-market narrowing is is_bet's job."""
+    out = set(BET_TIERS_DEFAULT)
+    for t in BET_TIERS.values():
+        out |= set(t)
+    return frozenset(out)
+
+
+def alertable_tiers_sql(col="tier"):
+    """(sql, params) for an `IN` over every tier any market is bet at — the
+    prefetch filter for queries that span markets. Rows STILL need the
+    per-market check (`tier in bet_tiers(market)`); this only avoids pulling
+    tiers nothing is bet at."""
+    t = sorted(alertable_tiers())
+    return f"{col} IN ({','.join('?' * len(t))})", t
+
+
+def is_bet(first_entry, market, tier):
+    """THE bet rule (user, 2026-06-16; tier added 2026-08-05): bet iff the pick
+    was High from its earliest snapshot (first_entry), it is a game market —
+    h2h / spread / total (props, incl. team_total, and late-crossers skip) —
+    AND its confidence tier is one this market is bet at (see BET_TIERS).
+
+    SINGLE SOURCE OF TRUTH for the Telegram tag, the app /picks 'bet' flag, and
+    the push worker — change the policy here, once (the Telegram↔app divergence
+    on 6/16 is why). No confirmed pick edge (6/15 re-measure ≈BE, Pikkit −4.6%);
+    ≈BE bonus-clearing vehicle, bet small, no size increase until forward CLV
+    confirms an edge.
+
+    `tier` is required rather than defaulted: a default would let a caller that
+    has not been updated keep the old policy silently, which is exactly the
+    divergence this function exists to prevent.
+    """
+    return (bool(first_entry) and market not in PROP_SHORT
+            and tier in bet_tiers(market))
 
 
 # --- forward-observation watchlist (2026-07-22) --------------------------------
@@ -126,7 +184,8 @@ def is_ev_watch(market, ev):
 
 
 def market_first_entry_sides(db, event_id, market, player):
-    """(seen, sides): `sides` = frozenset of the sides that were High at this
+    """(seen, sides): `sides` = frozenset of the sides that were at this market's
+    BET TIER (core.bet_tiers — High for most, Med for ML since 2026-08-05) at this
     (event, market, player)'s EARLIEST softbook_ev snapshot. A pick is first-entry iff
     ITS side is in `sides`. Side-aware: the OPPOSITE side that crosses into High only
     after the line moved is a LATE-CROSSER even though the market was High early — so it
@@ -145,10 +204,12 @@ def market_first_entry_sides(db, event_id, market, player):
         (event_id, market, player or "")).fetchone()
     if not opn or opn[0] is None:
         return (False, frozenset())
+    tiers = sorted(bet_tiers(market))    # the tier THIS market is bet at, not literal High
     return (True, frozenset(s for (s,) in db.execute(
         "SELECT side FROM softbook_ev WHERE event_id=? AND market=?"
-        " AND COALESCE(player,'')=? AND recorded_at=? AND tier='High'",
-        (event_id, market, player or "", opn[0]))))
+        " AND COALESCE(player,'')=? AND recorded_at=?"
+        f" AND tier IN ({','.join('?' * len(tiers))})",
+        (event_id, market, player or "", opn[0], *tiers))))
 
 
 def markets_for(sport):
