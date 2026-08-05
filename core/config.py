@@ -41,6 +41,31 @@ class Config:
         self.KELLY_FRACTION = float(os.getenv("KELLY_FRACTION", "0.25"))
         self.MAX_SINGLE_TRADE_PCT = float(os.getenv("MAX_SINGLE_TRADE_PCT", "0.10"))
         self.MAX_DIRECTIONAL_LOSS = float(os.getenv("MAX_DIRECTIONAL_LOSS", "50"))
+        # Paper staking (2026-08-05). Paper is a RESEARCH ledger — its job is to
+        # produce a clean per-strategy sample, not to simulate the real account.
+        # 20 strategies share the paper book vs 6 live, so sizing it like the
+        # real balance starves the research set: on 08-05 the tracker sat at -$34.58
+        # and "Insufficient bankroll" fired 2,010 times in 24h, i.e. the bot was
+        # discarding signals instead of recording them.
+        #
+        # Flat stake, not percent-of-bankroll, because the promotion gate is
+        # Wilson-LB(win rate) vs breakeven — a test that weights every bet
+        # equally. Stake-weighted ROI on top of that puts two headline numbers on
+        # different assumptions; with a flat unit, ROI IS mean return per bet and
+        # the two agree. It also removes the drift where a strategy that loses
+        # early then bets smaller, biasing its own later sample.
+        self.PAPER_FLAT_STAKE_USDC = float(os.getenv("PAPER_FLAT_STAKE_USDC", "10"))
+        # Notional the paper book is topped back up to. Not a constraint — see
+        # OrderManager._ensure_paper_funds.
+        self.PAPER_NOTIONAL_USDC = float(os.getenv("PAPER_NOTIONAL_USDC", "5000"))
+        # Backstop retained from the guard this replaces: market_maker once
+        # drained paper to -$817 via a 30-second quoting loop. It has never
+        # fired since, but it is still registered in the strategy loop, so an
+        # unbounded top-up would restore that failure mode. A day's worth of
+        # normal paper volume is ~200 bets; 100 refills = $1,000 of top-up is
+        # far above that and still stops a runaway cold.
+        self.PAPER_MAX_REPLENISH_PER_DAY = int(
+            os.getenv("PAPER_MAX_REPLENISH_PER_DAY", "100"))
         self.MAX_DAILY_LOSS = float(os.getenv("MAX_DAILY_LOSS", "200"))
         # Live-strategy daily loss cap — independent from paper MAX_DAILY_LOSS.
         # Set to same default so both modes have identical limits by default.
