@@ -2,7 +2,7 @@
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
-import { ACTION_BET, ACTION_DISMISS, CATEGORY_HIGH, CATEGORY_PRICE_MOVE } from "./config";
+import { ACTION_BET, ACTION_DISMISS, CATEGORY_HIGH } from "./config";
 
 export type NotifTarget =
   | { kind: "capture"; pickId: string }
@@ -10,10 +10,12 @@ export type NotifTarget =
   | { kind: "pickDetail"; pickId: string }
   | null;
 
-/** Pure: tapped notification / action button -> in-app intent. Settle / price-move
- * pushes carry only app_bet_id; with the 내 베팅 tab removed there is no in-app
- * destination for them, so they return null (the notification still informs — act at
- * the book / Pikkit). */
+/** Pure: tapped notification / action button -> in-app intent. Settle pushes carry
+ * only app_bet_id and there is no 내 베팅 tab, so they return null — the notification
+ * informs, and any action happens at the book / in Pikkit.
+ *
+ * Price-move pushes were retired 2026-08-05 for that same reason: tapping one landed
+ * nowhere, and "라인 이동" on a bet already placed has no action behind it at all. */
 export function notifTarget(response: Notifications.NotificationResponse): NotifTarget {
   const data = (response.notification.request.content.data ?? {}) as {
     pick_id?: string;
@@ -31,7 +33,6 @@ export async function registerCategories(): Promise<void> {
     { identifier: ACTION_BET, buttonTitle: "베팅함", options: { opensAppToForeground: true } },
     { identifier: ACTION_DISMISS, buttonTitle: "관심없음", options: { opensAppToForeground: false, isDestructive: true } },
   ]);
-  await Notifications.setNotificationCategoryAsync(CATEGORY_PRICE_MOVE, []);
 }
 
 /** iOS permission flow + Expo push token. Returns null on simulator / denied / no projectId. */

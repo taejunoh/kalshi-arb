@@ -4,7 +4,6 @@ import type { Settings } from "./api/types";
 // Must match scripts/softbook_push_worker.py categories + the buttons this app registers.
 export const CATEGORY_HIGH = "high_pick";
 export const CATEGORY_SETTLE = "settle";
-export const CATEGORY_PRICE_MOVE = "price_move";
 export const ACTION_BET = "BET_PLACED";
 export const ACTION_DISMISS = "NOT_INTERESTED";
 
