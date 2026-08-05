@@ -20,7 +20,7 @@ export const color = {
   negativeDim: "#3A1A1A",
   negativeStrong: "#5A2222",
   urgent: "#FBBF24",
-  urgentDim: "#3A2C0B",      // amber badge fill (ev_watch "보류" pills)
+  urgentDim: "#3A2C0B",      // amber badge fill
   heatmapEmpty: "#141319",
   text: "#F4F4F6",
   muted: "#9A9AA6",
