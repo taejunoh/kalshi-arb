@@ -160,25 +160,24 @@ EV_WATCH_SINCE = "2026-07-22"        # rows placed on/after this date = the OOS 
 
 
 def is_ev_watch(market, ev):
-    """ADVISORY ONLY — True means 'is_bet says BET, but this cell is under review'.
-    Never gates a bet, a push, or a ledger row; it only decorates the alert.
+    """ML at stated EV >= EV_WATCH_MIN. ANALYSIS CELL ONLY since 2026-08-05 — no
+    user-facing surface reads this any more.
 
-    Cell = ML (h2h) with stated EV >= 5%. High first-entry paper ledger to 7/22:
-    4-21, WR 16.0% vs BE 41.3%, -$42.39 = ROI -60.8%, spread over 18 days and 5
-    sports (max single day 24% of the loss, so not one bad slate), and negative in
-    BOTH June (-38.3%) and July (-100%). The same EV band is harmless everywhere
-    else — spread 4-0, total 6-6 (+10.4%), props -0.4% — so this is ML-specific,
-    not a general 'high EV is bad' rule, and a blanket EV cut would throw away the
-    spread cell. Mechanism (unproven): EV_MAX caps at 8%, so 5-8% is the top of the
-    allowed range, where a soft price that far off Pinnacle more likely means OUR
-    fair is stale than that we found an edge — and 1/4-Kelly stakes them biggest.
+    History: from 7/22 this cell carried a "hold" advisory on the Telegram tag,
+    the app card and the push title, because High ML at EV>=5% had run 4-21
+    (-60.8%). That review is closed. High ML is no longer bet at all (the whole
+    tier went, not just this band), and re-measured on the cohort we DO bet the
+    pathology does not reproduce: Med ML EV 5-8% is n=32, WR 50.0% vs BE 42.0%,
+    +$22.23 on $89.95.
 
-    Cutting it in-sample would take the game cohort from +6.4% to +16.6% (both
-    months positive), but that IS in-sample: hence observe, don't gate. The paper
-    ledger records these regardless of what the user does, so forward measurement
-    accrues on its own — re-measure rows with placed_at >= EV_WATCH_SINCE in ~3
-    weeks and decide then. SINGLE SOURCE for the Telegram tag / app /picks
-    ev_watch flag / push worker, same as is_bet.
+    n=32 proves nothing either way — Wilson LB 33.6% sits below breakeven, one
+    day (6/23) is 54% of the PnL, and the 22-bet June block is +$1.50. The user's
+    call, given that: the band is 6.4% of Med ML volume and is not negative, so
+    it rides with the rest rather than carrying a warning nobody can act on.
+    Reaching a decidable n here would take ~8 months at ~10 bets/month, so
+    "keep waiting" was not actually on the table.
+
+    softbook_ev_watch_eval still uses this to re-measure the band on demand.
     """
     return market == "h2h" and ev is not None and ev >= EV_WATCH_MIN
 

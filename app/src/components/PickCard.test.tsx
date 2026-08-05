@@ -99,88 +99,23 @@ test("shows no BET/SKIP badge when the flag is absent", async () => {
   expect(screen.queryByText(/🟣 BET|⚪ SKIP/)).toBeNull();
 });
 
-// ---- ev_watch: a BET the backend asks us to hold (core.is_ev_watch, 2026-07-22) ----
-// should_bet stays TRUE — the bet rule did not change, so these keep scoring in the
-// paper ledger. The card only has to make the hold visible and drop the stake.
+// ---- the hold advisory is retired (2026-08-05) ----
+// ML at EV>=5% carried a "🟡 관찰 · 베팅 보류" badge from 7/22, because High ML
+// in that band had run 4-21. High ML is no longer bet at all, and re-measured on
+// the cohort we DO bet the pathology does not reproduce (Med, n=32, WR 50.0% vs
+// BE 42.0%, +$22.23). The band now rides with every other BET.
 
-test("shows the 🟡 관찰 badge instead of BET when ev_watch is set", async () => {
-  await render(<PickCard pick={{ ...PICK, should_bet: true, ev_watch: true }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
-  // anchored on the emoji: the explainer line below also contains "관찰"
-  expect(await screen.findByText(/🟡 관찰/)).toBeOnTheScreen();
-  expect(screen.queryByText(/🟣 BET/)).toBeNull();
-  expect(screen.queryByText(/SKIP/)).toBeNull();          // held, NOT demoted to skip
-});
-
-test("explains why a watched pick is held", async () => {
-  await render(<PickCard pick={{ ...PICK, should_bet: true, ev_watch: true }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
-  expect(await screen.findByText(/ML EV≥5%/)).toBeOnTheScreen();
-});
-
-test("does NOT show a stake on watched picks ('$20' would contradict '보류')", async () => {
-  await render(<PickCard pick={{ ...PICK, should_bet: true, ev_watch: true }} unitStake={20} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
-  expect(screen.getByTestId("bet-button")).toHaveTextContent("베팅");
-  expect(screen.queryByText("베팅 $20")).toBeNull();
-});
-
-test("ev_watch on a SKIP pick changes nothing (a skip is already not recommended)", async () => {
-  await render(<PickCard pick={{ ...PICK, should_bet: false, ev_watch: true }} unitStake={20} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
-  expect(await screen.findByText(/SKIP/)).toBeOnTheScreen();
-  expect(screen.queryByText(/🟡 관찰/)).toBeNull();
-});
-
-test("a plain BET is unaffected when ev_watch is false or absent", async () => {
-  await render(<PickCard pick={{ ...PICK, should_bet: true, ev_watch: false }} unitStake={20} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+test("a former watch pick renders as a plain BET, stake and all", async () => {
+  await render(<PickCard pick={{ ...PICK, market: "h2h", ev: 0.07, should_bet: true }}
+    unitStake={20} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
   expect(await screen.findByText(/🟣 BET/)).toBeOnTheScreen();
   expect(screen.getByText("베팅 $20")).toBeOnTheScreen();
+});
+
+test("no surface still renders the hold badge or its note", async () => {
+  await render(<PickCard pick={{ ...PICK, market: "h2h", ev: 0.07, should_bet: true }}
+    unitStake={20} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
   expect(screen.queryByText(/🟡 관찰/)).toBeNull();
-});
-
-// Gesture simulation isn't reliable in jest, so we press the revealed swipe
-// action directly to lock the wiring. onDismiss takes the Pick (same as the
-// inline button), so we assert it's called with the pick.
-test("the swipe dismiss action calls onDismiss with the pick", async () => {
-  const onDismiss = jest.fn();
-  await render(<PickCard pick={PICK} onOpen={() => {}} onBet={() => {}} onDismiss={onDismiss} />);
-  await fireEvent.press(screen.getByTestId("swipe-dismiss"));
-  expect(onDismiss).toHaveBeenCalledWith(PICK);
-});
-
-test("card shows how stale the EV pill is", async () => {
-  // The pill reads the last HIGH snapshot, which freezes once a pick drops out
-  // of High. Without this line a card can state +1.3% forever.
-  await render(<PickCard pick={{ ...PICK,
-    alerted_at: "2026-08-05T09:10:00Z", alert_ev: 0.013,
-    now_at: "2026-08-05T09:50:00Z", now_ev: 0.004,
-  }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
-  expect(await screen.findByText(/→ 지금 \+0\.4%/)).toBeTruthy();
-});
-
-test("card says the price vanished instead of faking a decay", async () => {
-  await render(<PickCard pick={{ ...PICK,
-    alerted_at: "2026-08-05T09:40:00Z", alert_ev: 0.0105,
-    now_at: "2026-08-05T09:40:00Z", now_ev: 0.0105,
-    cooled_reason: "gone" as const,
-  }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
-  expect(await screen.findByText(/호가 사라짐/)).toBeTruthy();
-});
-
-test("card hides the line on a payload predating the fields", async () => {
-  await render(<PickCard pick={PICK} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
-  expect(screen.queryByText(/지금 |호가 사라짐/)).toBeNull();
-});
-
-test("watch note shows the live record, not a frozen 4승 21패", async () => {
-  // watch = should_bet && ev_watch, so both must be set for the note to show.
-  await render(<PickCard pick={{ ...PICK, market: "h2h", ev: 0.07,
-    should_bet: true, ev_watch: true,
-    watch_record: { n: 30, w: 7, l: 23, wr: 23.3, be: 42.1, roi: -42.8 },
-  }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
-  expect(await screen.findByText(/7승 23패/)).toBeTruthy();
-  expect(screen.queryByText(/4승 21패/)).toBeNull();
-});
-
-test("watch note degrades to the bare reason without a record", async () => {
-  await render(<PickCard pick={{ ...PICK, market: "h2h", ev: 0.07,
-    should_bet: true, ev_watch: true }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
-  expect(await screen.findByText(/ML EV≥5% — 전진관찰 중/)).toBeTruthy();
+  expect(screen.queryByText(/전진관찰/)).toBeNull();
+  expect(screen.queryByText(/보류/)).toBeNull();
 });

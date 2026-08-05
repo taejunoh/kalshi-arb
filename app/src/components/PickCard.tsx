@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import type { Pick } from "../api/types";
 import { color, radius, space, font } from "../theme";
-import { countdown, countdownUrgent, americanOdds, evPct, matchup, oddsBars, evTrail, watchNote } from "../format";
+import { countdown, countdownUrgent, americanOdds, evPct, matchup, oddsBars, evTrail } from "../format";
 
 export function PickCard({
   pick,
@@ -18,14 +18,9 @@ export function PickCard({
   onDismiss: (p: Pick) => void;
   unitStake?: number; // flat recommended stake ($); shown on BET picks only
 }) {
-  // Under forward review (core.is_ev_watch): still a BET verdict, but we ask to hold.
-  // Only meaningful on a BET — a SKIP is already not recommended.
-  const watch = pick.should_bet === true && pick.ev_watch === true;
   // "얼마 베팅" — the policy is a flat unit on the picks we actually bet (first-entry
   // games). SKIP picks intentionally show no amount (not recommended), and neither do
-  // watched picks: "$20" next to "베팅 보류" would contradict itself (same reason the
-  // Telegram tag drops its 💵 segment).
-  const betLabel = pick.should_bet && !watch && unitStake ? `베팅 $${unitStake}` : "베팅";
+  const betLabel = pick.should_bet && unitStake ? `베팅 $${unitStake}` : "베팅";
   // The bet label alone ("Over 167.5") doesn't say which game it is — show the
   // matchup so a totals/spread pick is identifiable at a glance.
   const game = matchup(pick.away, pick.home);
@@ -49,8 +44,7 @@ export function PickCard({
     <Pressable style={[s.card, pick.should_bet === false && s.cardMuted]} onPress={() => onOpen(pick)}>
       <View style={s.head}>
         {pick.should_bet !== undefined && (
-          <Text style={watch ? s.watchBadge : pick.should_bet ? s.betBadge : s.skipBadge}>
-            {watch ? "🟡 관찰 · 베팅 보류"
+          <Text style={pick.should_bet ? s.betBadge : s.skipBadge}>
               : pick.should_bet ? "🟣 BET · first-entry game" : "⚪ SKIP · 권장 스킵"}
           </Text>
         )}
@@ -58,7 +52,6 @@ export function PickCard({
       </View>
       {game && <Text style={s.matchup} numberOfLines={1}>{game}</Text>}
       <Text style={[s.label, game && s.labelTight]} numberOfLines={2}>{pick.label}</Text>
-      {watch && <Text style={s.watchNote}>{watchNote(pick.watch_record)}</Text>}
       <View style={s.meta}>
         <Text style={s.metaBook}>{pick.book ?? "—"} {americanOdds(pick.odds)}</Text>
         <Text style={s.metaDim}>{pick.n_books ?? 0}북</Text>
@@ -84,8 +77,6 @@ const s = StyleSheet.create({
   skipBadge: { color: color.muted, backgroundColor: color.surfaceRaised, fontSize: 12, fontWeight: "500", paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, overflow: "hidden" },
   // amber = "still a BET, but hold" — deliberately NOT the muted SKIP grey (it is not
   // a skip) and not the accent purple (it is not a plain bet).
-  watchBadge: { color: color.urgent, backgroundColor: color.urgentDim, fontSize: 12, fontWeight: "500", paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, overflow: "hidden" },
-  watchNote: { color: color.urgent, fontSize: 12, marginTop: space.xs },
   evPill: { color: color.positive, backgroundColor: color.positiveDim, fontSize: 17, fontWeight: "600", paddingHorizontal: 11, paddingVertical: 3, borderRadius: radius.sm, overflow: "hidden" },
   matchup: { color: color.muted, fontSize: 13, fontWeight: "500", marginTop: space.md },
   label: { ...font.pickLabel, marginTop: space.md },
