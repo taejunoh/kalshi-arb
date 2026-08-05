@@ -38,7 +38,10 @@ test("renders the active feed from the API", async () => {
   await waitFor(() => expect(screen.getByText("NYM ML")).toBeOnTheScreen());
 });
 
-test("the 🟣 BET filter hides non-bet picks (props + late-crossers)", async () => {
+test("the feed shows what the API sends — SKIP filtering now lives server-side", async () => {
+  // The screen used to carry a "BET만" chip. SKIP picks (props, late-crossers)
+  // no longer leave the API at all (user, 2026-08-05), so the chip filtered a
+  // list that could not contain them; the screen renders the feed as given.
   (api.getPicks as jest.Mock).mockResolvedValueOnce({
     picks: [
       {
@@ -47,22 +50,13 @@ test("the 🟣 BET filter hides non-bet picks (props + late-crossers)", async ()
         side: "NYM", point: -1.5, player: "", label: "BET PICK", ev: 0.05,
         book: "FanDuel", odds: 2.1, conf: 55, n_books: 8, first_entry: true, should_bet: true,
       },
-      {
-        id: "E2|h2h|MIA|0|", status: "active", event_id: "E2", sport: "baseball_mlb",
-        home: "MIA", away: "NYM", commence_time: "2099-01-01T00:00:00Z", market: "h2h",
-        side: "MIA", point: 0, player: "", label: "SKIP PICK", ev: 0.04,
-        book: "BetMGM", odds: 2.0, conf: 50, n_books: 7, first_entry: false, should_bet: false,
-      },
     ],
-    counts: { active: 2, cooled: 0 },
+    counts: { active: 1, cooled: 0 },
     cooled: [],
   });
   await render(<PicksScreen />);
   await waitFor(() => expect(screen.getByText("BET PICK")).toBeOnTheScreen());
-  expect(screen.getByText("SKIP PICK")).toBeOnTheScreen(); // both shown by default
-  await fireEvent.press(screen.getByText(/BET만/));
-  await waitFor(() => expect(screen.queryByText("SKIP PICK")).toBeNull()); // hidden
-  expect(screen.getByText("BET PICK")).toBeOnTheScreen(); // bet kept
+  expect(screen.queryByText(/BET만/)).toBeNull();   // the chip is gone
 });
 
 test("지나간 픽 (expired) section reveals an alerted pick the user missed after game start", async () => {

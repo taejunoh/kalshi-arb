@@ -47,16 +47,32 @@ def test_unauthorized_without_bearer(client):
     assert client.get("/picks").status_code == 401
 
 
-def test_picks_returns_active_high(client):
+def test_skip_picks_never_reach_the_feed(client):
+    """The seeded pick is a prop — a SKIP. Telegram has suppressed those since
+    7/22; the app feed was the last surface still rendering a card that says
+    "do not bet this" (user, 2026-08-05). It stays reachable by id."""
     r = client.get("/picks", headers={"Authorization": "Bearer secret"})
     assert r.status_code == 200
-    picks = r.json()["picks"]
+    assert r.json()["picks"] == []
+    pid = "E1|batter_total_bases|Over|1.5|Brandon Nimmo"
+    assert client.get(f"/picks/{pid}",
+                      headers={"Authorization": "Bearer secret"}).status_code == 200
+
+
+def test_feed_pick_carries_the_odds_bars(client):
+    """Bars ride along on the pick so the card never derives them (they encode
+    EV_MIN, which is policy). Seeded ev=0.074 @ 2.2 -> fair≈0.4882."""
+    ev = sqlite3.connect(os.environ["SOFTBOOK_EV_DB"])
+    ev.execute("DELETE FROM softbook_ev")
+    ev.execute("INSERT INTO softbook_ev VALUES (datetime('now'),"
+               "'baseball_mlb','E1','2099-01-01T00:00:00Z','MIA','NYM',"
+               "'spread','NYM',-1.5,'',0.45,2.0,"
+               "'theScore',2.2,0.074,9,5,60,'High')")
+    ev.commit(); ev.close()
+    picks = client.get("/picks", headers={"Authorization": "Bearer secret"}).json()["picks"]
     assert len(picks) == 1
     p = picks[0]
-    assert p["status"] == "active" and p["player"] == "Brandon Nimmo"
-    assert p["id"] == "E1|batter_total_bases|Over|1.5|Brandon Nimmo"
-    # 최소/본전 bars ride along on the pick so the card never derives them (they
-    # encode EV_MIN, which is policy). Seeded ev=0.074 @ 2.2 -> fair≈0.4882.
+    assert p["status"] == "active" and p["should_bet"] is True
     import softbook_ev_core as core
     assert (p["min_odds"], p["be_odds"]) == core.odds_bars(0.074, 2.2)
 
@@ -87,10 +103,14 @@ def test_picks_first_entry_flag(client):
     ev.commit(); ev.close()
     picks = client.get("/picks", headers={"Authorization": "Bearer secret"}).json()["picks"]
     by_event = {p["event_id"]: p for p in picks}
-    assert set(by_event) == {"E1", "E2", "E3"}
-    assert by_event["E1"]["first_entry"] is True and by_event["E1"]["should_bet"] is False   # prop
-    assert by_event["E2"]["first_entry"] is False and by_event["E2"]["should_bet"] is False  # late game
-    assert by_event["E3"]["first_entry"] is True and by_event["E3"]["should_bet"] is True    # first-entry game
+    # E1 (prop) and E2 (late-crosser) are both SKIP and no longer reach the feed.
+    assert set(by_event) == {"E3"}
+    assert by_event["E3"]["first_entry"] is True and by_event["E3"]["should_bet"] is True
+    # …but the verdict itself is unchanged — both are still reachable by id.
+    for pid, fe in (("E1|batter_total_bases|Over|1.5|Brandon Nimmo", True),
+                    ("E2|h2h|NYM|0.0|", False)):
+        d = client.get(f"/picks/{pid}", headers={"Authorization": "Bearer secret"}).json()
+        assert d["first_entry"] is fe and d["should_bet"] is False
 
 
 def test_picks_returns_recently_expired(client):
