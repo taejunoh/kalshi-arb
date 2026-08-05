@@ -1328,36 +1328,6 @@
          and observer panel was no longer fed. See [[crypto_full_freeze_2026-05-27]].
          For historical loss summary, see "crypto_archived" entry in performance section. -->
 
-    <!-- ── Observer high-edge signals ── -->
-    <section id="observer-section">
-      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
-        <div class="section-title" style="margin-bottom:0">Observer high-edge signals — last 60 min</div>
-        <span style="color:var(--text-dim);font-size:11px;">Pinnacle vs Kalshi YES gap ≥ 5¢. Selection-bias monitor.</span>
-      </div>
-      <div class="table-wrap">
-        <div class="table-scroll" style="max-height:280px;">
-          <table id="observer-table">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Sport</th>
-                <th>Phase</th>
-                <th>Ticker</th>
-                <th>MTS</th>
-                <th>Kalshi YES</th>
-                <th>Pin YES</th>
-                <th>Edge</th>
-                <th>Fired?</th>
-              </tr>
-            </thead>
-            <tbody id="observer-body">
-              <tr class="empty-row"><td colspan="9">Loading…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
     <!-- ── Trade History ── -->
     <section id="trades-section">
       <div class="section-title">Trade History</div>
@@ -2435,43 +2405,6 @@ function todayPlusDays(isoDate, days) {
 // See [[crypto_full_freeze_2026-05-27]].
 
 // ─────────────────────────────────────────────
-//  Observer high-edge signals
-// ─────────────────────────────────────────────
-async function refreshObserverSignals() {
-  try {
-    const data = await apiFetch('/api/observer-signals?limit=20&min_edge=0.05&minutes=60');
-    const tbody = document.getElementById('observer-body');
-    if (!data || data.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No high-edge signals in last 60 min.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = data.map(r => {
-      const edgeC = r.edge >= 0 ? 'edge-pos' : 'edge-neg';
-      const edgeStr = (r.edge >= 0 ? '+' : '') + (r.edge * 100).toFixed(1) + '¢';
-      const fired = r.fired
-        ? '<span class="badge badge-green">FIRED</span>'
-        : '<span class="badge badge-gray">SKIPPED</span>';
-      const mts = r.minutes_to_start == null ? '—' : `${Math.round(r.minutes_to_start)}m`;
-      return `
-        <tr>
-          <td class="td-mono">${fmtTs(r.timestamp)}</td>
-          <td><span class="badge badge-blue">${r.sport || '—'}</span></td>
-          <td>${r.phase || '—'}</td>
-          <td class="td-mono" title="${r.kalshi_ticker}">${shortMarket(r.kalshi_ticker)}</td>
-          <td class="td-mono">${mts}</td>
-          <td class="td-mono">${(r.kalshi_yes_ask * 100).toFixed(1)}¢</td>
-          <td class="td-mono">${(r.pinnacle_yes_prob * 100).toFixed(1)}¢</td>
-          <td class="td-mono"><span class="${edgeC}">${edgeStr}</span></td>
-          <td>${fired}</td>
-        </tr>`;
-    }).join('');
-  } catch (e) {
-    document.getElementById('observer-body').innerHTML =
-      `<tr class="empty-row"><td colspan="9">Error: ${e.message}</td></tr>`;
-  }
-}
-
-// ─────────────────────────────────────────────
 //  Settlement History
 // ─────────────────────────────────────────────
 async function refreshSettlementHistory() {
@@ -2603,7 +2536,7 @@ function applyViewMode(mode) {
   const regimeSection = document.getElementById('regime-section');
   if (regimeSection) regimeSection.style.display = isSpecial ? 'none' : '';
   // Hide other large sections in schedule/+EV mode (defensive — most are toggled above).
-  ['trades-section', 'orders-section', 'observer-signals-section', 'crypto-observer-section',
+  ['trades-section', 'orders-section', 'crypto-observer-section',
    'strategy-monitor-section', 'gates-section', 'equity-section',
    'pm-gap-section', 'strategy-gates-section', 'clv-trend-section'].forEach(id => {
     const el = document.getElementById(id);
@@ -3256,7 +3189,7 @@ async function fullRefresh() {
     refreshOrders(),
     refreshPositions(),
     refreshRegime(),
-    refreshObserverSignals(),
+    // refreshObserverSignals(): removed 2026-08-05 — observer panel deleted
     // refreshCryptoObserver(): removed 2026-05-27 — crypto observer section deleted
     // refreshEvalSchedule(): removed 2026-05-25 — replaced by Schedule tab (renderSchedule())
     renderSnapshot(),
