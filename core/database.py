@@ -321,7 +321,12 @@ class Database:
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_trade ON clv_snapshots(trade_id)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_time ON odds_observations(timestamp)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_ticker_time ON odds_observations(kalshi_ticker, timestamp)")
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_sport_phase ON odds_observations(sport, phase)")
+            # idx_obs_sport_phase was dropped 2026-08-06: it was a 0.33 GB prefix
+            # duplicate of idx_oo_sport_phase_ts (sport, phase, timestamp), which
+            # serves every (sport, phase) lookup. Recreating it here is what kept
+            # it alive after manual drops, so the line is gone rather than
+            # commented "off". idx_obs_time STAYS — the dashboard names it in an
+            # INDEXED BY, which errors (not degrades) if the index is missing.
             # 3-way market support (soccer): TIE leg gets is_yes_draw=1 with
             # is_yes_home=0; pinnacle_yes_prob stores draw_prob for those rows.
             # 2-way sports (baseball/basketball/hockey) leave is_yes_draw NULL.
