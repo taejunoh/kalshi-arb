@@ -1486,9 +1486,13 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         scanner *sees*, not what fired.
 
         INDEXED BY idx_obs_time forces the optimizer to range-scan the
-        timestamp index first (3-4k rows in the last hour) instead of
-        scanning the entire idx_obs_sport_phase B-tree — without the hint
-        SQLite picked the wrong index and the query took ~10s."""
+        timestamp index first (3-4k rows in the last hour) instead of walking a
+        whole (sport, phase, ...) B-tree — without the hint SQLite picked the
+        wrong index and the query took ~10s. (Historically that wrong pick was
+        idx_obs_sport_phase, dropped 2026-08-06 as a duplicate; the surviving
+        idx_oo_sport_phase_ts would tempt it the same way.) Because INDEXED BY
+        ERRORS if its index is missing, idx_obs_time must keep existing —
+        core/database.py recreates it on startup."""
         import aiosqlite
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
         hidden_ph = ",".join("?" * len(_DASHBOARD_HIDDEN_SPORTS))
