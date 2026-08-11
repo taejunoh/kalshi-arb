@@ -384,8 +384,12 @@ def alert_new_high(db, bets, now):
     # Nothing the user has already acted on: they marked it bet (telling them to
     # bet it again invites a double stake) or dismissed it (they said no once).
     done = actioned_picks()
+    # ...and nothing only ONE book quotes: those markets routinely exist in the
+    # API but not in the book's app, so the alert points at nothing (core
+    # .is_confirmable — recording above is untouched).
     to_send = [(b, fe) for b, fe in ((b, _first_entry_note(db, b)) for b in new)
                if fe not in SKIP_TAGS
+               and core.is_confirmable(b.get("n_books"))
                and (b["event_id"], b["market"], b["side"], float(b["point"] or 0),
                     b.get("player") or "") not in done]
     for b, fe in to_send[:8]:
@@ -476,13 +480,15 @@ def wakeup_requote(db, key, now, *, app_push=None):
         firsts[(eid, market, side, pt, pl)] = first_at
     latest = db.execute("SELECT MAX(recorded_at) FROM softbook_ev").fetchone()[0]
     bet, other = [], []              # still-live overnight picks, split by the bet rule
-    for eid, home, away, market, side, pt, pl, ct, book, odds, ev, tier in db.execute(
+    for eid, home, away, market, side, pt, pl, ct, book, odds, ev, tier, nb in db.execute(
             "SELECT event_id, home, away, market, side, COALESCE(point,0),"
             " COALESCE(player,''), commence_time, best_soft_book, best_soft_price,"
-            f" snapshot_ev, tier FROM softbook_ev WHERE recorded_at=? AND {tier_sql}",
+            f" snapshot_ev, tier, n_books FROM softbook_ev WHERE recorded_at=? AND {tier_sql}",
             (latest, *tier_params)):
         if tier not in core.bet_tiers(market):
             continue                 # not the tier this market is bet at
+        if not core.is_confirmable(nb):
+            continue                 # single-book market — likely not purchasable
         first_at = firsts.get((eid, market, side, pt, pl))
         if not first_at or not (w0 <= first_at < w1):
             continue                 # not an overnight pick (user was awake, or older day)

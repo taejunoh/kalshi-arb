@@ -149,6 +149,35 @@ def alertable_tiers():
     return frozenset(out)
 
 
+MIN_ALERT_BOOKS = 2
+
+
+def is_confirmable(n_books):
+    """Exposure gate (2026-08-11): a pick is only SHOWN to the user if at least
+    MIN_ALERT_BOOKS books quote the market. Recording is untouched — the paper
+    ledger and CLV trail keep every pick, so the 1-book cohort stays measurable.
+
+    Why: an amateur-MMA undercard quoted by FanDuel ALONE (1/1bk) alerted as a
+    Med BET and the market did not exist in the FanDuel app — the NY gate checks
+    book keys, not whether a book actually sells the market, and single-book
+    fringe markets are exactly the ones that appear in the API without being
+    purchasable. The user went looking and found nothing.
+
+    This was impossible under High-only ML: with one book the confidence score
+    tops out at 54 (consensus 12 + game 12 + imminence 15 + odds 8 + ev 7) and
+    High needs 55 — an accidental floor the ML->Med move (2026-08-05) removed.
+    15 of the last 7 days' alerts were 1-book picks.
+
+    Not an EV verdict: the 1-book cohort papers at +21%/bet (n=73), but paper
+    assumes a fill at a quote the user demonstrably cannot take — the yb-phantom
+    lesson. Unbettable EV is not EV.
+
+    None (missing) → False: never surface a pick whose coverage is unknown,
+    same policy as _is_bet's own error path.
+    """
+    return n_books is not None and n_books >= MIN_ALERT_BOOKS
+
+
 def alertable_tiers_sql(col="tier"):
     """(sql, params) for an `IN` over every tier any market is bet at — the
     prefetch filter for queries that span markets. Rows STILL need the

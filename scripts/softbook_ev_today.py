@@ -13,6 +13,7 @@ Usage: venv/bin/python scripts/softbook_ev_today.py [bankroll] [--json PATH] [--
 import os, json, sys, urllib.request, urllib.parse
 from datetime import datetime, timezone
 from collections import defaultdict
+import softbook_ev_core as core
 from softbook_ev_core import read_key, active_sports, scan_sport, EV_MIN
 
 JSON_CAP, TG_CAP = 40, 12   # dashboard / Telegram show top-N by EV (props can be many)
@@ -131,8 +132,9 @@ def main():
             print("json: no recorder db — listing no bets rather than unverified ones")
         else:
             bettable = [b for b in bets
-                        if rec._is_bet(rdb, b["event_id"], b["market"], b["side"],
-                                       b.get("player"), b["tier"])]
+                        if core.is_confirmable(b.get("n_books"))
+                        and rec._is_bet(rdb, b["event_id"], b["market"], b["side"],
+                                        b.get("player"), b["tier"])]
         for b in bettable[:JSON_CAP]:
             out["bets"].append({
                 "team": b["label"], "matchup": f"{b['away']} @ {b['home']}",
