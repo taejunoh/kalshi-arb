@@ -1,0 +1,9 @@
+[Unit]
+Description=Rolling 60-day retention for odds_observations (keeps bot.db flat after the 2026-08-06 disk-full)
+# Runs beside the live bot on purpose: batched 50k deletes + busy_timeout, no VACUUM.
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/prune_odds_observations.py

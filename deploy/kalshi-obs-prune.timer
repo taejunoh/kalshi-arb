@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily odds_observations prune (09:10 UTC = 05:10 ET, before the NY slate)
+
+[Timer]
+OnCalendar=*-*-* 09:10:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
