@@ -1,5 +1,5 @@
 // app/src/screens/PicksScreen.tsx
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { api } from "../api/client";
@@ -86,14 +86,44 @@ export function PicksScreen() {
     }
   }, [nav]);
 
+  // 관심없음 sits right next to 베팅, so mis-taps happen. Undo beats a confirm
+  // dialog: a real dismiss costs nothing extra, a mis-tap costs one tap back.
+  const [undoPick, setUndoPick] = useState<Pick | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const dismiss = useCallback(async (p: Pick) => {
-    setData((d) => (d ? { ...d, picks: d.picks.filter((x) => x.id !== p.id) } : d)); // optimistic
+    // Optimistic removal from EVERY list — the pick may live in cooled or
+    // expired, not just the active feed (a cooled-pick dismiss used to sit
+    // on screen until the next refetch, which read as the button not working).
+    setData((d) => (d ? {
+      ...d,
+      picks: d.picks.filter((x) => x.id !== p.id),
+      cooled: (d.cooled ?? []).filter((x) => x.id !== p.id),
+      expired: (d.expired ?? []).filter((x) => x.id !== p.id),
+    } : d));
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndoPick(p);
+    undoTimer.current = setTimeout(() => setUndoPick(null), 5000);
     try {
       await api.dismissPick(p.id);
     } catch {
+      setUndoPick(null);
       void load(); // revert by reloading on failure
     }
   }, [load]);
+
+  const undo = useCallback(async () => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    const p = undoPick;
+    setUndoPick(null);
+    if (!p) return;
+    try {
+      await api.undismissPick(p.id);
+    } catch {
+      // 404 = dismiss never landed server-side; either way the reload decides
+    }
+    void load();
+  }, [undoPick, load]);
 
   if (error) {
     return (
@@ -206,6 +236,14 @@ export function PicksScreen() {
           </>
         }
       />
+      {undoPick && (
+        <View style={s.undoBar}>
+          <Text style={s.undoText} numberOfLines={1}>무시함: {undoPick.label}</Text>
+          <Pressable onPress={() => void undo()} hitSlop={10}>
+            <Text style={s.undoAction}>실행취소</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -236,6 +274,13 @@ const s = StyleSheet.create({
   retry: { backgroundColor: color.accent, paddingHorizontal: space.lg, paddingVertical: 10, borderRadius: radius.sm },
   retryText: { color: color.onAccent, fontWeight: "600" },
   emptyWhy: { color: color.muted, fontSize: 12.5, textAlign: "center", marginTop: space.xs },
+  undoBar: { position: "absolute", left: space.lg, right: space.lg, bottom: space.lg,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: color.surface, borderRadius: radius.card, paddingHorizontal: space.lg,
+    paddingVertical: 12, borderWidth: 1, borderColor: color.border,
+    shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 8, elevation: 6 },
+  undoText: { color: color.text, fontSize: 13, flexShrink: 1, marginRight: space.md },
+  undoAction: { color: color.accentText, fontSize: 13, fontWeight: "700" },
   empty: { color: color.faint, textAlign: "center", marginTop: 40 },
   cooledHeader: { padding: space.lg },
   cooledText: { color: color.muted, fontWeight: "600" },
