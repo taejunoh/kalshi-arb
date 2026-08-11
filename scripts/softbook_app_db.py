@@ -123,6 +123,24 @@ def set_pick_state(db, pick, state, now):
     db.commit()
 
 
+def undismiss_group(db, pick):
+    """Delete the pick's dismissed row AND its same-timestamp dismissed
+    companions (the auto-dismissed reverse-middle opposites from the same
+    request). Returns rows deleted; 0 if the pick is not dismissed.
+    Never touches state='bet' — bets are records, not preferences."""
+    row = db.execute(
+        "SELECT updated_at FROM pick_state WHERE event_id=? AND market=? AND"
+        " side=? AND point=? AND player=? AND state='dismissed'",
+        _norm(pick)).fetchone()
+    if not row:
+        return 0
+    cur = db.execute(
+        "DELETE FROM pick_state WHERE event_id=? AND state='dismissed'"
+        " AND updated_at=?", (pick[0], row[0]))
+    db.commit()
+    return cur.rowcount
+
+
 def pick_states(db):
     """All overrides keyed by the normalized pick tuple -> state."""
     return {(_norm((e, m, s, p, pl))): st for e, m, s, p, pl, st in db.execute(

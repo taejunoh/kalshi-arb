@@ -44,6 +44,8 @@ export const api = {
     request<{ id: number }>("/bets", { method: "POST", body: JSON.stringify(bet) }),
   dismissPick: (id: string) =>
     request<{ ok: boolean }>(`/picks/${enc(id)}/dismiss`, { method: "POST" }),
+  undismissPick: (id: string) =>
+    request<{ ok: boolean }>(`/picks/${enc(id)}/undismiss`, { method: "POST" }),
   getSettings: () => request<Settings>("/settings"),
   putSettings: (s: Settings) =>
     request<{ ok: boolean }>("/settings", { method: "PUT", body: JSON.stringify(s) }),

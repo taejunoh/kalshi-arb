@@ -14,6 +14,7 @@ jest.mock("../api/client", () => ({
       cooled: [],
     })),
     dismissPick: jest.fn(async () => ({ ok: true })),
+    undismissPick: jest.fn(async () => ({ ok: true })),
     putSettings: jest.fn(async () => ({ ok: true })),
     getSettings: jest.fn(async () => ({ min_ev: 0, sports: null, muted_books: null, sort: "ev" })),
     scanBet: jest.fn(async () => ({ bet: { event_id: "EVT123", market: "batter_total_bases", source: "scan" }, matched: true, notes: "" })),
@@ -57,6 +58,53 @@ test("the feed shows what the API sends — SKIP filtering now lives server-side
   await render(<PicksScreen />);
   await waitFor(() => expect(screen.getByText("BET PICK")).toBeOnTheScreen());
   expect(screen.queryByText(/BET만/)).toBeNull();   // the chip is gone
+});
+
+test("dismissing a cooled pick removes it immediately", async () => {
+  // The reported bug: optimistic removal only filtered the active list, so a
+  // cooled-pick dismiss sat on screen until the next refetch — reading as the
+  // button not working.
+  (api.getPicks as jest.Mock).mockResolvedValueOnce({
+    picks: [], counts: {},
+    cooled: [{
+      id: "C1|spread|PHX|2.5|", status: "cooled", event_id: "C1", sport: "basketball_wnba",
+      home: "Los Angeles Sparks", away: "Phoenix Mercury", commence_time: "2099-01-01T00:00:00Z",
+      market: "spread", side: "Phoenix Mercury", point: 2.5, player: "",
+      label: "COOLED PICK", ev: 0.02, book: "FanDuel", odds: 1.86, conf: 40,
+      n_books: 3, first_entry: true, should_bet: true,
+    }],
+  });
+  (api.dismissPick as jest.Mock).mockResolvedValue({ ok: true });
+  await render(<PicksScreen />);
+  await fireEvent.press(screen.getByText(/식은 픽/));            // expand the section
+  await waitFor(() => expect(screen.getByText("COOLED PICK")).toBeOnTheScreen());
+  await fireEvent.press(screen.getAllByText("관심없음")[0]); // button + swipe action both render the label
+  await waitFor(() => expect(screen.queryByText("COOLED PICK")).toBeNull());
+});
+
+test("dismiss shows a 5-second undo which restores via the API", async () => {
+  // Once x2 (mount + the post-undo reload), NOT a permanent mockResolvedValue —
+  // that leaks this payload into every later test in the file.
+  const payload = {
+    picks: [{
+      id: "E1|h2h|SEA|0|", status: "active", event_id: "E1", sport: "baseball_mlb",
+      home: "DET", away: "SEA", commence_time: "2099-01-01T00:00:00Z",
+      market: "h2h", side: "SEA", point: 0, player: "", label: "UNDO PICK",
+      ev: 0.02, book: "Caesars", odds: 1.87, conf: 40, n_books: 8,
+      first_entry: true, should_bet: true,
+    }],
+    counts: {}, cooled: [],
+  };
+  (api.getPicks as jest.Mock).mockResolvedValueOnce(payload).mockResolvedValueOnce(payload);
+  (api.dismissPick as jest.Mock).mockResolvedValue({ ok: true });
+  (api.undismissPick as jest.Mock).mockResolvedValue({ ok: true });
+  await render(<PicksScreen />);
+  await waitFor(() => expect(screen.getByText("UNDO PICK")).toBeOnTheScreen());
+  await fireEvent.press(screen.getAllByText("관심없음")[0]); // button + swipe action both render the label
+  await waitFor(() => expect(screen.getByText("실행취소")).toBeOnTheScreen());
+  await fireEvent.press(screen.getByText("실행취소"));
+  expect(api.undismissPick).toHaveBeenCalledWith("E1|h2h|SEA|0|");
+  await waitFor(() => expect(screen.getByText("UNDO PICK")).toBeOnTheScreen()); // reload restored it
 });
 
 test("an empty feed says where the picks went, not just that there are none", async () => {
