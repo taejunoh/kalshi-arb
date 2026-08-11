@@ -369,6 +369,22 @@ class ScanIn(BaseModel):
     media_type: str = "image/jpeg"
 
 
+def _telegram_bet_done(bet):
+    """Look up the alert's message_id in the recorder db (read-only) and stamp
+    it. Delegates to rec.mark_bet_done — the recorder owns Telegram and the
+    high_alerted schema; a second implementation here would drift."""
+    import softbook_ev_recorder as rec
+    c = sqlite3.connect(f"file:{rec.OUT}?mode=ro", uri=True, timeout=5)
+    try:
+        odds = bet.fill_odds if getattr(bet, "fill_odds", None) else bet.rec_odds
+        note = " ".join(x for x in (
+            bet.book, rec._american(odds) if odds else None) if x)
+        rec.mark_bet_done(c, bet.event_id, bet.market, bet.side,
+                          bet.point or 0, bet.player or "", note or "앱에서 표시")
+    finally:
+        c.close()
+
+
 class BetIn(BaseModel):
     event_id: str
     sport: str | None = None
@@ -403,6 +419,15 @@ def post_bet(bet: BetIn, _=Depends(require_auth)):
             "bet", _now())
     finally:
         pdb.close()
+    # Stamp the original Telegram alert "✅ 베팅 완료" so the message in chat
+    # history stops reading as an open recommendation (2026-08-06: a stale
+    # message led to the same pick being bet twice, 50 minutes apart, at a
+    # worse price). Best-effort: a Telegram or ev-db hiccup must never fail
+    # the bet recording the user just did.
+    try:
+        _telegram_bet_done(bet)
+    except Exception:
+        pass
     return {"id": bid}
 
 
