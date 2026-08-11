@@ -464,9 +464,13 @@ def scan_bet(body: ScanIn, _=Depends(require_auth)):
     return {"bet": bet, "matched": eid is not None, "notes": draft.get("notes", "")}
 
 
-def _auto_dismiss_opposite(pdb, eid, market, side, point, player):
+def _auto_dismiss_opposite(pdb, eid, market, side, point, player, ts):
     """Reverse-middle: a same-game opposite-direction High that can never both
-    win as this pick -> auto-dismiss it too (reuse recorder._no_both_win)."""
+    win as this pick -> auto-dismiss it too (reuse recorder._no_both_win).
+
+    `ts` is the SAME timestamp as the user's own dismiss row, on purpose: it is
+    what lets undismiss find and revert this whole group. Nothing else marks a
+    row as auto-dismissed, so the shared timestamp is the group id."""
     this = {"market": market, "side": side, "point": point or 0,
             "player": player or "", "home": None, "away": None}
     for r in _latest_high_rows():
@@ -478,20 +482,42 @@ def _auto_dismiss_opposite(pdb, eid, market, side, point, player):
         if rec._no_both_win(this2, other):
             adb.set_pick_state(pdb, (eid, r["market"], r["side"],
                                      r["point"] or 0, r["player"] or ""),
-                               "dismissed", _now())
+                               "dismissed", ts)
 
 
 @app.post("/picks/{pick_id}/dismiss")
 def dismiss_pick(pick_id: str, _=Depends(require_auth)):
     eid, market, side, point, player = feed.decode_id(pick_id)
+    ts = _now()                          # one ts for the whole dismiss group
     pdb = adb.connect()
     try:
         adb.set_pick_state(pdb, (eid, market, side, point, player),
-                           "dismissed", _now())
-        _auto_dismiss_opposite(pdb, eid, market, side, point, player)
+                           "dismissed", ts)
+        _auto_dismiss_opposite(pdb, eid, market, side, point, player, ts)
     finally:
         pdb.close()
     return {"ok": True}
+
+
+@app.post("/picks/{pick_id}/undismiss")
+def undismiss_pick(pick_id: str, _=Depends(require_auth)):
+    """Revert a dismiss — the 5-second 실행취소 in the app. The 관심없음 button
+    sits next to 베팅, so mis-taps happen; undo beats a confirm dialog because
+    the honest case (a real dismiss) costs nothing extra.
+
+    Reverts the whole GROUP: the user's row plus any reverse-middle opposites
+    _auto_dismiss_opposite added in the same request, found by the shared
+    timestamp. Only state='dismissed' rows are touched — a 'bet' row is a record
+    of what the user did and no undo path may delete it."""
+    eid, market, side, point, player = feed.decode_id(pick_id)
+    pdb = adb.connect()
+    try:
+        n = adb.undismiss_group(pdb, (eid, market, side, point, player))
+    finally:
+        pdb.close()
+    if not n:
+        raise HTTPException(404, "no dismissed state to undo")
+    return {"ok": True, "reverted": n}
 
 
 class SettingsIn(BaseModel):
