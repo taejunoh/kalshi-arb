@@ -77,6 +77,69 @@ def send_telegram(text):
         return None
 
 
+def _telegram_call(method, payload):
+    tok = _env_read("TELEGRAM_BOT_TOKEN")
+    cho = _env_read("TELEGRAM_CHAT_ID")
+    if not (tok and cho):
+        return False
+    try:
+        data = urllib.parse.urlencode({"chat_id": cho, **payload}).encode()
+        urllib.request.urlopen(
+            f"https://api.telegram.org/bot{tok}/{method}", data=data, timeout=10).read()
+        return True
+    except Exception:
+        return False
+
+
+def _env_read(key):
+    try:
+        for line in open(os.getenv("ENV_PATH", "/home/ubuntu/kalshi-arb/.env")):
+            if line.startswith(key + "="):
+                return line.split("=", 1)[1].strip().strip('"')
+    except Exception:
+        return None
+    return None
+
+
+def mark_bet_done(db, event_id, market, side, point, player, note):
+    """Stamp the original Telegram alert as already-bet.
+
+    2026-08-06: the user bet a pick at 1:30 PM (Caesars, marked bet in the app)
+    and again at 2:20 PM at DraftKings, at a worse price. Nothing was sent at
+    2:20 — the second bet came from the 1:30 Telegram message, which sits in
+    chat history looking actionable forever. The app hides a bet-marked pick;
+    the message that pitched it never changes.
+
+    So on bet-marking, the original message gets "✅ 베팅 완료" prepended via
+    editMessageText (alert_text holds the sent body — an edit replaces the whole
+    text, so without it we could only annotate). Rows from before alert_text
+    existed fall back to a reply anchored under the message. The REPLY_HINT is
+    kept in the edited body on purpose: replying with the fill odds is exactly
+    what the fill listener still wants.
+
+    Best-effort by contract: returns False rather than raising — this runs
+    inside the app's POST /bets, and a Telegram hiccup must never fail the
+    user's bet recording."""
+    try:
+        row = db.execute(
+            "SELECT message_id, alert_text FROM high_alerted WHERE event_id=?"
+            " AND market=? AND side=? AND COALESCE(point,0)=?"
+            " AND COALESCE(player,'')=?",
+            (event_id, market, side, float(point or 0), player or "")).fetchone()
+    except sqlite3.Error:
+        return False
+    if not row or row[0] is None:
+        return False
+    mid, text = row
+    banner = f"✅ 베팅 완료 — {note}"
+    if text:
+        return _telegram_call("editMessageText",
+                              {"message_id": mid, "text": f"{banner}\n\n{text}"})
+    return _telegram_call("sendMessage",
+                          {"text": banner, "reply_to_message_id": mid,
+                           "allow_sending_without_reply": "true"})
+
+
 def _ensure_alert_cols(db):
     """One-time migrate: book/odds at alert time (slippage baseline) + the
     Telegram message_id so the fill listener can resolve replies to exact bets.
@@ -84,7 +147,8 @@ def _ensure_alert_cols(db):
     can race the first post-deploy ALTER."""
     db.execute(ALERT_SCHEMA)
     cols = {r[1] for r in db.execute("PRAGMA table_info(high_alerted)")}
-    for col, typ in (("book", "TEXT"), ("odds", "REAL"), ("message_id", "INTEGER")):
+    for col, typ in (("book", "TEXT"), ("odds", "REAL"), ("message_id", "INTEGER"),
+                     ("alert_text", "TEXT")):
         if col not in cols:
             try:
                 db.execute(f"ALTER TABLE high_alerted ADD COLUMN {col} {typ}")
@@ -198,9 +262,12 @@ def _send_bet_alert(db, b, prefix, extra="", batch=(), fe=None):
         db.execute("DELETE FROM high_alerted WHERE event_id=? AND market=?"
                    " AND side=? AND point=? AND player=?", pk)
     else:
-        db.execute("UPDATE high_alerted SET book=?, odds=?, message_id=?"
+        # alert_text is kept so mark_bet_done can EDIT this message later —
+        # Telegram's editMessageText replaces the whole body, so without the
+        # original we could only reply, not stamp.
+        db.execute("UPDATE high_alerted SET book=?, odds=?, message_id=?, alert_text=?"
                    " WHERE event_id=? AND market=? AND side=? AND point=? AND player=?",
-                   (b["book"], b["odds"], mid, *pk))
+                   (b["book"], b["odds"], mid, text, *pk))
     db.commit()
     time.sleep(1.05)                     # Telegram per-chat rate: ~1 msg/s
     return mid
