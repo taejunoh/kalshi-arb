@@ -74,6 +74,16 @@ test("fires onBet and onDismiss", async () => {
 });
 
 test("shows the 🟣 BET badge when should_bet is true", async () => {
+  // Exact string, not a regex: the retire-watch edit (2026-08-05) left the
+  // ternary's second line rendering as LITERAL SOURCE (": pick.should_bet ?
+  // \"🟣 BET…\"}") and /🟣 BET/ matched inside it — the broken badge passed
+  // its own test for six days and shipped over OTA.
+  await render(<PickCard pick={{ ...PICK, should_bet: true }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
+  expect(await screen.findByText("🟣 BET · first-entry game")).toBeOnTheScreen();
+  expect(screen.queryByText(/pick\.should_bet/)).toBeNull();   // no source text on screen
+});
+
+test("legacy regex-shaped check kept for the SKIP path", async () => {
   await render(<PickCard pick={{ ...PICK, should_bet: true }} onOpen={() => {}} onBet={() => {}} onDismiss={() => {}} />);
   expect(await screen.findByText(/BET/)).toBeOnTheScreen();
 });
