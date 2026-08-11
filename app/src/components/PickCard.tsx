@@ -44,8 +44,8 @@ export function PickCard({
     <Pressable style={[s.card, pick.should_bet === false && s.cardMuted]} onPress={() => onOpen(pick)}>
       <View style={s.head}>
         {pick.should_bet !== undefined && (
-          <Text style={pick.should_bet ? s.betBadge : s.skipBadge}>
-              : pick.should_bet ? "🟣 BET · first-entry game" : "⚪ SKIP · 권장 스킵"}
+          <Text style={pick.should_bet ? s.betBadge : s.skipBadge} numberOfLines={1}>
+            {pick.should_bet ? "🟣 BET · first-entry game" : "⚪ SKIP · 권장 스킵"}
           </Text>
         )}
         <Text style={s.evPill}>{evPct(pick.ev)}</Text>
@@ -73,8 +73,8 @@ const s = StyleSheet.create({
   cardMuted: { opacity: 0.5 },
   trail: { color: color.muted, fontSize: 12, marginTop: 4 },
   head: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  betBadge: { color: color.accentText, backgroundColor: color.accentDim, fontSize: 12, fontWeight: "500", paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, overflow: "hidden" },
-  skipBadge: { color: color.muted, backgroundColor: color.surfaceRaised, fontSize: 12, fontWeight: "500", paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, overflow: "hidden" },
+  betBadge: { flexShrink: 1, color: color.accentText, backgroundColor: color.accentDim, fontSize: 12, fontWeight: "500", paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, overflow: "hidden" },
+  skipBadge: { flexShrink: 1, color: color.muted, backgroundColor: color.surfaceRaised, fontSize: 12, fontWeight: "500", paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, overflow: "hidden" },
   // amber = "still a BET, but hold" — deliberately NOT the muted SKIP grey (it is not
   // a skip) and not the accent purple (it is not a plain bet).
   evPill: { color: color.positive, backgroundColor: color.positiveDim, fontSize: 17, fontWeight: "600", paddingHorizontal: 11, paddingVertical: 3, borderRadius: radius.sm, overflow: "hidden" },
