@@ -184,6 +184,8 @@ def _latest_high_rows():
         d = dict(zip(keys, r))
         if d["tier"] not in core.bet_tiers(d["market"]):
             continue                 # not the tier this market is bet at
+        if not core.is_confirmable(d["n_books"]):
+            continue                 # single-book market — see core.is_confirmable
         d["label"] = core.label(d["market"], d["side"],
                                  None if d["market"] == "h2h" else d["point"],
                                  d["player"] or None)

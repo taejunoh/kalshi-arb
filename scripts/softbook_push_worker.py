@@ -101,6 +101,8 @@ def _high_messages(ev, pdb, tokens, now):
             continue
         if r["tier"] not in core.bet_tiers(r["market"]):
             continue                                 # not the tier this market is bet at
+        if not core.is_confirmable(r["n_books"]):
+            continue                                 # single-book market — see core
         if not core.is_bet(_is_first_entry(ev, r), r["market"], r["tier"]):
             continue
         label = core.label(r["market"], r["side"],
