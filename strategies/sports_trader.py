@@ -562,11 +562,19 @@ INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
 # Toronto together through the overlap, and this retires the finished
 # half. Washington's TENNIS_SLUG_META entries stay for odds_observations
 # analysis. Next: Cincinnati (~mid-Aug), then the US Open.
+# 2026-08-12 rotation: the unmapped-active alert surfaced
+# tennis_{atp,wta}_cincinnati_open. Both tuples fan out rather than swap —
+# the Canadian Open still has 2 live events per tour (late rounds) against
+# Cincinnati's 13, so a straight swap would drop the Toronto/Montreal tail.
+# The staleness cron retires the Canadian half once it hits 0 events for
+# 2 days, same as the Washington→Toronto handoff. Next: the US Open.
 TENNIS_ATP_SLUGS: tuple[str, ...] = (
     "tennis_atp_canadian_open",       # M1000 hard, Toronto (~7/31-8/7)
+    "tennis_atp_cincinnati_open",     # M1000 hard, Cincinnati (~8/7-8/18)
 )
 TENNIS_WTA_SLUGS: tuple[str, ...] = (
     "tennis_wta_canadian_open",       # WTA 1000 hard, Montreal (~7/31-8/7)
+    "tennis_wta_cincinnati_open",     # WTA 1000 hard, Cincinnati (~8/7-8/18)
 )
 
 # Single source of truth for Kalshi series → Odds API sport key(s). Tennis
