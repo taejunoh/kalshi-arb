@@ -248,18 +248,25 @@ class Bot:
         # MLS observer n=14, WR 57.1%, ROI +18.57% at fade-fav band.
         # Paper-twin only at launch. Promotion gate: n>=25 + ROI>=+10% +
         # drop-top-3 > 0 by ~6/22.
-        # 2026-07-09 MOTHBALL: promotion gate failed on the full observer
-        # counterfactual (honest-ask first-crossing replay, current gate,
-        # n=24 settled): lifetime ROI +6.1% < +10%, drop-top-3 -3.39 < 0,
-        # and the promo evidence didn't survive OOS — 5/02-5/15 (promo)
-        # n=15 WR 60% +37% vs 5/15+ (OOS) n=9 WR 22% -45.5% (last 6
-        # candidates all lost). Paper trader adds no evidence over the
-        # observer (booking == observed ask, PR #24), so paper fires are
-        # dashboard noise. MLS WC break 5/25-7/09 explains the silence,
-        # not the retirement. RELAUNCH CONDITION: post-World-Cup observer
-        # cohort at this gate reaches n>=25 with ROI>=+10% AND
-        # drop-top-3 > 0 AND era-consistent (~Aug 2026 data). Instance
-        # kept (dashboard visibility); scan_loop launch commented in run().
+        # 2026-08-12 RETIRED. The 2026-07-09 mothball left one way back:
+        # a post-World-Cup observer cohort reaching n>=25, ROI>=+10%,
+        # drop-top-3 > 0, era-consistent. MLS resumed 7/09; the replay over
+        # 7/09-8/12 fails three of the four — n=15, ROI -19.37%,
+        # drop-top-3 -7.83 (weekly: -0.28 / -3.54 / +0.92).
+        #
+        # That is the THIRD period and the second independent one to come
+        # back negative: promo 5/02-5/15 n=15 +37%, OOS 5/15-5/25 n=9
+        # -45.5%, post-WC 7/09-8/12 n=15 -19.37%. The WC break was a real
+        # reason to suspend judgement in July, and a month of resumed play
+        # has now spent it. n=15 is thin (call it ★3), but waiting does not
+        # look promising either: at ~15 candidates/month the remaining 10
+        # would have to win almost outright to drag -19% above +10%.
+        #
+        # No relaunch condition remains. Reviving this needs a NEW edge
+        # thesis and a fresh promotion gate, not more of this cohort.
+        # Instance kept (dashboard visibility); scan_loop launch stays
+        # commented in run(). Observer keeps recording MLS independently,
+        # so the cohort remains measurable if that thesis ever arrives.
         self.sports_mls_fade_favorite_v1 = SportsMLSFadeFavoriteV1Strategy(
             self.config, self.order_manager, self.kalshi_client
         )
