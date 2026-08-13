@@ -32,6 +32,17 @@ CRITICAL_MSG_TYPES = frozenset({
     # advances its state file after send(), so a suppressed message would be
     # lost outright rather than retried.
     "livefade_gate",
+    # 2026-08-13 — user asked for fills and settlements overnight. Being in
+    # UNTHROTTLED_MSG_TYPES was not enough: _should_send() checks quiet hours
+    # BEFORE the unthrottled exemption, so they were silent 22:00-05:00 NYC.
+    #
+    # settle_digest is the one that matters and is easy to miss: nothing calls
+    # notify_settlement(), so no message ever goes out as msg_type "settlement"
+    # — core/settlement.py buffers into the hourly digest instead. Exempting
+    # only "trade"/"settlement" would have left settlements silent overnight
+    # while looking done. "settlement" is listed anyway so the dead path cannot
+    # come back with the opposite behaviour.
+    "trade", "settlement", "settle_digest",
 })
 
 # Hourly digest for LIVE settlements (2026-05-25). Buffered + flushed once/h
@@ -69,15 +80,26 @@ class TelegramNotifier:
             return True
         return (time.time() - last) >= RATE_LIMIT_SECONDS
 
-    async def send(self, text: str, msg_type: str = "general"):
+    async def send(self, text: str, msg_type: str = "general") -> bool:
+        """True only if Telegram accepted the message.
+
+        Suppression (quiet hours, rate limit) and transport failure (non-200,
+        connection error) both return False, because to a caller that discards
+        state once the message is "out" they are the same event.
+
+        Any such caller must check this. flush_settle_digest() does. The other
+        one, scripts/livefade_postfix_gate.py, advances its state file
+        unconditionally and leans on CRITICAL_MSG_TYPES instead — which covers
+        quiet hours but not a non-200 or a dropped connection.
+        """
         if not self.is_enabled:
-            return
+            return False
         if not self._should_send(msg_type):
             if self._is_quiet_hours() and msg_type not in CRITICAL_MSG_TYPES:
                 logger.debug(f"Quiet hours — suppressed {msg_type}")
             else:
                 logger.debug(f"Rate-limited: {msg_type}")
-            return
+            return False
 
         url = f"https://api.telegram.org/bot{self._bot_token}/sendMessage"
         payload = {"chat_id": self._chat_id, "text": text, "parse_mode": "HTML"}
@@ -88,10 +110,11 @@ class TelegramNotifier:
                 if resp.status_code == 200:
                     self._last_sent[msg_type] = time.time()
                     logger.debug(f"Telegram sent: {msg_type}")
-                else:
-                    logger.warning(f"Telegram API error: {resp.status_code} {resp.text}")
+                    return True
+                logger.warning(f"Telegram API error: {resp.status_code} {resp.text}")
         except Exception as e:
             logger.error(f"Telegram send failed: {e}")
+        return False
 
     # ─────────────────────────────────────────────
     # LIVE settle digest — buffered, flushed hourly
@@ -109,7 +132,16 @@ class TelegramNotifier:
             })
 
     async def flush_settle_digest(self):
-        """Build + send a digest of buffered LIVE settles. No-op if empty."""
+        """Build + send a digest of buffered LIVE settles. No-op if empty.
+
+        The buffer is only allowed to drain once Telegram has accepted the
+        message. It used to clear first and send afterwards, so anything that
+        stopped the send threw real settlement data away instead of deferring
+        it — quiet hours above all (every LIVE settle resolving 22:00-05:00 NYC,
+        up to 7 hourly digests a night), but a non-200 or a dropped connection
+        lost them the same way. A suppressed digest now rolls into the next
+        flush, so a night's settles arrive as one message once the window ends.
+        """
         async with self._settle_buffer_lock:
             if not self._settle_buffer:
                 return
@@ -128,8 +160,12 @@ class TelegramNotifier:
         total_wins = sum(d["wins"] for d in by_strat.values())
         bankroll = settles[-1]["bankroll"] if settles else 0
         emoji = "📈" if total_pnl > 0 else ("📉" if total_pnl < 0 else "➖")
+        # a carried digest can span the whole quiet window, so say what it covers
+        # rather than the one interval it used to be capped at by data loss
+        span_h = round((time.time() - min(s["ts"] for s in settles)) / 3600)
+        covers = "last hour" if span_h <= 1 else f"last {span_h}h"
         lines = [
-            f"{emoji} <b>LIVE settle digest — last hour</b>",
+            f"{emoji} <b>LIVE settle digest — {covers}</b>",
             f"Net: <b>${total_pnl:+.2f}</b> on {total_n} settles "
             f"({total_wins}W / {total_n - total_wins}L)",
             "",
@@ -139,7 +175,11 @@ class TelegramNotifier:
             lines.append(f"  {strat}: ${d['pnl']:+.2f} ({wl})")
         lines.append(f"\nBankroll: ${bankroll:.2f}")
         msg = "\n".join(lines)
-        await self.send(msg, msg_type="settle_digest")
+        if not await self.send(msg, msg_type="settle_digest"):
+            # undelivered — put them back ahead of anything buffered while we
+            # were awaiting, so the next flush carries them in arrival order
+            async with self._settle_buffer_lock:
+                self._settle_buffer[:0] = settles
 
     async def settle_digest_loop(self):
         """Background task — flushes settle digest every SETTLE_DIGEST_INTERVAL_S."""
