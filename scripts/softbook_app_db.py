@@ -132,6 +132,16 @@ def set_pick_state(db, pick, state, now):
     db.commit()
 
 
+def pick_state_of(db, pick):
+    """This one pick's override ('bet' | 'dismissed'), or None. The targeted read
+    for callers that only care about a single pick — pick_states() scans the
+    whole table to build the feed's map."""
+    row = db.execute(
+        "SELECT state FROM pick_state WHERE event_id=? AND market=? AND side=?"
+        " AND point=? AND player=?", _norm(pick)).fetchone()
+    return row[0] if row else None
+
+
 def undismiss_group(db, pick):
     """Delete the pick's dismissed row AND its same-timestamp dismissed
     companions (the auto-dismissed reverse-middle opposites from the same

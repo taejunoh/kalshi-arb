@@ -559,6 +559,42 @@ def test_delete_unmark_on_a_never_unmarked_bet_is_a_noop(client):
     assert n == 1 and after == before
 
 
+def test_delete_unmark_does_not_overwrite_a_dismissed_pick_state(client):
+    """The two halves of one toggle must agree about 'dismissed'. clear_bet_state
+    is explicitly documented never to touch a dismissed row ("a separate user
+    preference"), but remark_bet used to set_pick_state(..., 'bet') flat out — so
+    dismissing a pick while its bet is disowned and then 되돌리기 rewrote the
+    user's dismissal into 'bet'. Both states hide the pick, so the impact is
+    small; the incoherence is the bug. The ledger half must still happen."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    client.post(f"/bets/{bid}/unmark", headers=h)          # 'bet' override gone
+    pid = "E1|batter_total_bases|Over|1.5|Brandon Nimmo"
+    assert client.post(f"/picks/{pid}/dismiss", headers=h).status_code == 200
+    assert client.delete(f"/bets/{bid}/unmark", headers=h).status_code == 200
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    states = pdb.execute("SELECT state FROM pick_state").fetchall()
+    row = adb2.get_app_bet(pdb, bid)
+    pdb.close()
+    assert states == [("dismissed",)]                      # preference preserved
+    assert row["not_placed"] == 0                          # bet counts again
+
+
+def test_delete_unmark_restores_the_bet_state_when_not_dismissed(client):
+    """The other side of the dismissed check: with no 'dismissed' row in the way,
+    restoring still re-hides the pick behind a 'bet' override."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    client.post(f"/bets/{bid}/unmark", headers=h)
+    client.delete(f"/bets/{bid}/unmark", headers=h)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    states = pdb.execute("SELECT state FROM pick_state").fetchall()
+    pdb.close()
+    assert states == [("bet",)]
+
+
 def test_unmark_unknown_bet_is_404(client):
     h = {"Authorization": "Bearer secret"}
     assert client.post("/bets/9999/unmark", headers=h).status_code == 404
