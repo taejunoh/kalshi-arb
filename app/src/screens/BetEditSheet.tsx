@@ -31,7 +31,10 @@ export function BetEditSheet({ route }: Props) {
   const bet = route.params.bet;
   const [book, setBook] = useState(bet.book ?? "");
   const [stake, setStake] = useState(bet.stake != null ? String(bet.stake) : "");
-  const [odds, setOdds] = useState(bet.fill_odds != null ? americanOdds(bet.fill_odds) : "");
+  // Kept so save() can tell "the user retyped the odds" from "the odds field was
+  // merely rendered". See the omit rule in save().
+  const initialOdds = bet.fill_odds != null ? americanOdds(bet.fill_odds) : "";
+  const [odds, setOdds] = useState(initialOdds);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,8 +53,17 @@ export function BetEditSheet({ route }: Props) {
       // one payload this must never send. Parse first, include only if finite.
       const parsedStake = Number(stake);
       if (stake && Number.isFinite(parsedStake)) patch.stake = parsedStake;
-      const parsedOdds = parseOddsToDecimal(odds);
-      if (parsedOdds != null) patch.fill_odds = parsedOdds;
+      // fill_odds goes in ONLY when the text changed. decimal -> American -> decimal
+      // is lossy for every price under 2.0 — i.e. every favorite: americanOdds(1.91)
+      // is "-110" and parsing that back gives 1.9090909090909092 (2.375 -> "+138" ->
+      // 2.38). Re-parsing an untouched field would reprice a real-money ledger row
+      // to a number the book never showed, on a save the user made to fix the book
+      // name. app_bet rows are never repriced (LEDGER RULE in softbook_app_db).
+      // stake needs no such guard: String(20) -> Number("20") is exact.
+      if (odds !== initialOdds) {
+        const parsedOdds = parseOddsToDecimal(odds);
+        if (parsedOdds != null) patch.fill_odds = parsedOdds;
+      }
       await api.patchBet(bet.id, patch);
       nav.popToTop();
     } catch (e) {

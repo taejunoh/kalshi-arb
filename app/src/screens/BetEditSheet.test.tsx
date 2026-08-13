@@ -54,11 +54,16 @@ test("shows the immutable context and the three editable fields", async () => {
 });
 
 test("saving sends only the three fields", async () => {
+  // Every field is edited here so all three appear: an untouched odds field is
+  // deliberately omitted (see the reprice tests below), so leaving it alone
+  // would no longer exercise "the patch carries fill_odds and nothing extra".
   await render(<BetEditSheet route={routeFor(bet)} />);
+  await fireEvent.changeText(screen.getByTestId("edit-book"), "DraftKings");
   await fireEvent.changeText(screen.getByTestId("edit-stake"), "25");
+  await fireEvent.changeText(screen.getByTestId("edit-odds"), "+105");
   await fireEvent.press(screen.getByText("저장"));
   await waitFor(() => expect(api.patchBet).toHaveBeenCalledWith(7, {
-    book: "FanDuel", stake: 25, fill_odds: 2.1,
+    book: "DraftKings", stake: 25, fill_odds: 2.05,
   }));
   expect(mockPopToTop).toHaveBeenCalled();
 });
@@ -69,8 +74,10 @@ test("an emptied stake is omitted, never sent as null", async () => {
   await render(<BetEditSheet route={routeFor(bet)} />);
   await fireEvent.changeText(screen.getByTestId("edit-stake"), "");
   await fireEvent.press(screen.getByText("저장"));
+  // fill_odds is absent because the odds field was never touched, not because
+  // it was emptied — that is the reprice guard, covered on its own below.
   await waitFor(() => expect(api.patchBet).toHaveBeenCalledWith(7, {
-    book: "FanDuel", fill_odds: 2.1,
+    book: "FanDuel",
   }));
 });
 
@@ -83,7 +90,7 @@ test("a non-numeric stake is omitted, never sent as NaN/null", async () => {
   await fireEvent.changeText(screen.getByTestId("edit-stake"), "abc");
   await fireEvent.press(screen.getByText("저장"));
   await waitFor(() => expect(api.patchBet).toHaveBeenCalledWith(7, {
-    book: "FanDuel", fill_odds: 2.1,
+    book: "FanDuel",
   }));
 });
 
@@ -98,13 +105,54 @@ test("an unparseable odds field is omitted, never sent as null", async () => {
   }));
 });
 
+test("an untouched odds field is omitted — saving never reprices fill_odds", async () => {
+  // americanOdds/parseOddsToDecimal do NOT round-trip below decimal 2.0, i.e.
+  // for every favorite: 1.91 -> "-110" -> 1.9090909090909092. Re-parsing a field
+  // the user never touched would rewrite the ledger's recorded fill price to a
+  // number the sportsbook never showed — on a save made to fix the book name.
+  // app_bet rows are bet records: never repriced (LEDGER RULE).
+  const fav: AppBet = { ...bet, fill_odds: 1.91 };
+  await render(<BetEditSheet route={routeFor(fav)} />);
+  expect(screen.getByTestId("edit-odds").props.value).toBe("-110");
+  await fireEvent.changeText(screen.getByTestId("edit-book"), "DraftKings");
+  await fireEvent.press(screen.getByText("저장"));
+  await waitFor(() => expect(api.patchBet).toHaveBeenCalledWith(7, {
+    book: "DraftKings", stake: 20,
+  }));
+});
+
+test("an edited odds field still sends the new value", async () => {
+  // The other half of the omit rule: the field is still editable, and a real
+  // edit must reach the server. -105 -> 1 + 100/105.
+  const fav: AppBet = { ...bet, fill_odds: 1.91 };
+  await render(<BetEditSheet route={routeFor(fav)} />);
+  await fireEvent.changeText(screen.getByTestId("edit-odds"), "-105");
+  await fireEvent.press(screen.getByText("저장"));
+  await waitFor(() => expect(api.patchBet).toHaveBeenCalledWith(7, {
+    book: "FanDuel", stake: 20, fill_odds: 1 + 100 / 105,
+  }));
+});
+
+test("retyping the same odds text is still omitted", async () => {
+  // The rule is "the TEXT differs from what was rendered", so a user who edits
+  // the field and puts it back must not trigger a reprice either.
+  const fav: AppBet = { ...bet, fill_odds: 1.91 };
+  await render(<BetEditSheet route={routeFor(fav)} />);
+  await fireEvent.changeText(screen.getByTestId("edit-odds"), "-120");
+  await fireEvent.changeText(screen.getByTestId("edit-odds"), "-110");
+  await fireEvent.press(screen.getByText("저장"));
+  await waitFor(() => expect(api.patchBet).toHaveBeenCalledWith(7, {
+    book: "FanDuel", stake: 20,
+  }));
+});
+
 test("a whitespace-only book is sent as null, not a space", async () => {
   // book.trim() || null: " " is truthy but not a real value.
   await render(<BetEditSheet route={routeFor(bet)} />);
   await fireEvent.changeText(screen.getByTestId("edit-book"), "  ");
   await fireEvent.press(screen.getByText("저장"));
   await waitFor(() => expect(api.patchBet).toHaveBeenCalledWith(7, {
-    book: null, stake: 20, fill_odds: 2.1,
+    book: null, stake: 20,
   }));
 });
 
