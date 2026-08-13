@@ -333,6 +333,40 @@ def test_patch_bet_on_a_not_placed_row_is_conflict(client):
     assert r.status_code == 409
 
 
+def test_patch_bet_rejects_explicit_null_stake(client):
+    """Regression: exclude_unset=True only tells 'omitted' from 'set' — it does
+    not stop an explicit null from getting through. {"stake": null} used to
+    write stake=NULL, and settle's pnl = stake * (fill_odds - 1) has no None
+    guard, so that one row's TypeError aborted the whole settle batch (settle
+    commits once after its loop, not per-row)."""
+    bid = _place_bet(client)
+    r = client.patch(f"/bets/{bid}", json={"stake": None},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 422
+    body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
+    row = body["open"][0]
+    assert row["stake"] == 2.0
+
+
+def test_patch_bet_rejects_explicit_null_fill_odds(client):
+    """Regression: same hole as stake — fill_odds also feeds settle's
+    pnl = stake * (fill_odds - 1) arithmetic with no None guard."""
+    bid = _place_bet(client)
+    r = client.patch(f"/bets/{bid}", json={"fill_odds": None},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 422
+
+
+def test_patch_bet_allows_explicit_null_book(client):
+    """book is descriptive metadata, not settle arithmetic — POST /bets already
+    accepts a bet with no book, so PATCH clearing it back to null must still
+    be allowed."""
+    bid = _place_bet(client)
+    r = client.patch(f"/bets/{bid}", json={"book": None},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200
+
+
 def test_patch_unknown_bet_is_404(client):
     r = client.patch("/bets/9999", json={"stake": 1.0},
                      headers={"Authorization": "Bearer secret"})
