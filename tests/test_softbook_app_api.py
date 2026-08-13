@@ -386,6 +386,40 @@ def test_unmark_returns_the_pick_to_the_active_feed(client):
     assert [p["id"] for p in picks] == ["E1|spread|NYM|-1.5|"]         # back
 
 
+def _seed_spread_pick(ev_path):
+    """Replace the seeded prop with a bettable GAME pick (props are SKIP and never
+    reach the feed), so 'is this pick back in the feed?' is answerable."""
+    ev = sqlite3.connect(ev_path)
+    ev.execute("DELETE FROM softbook_ev")
+    ev.execute("INSERT INTO softbook_ev VALUES (datetime('now'),"
+               "'baseball_mlb','E1','2099-01-01T00:00:00Z','MIA','NYM',"
+               "'spread','NYM',-1.5,'',0.45,2.0,'theScore',2.2,0.074,9,5,60,'High')")
+    ev.commit(); ev.close()
+
+
+def test_unmarking_one_of_two_bets_on_a_pick_keeps_it_hidden(client):
+    """Two owned bets on one pick is reachable through a documented flow: one-tap
+    the pick from the feed, then also scan the paper slip. Unmarking one of them
+    must NOT drop the pick_state 'bet' override — doing so puts a one-tap-bettable
+    card back in the feed while the second bet is still open, which is exactly the
+    double-bet that cost real money on 2026-08-06 (Seattle ML bet twice, 50
+    minutes apart, at a worse price) and that the Telegram '✅ 베팅 완료' stamp
+    was built to prevent. The override drops only when the LAST one is unmarked."""
+    _seed_spread_pick(os.environ["SOFTBOOK_EV_DB"])
+    h = {"Authorization": "Bearer secret"}
+    kw = dict(market="spread", side="NYM", point=-1.5, player="", label="NYM -1.5")
+    b1 = _place_bet(client, **kw)
+    b2 = _place_bet(client, **kw)
+    assert client.post(f"/bets/{b1}/unmark", headers=h).status_code == 200
+    feed = client.get("/picks", headers=h).json()
+    assert feed["picks"] == []                       # still hidden
+    assert feed["counts"].get("bet") == 1            # still marked as bet
+    # …and the last one unmarked does return it.
+    assert client.post(f"/bets/{b2}/unmark", headers=h).status_code == 200
+    picks = client.get("/picks", headers=h).json()["picks"]
+    assert [p["id"] for p in picks] == ["E1|spread|NYM|-1.5|"]
+
+
 def test_unmark_of_a_settled_bet_reports_the_calendar_change(client):
     h = {"Authorization": "Bearer secret"}
     bid = _place_bet(client)

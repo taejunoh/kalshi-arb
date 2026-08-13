@@ -205,11 +205,33 @@ def set_not_placed(db, bet_id, flag, now):
     return cur.rowcount > 0
 
 
+def live_bets_for_pick(db, pick, exclude_id=None):
+    """How many app_bet rows for this pick the user still owns (not_placed=0),
+    ignoring `exclude_id`. Pass the row being disowned as exclude_id to ask "is
+    there ANOTHER live bet on this pick?" — the question clear_bet_state's caller
+    must answer first (see that docstring).
+
+    `id IS NOT ?` rather than `id != ?`: SQLite's IS NOT is the null-safe
+    comparison, so exclude_id=None correctly excludes nothing instead of
+    matching no rows the way `id != NULL` would."""
+    eid, market, side, point, player = _norm(pick)
+    return db.execute(
+        "SELECT count(*) FROM app_bet WHERE event_id=? AND market=? AND side=?"
+        " AND COALESCE(point,0)=? AND COALESCE(player,'')=?"
+        " AND COALESCE(not_placed,0)=0 AND id IS NOT ?",
+        (eid, market, side, point, player, exclude_id)).fetchone()[0]
+
+
 def clear_bet_state(db, pick):
     """Delete this pick's state='bet' override so it returns to the live feed.
     Single row only, and only state='bet' — unlike undismiss_group there is no
     reverse-middle group to sweep, and a 'dismissed' row is a separate
-    preference that this must not touch. Returns rows deleted."""
+    preference that this must not touch. Returns rows deleted.
+
+    CALLER CONTRACT: the override speaks for EVERY bet on the pick, not for one
+    app_bet row, so only call this once no owned bet survives — ask
+    live_bets_for_pick first. Returning a pick to the feed while a bet on it is
+    still open is the double-bet failure mode."""
     cur = db.execute(
         "DELETE FROM pick_state WHERE event_id=? AND market=? AND side=?"
         " AND point=? AND player=? AND state='bet'", _norm(pick))

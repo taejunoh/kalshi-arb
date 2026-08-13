@@ -163,6 +163,28 @@ def test_set_not_placed_flips_the_flag_and_stamps_the_time():
     assert adb.set_not_placed(db, bid + 999, True, "x") is False
 
 
+def test_live_bets_for_pick_counts_only_owned_rows_on_that_pick():
+    """The question unmark asks before dropping a pick's feed override: is any
+    OTHER bet on this pick still owned? not_placed rows are disowned and do not
+    count; a different pick's rows are a different question."""
+    db = mem()
+    pick = {"event_id": "E1", "market": "spread", "side": "NYM", "point": -1.5}
+    b1 = adb.insert_app_bet(db, dict(pick))
+    b2 = adb.insert_app_bet(db, dict(pick))
+    adb.insert_app_bet(db, {"event_id": "E1", "market": "h2h", "side": "NYM"})
+    key = ("E1", "spread", "NYM", -1.5, "")
+    assert adb.live_bets_for_pick(db, key) == 2
+    # exclude_id answers "is there ANOTHER one", the form unmark needs.
+    assert adb.live_bets_for_pick(db, key, exclude_id=b1) == 1
+    adb.set_not_placed(db, b2, True, "t1")
+    assert adb.live_bets_for_pick(db, key, exclude_id=b1) == 0
+    assert adb.live_bets_for_pick(db, key) == 1            # b1 itself still owned
+    adb.set_not_placed(db, b1, True, "t1")
+    assert adb.live_bets_for_pick(db, key) == 0
+    # A pick with no rows at all.
+    assert adb.live_bets_for_pick(db, ("E9", "h2h", "MIA", 0, "")) == 0
+
+
 def test_clear_bet_state_removes_bet_only_and_leaves_dismissed():
     """A dismissed row is a preference; a bet row is what we are undoing here.
     Clearing one must never sweep up the other."""
