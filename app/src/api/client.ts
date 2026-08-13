@@ -51,7 +51,7 @@ export const api = {
   unmarkBet: (id: number) =>
     request<UnmarkResponse>(`/bets/${id}/unmark`, { method: "POST" }),
   remarkBet: (id: number) =>
-    request<{ ok: boolean }>(`/bets/${id}/unmark`, { method: "DELETE" }),
+    request<UnmarkResponse>(`/bets/${id}/unmark`, { method: "DELETE" }),
   dismissPick: (id: string) =>
     request<{ ok: boolean }>(`/picks/${enc(id)}/dismiss`, { method: "POST" }),
   undismissPick: (id: string) =>

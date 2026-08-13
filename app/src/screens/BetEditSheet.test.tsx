@@ -2,7 +2,7 @@ jest.mock("../api/client", () => ({
   api: {
     patchBet: jest.fn(async () => ({ ok: true })),
     unmarkBet: jest.fn(async () => ({ ok: true, pnl_delta: null, settled_day: null })),
-    remarkBet: jest.fn(async () => ({ ok: true })),
+    remarkBet: jest.fn(async () => ({ ok: true, pnl_delta: null, settled_day: null })),
   },
 }));
 const mockPopToTop = jest.fn();
@@ -20,11 +20,11 @@ import { BetEditSheet } from "./BetEditSheet";
 // path moves between Expo SDKs and a mock of it fails silently as a no-op.
 const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
 
-/** Press the destructive button in the last Alert the component raised. */
-function confirmLastAlert() {
+/** Press the named confirm button in the last Alert the component raised. */
+function confirmLastAlert(text = "처리") {
   const buttons = alertSpy.mock.calls.at(-1)?.[2] as
     { text?: string; onPress?: () => void }[] | undefined;
-  buttons?.find((b) => b.text === "처리")?.onPress?.();
+  buttons?.find((b) => b.text === text)?.onPress?.();
 }
 
 const bet: AppBet = {
@@ -187,10 +187,35 @@ test("a settled bet cannot be edited, only unmarked", async () => {
   expect(screen.getByText("베팅 안 했음")).toBeOnTheScreen();
 });
 
+const offBet: AppBet = { ...bet, not_placed: 1, not_placed_at: "2026-08-12T10:00:00+00:00" };
+
 test("a not-placed bet offers 되돌리기 instead", async () => {
-  const off: AppBet = { ...bet, not_placed: 1, not_placed_at: "2026-08-12T10:00:00+00:00" };
-  await render(<BetEditSheet route={routeFor(off)} />);
+  await render(<BetEditSheet route={routeFor(offBet)} />);
   await fireEvent.press(screen.getByText("되돌리기"));
+  expect(api.remarkBet).not.toHaveBeenCalled();      // dialog first, no API yet
+  confirmLastAlert("되돌리기");
   await waitFor(() => expect(api.remarkBet).toHaveBeenCalledWith(7));
   expect(mockPopToTop).toHaveBeenCalled();
+});
+
+test("되돌리기 goes through a confirm dialog before calling the API", async () => {
+  // Symmetric with 베팅 안 했음: this direction puts a past day's PnL BACK, so
+  // it may not be a single unconfirmed tap either.
+  await render(<BetEditSheet route={routeFor(offBet)} />);
+  await fireEvent.press(screen.getByText("되돌리기"));
+  const [title, message] = alertSpy.mock.calls[0] as unknown as [string, string];
+  expect(title).toBe("베팅 기록 되돌리기");
+  expect(message).toBe("이 베팅이 다시 집계에 포함됩니다. 이 픽은 피드에서 다시 숨겨집니다.");
+});
+
+test("a settled bet's 되돌리기 dialog names the restored PnL", async () => {
+  // Same day, same amount as the unmark dialog above, opposite sign: unmarking
+  // this bet moved 8월 9일 by +45.00, so restoring it moves it by -45.00.
+  const settledOff: AppBet = { ...offBet, settled: 1, won: 1, pnl: -45,
+    settled_at: "2026-08-09T22:00:00+00:00" };
+  await render(<BetEditSheet route={routeFor(settledOff)} />);
+  await fireEvent.press(screen.getByText("되돌리기"));
+  const [, message] = alertSpy.mock.calls[0] as unknown as [string, string];
+  expect(message).toBe(
+    "8월 9일 PnL이 -45.00 변경됩니다. 이 베팅이 다시 집계에 포함됩니다. 이 픽은 피드에서 다시 숨겨집니다.");
 });

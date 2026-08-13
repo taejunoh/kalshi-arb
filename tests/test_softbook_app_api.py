@@ -482,12 +482,49 @@ def test_unmark_never_deletes_the_ledger_row(client):
     assert row["stake"] == 2.0 and row["fill_odds"] == 2.2   # not repriced
 
 
+def test_delete_unmark_reports_the_restored_calendar_change(client):
+    """The two directions of the toggle must be symmetric. POST goes out of its
+    way to honor "a past number must never shift in silence" — DELETE puts the
+    very same PnL BACK into that day, so it owes the caller the same disclosure
+    (the app names it in a confirm dialog). Opposite sign of the POST's delta."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=2.4,"
+                " settled_at='2026-08-09T22:00:00+00:00' WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    assert client.post(f"/bets/{bid}/unmark", headers=h).json()["pnl_delta"] == -2.4
+    r = client.delete(f"/bets/{bid}/unmark", headers=h).json()
+    assert r == {"ok": True, "pnl_delta": 2.4, "settled_day": "2026-08-09"}
+
+
+def test_delete_unmark_twice_reports_the_change_only_once(client):
+    """Mirrors test_unmark_twice_on_a_settled_bet_...: `row` is the PRE-mutation
+    snapshot, so a repeat DELETE must see not_placed already 0 and report no
+    further change. A client applying a repeated delta to a cached calendar
+    would double-ADD it."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=2.4,"
+                " settled_at='2026-08-09T22:00:00+00:00' WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    client.post(f"/bets/{bid}/unmark", headers=h)
+    assert client.delete(f"/bets/{bid}/unmark", headers=h).json()["pnl_delta"] == 2.4
+    r2 = client.delete(f"/bets/{bid}/unmark", headers=h).json()
+    assert r2["pnl_delta"] is None and r2["settled_day"] is None
+
+
 def test_delete_unmark_restores_the_bet_state(client):
     h = {"Authorization": "Bearer secret"}
     bid = _place_bet(client)
     client.post(f"/bets/{bid}/unmark", headers=h)
     r = client.delete(f"/bets/{bid}/unmark", headers=h)
     assert r.status_code == 200
+    # An unsettled bet moves no past day, so there is nothing to disclose.
+    assert r.json() == {"ok": True, "pnl_delta": None, "settled_day": None}
     assert client.get("/picks", headers=h).json()["counts"].get("bet") == 1
     body = client.get("/mybets", headers=h).json()
     assert body["not_placed"] == [] and [b["id"] for b in body["open"]] == [bid]
@@ -511,6 +548,7 @@ def test_delete_unmark_on_a_never_unmarked_bet_is_a_noop(client):
     pdb.close()
     r = client.delete(f"/bets/{bid}/unmark", headers=h)
     assert r.status_code == 200
+    assert r.json() == {"ok": True, "pnl_delta": None, "settled_day": None}
     pdb = adb2.connect()
     row = adb2.get_app_bet(pdb, bid)
     n, after = pdb.execute(
