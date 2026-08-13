@@ -149,3 +149,67 @@ export interface MuteRule {
   value: string;
   created_at: string;
 }
+
+// ===== 내 베팅 (app_bet 원장) =====
+// A row of the bet ledger. `not_placed` = the user said this bet never happened
+// (mis-tap, or the book rejected it). The row is NEVER deleted — it is a record —
+// so the app renders it struck through instead of hiding it.
+export interface AppBet {
+  id: number;
+  event_id: string | null;
+  sport: string | null;
+  home: string | null;
+  away: string | null;
+  commence_time: string | null;
+  market: string | null;
+  side: string | null;
+  point: number | null;
+  player: string | null;
+  label: string | null;
+  book: string | null;
+  fill_odds: number | null;
+  stake: number | null;
+  live_status: string | null;
+  live_progress: unknown;
+  settled: number;
+  won: number | null;
+  pnl: number | null;
+  settled_at: string | null;
+  not_placed: number;
+  not_placed_at: string | null;
+}
+
+export interface MyBetsResponse {
+  /** day (YYYY-MM-DD) -> settled PnL, not_placed excluded */
+  calendar: Record<string, number>;
+  open: AppBet[];
+  settled: AppBet[];
+  not_placed: AppBet[];
+}
+
+/** Both directions of /bets/{id}/unmark — POST (disown) and DELETE (restore)
+ *  answer in this same shape. pnl_delta/settled_day are non-null only when the
+ *  bet had already settled AND the call actually changed something (a repeat
+ *  call reports null, so a client applying the delta to a cached calendar
+ *  cannot double-count) — the app names the calendar change in a confirm
+ *  dialog. DELETE's delta is the opposite sign of POST's: it puts the PnL back. */
+export interface UnmarkResponse {
+  ok: boolean;
+  pnl_delta: number | null;
+  settled_day: string | null;
+}
+
+/** The only three fields the server accepts — anything else is a 422.
+ *
+ *  `stake`/`fill_odds` are NOT nullable here even though the server field is
+ *  optional: PATCH /bets/{id} 422s an explicitly-null stake or fill_odds,
+ *  because a placed bet without them isn't a record of anything and the
+ *  settlement worker multiplies by both. `book` stays nullable — it's
+ *  descriptive metadata, and the server already accepts a null book on
+ *  bet creation. Don't widen stake/fill_odds back to `| null`; a "clear
+ *  this field" edit interaction would compile cleanly and then 422. */
+export interface BetPatch {
+  book?: string | null;
+  stake?: number;
+  fill_odds?: number;
+}

@@ -67,7 +67,7 @@ def settle_app_bets(db, key=None, fetch_scores=_fetch_scores,
     rows = db.execute(
         "SELECT id, sport, event_id, market, side, point, player, home, away,"
         " commence_time, fill_odds, stake"
-        " FROM app_bet WHERE settled=0"
+        " FROM app_bet WHERE settled=0 AND not_placed=0"
     ).fetchall()
 
     # cache scores per sport so we fetch each at most once
@@ -146,7 +146,8 @@ def stuck_bets(db, hours=STUCK_AFTER_H):
     return [dict(zip(("id", "sport", "label", "book", "stake", "commence_time"), r))
             for r in db.execute(
                 "SELECT id, sport, label, book, stake, commence_time FROM app_bet"
-                " WHERE settled=0 AND sport IS NOT NULL AND commence_time IS NOT NULL"
+                " WHERE settled=0 AND not_placed=0"
+                "   AND sport IS NOT NULL AND commence_time IS NOT NULL"
                 "   AND datetime(replace(commence_time,'Z','')) < datetime('now', ?)"
                 " ORDER BY commence_time", (f"-{int(hours)} hours",))]
 

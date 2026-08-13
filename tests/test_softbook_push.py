@@ -133,3 +133,17 @@ def test_worker_pushes_settlement_result_once():
     worker.run_once(ev, pdb, send=lambda msgs: sent.extend(msgs) or [])
     settle = [m for m in sent if m.get("categoryId") == "settle"]
     assert len(settle) == 1 and "win" in settle[0]["body"].lower() or "적중" in settle[0]["body"]
+
+
+def test_worker_does_not_push_settlement_for_a_not_placed_bet():
+    """Regression: without the not_placed filter the user gets a "정산 결과"
+    push for a bet they told the app never happened."""
+    ev, pdb = _worker_dbs()
+    pdb.execute("INSERT INTO app_bet(event_id,market,side,point,player,label,book,"
+                "fill_odds,stake,settled,won,pnl,settled_at,not_placed) VALUES "
+                "('E1','batter_total_bases','Over',1.5,'Brandon Nimmo','x','FanDuel',"
+                "2.2,2.0,1,1,2.4,'2026-06-12T22:00:00+00:00',1)")
+    pdb.commit()
+    sent = []
+    worker.run_once(ev, pdb, send=lambda msgs: sent.extend(msgs) or [])
+    assert [m for m in sent if m.get("categoryId") == "settle"] == []

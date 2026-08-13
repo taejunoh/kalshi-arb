@@ -25,7 +25,7 @@ import softbook_app_feed as feed
 import softbook_deeplink as deeplink
 import softbook_scan as scan
 import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import softbook_ev_recorder as rec
 
 EV_DB = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
@@ -431,6 +431,136 @@ def post_bet(bet: BetIn, _=Depends(require_auth)):
     return {"id": bid}
 
 
+class BetPatch(BaseModel):
+    """The only three fields the user typed, so the only three they may retype.
+
+    extra="forbid" makes anything else a 422 rather than a silent no-op:
+    event/market/side/point/player describe a DIFFERENT bet (void this one and
+    record a new one instead), rec_odds is the system's observation at
+    recommendation time and feeds CLV, and settled/won/pnl belong to the
+    settle worker."""
+    model_config = ConfigDict(extra="forbid")
+    book: str | None = None
+    stake: float | None = None
+    fill_odds: float | None = None
+
+
+@app.patch("/bets/{bet_id}")
+def patch_bet(bet_id: int, body: BetPatch, _=Depends(require_auth)):
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(422, "no editable fields supplied")
+    # exclude_unset only tells "field omitted" from "field explicitly set" — it
+    # does NOT stop an explicit null from getting through. stake/fill_odds feed
+    # settle's pnl = stake * (fill_odds - 1) with no None guard, so a nulled
+    # one poisons that row and (since settle commits once after its loop) takes
+    # the whole batch down with it. There's also no sense in which a placed bet
+    # with no stake is a record of anything, so this isn't just a worker
+    # crash-guard — it's an invalid edit. book has neither problem: it's
+    # descriptive metadata and POST /bets already allows a bookless bet.
+    if "stake" in fields and fields["stake"] is None:
+        raise HTTPException(422, "stake cannot be cleared")
+    if "fill_odds" in fields and fields["fill_odds"] is None:
+        raise HTTPException(422, "fill_odds cannot be cleared")
+    pdb = adb.connect()
+    try:
+        row = adb.get_app_bet(pdb, bet_id)
+        if row is None:
+            raise HTTPException(404, "no such bet")
+        if row["settled"]:
+            # Editing the stake now would contradict a pnl already computed from
+            # it. The honest move in that situation is /unmark.
+            raise HTTPException(409, "settled bet — 수정 불가, 표시 해제를 쓰세요")
+        if row["not_placed"]:
+            raise HTTPException(409, "not-placed bet — 먼저 표시를 복원하세요")
+        adb.update_app_bet(pdb, bet_id, fields)
+    finally:
+        pdb.close()
+    return {"ok": True}
+
+
+def _pick_of(row):
+    """The pick_state key for an app_bet row."""
+    return (row["event_id"], row["market"], row["side"],
+            row["point"] or 0, row["player"] or "")
+
+
+@app.post("/bets/{bet_id}/unmark")
+def unmark_bet(bet_id: int, _=Depends(require_auth)):
+    """"이 베팅은 성립하지 않았다" — a mis-tap, or the book rejected the slip.
+
+    The row is NOT deleted: app_bet rows are bet records (LEDGER RULE in
+    softbook_app_db). It gets not_placed=1, which the settle worker, the push
+    worker, the live grader and /mybets all filter out, and its pick_state 'bet'
+    override is dropped so the pick returns to the live feed.
+
+    Allowed on a settled bet too: if a mis-marked bet already auto-settled, that
+    day's PnL is ALREADY wrong and this is the only way to fix it. The response
+    reports the change so the app can say which day moves by how much rather
+    than letting a past number shift in silence.
+
+    Reversible: DELETE the same path."""
+    pdb = adb.connect()
+    try:
+        row = adb.get_app_bet(pdb, bet_id)
+        if row is None:
+            raise HTTPException(404, "no such bet")
+        if not row["not_placed"]:
+            adb.set_not_placed(pdb, bet_id, True, _now())
+            # The pick_state 'bet' override speaks for the PICK, not for this
+            # row, so it may only be dropped once no owned bet on that pick
+            # survives. Two rows on one pick is reachable (one-tap the pick from
+            # the feed, then also scan the paper slip); returning the pick to the
+            # feed on the first unmark would offer a one-tap re-bet while the
+            # other bet is still open — the 2026-08-06 double-bet.
+            if adb.live_bets_for_pick(pdb, _pick_of(row), exclude_id=bet_id) == 0:
+                adb.clear_bet_state(pdb, _pick_of(row))
+    finally:
+        pdb.close()
+    # `row` is the state BEFORE this call, so a repeat unmark correctly reports
+    # no change. Only a settled bet moves the calendar.
+    if row["not_placed"] or not row["settled"]:
+        return {"ok": True, "pnl_delta": None, "settled_day": None}
+    return {"ok": True,
+            "pnl_delta": -(row["pnl"] or 0),
+            "settled_day": (row["settled_at"] or "")[:10] or None}
+
+
+@app.delete("/bets/{bet_id}/unmark")
+def remark_bet(bet_id: int, _=Depends(require_auth)):
+    """Undo an unmark: the bet counts again and the pick re-hides from the feed.
+
+    Reports the calendar change in the SAME shape as POST, opposite sign. This
+    direction puts a past day's PnL back, which is the same "a past number must
+    never shift in silence" problem the POST response was built for — the app
+    names the day and the amount in a confirm dialog before calling."""
+    pdb = adb.connect()
+    try:
+        row = adb.get_app_bet(pdb, bet_id)
+        if row is None:
+            raise HTTPException(404, "no such bet")
+        if row["not_placed"]:
+            adb.set_not_placed(pdb, bet_id, False, None)
+            # Never over a 'dismissed' row. clear_bet_state deliberately leaves
+            # dismissed alone ("a separate user preference"), so the other half
+            # of the same toggle has to agree — otherwise dismissing a pick
+            # while its bet is disowned and then restoring rewrites the user's
+            # dismissal into 'bet'. Both states hide the pick from the feed, so
+            # keeping the preference costs nothing.
+            if adb.pick_state_of(pdb, _pick_of(row)) != "dismissed":
+                adb.set_pick_state(pdb, _pick_of(row), "bet", _now())
+    finally:
+        pdb.close()
+    # `row` is the state BEFORE this call, so a repeat remark correctly reports
+    # no change. Only a bet that was actually disowned AND settled moves the
+    # calendar; restoring it ADDS its pnl back to that day.
+    if not row["not_placed"] or not row["settled"]:
+        return {"ok": True, "pnl_delta": None, "settled_day": None}
+    return {"ok": True,
+            "pnl_delta": (row["pnl"] or 0),
+            "settled_day": (row["settled_at"] or "")[:10] or None}
+
+
 @app.post("/bets/scan")
 def scan_bet(body: ScanIn, _=Depends(require_auth)):
     """Parse a bet-slip image into a BetIn-shaped draft for the confirm sheet.
@@ -570,31 +700,53 @@ def delete_rule(rule_id: int, _=Depends(require_auth)):
     return {"ok": True}
 
 
+_MYBET_COLS = ("id, event_id, sport, home, away, commence_time, market, side,"
+               " point, player, label, book, fill_odds, stake, live_status,"
+               " live_progress, settled, won, pnl, settled_at, not_placed,"
+               " not_placed_at")
+
+# 90 days: the app screen is a working record, not an archive — the dashboard
+# History owns the long tail. Keeps the payload bounded as app_bet grows.
+_SETTLED_WINDOW_D = 90
+
+
+def _mybet_rows(pdb, tail, params=()):
+    keys = [c.strip() for c in _MYBET_COLS.split(",")]
+    rows = [dict(zip(keys, r)) for r in
+            pdb.execute(f"SELECT {_MYBET_COLS} FROM app_bet WHERE {tail}", params)]
+    for o in rows:
+        if o.get("live_progress"):
+            try:
+                o["live_progress"] = json.loads(o["live_progress"])
+            except Exception:
+                pass
+    return rows
+
+
 @app.get("/mybets")
 def get_mybets(_=Depends(require_auth)):
+    """The bet ledger, split by what the user can do with each row: open (waiting),
+    settled (done), not_placed (disowned — kept visible because the row is never
+    deleted). not_placed is excluded from the calendar: its PnL is not real."""
     pdb = adb.connect()
     try:
         cal = {}
         for day, pnl in pdb.execute(
                 "SELECT substr(settled_at,1,10) d, COALESCE(sum(pnl),0)"
                 " FROM app_bet WHERE settled=1 AND settled_at IS NOT NULL"
-                " GROUP BY d"):
+                " AND not_placed=0 GROUP BY d"):
             cal[day] = round(pnl, 2)
-        cols = ("id, event_id, sport, home, away, commence_time, market, side,"
-                " point, player, label, book, fill_odds, stake, live_status,"
-                " live_progress")
-        open_rows = [dict(zip(cols.replace(" ", "").split(","), r)) for r in
-                     pdb.execute(f"SELECT {cols} FROM app_bet WHERE settled=0"
-                                 " ORDER BY commence_time")]
-        for o in open_rows:
-            if o.get("live_progress"):
-                try:
-                    o["live_progress"] = json.loads(o["live_progress"])
-                except Exception:
-                    pass
+        open_rows = _mybet_rows(
+            pdb, "settled=0 AND not_placed=0 ORDER BY commence_time")
+        settled = _mybet_rows(
+            pdb, "settled=1 AND not_placed=0 AND settled_at IS NOT NULL"
+                 " AND datetime(settled_at) >= datetime('now', ?)"
+                 " ORDER BY settled_at DESC", (f"-{_SETTLED_WINDOW_D} days",))
+        not_placed = _mybet_rows(pdb, "not_placed=1 ORDER BY not_placed_at DESC")
     finally:
         pdb.close()
-    return {"calendar": cal, "open": open_rows}
+    return {"calendar": cal, "open": open_rows,
+            "settled": settled, "not_placed": not_placed}
 
 
 @app.get("/settings")

@@ -128,7 +128,7 @@ def _settle_messages(pdb, tokens, now):
     rows = pdb.execute(
         "SELECT a.id, a.label, a.won, a.pnl FROM app_bet a"
         " LEFT JOIN notified_settle n ON n.app_bet_id=a.id"
-        " WHERE a.settled=1 AND n.app_bet_id IS NULL").fetchall()
+        " WHERE a.settled=1 AND a.not_placed=0 AND n.app_bet_id IS NULL").fetchall()
     msgs = []
     for bid, label, won, pnl in rows:
         # won: 1=win, 0=lose, None=void/push (app_settle writes None for DNP/push)
