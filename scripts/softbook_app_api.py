@@ -479,6 +479,62 @@ def patch_bet(bet_id: int, body: BetPatch, _=Depends(require_auth)):
     return {"ok": True}
 
 
+def _pick_of(row):
+    """The pick_state key for an app_bet row."""
+    return (row["event_id"], row["market"], row["side"],
+            row["point"] or 0, row["player"] or "")
+
+
+@app.post("/bets/{bet_id}/unmark")
+def unmark_bet(bet_id: int, _=Depends(require_auth)):
+    """"이 베팅은 성립하지 않았다" — a mis-tap, or the book rejected the slip.
+
+    The row is NOT deleted: app_bet rows are bet records (LEDGER RULE in
+    softbook_app_db). It gets not_placed=1, which the settle worker, the push
+    worker, the live grader and /mybets all filter out, and its pick_state 'bet'
+    override is dropped so the pick returns to the live feed.
+
+    Allowed on a settled bet too: if a mis-marked bet already auto-settled, that
+    day's PnL is ALREADY wrong and this is the only way to fix it. The response
+    reports the change so the app can say which day moves by how much rather
+    than letting a past number shift in silence.
+
+    Reversible: DELETE the same path."""
+    pdb = adb.connect()
+    try:
+        row = adb.get_app_bet(pdb, bet_id)
+        if row is None:
+            raise HTTPException(404, "no such bet")
+        if not row["not_placed"]:
+            adb.set_not_placed(pdb, bet_id, True, _now())
+            adb.clear_bet_state(pdb, _pick_of(row))
+    finally:
+        pdb.close()
+    # `row` is the state BEFORE this call, so a repeat unmark correctly reports
+    # no change. Only a settled bet moves the calendar.
+    if row["not_placed"] or not row["settled"]:
+        return {"ok": True, "pnl_delta": None, "settled_day": None}
+    return {"ok": True,
+            "pnl_delta": -(row["pnl"] or 0),
+            "settled_day": (row["settled_at"] or "")[:10] or None}
+
+
+@app.delete("/bets/{bet_id}/unmark")
+def remark_bet(bet_id: int, _=Depends(require_auth)):
+    """Undo an unmark: the bet counts again and the pick re-hides from the feed."""
+    pdb = adb.connect()
+    try:
+        row = adb.get_app_bet(pdb, bet_id)
+        if row is None:
+            raise HTTPException(404, "no such bet")
+        if row["not_placed"]:
+            adb.set_not_placed(pdb, bet_id, False, None)
+            adb.set_pick_state(pdb, _pick_of(row), "bet", _now())
+    finally:
+        pdb.close()
+    return {"ok": True}
+
+
 @app.post("/bets/scan")
 def scan_bet(body: ScanIn, _=Depends(require_auth)):
     """Parse a bet-slip image into a BetIn-shaped draft for the confirm sheet.
