@@ -450,6 +450,18 @@ def patch_bet(bet_id: int, body: BetPatch, _=Depends(require_auth)):
     fields = body.model_dump(exclude_unset=True)
     if not fields:
         raise HTTPException(422, "no editable fields supplied")
+    # exclude_unset only tells "field omitted" from "field explicitly set" — it
+    # does NOT stop an explicit null from getting through. stake/fill_odds feed
+    # settle's pnl = stake * (fill_odds - 1) with no None guard, so a nulled
+    # one poisons that row and (since settle commits once after its loop) takes
+    # the whole batch down with it. There's also no sense in which a placed bet
+    # with no stake is a record of anything, so this isn't just a worker
+    # crash-guard — it's an invalid edit. book has neither problem: it's
+    # descriptive metadata and POST /bets already allows a bookless bet.
+    if "stake" in fields and fields["stake"] is None:
+        raise HTTPException(422, "stake cannot be cleared")
+    if "fill_odds" in fields and fields["fill_odds"] is None:
+        raise HTTPException(422, "fill_odds cannot be cleared")
     pdb = adb.connect()
     try:
         row = adb.get_app_bet(pdb, bet_id)
