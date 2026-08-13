@@ -34,7 +34,8 @@ APP_BET_SCHEMA = """CREATE TABLE IF NOT EXISTS app_bet(
     book TEXT, rec_odds REAL, fill_odds REAL, stake REAL,
     placed_at TEXT, source TEXT,
     live_status TEXT DEFAULT 'pending', live_progress TEXT,
-    settled INTEGER DEFAULT 0, won INTEGER, pnl REAL, settled_at TEXT)"""
+    settled INTEGER DEFAULT 0, won INTEGER, pnl REAL, settled_at TEXT,
+    not_placed INTEGER DEFAULT 0, not_placed_at TEXT)"""
 
 FILTER_PREFS_SCHEMA = """CREATE TABLE IF NOT EXISTS filter_prefs(
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -63,11 +64,19 @@ def init_schema(db):
 
 
 def _ensure_app_bet_columns(db):
-    """Idempotently add advisory price columns to an existing app_bet table."""
+    """Idempotently add columns to an existing app_bet table."""
     have = {r[1] for r in db.execute("PRAGMA table_info(app_bet)")}
     # Written by the retired price-move pusher (2026-08-05). Kept so existing rows
     # keep their columns; nothing writes or reads them now.
-    for name, decl in (("current_best_odds", "REAL"), ("last_odds_check_at", "TEXT")):
+    # not_placed: the user marked a pick bet but the bet never happened (mis-tap,
+    # or the book rejected it). NOT called 'voided' — softbook_results already
+    # uses 'void' for a settlement outcome (cancelled/walkover game), and one word
+    # for two concepts would fuse them permanently. The row is never deleted
+    # (ledger rule); every consumer filters not_placed=0 instead.
+    for name, decl in (("current_best_odds", "REAL"),
+                       ("last_odds_check_at", "TEXT"),
+                       ("not_placed", "INTEGER DEFAULT 0"),
+                       ("not_placed_at", "TEXT")):
         if name not in have:
             db.execute(f"ALTER TABLE app_bet ADD COLUMN {name} {decl}")
 
@@ -158,6 +167,54 @@ def insert_app_bet(db, bet):
          bet.get("stake"), bet.get("placed_at"), bet.get("source")))
     db.commit()
     return cur.lastrowid
+
+
+_EDITABLE_BET_COLS = ("book", "stake", "fill_odds")
+
+
+def get_app_bet(db, bet_id):
+    """One app_bet row as a dict (all columns), or None."""
+    cur = db.execute("SELECT * FROM app_bet WHERE id=?", (bet_id,))
+    row = cur.fetchone()
+    if row is None:
+        return None
+    return dict(zip([d[0] for d in cur.description], row))
+
+
+def update_app_bet(db, bet_id, fields):
+    """Write the three user-entered columns. Anything else in `fields` is
+    ignored on purpose — event/market/side describe a DIFFERENT bet, rec_odds is
+    a system observation feeding CLV, and settled/won/pnl belong to the settle
+    worker. Returns rows changed."""
+    cols = [c for c in _EDITABLE_BET_COLS if c in fields]
+    if not cols:
+        return 0
+    sets = ", ".join(f"{c}=?" for c in cols)
+    cur = db.execute(f"UPDATE app_bet SET {sets} WHERE id=?",
+                     (*(fields[c] for c in cols), bet_id))
+    db.commit()
+    return cur.rowcount
+
+
+def set_not_placed(db, bet_id, flag, now):
+    """Mark (or unmark) a bet as never actually placed. The row stays — see the
+    LEDGER RULE at the top of this module. Returns True if the row exists."""
+    cur = db.execute("UPDATE app_bet SET not_placed=?, not_placed_at=? WHERE id=?",
+                     (1 if flag else 0, now if flag else None, bet_id))
+    db.commit()
+    return cur.rowcount > 0
+
+
+def clear_bet_state(db, pick):
+    """Delete this pick's state='bet' override so it returns to the live feed.
+    Single row only, and only state='bet' — unlike undismiss_group there is no
+    reverse-middle group to sweep, and a 'dismissed' row is a separate
+    preference that this must not touch. Returns rows deleted."""
+    cur = db.execute(
+        "DELETE FROM pick_state WHERE event_id=? AND market=? AND side=?"
+        " AND point=? AND player=? AND state='bet'", _norm(pick))
+    db.commit()
+    return cur.rowcount
 
 
 def migrate_real_fill(db):
