@@ -36,7 +36,35 @@ jest.mock("@react-navigation/native", () => ({
 }));
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
-import { MyBetsScreen } from "./MyBetsScreen";
+import { MyBetsScreen, monthPnl, monthPrefix } from "./MyBetsScreen";
+
+// The user is in New York and the calendar's day keys are UTC, so the two frames
+// disagree for the last evening of every month. Pin the runner's zone to make
+// that boundary bite deterministically on any machine, and restore it after —
+// jest reuses one worker process across test files.
+const realTZ = process.env.TZ;
+process.env.TZ = "America/New_York";
+afterAll(() => { process.env.TZ = realTZ; });
+
+test("monthPnl sums only the requested month's days", () => {
+  // The screen's headline number. Fixed prefix, never new Date(): a test for it
+  // must not start failing on some future day.
+  const calendar = { "2026-07-31": 100, "2026-08-01": 12.5,
+                     "2026-08-09": -4.25, "2026-09-01": 999 };
+  expect(monthPnl(calendar, "2026-08")).toBe(8.25);
+  expect(monthPnl(calendar, "2026-09")).toBe(999);
+  expect(monthPnl({}, "2026-08")).toBe(0);
+  expect(monthPnl(calendar, "2026-10")).toBe(0);
+});
+
+test("이번 달 is derived in UTC — the frame the calendar keys are in", () => {
+  // Day keys are substr(settled_at,1,10) of a UTC timestamp. 2026-08-31 21:00 ET
+  // is 2026-09-01 01:00 UTC, so that evening's settlements are keyed
+  // "2026-09-01"; reading the DEVICE's local month here would look for "2026-08"
+  // and leave them out of both months' summaries.
+  expect(monthPrefix(new Date("2026-09-01T01:00:00Z"))).toBe("2026-09");
+  expect(monthPrefix(new Date("2026-08-01T03:00:00Z"))).toBe("2026-08");
+});
 
 test("renders the three sections with their exact headers", async () => {
   await render(<MyBetsScreen />);

@@ -9,9 +9,19 @@ import { color, radius, space } from "../theme";
 
 type Section = { title: string; data: AppBet[] };
 
-/** The month key the calendar uses, in the device's local date. */
-function monthPrefix(now = new Date()): string {
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+/** The month key the calendar uses — UTC, because the keys it is matched against
+ *  are UTC. The server builds them as substr(settled_at,1,10) of a UTC timestamp,
+ *  so reading the DEVICE's local month here mixes two frames: for a New York
+ *  user, a bet settled 2026-08-31 21:00 ET is keyed "2026-09-01" and would be
+ *  missing from the August total on screen, while July 31 evening settlements
+ *  would count toward August.
+ *
+ *  The day keys themselves deliberately stay UTC. Re-attributing them to Eastern
+ *  would move per-day numbers the user has already seen — that is the user's
+ *  call to make, not a bug fix. This only aligns the summary with the frame its
+ *  keys are actually in. */
+export function monthPrefix(now = new Date()): string {
+  return now.toISOString().slice(0, 7);
 }
 
 export function monthPnl(calendar: Record<string, number>, prefix = monthPrefix()): number {
