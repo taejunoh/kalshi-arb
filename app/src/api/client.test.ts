@@ -105,3 +105,33 @@ test("rules CRUD client methods hit the right paths", async () => {
   expect((await api.deleteRule(2)).ok).toBe(true);
   expect(fetchMock.mock.calls.some(([u, i]) => String(u).endsWith("/rules/2") && i?.method === "DELETE")).toBe(true);
 });
+
+test("getMyBets reads /mybets", async () => {
+  const f = mockFetch({ calendar: {}, open: [], settled: [], not_placed: [] });
+  global.fetch = f;
+  const r = await api.getMyBets();
+  expect((f as jest.Mock).mock.calls[0][0]).toBe("https://api.example.com/mybets");
+  expect(r.not_placed).toEqual([]);
+});
+
+test("patchBet sends PATCH with only the supplied fields", async () => {
+  const f = mockFetch({ ok: true });
+  global.fetch = f;
+  await api.patchBet(7, { stake: 25 });
+  const [url, init] = (f as jest.Mock).mock.calls[0];
+  expect(url).toBe("https://api.example.com/bets/7");
+  expect(init.method).toBe("PATCH");
+  expect(JSON.parse(init.body)).toEqual({ stake: 25 });
+});
+
+test("unmarkBet POSTs and remarkBet DELETEs the same path", async () => {
+  const f = mockFetch({ ok: true, pnl_delta: null, settled_day: null });
+  global.fetch = f;
+  await api.unmarkBet(7);
+  await api.remarkBet(7);
+  const calls = (f as jest.Mock).mock.calls;
+  expect(calls[0][0]).toBe("https://api.example.com/bets/7/unmark");
+  expect(calls[0][1].method).toBe("POST");
+  expect(calls[1][0]).toBe("https://api.example.com/bets/7/unmark");
+  expect(calls[1][1].method).toBe("DELETE");
+});

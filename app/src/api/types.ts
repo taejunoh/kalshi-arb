@@ -149,3 +149,55 @@ export interface MuteRule {
   value: string;
   created_at: string;
 }
+
+// ===== 내 베팅 (app_bet 원장) =====
+// A row of the bet ledger. `not_placed` = the user said this bet never happened
+// (mis-tap, or the book rejected it). The row is NEVER deleted — it is a record —
+// so the app renders it struck through instead of hiding it.
+export interface AppBet {
+  id: number;
+  event_id: string | null;
+  sport: string | null;
+  home: string | null;
+  away: string | null;
+  commence_time: string | null;
+  market: string | null;
+  side: string | null;
+  point: number | null;
+  player: string | null;
+  label: string | null;
+  book: string | null;
+  fill_odds: number | null;
+  stake: number | null;
+  live_status: string | null;
+  live_progress: unknown;
+  settled: number;
+  won: number | null;
+  pnl: number | null;
+  settled_at: string | null;
+  not_placed: number;
+  not_placed_at: string | null;
+}
+
+export interface MyBetsResponse {
+  /** day (YYYY-MM-DD) -> settled PnL, not_placed excluded */
+  calendar: Record<string, number>;
+  open: AppBet[];
+  settled: AppBet[];
+  not_placed: AppBet[];
+}
+
+/** POST /bets/{id}/unmark. pnl_delta/settled_day are non-null only when the
+ *  unmarked bet had already settled — the app names the calendar change. */
+export interface UnmarkResponse {
+  ok: boolean;
+  pnl_delta: number | null;
+  settled_day: string | null;
+}
+
+/** The only three fields the server accepts — anything else is a 422. */
+export interface BetPatch {
+  book?: string | null;
+  stake?: number | null;
+  fill_odds?: number | null;
+}

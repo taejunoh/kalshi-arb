@@ -2,12 +2,15 @@
 import { getCredentials } from "../storage";
 import type {
   BetIn,
+  BetPatch,
   MuteRule,
+  MyBetsResponse,
   Pick,
   PicksResponse,
   RefreshResponse,
   ScanDraft,
   Settings,
+  UnmarkResponse,
 } from "./types";
 
 export class ApiError extends Error {
@@ -42,6 +45,13 @@ export const api = {
   refreshPick: (id: string) => request<RefreshResponse>(`/picks/${enc(id)}/refresh`),
   postBet: (bet: BetIn) =>
     request<{ id: number }>("/bets", { method: "POST", body: JSON.stringify(bet) }),
+  getMyBets: () => request<MyBetsResponse>("/mybets"),
+  patchBet: (id: number, body: BetPatch) =>
+    request<{ ok: boolean }>(`/bets/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  unmarkBet: (id: number) =>
+    request<UnmarkResponse>(`/bets/${id}/unmark`, { method: "POST" }),
+  remarkBet: (id: number) =>
+    request<{ ok: boolean }>(`/bets/${id}/unmark`, { method: "DELETE" }),
   dismissPick: (id: string) =>
     request<{ ok: boolean }>(`/picks/${enc(id)}/dismiss`, { method: "POST" }),
   undismissPick: (id: string) =>
