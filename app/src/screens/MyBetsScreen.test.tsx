@@ -39,12 +39,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react-nativ
 import { MyBetsScreen, monthPnl, monthPrefix } from "./MyBetsScreen";
 
 // The user is in New York and the calendar's day keys are UTC, so the two frames
-// disagree for the last evening of every month. Pin the runner's zone to make
-// that boundary bite deterministically on any machine, and restore it after —
-// jest reuses one worker process across test files.
-const realTZ = process.env.TZ;
-process.env.TZ = "America/New_York";
-afterAll(() => { process.env.TZ = realTZ; });
+// disagree for the last evening of every month. The test below needs the
+// runner's zone pinned to one deterministically west of UTC to make that
+// boundary bite on any machine — but process.env.TZ set here, inside the test
+// module, is inert: Node/V8 reads TZ once at process boot and caches it, so an
+// assignment after the process is already running has no effect on Date. The
+// zone is pinned in app/package.json's "test" script instead
+// (`TZ=America/New_York jest`), which sets it in the shell environment before
+// the jest process — and any workers it forks — ever start.
 
 test("monthPnl sums only the requested month's days", () => {
   // The screen's headline number. Fixed prefix, never new Date(): a test for it
