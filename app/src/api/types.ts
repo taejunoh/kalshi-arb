@@ -180,8 +180,17 @@ export interface AppBet {
 }
 
 export interface MyBetsResponse {
-  /** day (YYYY-MM-DD) -> settled PnL, not_placed excluded */
+  /** day -> settled PnL, not_placed excluded. Keys are EASTERN calendar days
+   *  (YYYY-MM-DD), not UTC: settled_at is UTC, so a 10pm ET settlement lands at
+   *  02:00Z the next day and used to be filed under a day the user never
+   *  experienced. Converted server-side, where there is a real tz database. */
   calendar: Record<string, number>;
+  /** Current Eastern year-month ("2026-08") — the frame `calendar`'s keys are
+   *  in, so the "이번 달" total is summed over the same one. Sent by the server
+   *  because deriving it here needs Intl.DateTimeFormat's timeZone option and
+   *  full-ICU is not guaranteed under Hermes. Optional only because a response
+   *  can predate the field during a deploy skew; see summaryMonth's fallback. */
+  month?: string;
   open: AppBet[];
   settled: AppBet[];
   not_placed: AppBet[];

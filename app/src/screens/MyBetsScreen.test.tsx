@@ -2,6 +2,7 @@ jest.mock("../api/client", () => ({
   api: {
     getMyBets: jest.fn(async () => ({
       calendar: { "2026-08-09": 12.5 },
+      month: "2026-08",
       open: [{
         id: 1, event_id: "E1", sport: "baseball_mlb", home: "MIA", away: "NYM",
         commence_time: "2099-01-01T00:00:00Z", market: "h2h", side: "NYM",
@@ -36,17 +37,18 @@ jest.mock("@react-navigation/native", () => ({
 }));
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
-import { MyBetsScreen, monthPnl, monthPrefix } from "./MyBetsScreen";
+import type { MyBetsResponse } from "../api/types";
+import { MyBetsScreen, localMonth, monthPnl, summaryMonth } from "./MyBetsScreen";
 
-// The user is in New York and the calendar's day keys are UTC, so the two frames
-// disagree for the last evening of every month. The test below needs the
-// runner's zone pinned to one deterministically west of UTC to make that
-// boundary bite on any machine — but process.env.TZ set here, inside the test
-// module, is inert: Node/V8 reads TZ once at process boot and caches it, so an
-// assignment after the process is already running has no effect on Date. The
-// zone is pinned in app/package.json's "test" script instead
-// (`TZ=America/New_York jest`), which sets it in the shell environment before
-// the jest process — and any workers it forks — ever start.
+// The fallback below is a LOCAL-zone derivation, so one assertion in
+// `localMonth` can only tell "local" from "UTC" on a host that is not UTC. That
+// is not left to luck: app/jest.globalSetup.js pins TZ=America/New_York in the
+// jest parent before any worker boots, so the discriminating assertion is
+// deterministic on every machine — including a UTC CI/EC2 host, and including
+// --runInBand. (Setting process.env.TZ inside a test module would NOT work:
+// Node/V8 caches the zone at process boot.) Each zone-sensitive assertion below
+// is paired with one that holds in every zone, so a broken pin degrades the
+// suite loudly rather than silently.
 
 test("monthPnl sums only the requested month's days", () => {
   // The screen's headline number. Fixed prefix, never new Date(): a test for it
@@ -59,13 +61,60 @@ test("monthPnl sums only the requested month's days", () => {
   expect(monthPnl(calendar, "2026-10")).toBe(0);
 });
 
-test("이번 달 is derived in UTC — the frame the calendar keys are in", () => {
-  // Day keys are substr(settled_at,1,10) of a UTC timestamp. 2026-08-31 21:00 ET
-  // is 2026-09-01 01:00 UTC, so that evening's settlements are keyed
-  // "2026-09-01"; reading the DEVICE's local month here would look for "2026-08"
-  // and leave them out of both months' summaries.
-  expect(monthPrefix(new Date("2026-09-01T01:00:00Z"))).toBe("2026-09");
-  expect(monthPrefix(new Date("2026-08-01T03:00:00Z"))).toBe("2026-08");
+test("이번 달 is the month the server sent, in the frame the keys are in", () => {
+  // The calendar's keys are Eastern days now, and the server sends the Eastern
+  // month alongside them. Nothing about the month is re-derived on the device:
+  // whatever the server says is what gets summed, even a month the device's own
+  // clock disagrees with.
+  const at = (month?: string) => ({ month, calendar: {} } as unknown as MyBetsResponse);
+  expect(summaryMonth(at("2026-07"))).toBe("2026-07");
+  expect(summaryMonth(at("2099-12"))).toBe("2099-12");
+});
+
+test("a response predating `month` falls back to the DEVICE's local month", () => {
+  // Deploy skew only (JS shipped by OTA ahead of the API, or an API rollback).
+  // Local, not UTC: UTC was correct only while the day keys were UTC, and they
+  // no longer are. For this user — in New York — local IS the server's frame.
+  const noMonth = { calendar: {} } as unknown as MyBetsResponse;
+  expect(summaryMonth(noMonth, new Date("2026-08-15T12:00:00Z"))).toBe("2026-08");
+
+  // Midday mid-month: every zone on earth agrees, so this pins the format and
+  // the off-by-one on any host, pin or no pin.
+  expect(localMonth(new Date("2026-08-15T12:00:00Z"))).toBe("2026-08");
+  expect(localMonth(new Date("2026-01-15T12:00:00Z"))).toBe("2026-01");
+
+  // 2026-08-31 21:00 ET. This is the pair that discriminates: a UTC derivation
+  // answers "2026-09" and drops that evening out of the August total the user
+  // is looking at. Deterministic here because globalSetup pins the zone.
+  expect(localMonth(new Date("2026-09-01T01:00:00Z"))).toBe("2026-08");
+  expect(localMonth(new Date("2026-01-01T02:00:00Z"))).toBe("2025-12");
+});
+
+test("the summary sums the server's month, not the device's", async () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { api } = require("../api/client");
+  // A calendar spanning two Eastern months, and a server month that is neither
+  // the current one nor the one a UTC/device derivation would pick. Only code
+  // that actually reads response.month can produce +7.25.
+  (api.getMyBets as jest.Mock).mockResolvedValueOnce({
+    calendar: { "2026-06-30": 500, "2026-07-04": 7.25, "2026-08-01": 900 },
+    month: "2026-07", open: [], settled: [], not_placed: [],
+  });
+  await render(<MyBetsScreen />);
+  await waitFor(() => expect(screen.getByText("+7.25")).toBeOnTheScreen());
+});
+
+test("the summary still shows a number when `month` is missing", async () => {
+  // The alternative — blanking the headline — would turn a minutes-long deploy
+  // skew into a screen that looks broken. Keyed off localMonth so the assertion
+  // does not depend on what day the suite happens to run.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { api } = require("../api/client");
+  (api.getMyBets as jest.Mock).mockResolvedValueOnce({
+    calendar: { [`${localMonth()}-05`]: 3.5 }, open: [], settled: [], not_placed: [],
+  });
+  await render(<MyBetsScreen />);
+  await waitFor(() => expect(screen.getByText("+3.50")).toBeOnTheScreen());
 });
 
 test("renders the three sections with their exact headers", async () => {
