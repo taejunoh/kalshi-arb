@@ -211,16 +211,21 @@ test("the 되돌리기 dialog names the EASTERN day too", async () => {
   expect(message).not.toContain("8월 13일");
 });
 
-test("a row predating settled_day names no day rather than a wrong one", async () => {
-  // Deploy skew. The dialog degrades to the tail sentence — the same shape as a
-  // bet with no recorded PnL. Naming the UTC day instead would be the very bug
-  // this change removes, and the device cannot convert the instant itself.
+test("a row predating settled_day still confirms and names the amount, just no day", async () => {
+  // Deploy skew (an OTA ahead of the API, or an API rollback): the row has no
+  // settled_day yet. Whether to PROMPT (the money question: settled && pnl !=
+  // null) and whether to NAME A DAY (settled_day present) are separate — this
+  // row still moves a real PnL, so it still gets a confirm with the amount in
+  // it; it just cannot say which day, because the device cannot convert the
+  // instant itself and naming the UTC day would be the very bug this whole
+  // change removes.
   const noDay: AppBet = { ...bet, settled: 1, won: 1, pnl: -45,
     settled_at: "2026-08-13T02:00:00+00:00" };
   await render(<BetEditSheet route={routeFor(noDay)} />);
   await fireEvent.press(screen.getByText("베팅 안 했음"));
   const [, message] = alertSpy.mock.calls[0] as unknown as [string, string];
-  expect(message).toBe("기록은 남고 집계에서만 빠집니다. 이 픽은 다시 피드에 나타납니다.");
+  expect(message).toBe(
+    "PnL이 +45.00 변경됩니다. 기록은 남고 집계에서만 빠집니다. 이 픽은 다시 피드에 나타납니다.");
   expect(message).not.toContain("월");
 });
 
@@ -260,6 +265,31 @@ test("a settled 되돌리기 confirms first and names the restored PnL", async (
   expect(title).toBe("베팅 기록 되돌리기");
   expect(message).toBe(
     "8월 9일 PnL이 -45.00 변경됩니다. 이 베팅이 다시 집계에 포함됩니다. 이 픽은 피드에서 다시 숨겨집니다.");
+  confirmLastAlert("되돌리기");
+  await waitFor(() => expect(api.remarkBet).toHaveBeenCalledWith(7));
+  expect(mockPopToTop).toHaveBeenCalled();
+});
+
+const settledOffBetNoDay: AppBet = { ...offBet, settled: 1, won: 1, pnl: -45,
+  settled_at: "2026-08-13T02:00:00+00:00" };            // no settled_day
+
+test("a settled 되돌리기 still confirms even with no settled_day to name", async () => {
+  // Finding: movesSettledPnl used to be gated on settled_day, and remark()
+  // reuses that predicate to decide whether to prompt AT ALL — so a row
+  // predating settled_day (deploy skew) took the "nothing moved" branch and
+  // called remarkBet immediately, moving a past PnL with zero disclosure.
+  // Measured: settled:1, pnl:-45, settled_at set, no settled_day ->
+  // alerts=0, remarkCalled=1. The money question (settled && pnl != null)
+  // must gate the prompt on its own, independent of whether a day can be
+  // named.
+  await render(<BetEditSheet route={routeFor(settledOffBetNoDay)} />);
+  await fireEvent.press(screen.getByText("되돌리기"));
+  expect(api.remarkBet).not.toHaveBeenCalled();      // dialog first, no API yet
+  const [title, message] = alertSpy.mock.calls[0] as unknown as [string, string];
+  expect(title).toBe("베팅 기록 되돌리기");
+  expect(message).toBe(
+    "PnL이 -45.00 변경됩니다. 이 베팅이 다시 집계에 포함됩니다. 이 픽은 피드에서 다시 숨겨집니다.");
+  expect(message).not.toContain("월");
   confirmLastAlert("되돌리기");
   await waitFor(() => expect(api.remarkBet).toHaveBeenCalledWith(7));
   expect(mockPopToTop).toHaveBeenCalled();
