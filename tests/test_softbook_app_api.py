@@ -217,6 +217,62 @@ def test_mybets_groups_open_and_calendar(client):
     assert isinstance(body["open"], list)
 
 
+def _place_bet(client, **over):
+    body = {"event_id": "E1", "sport": "baseball_mlb", "market": "batter_total_bases",
+            "side": "Over", "point": 1.5, "player": "Brandon Nimmo",
+            "label": "Brandon Nimmo TB Over 1.5", "book": "theScore",
+            "fill_odds": 2.2, "stake": 2.0}
+    body.update(over)
+    r = client.post("/bets", json=body, headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200
+    return r.json()["id"]
+
+
+def test_mybets_splits_open_settled_and_not_placed(client):
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=2.4,"
+                " settled_at=strftime('%Y-%m-%dT%H:%M:%S+00:00','now') WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
+    assert body["open"] == []
+    assert [b["id"] for b in body["settled"]] == [bid]
+    assert body["settled"][0]["pnl"] == 2.4 and body["settled"][0]["won"] == 1
+    assert body["not_placed"] == []
+
+
+def test_mybets_excludes_not_placed_from_calendar_and_lists(client):
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=2.4,"
+                " settled_at='2026-06-12T22:00:00+00:00', not_placed=1,"
+                " not_placed_at='2026-08-12T10:00:00+00:00' WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
+    assert body["calendar"] == {}                       # PnL no longer counted
+    assert body["settled"] == [] and body["open"] == []
+    assert [b["id"] for b in body["not_placed"]] == [bid]
+
+
+def test_mybets_excludes_unsettled_not_placed_from_open(client):
+    """Regression: disowning a bet BEFORE it settles (the common case) must pull
+    it out of open, not just out of settled. The prior not_placed test only
+    covered an already-settled bet, so it never exercised the `open` bucket's
+    `AND not_placed=0` clause — mutation testing showed deleting that clause
+    left every test green."""
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET not_placed=1,"
+                " not_placed_at='2026-08-12T10:00:00+00:00' WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
+    assert body["open"] == []
+    assert [b["id"] for b in body["not_placed"]] == [bid]
+
+
 def test_settings_roundtrip(client):
     put = client.put("/settings", json={"min_ev": 0.03, "sports": ["baseball_mlb"],
                                         "muted_books": ["BallyBet"], "sort": "time"},
@@ -237,3 +293,315 @@ def test_push_register_upserts_token(client):
     n = pdb.execute("SELECT count(*) FROM push_token").fetchone()[0]
     pdb.close()
     assert n == 1
+
+
+def test_patch_bet_updates_the_three_editable_fields(client):
+    bid = _place_bet(client)
+    r = client.patch(f"/bets/{bid}", json={"book": "DraftKings", "stake": 25.0,
+                                           "fill_odds": 2.05},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200
+    body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
+    row = body["open"][0]
+    assert (row["book"], row["stake"], row["fill_odds"]) == ("DraftKings", 25.0, 2.05)
+
+
+def test_patch_bet_rejects_fields_that_would_make_it_a_different_bet(client):
+    bid = _place_bet(client)
+    for payload in ({"market": "h2h"}, {"rec_odds": 9.9}, {"pnl": 100.0}):
+        r = client.patch(f"/bets/{bid}", json=payload,
+                         headers={"Authorization": "Bearer secret"})
+        assert r.status_code == 422, payload
+
+
+def test_patch_bet_on_a_settled_row_is_conflict(client):
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, pnl=2.4 WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    r = client.patch(f"/bets/{bid}", json={"stake": 25.0},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 409
+
+
+def test_patch_bet_on_a_not_placed_row_is_conflict(client):
+    bid = _place_bet(client)
+    client.post(f"/bets/{bid}/unmark", headers={"Authorization": "Bearer secret"})
+    r = client.patch(f"/bets/{bid}", json={"stake": 25.0},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 409
+
+
+def test_patch_bet_rejects_explicit_null_stake(client):
+    """Regression: exclude_unset=True only tells 'omitted' from 'set' — it does
+    not stop an explicit null from getting through. {"stake": null} used to
+    write stake=NULL, and settle's pnl = stake * (fill_odds - 1) has no None
+    guard, so that one row's TypeError aborted the whole settle batch (settle
+    commits once after its loop, not per-row)."""
+    bid = _place_bet(client)
+    r = client.patch(f"/bets/{bid}", json={"stake": None},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 422
+    body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
+    row = body["open"][0]
+    assert row["stake"] == 2.0
+
+
+def test_patch_bet_rejects_explicit_null_fill_odds(client):
+    """Regression: same hole as stake — fill_odds also feeds settle's
+    pnl = stake * (fill_odds - 1) arithmetic with no None guard."""
+    bid = _place_bet(client)
+    r = client.patch(f"/bets/{bid}", json={"fill_odds": None},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 422
+
+
+def test_patch_bet_allows_explicit_null_book(client):
+    """book is descriptive metadata, not settle arithmetic — POST /bets already
+    accepts a bet with no book, so PATCH clearing it back to null must still
+    be allowed."""
+    bid = _place_bet(client)
+    r = client.patch(f"/bets/{bid}", json={"book": None},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200
+
+
+def test_unmark_returns_the_pick_to_the_active_feed(client):
+    """The whole point: a mis-marked pick becomes actionable again."""
+    ev = sqlite3.connect(os.environ["SOFTBOOK_EV_DB"])
+    ev.execute("DELETE FROM softbook_ev")
+    ev.execute("INSERT INTO softbook_ev VALUES (datetime('now'),"
+               "'baseball_mlb','E1','2099-01-01T00:00:00Z','MIA','NYM',"
+               "'spread','NYM',-1.5,'',0.45,2.0,'theScore',2.2,0.074,9,5,60,'High')")
+    ev.commit(); ev.close()
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client, market="spread", side="NYM", point=-1.5, player="",
+                     label="NYM -1.5")
+    assert client.get("/picks", headers=h).json()["picks"] == []      # hidden
+    r = client.post(f"/bets/{bid}/unmark", headers=h)
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "pnl_delta": None, "settled_day": None}
+    picks = client.get("/picks", headers=h).json()["picks"]
+    assert [p["id"] for p in picks] == ["E1|spread|NYM|-1.5|"]         # back
+
+
+def _seed_spread_pick(ev_path):
+    """Replace the seeded prop with a bettable GAME pick (props are SKIP and never
+    reach the feed), so 'is this pick back in the feed?' is answerable."""
+    ev = sqlite3.connect(ev_path)
+    ev.execute("DELETE FROM softbook_ev")
+    ev.execute("INSERT INTO softbook_ev VALUES (datetime('now'),"
+               "'baseball_mlb','E1','2099-01-01T00:00:00Z','MIA','NYM',"
+               "'spread','NYM',-1.5,'',0.45,2.0,'theScore',2.2,0.074,9,5,60,'High')")
+    ev.commit(); ev.close()
+
+
+def test_unmarking_one_of_two_bets_on_a_pick_keeps_it_hidden(client):
+    """Two owned bets on one pick is reachable through a documented flow: one-tap
+    the pick from the feed, then also scan the paper slip. Unmarking one of them
+    must NOT drop the pick_state 'bet' override — doing so puts a one-tap-bettable
+    card back in the feed while the second bet is still open, which is exactly the
+    double-bet that cost real money on 2026-08-06 (Seattle ML bet twice, 50
+    minutes apart, at a worse price) and that the Telegram '✅ 베팅 완료' stamp
+    was built to prevent. The override drops only when the LAST one is unmarked."""
+    _seed_spread_pick(os.environ["SOFTBOOK_EV_DB"])
+    h = {"Authorization": "Bearer secret"}
+    kw = dict(market="spread", side="NYM", point=-1.5, player="", label="NYM -1.5")
+    b1 = _place_bet(client, **kw)
+    b2 = _place_bet(client, **kw)
+    assert client.post(f"/bets/{b1}/unmark", headers=h).status_code == 200
+    feed = client.get("/picks", headers=h).json()
+    assert feed["picks"] == []                       # still hidden
+    assert feed["counts"].get("bet") == 1            # still marked as bet
+    # …and the last one unmarked does return it.
+    assert client.post(f"/bets/{b2}/unmark", headers=h).status_code == 200
+    picks = client.get("/picks", headers=h).json()["picks"]
+    assert [p["id"] for p in picks] == ["E1|spread|NYM|-1.5|"]
+
+
+def test_unmark_of_a_settled_bet_reports_the_calendar_change(client):
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=2.4,"
+                " settled_at='2026-08-09T22:00:00+00:00' WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    r = client.post(f"/bets/{bid}/unmark", headers=h).json()
+    assert r["pnl_delta"] == -2.4 and r["settled_day"] == "2026-08-09"
+
+
+def test_unmark_is_idempotent(client):
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    for _ in range(2):
+        assert client.post(f"/bets/{bid}/unmark", headers=h).status_code == 200
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    n = pdb.execute("SELECT count(*) FROM pick_state").fetchone()[0]
+    rows = pdb.execute("SELECT count(*) FROM app_bet").fetchone()[0]
+    pdb.close()
+    assert n == 0 and rows == 1          # state gone, ledger row still there
+
+
+def test_unmark_twice_on_a_settled_bet_reports_the_change_only_once(client):
+    """Regression: unmark_bet's guard `if row["not_placed"] or not row["settled"]`
+    relies on `row` being the PRE-mutation snapshot, so a repeat POST must see
+    not_placed already 1 and report no further change. Deleting
+    `row["not_placed"] or` from that guard left every existing unmark test
+    green — the calendar test POSTs once, and the idempotency test POSTs twice
+    but only checks status_code on an unsettled bet, so pnl_delta is trivially
+    null either way. Under that regression a duplicate tap or a retried
+    request reports pnl_delta a second time, and a client applying it to a
+    cached calendar double-subtracts."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=2.4,"
+                " settled_at='2026-08-09T22:00:00+00:00' WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    r1 = client.post(f"/bets/{bid}/unmark", headers=h).json()
+    assert r1["pnl_delta"] == -2.4 and r1["settled_day"] == "2026-08-09"
+    r2 = client.post(f"/bets/{bid}/unmark", headers=h).json()
+    assert r2["pnl_delta"] is None and r2["settled_day"] is None
+
+
+def test_unmark_never_deletes_the_ledger_row(client):
+    """LEDGER RULE. If this ever fails, the feature has become a delete button."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    client.post(f"/bets/{bid}/unmark", headers=h)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    row = adb2.get_app_bet(pdb, bid)
+    pdb.close()
+    assert row is not None and row["not_placed"] == 1
+    assert row["not_placed_at"] is not None
+    assert row["stake"] == 2.0 and row["fill_odds"] == 2.2   # not repriced
+
+
+def test_delete_unmark_reports_the_restored_calendar_change(client):
+    """The two directions of the toggle must be symmetric. POST goes out of its
+    way to honor "a past number must never shift in silence" — DELETE puts the
+    very same PnL BACK into that day, so it owes the caller the same disclosure
+    (the app names it in a confirm dialog). Opposite sign of the POST's delta."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=2.4,"
+                " settled_at='2026-08-09T22:00:00+00:00' WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    assert client.post(f"/bets/{bid}/unmark", headers=h).json()["pnl_delta"] == -2.4
+    r = client.delete(f"/bets/{bid}/unmark", headers=h).json()
+    assert r == {"ok": True, "pnl_delta": 2.4, "settled_day": "2026-08-09"}
+
+
+def test_delete_unmark_twice_reports_the_change_only_once(client):
+    """Mirrors test_unmark_twice_on_a_settled_bet_...: `row` is the PRE-mutation
+    snapshot, so a repeat DELETE must see not_placed already 0 and report no
+    further change. A client applying a repeated delta to a cached calendar
+    would double-ADD it."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=2.4,"
+                " settled_at='2026-08-09T22:00:00+00:00' WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    client.post(f"/bets/{bid}/unmark", headers=h)
+    assert client.delete(f"/bets/{bid}/unmark", headers=h).json()["pnl_delta"] == 2.4
+    r2 = client.delete(f"/bets/{bid}/unmark", headers=h).json()
+    assert r2["pnl_delta"] is None and r2["settled_day"] is None
+
+
+def test_delete_unmark_restores_the_bet_state(client):
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    client.post(f"/bets/{bid}/unmark", headers=h)
+    r = client.delete(f"/bets/{bid}/unmark", headers=h)
+    assert r.status_code == 200
+    # An unsettled bet moves no past day, so there is nothing to disclose.
+    assert r.json() == {"ok": True, "pnl_delta": None, "settled_day": None}
+    assert client.get("/picks", headers=h).json()["counts"].get("bet") == 1
+    body = client.get("/mybets", headers=h).json()
+    assert body["not_placed"] == [] and [b["id"] for b in body["open"]] == [bid]
+
+
+def test_delete_unmark_on_a_never_unmarked_bet_is_a_noop(client):
+    """Regression: remark_bet's `if row["not_placed"]:` guard makes DELETE a
+    no-op when the bet was never unmarked. The only existing DELETE test
+    (test_delete_unmark_restores_the_bet_state) always POSTs an unmark first,
+    so nothing pins this path — a DELETE on a bet that was never disowned is
+    correct by inspection but unpinned. If the guard is removed, remark_bet
+    mutates unconditionally: harmless for not_placed (already 0) but it
+    re-touches the pick_state 'bet' row's updated_at, which this test catches
+    even though the row's presence and not_placed both look unchanged."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    before = pdb.execute(
+        "SELECT updated_at FROM pick_state WHERE state='bet'").fetchone()[0]
+    pdb.close()
+    r = client.delete(f"/bets/{bid}/unmark", headers=h)
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "pnl_delta": None, "settled_day": None}
+    pdb = adb2.connect()
+    row = adb2.get_app_bet(pdb, bid)
+    n, after = pdb.execute(
+        "SELECT count(*), max(updated_at) FROM pick_state WHERE state='bet'"
+    ).fetchone()
+    pdb.close()
+    assert row["not_placed"] == 0
+    assert n == 1 and after == before
+
+
+def test_delete_unmark_does_not_overwrite_a_dismissed_pick_state(client):
+    """The two halves of one toggle must agree about 'dismissed'. clear_bet_state
+    is explicitly documented never to touch a dismissed row ("a separate user
+    preference"), but remark_bet used to set_pick_state(..., 'bet') flat out — so
+    dismissing a pick while its bet is disowned and then 되돌리기 rewrote the
+    user's dismissal into 'bet'. Both states hide the pick, so the impact is
+    small; the incoherence is the bug. The ledger half must still happen."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    client.post(f"/bets/{bid}/unmark", headers=h)          # 'bet' override gone
+    pid = "E1|batter_total_bases|Over|1.5|Brandon Nimmo"
+    assert client.post(f"/picks/{pid}/dismiss", headers=h).status_code == 200
+    assert client.delete(f"/bets/{bid}/unmark", headers=h).status_code == 200
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    states = pdb.execute("SELECT state FROM pick_state").fetchall()
+    row = adb2.get_app_bet(pdb, bid)
+    pdb.close()
+    assert states == [("dismissed",)]                      # preference preserved
+    assert row["not_placed"] == 0                          # bet counts again
+
+
+def test_delete_unmark_restores_the_bet_state_when_not_dismissed(client):
+    """The other side of the dismissed check: with no 'dismissed' row in the way,
+    restoring still re-hides the pick behind a 'bet' override."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    client.post(f"/bets/{bid}/unmark", headers=h)
+    client.delete(f"/bets/{bid}/unmark", headers=h)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    states = pdb.execute("SELECT state FROM pick_state").fetchall()
+    pdb.close()
+    assert states == [("bet",)]
+
+
+def test_unmark_unknown_bet_is_404(client):
+    h = {"Authorization": "Bearer secret"}
+    assert client.post("/bets/9999/unmark", headers=h).status_code == 404
+    assert client.delete("/bets/9999/unmark", headers=h).status_code == 404
+
+
+def test_patch_unknown_bet_is_404(client):
+    r = client.patch("/bets/9999", json={"stake": 1.0},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 404
