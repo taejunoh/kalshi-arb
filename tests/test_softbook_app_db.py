@@ -163,6 +163,16 @@ def test_set_not_placed_flips_the_flag_and_stamps_the_time():
     assert adb.set_not_placed(db, bid + 999, True, "x") is False
 
 
+def test_pick_state_of_reads_one_picks_override():
+    db = mem()
+    bet = ("E1", "h2h", "NYM", 0, "")
+    adb.set_pick_state(db, bet, "dismissed", "t1")
+    assert adb.pick_state_of(db, bet) == "dismissed"
+    adb.set_pick_state(db, bet, "bet", "t2")
+    assert adb.pick_state_of(db, bet) == "bet"
+    assert adb.pick_state_of(db, ("E9", "h2h", "MIA", 0, "")) is None
+
+
 def test_live_bets_for_pick_counts_only_owned_rows_on_that_pick():
     """The question unmark asks before dropping a pick's feed override: is any
     OTHER bet on this pick still owned? not_placed rows are disowned and do not

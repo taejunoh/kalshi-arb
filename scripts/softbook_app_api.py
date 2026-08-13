@@ -541,7 +541,14 @@ def remark_bet(bet_id: int, _=Depends(require_auth)):
             raise HTTPException(404, "no such bet")
         if row["not_placed"]:
             adb.set_not_placed(pdb, bet_id, False, None)
-            adb.set_pick_state(pdb, _pick_of(row), "bet", _now())
+            # Never over a 'dismissed' row. clear_bet_state deliberately leaves
+            # dismissed alone ("a separate user preference"), so the other half
+            # of the same toggle has to agree — otherwise dismissing a pick
+            # while its bet is disowned and then restoring rewrites the user's
+            # dismissal into 'bet'. Both states hide the pick from the feed, so
+            # keeping the preference costs nothing.
+            if adb.pick_state_of(pdb, _pick_of(row)) != "dismissed":
+                adb.set_pick_state(pdb, _pick_of(row), "bet", _now())
     finally:
         pdb.close()
     # `row` is the state BEFORE this call, so a repeat remark correctly reports
