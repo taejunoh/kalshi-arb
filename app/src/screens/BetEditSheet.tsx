@@ -11,20 +11,47 @@ import { color, radius, space } from "../theme";
 
 type Props = { route: NativeStackScreenProps<MyBetsStackParamList, "BetEdit">["route"] };
 
-const MONTH_DAY = (iso: string): string => {
-  const [, m, d] = iso.slice(0, 10).split("-");
+/** "8월 12일" from a YYYY-MM-DD day key.
+ *
+ *  Takes the DAY, never a raw settled_at. settled_at is a UTC instant, so
+ *  slicing it names the following day for anything settling after 8pm ET —
+ *  which is most evening games, and 39% of settled bets in production. The day
+ *  is computed once on the server (see AppBet.settled_day) and only formatted
+ *  here. */
+const MONTH_DAY = (day: string): string => {
+  const [, m, d] = day.split("-");
   return `${Number(m)}월 ${Number(d)}일`;
 };
 
-/** Does toggling this bet move a number that is already on the books? Only a
- *  settled row with a recorded PnL has one. Both the dialog TEXT and the
- *  decision to show a dialog at all read this single predicate, so a confirm
- *  prompt can never appear with no amount in it to disclose.
+/** Does toggling this bet move a number that is already on the books AT ALL?
+ *  The MONEY question: only a settled row with a recorded PnL has one. Both
+ *  UNMARK's post-hoc check and REMARK's decision to prompt AT ALL read this
+ *  single predicate — so it alone must decide "does anything move", never
+ *  "can we name what day it lands on" too, or the answer to "should I even
+ *  ask" quietly depends on a field (settled_day) that is only a display nicety.
  *
- *  A type predicate so toggleMessage still gets pnl/settled_at narrowed to
- *  non-null after its early return. */
-function movesSettledPnl(bet: AppBet): bet is AppBet & { pnl: number; settled_at: string } {
-  return !!bet.settled && bet.pnl != null && !!bet.settled_at;
+ *  Deliberately does NOT require settled_day. It used to, and that let a row
+ *  predating the field (deploy skew: an OTA published before the API deploy,
+ *  or an API rollback afterward) take the "nothing moved" branch — remark()
+ *  reuses this predicate to gate its confirm dialog, so that row called
+ *  remarkBet with NO prompt at all, moving a past PnL in silence. Whether the
+ *  dialog can additionally NAME a day is a separate question — see
+ *  hasNameableDay below.
+ *
+ *  A type predicate so toggleMessage still gets pnl narrowed to non-null
+ *  after its early return. */
+function movesSettledPnl(bet: AppBet): bet is AppBet & { pnl: number } {
+  return !!bet.settled && bet.pnl != null;
+}
+
+/** Can the dialog additionally NAME the day that moves? Only once settled_day
+ *  is present. A row predating that field still moves real money
+ *  (movesSettledPnl above says so on its own) but has nothing honest to call
+ *  it — the device cannot convert the UTC instant itself, and slicing
+ *  settled_at would name the wrong day for an evening settlement, which is
+ *  the whole bug this feature exists to prevent. */
+function hasNameableDay(bet: AppBet): bet is AppBet & { settled_day: string } {
+  return bet.settled_day != null;
 }
 
 /** "{month}월 {day}일 PnL이 {+/-N.NN}" — the day+amount fragment named in every
@@ -32,18 +59,32 @@ function movesSettledPnl(bet: AppBet): bet is AppBet & { pnl: number; settled_at
  *  ("about to change") and after one (unmarkedElsewhereMessage, below,
  *  "just changed") cannot drift apart. */
 function pnlChangeFragment(day: string, delta: number): string {
+  return `${MONTH_DAY(day)} ${pnlDeltaFragment(delta)}`;
+}
+
+/** "PnL이 {+/-N.NN}" — the amount alone, for a row that moves real money but
+ *  has no day to name (see hasNameableDay). pnlChangeFragment builds on this
+ *  rather than duplicating the sign/format logic, so the two fragments can
+ *  never disagree about how a delta is written. */
+function pnlDeltaFragment(delta: number): string {
   const signed = `${delta >= 0 ? "+" : "-"}${Math.abs(delta).toFixed(2)}`;
-  return `${MONTH_DAY(day)} PnL이 ${signed}`;
+  return `PnL이 ${signed}`;
 }
 
 /** The confirm text for BOTH directions of the 베팅 안 했음 toggle. A settled
  *  bet's PnL moves either way — out of that day on unmark, back into it on
- *  restore — so the dialog names the day and the amount: a past number must
- *  never shift in silence. One builder on purpose, so the two dialogs cannot
- *  drift apart; only the sign of the delta and the trailing sentence differ. */
+ *  restore — so the dialog names the amount (and the day, when one can be
+ *  named): a past number must never shift in silence, even when the day it
+ *  lands on cannot be honestly stated. One builder on purpose, so the two
+ *  dialogs cannot drift apart; only the sign of the delta and the trailing
+ *  sentence differ. */
 function toggleMessage(bet: AppBet, sign: 1 | -1, tail: string): string {
   if (!movesSettledPnl(bet)) return tail;
-  return `${pnlChangeFragment(bet.settled_at, sign * bet.pnl)} 변경됩니다. ${tail}`;
+  const delta = sign * bet.pnl;
+  const fragment = hasNameableDay(bet)
+    ? pnlChangeFragment(bet.settled_day, delta)
+    : pnlDeltaFragment(delta);
+  return `${fragment} 변경됩니다. ${tail}`;
 }
 
 /** 베팅 안 했음: the bet leaves the totals, the pick returns to the feed. */

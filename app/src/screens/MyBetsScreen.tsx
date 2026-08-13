@@ -9,22 +9,32 @@ import { color, radius, space } from "../theme";
 
 type Section = { title: string; data: AppBet[] };
 
-/** The month key the calendar uses — UTC, because the keys it is matched against
- *  are UTC. The server builds them as substr(settled_at,1,10) of a UTC timestamp,
- *  so reading the DEVICE's local month here mixes two frames: for a New York
- *  user, a bet settled 2026-08-31 21:00 ET is keyed "2026-09-01" and would be
- *  missing from the August total on screen, while July 31 evening settlements
- *  would count toward August.
+/** The device's own year-month. Fallback only — see summaryMonth.
  *
- *  The day keys themselves deliberately stay UTC. Re-attributing them to Eastern
- *  would move per-day numbers the user has already seen — that is the user's
- *  call to make, not a bug fix. This only aligns the summary with the frame its
- *  keys are actually in. */
-export function monthPrefix(now = new Date()): string {
-  return now.toISOString().slice(0, 7);
+ *  Local fields, not toISOString(): that is UTC, which was the right frame only
+ *  while the calendar's day keys were UTC. They are Eastern days now. */
+export function localMonth(now = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export function monthPnl(calendar: Record<string, number>, prefix = monthPrefix()): number {
+/** The month the "이번 달" total is summed over.
+ *
+ *  The server sends it, because the calendar's day keys are Eastern and only
+ *  the server has a real timezone database: deriving an Eastern month here
+ *  would need Intl.DateTimeFormat's timeZone option, and full-ICU is not
+ *  guaranteed under Hermes. Nothing about the frame is decided on the device.
+ *
+ *  The fallback covers exactly one transient case — a response that predates
+ *  the field (JS shipped by OTA ahead of the API deploy, or an API rollback).
+ *  It reads the DEVICE's local month, which is the server's own answer whenever
+ *  the device sits in the zone the server keys on; it does for this user, who
+ *  is in New York. Blanking the headline instead would turn a minutes-long
+ *  deploy skew into a screen that reads as broken. */
+export function summaryMonth(data: MyBetsResponse, now = new Date()): string {
+  return data.month ?? localMonth(now);
+}
+
+export function monthPnl(calendar: Record<string, number>, prefix: string): number {
   return Object.entries(calendar)
     .filter(([day]) => day.startsWith(prefix))
     .reduce((sum, [, pnl]) => sum + pnl, 0);
@@ -101,7 +111,7 @@ export function MyBetsScreen() {
     );
   }
 
-  const month = data ? monthPnl(data.calendar) : 0;
+  const month = data ? monthPnl(data.calendar, summaryMonth(data)) : 0;
 
   return (
     <View style={s.container}>

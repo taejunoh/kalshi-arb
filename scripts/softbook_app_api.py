@@ -13,9 +13,11 @@ Run: uvicorn softbook_app_api:app --host 127.0.0.1 --port 8000
 """
 import json
 import os
+import re
 import sqlite3
 import sys
 import time
+import zoneinfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 
@@ -518,12 +520,17 @@ def unmark_bet(bet_id: int, _=Depends(require_auth)):
     finally:
         pdb.close()
     # `row` is the state BEFORE this call, so a repeat unmark correctly reports
-    # no change. Only a settled bet moves the calendar.
-    if row["not_placed"] or not row["settled"]:
+    # no change. Only a settled bet moves the calendar — and only when its
+    # settled_at actually resolves to an Eastern day: get_mybets drops a row
+    # with no resolvable day from the calendar entirely (see
+    # test_a_settled_at_with_no_date_in_it_is_dropped_from_the_calendar), so
+    # gating pnl_delta on `settled` alone while settled_day comes back None
+    # would assert a calendar change that never happens. Same condition for
+    # both fields, so they cannot disagree.
+    day = _et_day(row["settled_at"]) if not row["not_placed"] and row["settled"] else None
+    if day is None:
         return {"ok": True, "pnl_delta": None, "settled_day": None}
-    return {"ok": True,
-            "pnl_delta": -(row["pnl"] or 0),
-            "settled_day": (row["settled_at"] or "")[:10] or None}
+    return {"ok": True, "pnl_delta": -(row["pnl"] or 0), "settled_day": day}
 
 
 @app.delete("/bets/{bet_id}/unmark")
@@ -552,13 +559,15 @@ def remark_bet(bet_id: int, _=Depends(require_auth)):
     finally:
         pdb.close()
     # `row` is the state BEFORE this call, so a repeat remark correctly reports
-    # no change. Only a bet that was actually disowned AND settled moves the
-    # calendar; restoring it ADDS its pnl back to that day.
-    if not row["not_placed"] or not row["settled"]:
+    # no change. Only a bet that was actually disowned AND settled AND whose
+    # settled_at resolves to an Eastern day moves the calendar (same gate as
+    # unmark_bet, for the same reason — get_mybets drops an unresolvable
+    # settled_at from the calendar rather than filing it under a synthetic
+    # day); restoring it ADDS its pnl back to that day.
+    day = _et_day(row["settled_at"]) if row["not_placed"] and row["settled"] else None
+    if day is None:
         return {"ok": True, "pnl_delta": None, "settled_day": None}
-    return {"ok": True,
-            "pnl_delta": (row["pnl"] or 0),
-            "settled_day": (row["settled_at"] or "")[:10] or None}
+    return {"ok": True, "pnl_delta": (row["pnl"] or 0), "settled_day": day}
 
 
 @app.post("/bets/scan")
@@ -707,7 +716,61 @@ _MYBET_COLS = ("id, event_id, sport, home, away, commence_time, market, side,"
 
 # 90 days: the app screen is a working record, not an archive — the dashboard
 # History owns the long tail. Keeps the payload bounded as app_bet grows.
+# Deliberately still measured in UTC: this is a RETENTION window (how much
+# history to ship), not a display attribution, and a half-day of slack at its
+# far edge is meaningless. Only the calendar keys are re-attributed below.
 _SETTLED_WINDOW_D = 90
+
+# The user is in New York, and settled_at is UTC. Keying the calendar on the UTC
+# date filed every evening settlement under the NEXT day: a 10pm ET Tuesday game
+# settles at 02:00Z Wednesday. Measured against production, 80 of 206 settled
+# bets (39%) were shown on a day the user did not experience, and per-day totals
+# moved materially with them (2026-08-09 read -$24.56 in UTC, +$36.94 in ET).
+#
+# zoneinfo rather than an offset: a fixed -4 is right only in EDT and an hour
+# wrong all winter (EST is UTC-5), which changes the DATE for anything settling
+# 04:00-04:59Z. That also rules out doing this in SQL — SQLite ships no timezone
+# database, so date(settled_at,'-4 hours') cannot be made correct year-round.
+# Same choice, same reason, as core/clv_tracker.py.
+_ET = zoneinfo.ZoneInfo("America/New_York")
+
+_DATE_PREFIX = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _et_day(settled_at):
+    """A stored UTC timestamp -> the Eastern calendar day the user lived it on.
+
+    Returns None only when the value holds no day at all, so one corrupt row
+    costs the calendar that row rather than 500-ing the whole ledger screen.
+    """
+    raw = (settled_at or "").strip()
+    if not raw:
+        return None
+    iso = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        dt = datetime.datetime.fromisoformat(iso)
+    except ValueError:
+        # Not ISO at all. Fall back to the leading date if there is one: the
+        # calendar is a sum of money the user reconciles against the settled
+        # list beside it, so dropping a row would make that total disagree in
+        # silence. Filed a day off is the error we are already fixing; money
+        # that vanishes from a total is a worse, newer one.
+        head = raw[:10]
+        return head if _DATE_PREFIX.fullmatch(head) else None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)   # every writer here is UTC
+    return dt.astimezone(_ET).date().isoformat()
+
+
+def _et_month(now=None):
+    """The current Eastern year-month ('2026-08').
+
+    Served to the app rather than derived there: computing an ET month on the
+    client needs Intl.DateTimeFormat's timeZone option, and full-ICU is not
+    guaranteed under Hermes on React Native. Keeping it here puts the timezone
+    decision in one place, with a real tz database behind it.
+    """
+    return (now or datetime.datetime.now(datetime.timezone.utc)).astimezone(_ET).strftime("%Y-%m")
 
 
 def _mybet_rows(pdb, tail, params=()):
@@ -720,6 +783,14 @@ def _mybet_rows(pdb, tail, params=()):
                 o["live_progress"] = json.loads(o["live_progress"])
             except Exception:
                 pass
+        # Derived, not stored: the Eastern day this row's PnL sits on, i.e. the
+        # calendar key it contributes to. The app's confirm dialog names the day
+        # a toggle will move, and it is raised BEFORE the request — so it cannot
+        # use the unmark response and must read it off the row. Sent rather than
+        # computed on the device because that would be a second implementation
+        # of the timezone rule, on the platform least able to do it (Intl's
+        # timeZone option needs full-ICU, not guaranteed under Hermes).
+        o["settled_day"] = _et_day(o.get("settled_at"))
     return rows
 
 
@@ -727,15 +798,24 @@ def _mybet_rows(pdb, tail, params=()):
 def get_mybets(_=Depends(require_auth)):
     """The bet ledger, split by what the user can do with each row: open (waiting),
     settled (done), not_placed (disowned — kept visible because the row is never
-    deleted). not_placed is excluded from the calendar: its PnL is not real."""
+    deleted). not_placed is excluded from the calendar: its PnL is not real.
+
+    Calendar days are Eastern, not UTC — see _et_day. `month` rides along so the
+    app's "이번 달" total is summed in the same frame its keys are in."""
     pdb = adb.connect()
     try:
-        cal = {}
-        for day, pnl in pdb.execute(
-                "SELECT substr(settled_at,1,10) d, COALESCE(sum(pnl),0)"
-                " FROM app_bet WHERE settled=1 AND settled_at IS NOT NULL"
-                " AND not_placed=0 GROUP BY d"):
-            cal[day] = round(pnl, 2)
+        # Folded in Python, not GROUP BY: the grouping key is only knowable
+        # after a tz-database conversion SQLite cannot do (see _et_day).
+        totals = {}
+        for settled_at, pnl in pdb.execute(
+                "SELECT settled_at, COALESCE(pnl,0) FROM app_bet"
+                " WHERE settled=1 AND settled_at IS NOT NULL AND not_placed=0"):
+            day = _et_day(settled_at)
+            if day is not None:
+                totals[day] = totals.get(day, 0.0) + pnl
+        # Rounded once at the end, not per addition, so the day total is the
+        # rounded sum rather than a sum of rounded parts.
+        cal = {d: round(v, 2) for d, v in totals.items()}
         open_rows = _mybet_rows(
             pdb, "settled=0 AND not_placed=0 ORDER BY commence_time")
         settled = _mybet_rows(
@@ -745,7 +825,7 @@ def get_mybets(_=Depends(require_auth)):
         not_placed = _mybet_rows(pdb, "not_placed=1 ORDER BY not_placed_at DESC")
     finally:
         pdb.close()
-    return {"calendar": cal, "open": open_rows,
+    return {"calendar": cal, "month": _et_month(), "open": open_rows,
             "settled": settled, "not_placed": not_placed}
 
 

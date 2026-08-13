@@ -174,14 +174,34 @@ export interface AppBet {
   settled: number;
   won: number | null;
   pnl: number | null;
+  /** The stored settlement instant — UTC. Never slice this to get a day: for a
+   *  10pm ET settlement it reads as the NEXT date. Use settled_day. */
   settled_at: string | null;
+  /** The EASTERN calendar day settled_at falls on — the calendar key this row's
+   *  PnL contributes to, and the day a 베팅 안 했음 toggle will move. Derived
+   *  server-side by the same conversion that builds the calendar, so the two
+   *  cannot disagree and the device never has to do timezone math (Intl's
+   *  timeZone option needs full-ICU, not guaranteed under Hermes).
+   *
+   *  Optional only because a response can predate the field during a deploy
+   *  skew; absent, the confirm dialog names no day rather than a wrong one. */
+  settled_day?: string | null;
   not_placed: number;
   not_placed_at: string | null;
 }
 
 export interface MyBetsResponse {
-  /** day (YYYY-MM-DD) -> settled PnL, not_placed excluded */
+  /** day -> settled PnL, not_placed excluded. Keys are EASTERN calendar days
+   *  (YYYY-MM-DD), not UTC: settled_at is UTC, so a 10pm ET settlement lands at
+   *  02:00Z the next day and used to be filed under a day the user never
+   *  experienced. Converted server-side, where there is a real tz database. */
   calendar: Record<string, number>;
+  /** Current Eastern year-month ("2026-08") — the frame `calendar`'s keys are
+   *  in, so the "이번 달" total is summed over the same one. Sent by the server
+   *  because deriving it here needs Intl.DateTimeFormat's timeZone option and
+   *  full-ICU is not guaranteed under Hermes. Optional only because a response
+   *  can predate the field during a deploy skew; see summaryMonth's fallback. */
+  month?: string;
   open: AppBet[];
   settled: AppBet[];
   not_placed: AppBet[];
