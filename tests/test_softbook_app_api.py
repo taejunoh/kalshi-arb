@@ -650,19 +650,58 @@ def test_unmark_settled_day_follows_dst_like_the_calendar_does(client):
     assert r["settled_day"] == "2026-01-14"
 
 
+def test_unmark_of_a_settled_bet_with_no_resolvable_day_reports_no_change(client):
+    """Regression: unmark_bet gated pnl_delta on `not row["not_placed"] and
+    row["settled"]` alone, without also requiring settled_at to resolve to an
+    Eastern day. A settled row whose settled_at is unparseable then reported
+    pnl_delta=-pnl while settled_day=None — asserting a calendar change that
+    get_mybets never makes: that same settled_at is DROPPED from the calendar
+    entirely (test_a_settled_at_with_no_date_in_it_is_dropped_from_the_calendar),
+    not filed under a synthetic day. Both fields must be gated on the same
+    condition so they cannot disagree."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    _settle(bid, "not a timestamp")
+    r = client.post(f"/bets/{bid}/unmark", headers=h).json()
+    assert r == {"ok": True, "pnl_delta": None, "settled_day": None}
+
+
+def test_delete_unmark_of_a_settled_bet_with_no_resolvable_day_reports_no_change(client):
+    """Same gate, the restore direction."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    _settle(bid, "not a timestamp")
+    client.post(f"/bets/{bid}/unmark", headers=h)
+    r = client.delete(f"/bets/{bid}/unmark", headers=h).json()
+    assert r == {"ok": True, "pnl_delta": None, "settled_day": None}
+
+
 def test_mybets_rows_carry_the_eastern_settled_day(client):
     """The confirm dialog is raised BEFORE the request, so it cannot use the
     unmark response — it can only use the row the screen already holds. The row
     therefore carries the Eastern day itself, computed by the same helper, so
     the client never has to convert (Intl's timeZone option is not safe under
-    Hermes) and there is still exactly one conversion in the system."""
+    Hermes) and there is still exactly one conversion in the system.
+
+    This reads the `settled` bucket, which — unlike the calendar — IS windowed
+    (`datetime(settled_at) >= datetime('now','-90 days')`, see
+    _SETTLED_WINDOW_D). A hardcoded past instant eventually ages out of that
+    window and body["settled"] comes back empty, dying on an IndexError for
+    code that is still correct (feedback_test_date_bomb_rolling_window.md).
+    So seed *today's* 02:00Z instead of a fixed date — it is always inside the
+    window — while still discriminating ET-vs-UTC: 02:00Z is always the
+    PREVIOUS Eastern calendar day under both EST (UTC-5) and EDT (UTC-4), so
+    the row never stops proving the conversion is real."""
+    import datetime as dt
+    today = dt.datetime.now(dt.timezone.utc).date()
+    yesterday_et = (today - dt.timedelta(days=1)).isoformat()
     bid = _place_bet(client)
-    _settle(bid, "2026-08-13T02:00:00+00:00")
+    _settle(bid, f"{today.isoformat()}T02:00:00+00:00")
     body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
     row = body["settled"][0]
     assert row["id"] == bid
-    assert row["settled_at"].startswith("2026-08-13")   # stored instant is UTC…
-    assert row["settled_day"] == "2026-08-12"           # …the day the user lived
+    assert row["settled_at"].startswith(today.isoformat())  # stored instant is UTC…
+    assert row["settled_day"] == yesterday_et                # …the day the user lived
     assert list(body["calendar"]) == [row["settled_day"]]
 
 
