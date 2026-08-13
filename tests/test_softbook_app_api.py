@@ -256,6 +256,23 @@ def test_mybets_excludes_not_placed_from_calendar_and_lists(client):
     assert [b["id"] for b in body["not_placed"]] == [bid]
 
 
+def test_mybets_excludes_unsettled_not_placed_from_open(client):
+    """Regression: disowning a bet BEFORE it settles (the common case) must pull
+    it out of open, not just out of settled. The prior not_placed test only
+    covered an already-settled bet, so it never exercised the `open` bucket's
+    `AND not_placed=0` clause — mutation testing showed deleting that clause
+    left every test green."""
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET not_placed=1,"
+                " not_placed_at='2026-08-12T10:00:00+00:00' WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
+    assert body["open"] == []
+    assert [b["id"] for b in body["not_placed"]] == [bid]
+
+
 def test_settings_roundtrip(client):
     put = client.put("/settings", json={"min_ev": 0.03, "sports": ["baseball_mlb"],
                                         "muted_books": ["BallyBet"], "sort": "time"},
