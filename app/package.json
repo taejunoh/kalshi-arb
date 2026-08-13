@@ -36,10 +36,11 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "TZ=America/New_York jest"
+    "test": "jest"
   },
   "jest": {
     "preset": "jest-expo",
+    "globalSetup": "./jest.globalSetup.js",
     "setupFilesAfterEnv": [
       "./jest.setup.ts"
     ],
