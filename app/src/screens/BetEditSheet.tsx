@@ -16,15 +16,25 @@ const MONTH_DAY = (iso: string): string => {
   return `${Number(m)}월 ${Number(d)}일`;
 };
 
-/** The confirm text. A settled bet's PnL moves, so the dialog names the day and
- *  the amount — a past number must never shift in silence. */
-export function unmarkMessage(bet: AppBet): string {
-  const tail = "기록은 남고 집계에서만 빠집니다. 이 픽은 다시 피드에 나타납니다.";
+/** The confirm text for BOTH directions of the 베팅 안 했음 toggle. A settled
+ *  bet's PnL moves either way — out of that day on unmark, back into it on
+ *  restore — so the dialog names the day and the amount: a past number must
+ *  never shift in silence. One builder on purpose, so the two dialogs cannot
+ *  drift apart; only the sign of the delta and the trailing sentence differ. */
+function toggleMessage(bet: AppBet, sign: 1 | -1, tail: string): string {
   if (!bet.settled || bet.pnl == null || !bet.settled_at) return tail;
-  const delta = -bet.pnl;
+  const delta = sign * bet.pnl;
   const signed = `${delta >= 0 ? "+" : "-"}${Math.abs(delta).toFixed(2)}`;
   return `${MONTH_DAY(bet.settled_at)} PnL이 ${signed} 변경됩니다. ${tail}`;
 }
+
+/** 베팅 안 했음: the bet leaves the totals, the pick returns to the feed. */
+export const unmarkMessage = (bet: AppBet): string => toggleMessage(bet, -1,
+  "기록은 남고 집계에서만 빠집니다. 이 픽은 다시 피드에 나타납니다.");
+
+/** 되돌리기: the exact inverse, and just as much of a change to a past day. */
+export const remarkMessage = (bet: AppBet): string => toggleMessage(bet, 1,
+  "이 베팅이 다시 집계에 포함됩니다. 이 픽은 피드에서 다시 숨겨집니다.");
 
 export function BetEditSheet({ route }: Props) {
   const nav = useNavigation<{ popToTop: () => void; goBack: () => void }>();
@@ -93,15 +103,27 @@ export function BetEditSheet({ route }: Props) {
     ]);
   };
 
-  const remark = async () => {
-    setBusy(true);
-    try {
-      await api.remarkBet(bet.id);
-      nav.popToTop();
-    } catch (e) {
-      setError((e as Error).message);
-      setBusy(false);
-    }
+  // Confirmed too, for the same reason unmark is: restoring a settled bet moves
+  // a past day's PnL. An unconfirmed single tap that silently rewrites a number
+  // the user has already read is exactly what the unmark dialog exists to stop,
+  // and the inverse action is no less of a change.
+  const remark = () => {
+    Alert.alert("베팅 기록 되돌리기", remarkMessage(bet), [
+      { text: "취소", style: "cancel" },
+      {
+        text: "되돌리기",
+        onPress: () => void (async () => {
+          setBusy(true);
+          try {
+            await api.remarkBet(bet.id);
+            nav.popToTop();
+          } catch (e) {
+            setError((e as Error).message);
+            setBusy(false);
+          }
+        })(),
+      },
+    ]);
   };
 
   return (
@@ -144,7 +166,7 @@ export function BetEditSheet({ route }: Props) {
       </View>
 
       {bet.not_placed === 1 ? (
-        <Pressable style={s.destructive} disabled={busy} onPress={() => void remark()}>
+        <Pressable style={s.destructive} disabled={busy} onPress={remark}>
           <Text style={s.destructiveText}>되돌리기</Text>
         </Pressable>
       ) : (

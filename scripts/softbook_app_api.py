@@ -528,7 +528,12 @@ def unmark_bet(bet_id: int, _=Depends(require_auth)):
 
 @app.delete("/bets/{bet_id}/unmark")
 def remark_bet(bet_id: int, _=Depends(require_auth)):
-    """Undo an unmark: the bet counts again and the pick re-hides from the feed."""
+    """Undo an unmark: the bet counts again and the pick re-hides from the feed.
+
+    Reports the calendar change in the SAME shape as POST, opposite sign. This
+    direction puts a past day's PnL back, which is the same "a past number must
+    never shift in silence" problem the POST response was built for — the app
+    names the day and the amount in a confirm dialog before calling."""
     pdb = adb.connect()
     try:
         row = adb.get_app_bet(pdb, bet_id)
@@ -539,7 +544,14 @@ def remark_bet(bet_id: int, _=Depends(require_auth)):
             adb.set_pick_state(pdb, _pick_of(row), "bet", _now())
     finally:
         pdb.close()
-    return {"ok": True}
+    # `row` is the state BEFORE this call, so a repeat remark correctly reports
+    # no change. Only a bet that was actually disowned AND settled moves the
+    # calendar; restoring it ADDS its pnl back to that day.
+    if not row["not_placed"] or not row["settled"]:
+        return {"ok": True, "pnl_delta": None, "settled_day": None}
+    return {"ok": True,
+            "pnl_delta": (row["pnl"] or 0),
+            "settled_day": (row["settled_at"] or "")[:10] or None}
 
 
 @app.post("/bets/scan")

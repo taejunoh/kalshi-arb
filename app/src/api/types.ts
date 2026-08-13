@@ -187,8 +187,12 @@ export interface MyBetsResponse {
   not_placed: AppBet[];
 }
 
-/** POST /bets/{id}/unmark. pnl_delta/settled_day are non-null only when the
- *  unmarked bet had already settled — the app names the calendar change. */
+/** Both directions of /bets/{id}/unmark — POST (disown) and DELETE (restore)
+ *  answer in this same shape. pnl_delta/settled_day are non-null only when the
+ *  bet had already settled AND the call actually changed something (a repeat
+ *  call reports null, so a client applying the delta to a cached calendar
+ *  cannot double-count) — the app names the calendar change in a confirm
+ *  dialog. DELETE's delta is the opposite sign of POST's: it puts the PnL back. */
 export interface UnmarkResponse {
   ok: boolean;
   pnl_delta: number | null;
