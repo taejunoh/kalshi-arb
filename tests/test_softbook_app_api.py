@@ -367,6 +367,81 @@ def test_patch_bet_allows_explicit_null_book(client):
     assert r.status_code == 200
 
 
+def test_unmark_returns_the_pick_to_the_active_feed(client):
+    """The whole point: a mis-marked pick becomes actionable again."""
+    ev = sqlite3.connect(os.environ["SOFTBOOK_EV_DB"])
+    ev.execute("DELETE FROM softbook_ev")
+    ev.execute("INSERT INTO softbook_ev VALUES (datetime('now'),"
+               "'baseball_mlb','E1','2099-01-01T00:00:00Z','MIA','NYM',"
+               "'spread','NYM',-1.5,'',0.45,2.0,'theScore',2.2,0.074,9,5,60,'High')")
+    ev.commit(); ev.close()
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client, market="spread", side="NYM", point=-1.5, player="",
+                     label="NYM -1.5")
+    assert client.get("/picks", headers=h).json()["picks"] == []      # hidden
+    r = client.post(f"/bets/{bid}/unmark", headers=h)
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "pnl_delta": None, "settled_day": None}
+    picks = client.get("/picks", headers=h).json()["picks"]
+    assert [p["id"] for p in picks] == ["E1|spread|NYM|-1.5|"]         # back
+
+
+def test_unmark_of_a_settled_bet_reports_the_calendar_change(client):
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=2.4,"
+                " settled_at='2026-08-09T22:00:00+00:00' WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    r = client.post(f"/bets/{bid}/unmark", headers=h).json()
+    assert r["pnl_delta"] == -2.4 and r["settled_day"] == "2026-08-09"
+
+
+def test_unmark_is_idempotent(client):
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    for _ in range(2):
+        assert client.post(f"/bets/{bid}/unmark", headers=h).status_code == 200
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    n = pdb.execute("SELECT count(*) FROM pick_state").fetchone()[0]
+    rows = pdb.execute("SELECT count(*) FROM app_bet").fetchone()[0]
+    pdb.close()
+    assert n == 0 and rows == 1          # state gone, ledger row still there
+
+
+def test_unmark_never_deletes_the_ledger_row(client):
+    """LEDGER RULE. If this ever fails, the feature has become a delete button."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    client.post(f"/bets/{bid}/unmark", headers=h)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    row = adb2.get_app_bet(pdb, bid)
+    pdb.close()
+    assert row is not None and row["not_placed"] == 1
+    assert row["not_placed_at"] is not None
+    assert row["stake"] == 2.0 and row["fill_odds"] == 2.2   # not repriced
+
+
+def test_delete_unmark_restores_the_bet_state(client):
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    client.post(f"/bets/{bid}/unmark", headers=h)
+    r = client.delete(f"/bets/{bid}/unmark", headers=h)
+    assert r.status_code == 200
+    assert client.get("/picks", headers=h).json()["counts"].get("bet") == 1
+    body = client.get("/mybets", headers=h).json()
+    assert body["not_placed"] == [] and [b["id"] for b in body["open"]] == [bid]
+
+
+def test_unmark_unknown_bet_is_404(client):
+    h = {"Authorization": "Bearer secret"}
+    assert client.post("/bets/9999/unmark", headers=h).status_code == 404
+    assert client.delete("/bets/9999/unmark", headers=h).status_code == 404
+
+
 def test_patch_unknown_bet_is_404(client):
     r = client.patch("/bets/9999", json={"stake": 1.0},
                      headers={"Authorization": "Bearer secret"})
