@@ -520,12 +520,17 @@ def unmark_bet(bet_id: int, _=Depends(require_auth)):
     finally:
         pdb.close()
     # `row` is the state BEFORE this call, so a repeat unmark correctly reports
-    # no change. Only a settled bet moves the calendar.
-    if row["not_placed"] or not row["settled"]:
+    # no change. Only a settled bet moves the calendar — and only when its
+    # settled_at actually resolves to an Eastern day: get_mybets drops a row
+    # with no resolvable day from the calendar entirely (see
+    # test_a_settled_at_with_no_date_in_it_is_dropped_from_the_calendar), so
+    # gating pnl_delta on `settled` alone while settled_day comes back None
+    # would assert a calendar change that never happens. Same condition for
+    # both fields, so they cannot disagree.
+    day = _et_day(row["settled_at"]) if not row["not_placed"] and row["settled"] else None
+    if day is None:
         return {"ok": True, "pnl_delta": None, "settled_day": None}
-    return {"ok": True,
-            "pnl_delta": -(row["pnl"] or 0),
-            "settled_day": _et_day(row["settled_at"])}
+    return {"ok": True, "pnl_delta": -(row["pnl"] or 0), "settled_day": day}
 
 
 @app.delete("/bets/{bet_id}/unmark")
@@ -554,13 +559,15 @@ def remark_bet(bet_id: int, _=Depends(require_auth)):
     finally:
         pdb.close()
     # `row` is the state BEFORE this call, so a repeat remark correctly reports
-    # no change. Only a bet that was actually disowned AND settled moves the
-    # calendar; restoring it ADDS its pnl back to that day.
-    if not row["not_placed"] or not row["settled"]:
+    # no change. Only a bet that was actually disowned AND settled AND whose
+    # settled_at resolves to an Eastern day moves the calendar (same gate as
+    # unmark_bet, for the same reason — get_mybets drops an unresolvable
+    # settled_at from the calendar rather than filing it under a synthetic
+    # day); restoring it ADDS its pnl back to that day.
+    day = _et_day(row["settled_at"]) if row["not_placed"] and row["settled"] else None
+    if day is None:
         return {"ok": True, "pnl_delta": None, "settled_day": None}
-    return {"ok": True,
-            "pnl_delta": (row["pnl"] or 0),
-            "settled_day": _et_day(row["settled_at"])}
+    return {"ok": True, "pnl_delta": (row["pnl"] or 0), "settled_day": day}
 
 
 @app.post("/bets/scan")
