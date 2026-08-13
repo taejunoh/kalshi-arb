@@ -74,6 +74,40 @@ test("an emptied stake is omitted, never sent as null", async () => {
   }));
 });
 
+test("a non-numeric stake is omitted, never sent as NaN/null", async () => {
+  // Number("abc") is NaN, and JSON.stringify serializes NaN as null — the one
+  // payload the server 422s. A pasted or hardware-keyboard non-numeric value
+  // must not defeat the omit-don't-null invariant the same way an emptied
+  // field does.
+  await render(<BetEditSheet route={routeFor(bet)} />);
+  await fireEvent.changeText(screen.getByTestId("edit-stake"), "abc");
+  await fireEvent.press(screen.getByText("저장"));
+  await waitFor(() => expect(api.patchBet).toHaveBeenCalledWith(7, {
+    book: "FanDuel", fill_odds: 2.1,
+  }));
+});
+
+test("an unparseable odds field is omitted, never sent as null", async () => {
+  // Mirrors the stake omit invariant: a bad fill_odds must be dropped from
+  // the patch, not sent through as null and rejected by the server 422.
+  await render(<BetEditSheet route={routeFor(bet)} />);
+  await fireEvent.changeText(screen.getByTestId("edit-odds"), "abc");
+  await fireEvent.press(screen.getByText("저장"));
+  await waitFor(() => expect(api.patchBet).toHaveBeenCalledWith(7, {
+    book: "FanDuel", stake: 20,
+  }));
+});
+
+test("a whitespace-only book is sent as null, not a space", async () => {
+  // book.trim() || null: " " is truthy but not a real value.
+  await render(<BetEditSheet route={routeFor(bet)} />);
+  await fireEvent.changeText(screen.getByTestId("edit-book"), "  ");
+  await fireEvent.press(screen.getByText("저장"));
+  await waitFor(() => expect(api.patchBet).toHaveBeenCalledWith(7, {
+    book: null, stake: 20, fill_odds: 2.1,
+  }));
+});
+
 test("표시 해제 goes through a confirm dialog before calling the API", async () => {
   await render(<BetEditSheet route={routeFor(bet)} />);
   await fireEvent.press(screen.getByText("베팅 안 했음"));
