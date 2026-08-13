@@ -525,7 +525,7 @@ def unmark_bet(bet_id: int, _=Depends(require_auth)):
         return {"ok": True, "pnl_delta": None, "settled_day": None}
     return {"ok": True,
             "pnl_delta": -(row["pnl"] or 0),
-            "settled_day": (row["settled_at"] or "")[:10] or None}
+            "settled_day": _et_day(row["settled_at"])}
 
 
 @app.delete("/bets/{bet_id}/unmark")
@@ -560,7 +560,7 @@ def remark_bet(bet_id: int, _=Depends(require_auth)):
         return {"ok": True, "pnl_delta": None, "settled_day": None}
     return {"ok": True,
             "pnl_delta": (row["pnl"] or 0),
-            "settled_day": (row["settled_at"] or "")[:10] or None}
+            "settled_day": _et_day(row["settled_at"])}
 
 
 @app.post("/bets/scan")
@@ -776,6 +776,14 @@ def _mybet_rows(pdb, tail, params=()):
                 o["live_progress"] = json.loads(o["live_progress"])
             except Exception:
                 pass
+        # Derived, not stored: the Eastern day this row's PnL sits on, i.e. the
+        # calendar key it contributes to. The app's confirm dialog names the day
+        # a toggle will move, and it is raised BEFORE the request — so it cannot
+        # use the unmark response and must read it off the row. Sent rather than
+        # computed on the device because that would be a second implementation
+        # of the timezone rule, on the platform least able to do it (Intl's
+        # timeZone option needs full-ICU, not guaranteed under Hermes).
+        o["settled_day"] = _et_day(o.get("settled_at"))
     return rows
 
 
