@@ -605,6 +605,74 @@ def test_unmark_twice_on_a_settled_bet_reports_the_change_only_once(client):
     assert r2["pnl_delta"] is None and r2["settled_day"] is None
 
 
+def test_unmark_names_the_same_eastern_day_the_calendar_moves(client):
+    """The dialog that discloses the change and the calendar row that actually
+    changes must name ONE day. settled_day used to be a raw UTC slice, so once
+    the calendar moved to Eastern the two disagreed for every evening
+    settlement — the user reconciles them against each other, so a dialog
+    saying "8월 13일" over a calendar that moved 8월 12일 is worse than silence.
+
+    The second assertion is the anti-drift one: it pins them to each other, not
+    just to a literal, so re-introducing a separate conversion on either side
+    fails here even if both are individually 'a date'.
+
+    22:00Z (what every other settled_day test uses) is the same day in both
+    frames — which is exactly why nothing caught this. 02:00Z is not."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    _settle(bid, "2026-08-13T02:00:00+00:00")        # 10pm ET Aug 12
+    cal = _calendar(client)
+    r = client.post(f"/bets/{bid}/unmark", headers=h).json()
+    assert r["settled_day"] == "2026-08-12"
+    assert list(cal) == [r["settled_day"]]
+
+
+def test_delete_unmark_names_the_same_eastern_day_the_calendar_moves(client):
+    """The restore direction owes the same disclosure, so it owes the same day."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    _settle(bid, "2026-08-13T02:00:00+00:00")
+    cal = _calendar(client)
+    client.post(f"/bets/{bid}/unmark", headers=h)
+    r = client.delete(f"/bets/{bid}/unmark", headers=h).json()
+    assert r["settled_day"] == "2026-08-12"
+    assert list(cal) == [r["settled_day"]]
+
+
+def test_unmark_settled_day_follows_dst_like_the_calendar_does(client):
+    """Shared conversion, so the endpoints inherit the tz database rather than
+    reimplementing it. 04:30Z is the window where a fixed offset changes the
+    DATE, so a hand-rolled '-4 hours' on this path would answer 2026-01-15."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    _settle(bid, "2026-01-15T04:30:00+00:00")        # 11:30pm ET Jan 14, EST
+    r = client.post(f"/bets/{bid}/unmark", headers=h).json()
+    assert r["settled_day"] == "2026-01-14"
+
+
+def test_mybets_rows_carry_the_eastern_settled_day(client):
+    """The confirm dialog is raised BEFORE the request, so it cannot use the
+    unmark response — it can only use the row the screen already holds. The row
+    therefore carries the Eastern day itself, computed by the same helper, so
+    the client never has to convert (Intl's timeZone option is not safe under
+    Hermes) and there is still exactly one conversion in the system."""
+    bid = _place_bet(client)
+    _settle(bid, "2026-08-13T02:00:00+00:00")
+    body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
+    row = body["settled"][0]
+    assert row["id"] == bid
+    assert row["settled_at"].startswith("2026-08-13")   # stored instant is UTC…
+    assert row["settled_day"] == "2026-08-12"           # …the day the user lived
+    assert list(body["calendar"]) == [row["settled_day"]]
+
+
+def test_an_open_row_has_no_settled_day(client):
+    """Nothing has settled, so there is no day to name."""
+    _place_bet(client)
+    body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
+    assert body["open"][0]["settled_day"] is None
+
+
 def test_unmark_never_deletes_the_ledger_row(client):
     """LEDGER RULE. If this ever fails, the feature has become a delete button."""
     h = {"Authorization": "Bearer secret"}
