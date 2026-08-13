@@ -238,3 +238,36 @@ test("베팅 안 했음 still confirms even when unsettled — it is the destruc
   expect(alertSpy).toHaveBeenCalled();
   expect(api.unmarkBet).not.toHaveBeenCalled();
 });
+
+// The confirm dialog above is built from the navigation-param snapshot taken
+// when the list loaded. If the settlement worker settles the bet while the
+// sheet is open, movesSettledPnl(snapshot) still reads false, so that dialog
+// names no amount — but the server's response is authoritative and may carry
+// a real pnl_delta/settled_day. A silent server-side PnL change is exactly
+// what the confirm dialog exists to prevent, so a follow-up alert must
+// disclose it after the fact.
+
+test("서버가 정산 후 실제 PnL 변경을 보고하면 사후 안내를 띄운다", async () => {
+  (api.unmarkBet as jest.Mock).mockResolvedValueOnce({
+    ok: true, pnl_delta: -45, settled_day: "2026-08-09",
+  });
+  await render(<BetEditSheet route={routeFor(bet)} />);
+  await fireEvent.press(screen.getByText("베팅 안 했음"));
+  confirmLastAlert();
+  await waitFor(() => expect(api.unmarkBet).toHaveBeenCalledWith(7));
+  await waitFor(() => expect(alertSpy).toHaveBeenCalledTimes(2));
+  const [message] = alertSpy.mock.calls[1] as unknown as [string];
+  expect(message).toBe("8월 9일 PnL이 -45.00 변경되었습니다.");
+  expect(mockPopToTop).toHaveBeenCalled();
+});
+
+test("pnl_delta 가 null 이면 사후 안내를 띄우지 않는다", async () => {
+  // unmarkBet's default mock in this file already resolves { pnl_delta: null,
+  // settled_day: null } — the ordinary case where the snapshot was accurate.
+  await render(<BetEditSheet route={routeFor(bet)} />);
+  await fireEvent.press(screen.getByText("베팅 안 했음"));
+  confirmLastAlert();
+  await waitFor(() => expect(api.unmarkBet).toHaveBeenCalledWith(7));
+  await waitFor(() => expect(mockPopToTop).toHaveBeenCalled());
+  expect(alertSpy).toHaveBeenCalledTimes(1); // only the confirm dialog
+});

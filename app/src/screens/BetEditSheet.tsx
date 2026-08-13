@@ -27,6 +27,15 @@ function movesSettledPnl(bet: AppBet): bet is AppBet & { pnl: number; settled_at
   return !!bet.settled && bet.pnl != null && !!bet.settled_at;
 }
 
+/** "{month}월 {day}일 PnL이 {+/-N.NN}" — the day+amount fragment named in every
+ *  surface that discloses a PnL change, so the wording used before an action
+ *  ("about to change") and after one (unmarkedElsewhereMessage, below,
+ *  "just changed") cannot drift apart. */
+function pnlChangeFragment(day: string, delta: number): string {
+  const signed = `${delta >= 0 ? "+" : "-"}${Math.abs(delta).toFixed(2)}`;
+  return `${MONTH_DAY(day)} PnL이 ${signed}`;
+}
+
 /** The confirm text for BOTH directions of the 베팅 안 했음 toggle. A settled
  *  bet's PnL moves either way — out of that day on unmark, back into it on
  *  restore — so the dialog names the day and the amount: a past number must
@@ -34,9 +43,7 @@ function movesSettledPnl(bet: AppBet): bet is AppBet & { pnl: number; settled_at
  *  drift apart; only the sign of the delta and the trailing sentence differ. */
 function toggleMessage(bet: AppBet, sign: 1 | -1, tail: string): string {
   if (!movesSettledPnl(bet)) return tail;
-  const delta = sign * bet.pnl;
-  const signed = `${delta >= 0 ? "+" : "-"}${Math.abs(delta).toFixed(2)}`;
-  return `${MONTH_DAY(bet.settled_at)} PnL이 ${signed} 변경됩니다. ${tail}`;
+  return `${pnlChangeFragment(bet.settled_at, sign * bet.pnl)} 변경됩니다. ${tail}`;
 }
 
 /** 베팅 안 했음: the bet leaves the totals, the pick returns to the feed. */
@@ -46,6 +53,23 @@ export const unmarkMessage = (bet: AppBet): string => toggleMessage(bet, -1,
 /** 되돌리기: the exact inverse, and just as much of a change to a past day. */
 export const remarkMessage = (bet: AppBet): string => toggleMessage(bet, 1,
   "이 베팅이 다시 집계에 포함됩니다. 이 픽은 피드에서 다시 숨겨집니다.");
+
+/** Post-hoc disclosure for unmark ONLY. unmarkMessage(bet) above is built from
+ *  the navigation-param snapshot taken when the list loaded; if the
+ *  settlement worker settles this bet while the sheet is open,
+ *  movesSettledPnl(snapshot) still reads false and that confirm dialog names
+ *  no amount. The server's response is the only place the truth is available
+ *  at that point (POST /bets/{id}/unmark's pnl_delta/settled_day), so the
+ *  caller shows this after the fact rather than dropping a real past-day PnL
+ *  change in silence. Same pnlChangeFragment as the confirm dialogs, just past
+ *  tense — the two paths cannot say different things about the same change.
+ *
+ *  Scoped to unmark only: 되돌리기 (remark) can never hit this gap, because the
+ *  settlement worker only ever touches rows with not_placed=0 — a disowned
+ *  row's settled/pnl cannot go stale out from under a 되돌리기 confirm. */
+export function unmarkedElsewhereMessage(day: string, delta: number): string {
+  return `${pnlChangeFragment(day, delta)} 변경되었습니다.`;
+}
 
 export function BetEditSheet({ route }: Props) {
   const nav = useNavigation<{ popToTop: () => void; goBack: () => void }>();
@@ -103,7 +127,13 @@ export function BetEditSheet({ route }: Props) {
         onPress: () => void (async () => {
           setBusy(true);
           try {
-            await api.unmarkBet(bet.id);
+            const res = await api.unmarkBet(bet.id);
+            // The confirm dialog just shown named no amount (movesSettledPnl
+            // read false on the snapshot). If the server reports a real
+            // pnl_delta anyway, the snapshot was stale — disclose it now.
+            if (res.pnl_delta != null && res.settled_day != null && !movesSettledPnl(bet)) {
+              Alert.alert(unmarkedElsewhereMessage(res.settled_day, res.pnl_delta));
+            }
             nav.popToTop();
           } catch (e) {
             setError((e as Error).message);
