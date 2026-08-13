@@ -411,6 +411,29 @@ def test_unmark_is_idempotent(client):
     assert n == 0 and rows == 1          # state gone, ledger row still there
 
 
+def test_unmark_twice_on_a_settled_bet_reports_the_change_only_once(client):
+    """Regression: unmark_bet's guard `if row["not_placed"] or not row["settled"]`
+    relies on `row` being the PRE-mutation snapshot, so a repeat POST must see
+    not_placed already 1 and report no further change. Deleting
+    `row["not_placed"] or` from that guard left every existing unmark test
+    green — the calendar test POSTs once, and the idempotency test POSTs twice
+    but only checks status_code on an unsettled bet, so pnl_delta is trivially
+    null either way. Under that regression a duplicate tap or a retried
+    request reports pnl_delta a second time, and a client applying it to a
+    cached calendar double-subtracts."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=2.4,"
+                " settled_at='2026-08-09T22:00:00+00:00' WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    r1 = client.post(f"/bets/{bid}/unmark", headers=h).json()
+    assert r1["pnl_delta"] == -2.4 and r1["settled_day"] == "2026-08-09"
+    r2 = client.post(f"/bets/{bid}/unmark", headers=h).json()
+    assert r2["pnl_delta"] is None and r2["settled_day"] is None
+
+
 def test_unmark_never_deletes_the_ledger_row(client):
     """LEDGER RULE. If this ever fails, the feature has become a delete button."""
     h = {"Authorization": "Bearer secret"}
@@ -434,6 +457,34 @@ def test_delete_unmark_restores_the_bet_state(client):
     assert client.get("/picks", headers=h).json()["counts"].get("bet") == 1
     body = client.get("/mybets", headers=h).json()
     assert body["not_placed"] == [] and [b["id"] for b in body["open"]] == [bid]
+
+
+def test_delete_unmark_on_a_never_unmarked_bet_is_a_noop(client):
+    """Regression: remark_bet's `if row["not_placed"]:` guard makes DELETE a
+    no-op when the bet was never unmarked. The only existing DELETE test
+    (test_delete_unmark_restores_the_bet_state) always POSTs an unmark first,
+    so nothing pins this path — a DELETE on a bet that was never disowned is
+    correct by inspection but unpinned. If the guard is removed, remark_bet
+    mutates unconditionally: harmless for not_placed (already 0) but it
+    re-touches the pick_state 'bet' row's updated_at, which this test catches
+    even though the row's presence and not_placed both look unchanged."""
+    h = {"Authorization": "Bearer secret"}
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    before = pdb.execute(
+        "SELECT updated_at FROM pick_state WHERE state='bet'").fetchone()[0]
+    pdb.close()
+    r = client.delete(f"/bets/{bid}/unmark", headers=h)
+    assert r.status_code == 200
+    pdb = adb2.connect()
+    row = adb2.get_app_bet(pdb, bid)
+    n, after = pdb.execute(
+        "SELECT count(*), max(updated_at) FROM pick_state WHERE state='bet'"
+    ).fetchone()
+    pdb.close()
+    assert row["not_placed"] == 0
+    assert n == 1 and after == before
 
 
 def test_unmark_unknown_bet_is_404(client):
