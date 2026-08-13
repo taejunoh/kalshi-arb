@@ -1479,6 +1479,17 @@ test("saving sends only the three fields", async () => {
   expect(mockPopToTop).toHaveBeenCalled();
 });
 
+test("an emptied stake is omitted, never sent as null", async () => {
+  // The server 422s an explicit null stake — a placed bet without one is not a
+  // record of anything, and the settle worker multiplies by it.
+  await render(<BetEditSheet route={routeFor(bet)} />);
+  fireEvent.changeText(screen.getByTestId("edit-stake"), "");
+  fireEvent.press(screen.getByText("저장"));
+  await waitFor(() => expect(api.patchBet).toHaveBeenCalledWith(7, {
+    book: "FanDuel", fill_odds: 2.1,
+  }));
+});
+
 test("표시 해제 goes through a confirm dialog before calling the API", async () => {
   await render(<BetEditSheet route={routeFor(bet)} />);
   fireEvent.press(screen.getByText("베팅 안 했음"));
@@ -1538,7 +1549,7 @@ import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-nativ
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { api } from "../api/client";
-import type { AppBet } from "../api/types";
+import type { AppBet, BetPatch } from "../api/types";
 import type { MyBetsStackParamList } from "../navigation/types";
 import { americanOdds, matchup, parseOddsToDecimal } from "../format";
 import { color, radius, space } from "../theme";
@@ -1575,11 +1586,15 @@ export function BetEditSheet({ route }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await api.patchBet(bet.id, {
-        book: book || null,
-        stake: stake ? Number(stake) : null,
-        fill_odds: parseOddsToDecimal(odds),
-      });
+      // stake / fill_odds cannot be nulled server-side (422): a placed bet
+      // without them is not a record of anything, and the settle worker
+      // multiplies by both. So an emptied field is OMITTED, not sent as null.
+      // book may be cleared — it is descriptive metadata.
+      const patch: BetPatch = { book: book || null };
+      if (stake) patch.stake = Number(stake);
+      const parsedOdds = parseOddsToDecimal(odds);
+      if (parsedOdds != null) patch.fill_odds = parsedOdds;
+      await api.patchBet(bet.id, patch);
       nav.popToTop();
     } catch (e) {
       setError((e as Error).message);
