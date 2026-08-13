@@ -174,7 +174,18 @@ export interface AppBet {
   settled: number;
   won: number | null;
   pnl: number | null;
+  /** The stored settlement instant — UTC. Never slice this to get a day: for a
+   *  10pm ET settlement it reads as the NEXT date. Use settled_day. */
   settled_at: string | null;
+  /** The EASTERN calendar day settled_at falls on — the calendar key this row's
+   *  PnL contributes to, and the day a 베팅 안 했음 toggle will move. Derived
+   *  server-side by the same conversion that builds the calendar, so the two
+   *  cannot disagree and the device never has to do timezone math (Intl's
+   *  timeZone option needs full-ICU, not guaranteed under Hermes).
+   *
+   *  Optional only because a response can predate the field during a deploy
+   *  skew; absent, the confirm dialog names no day rather than a wrong one. */
+  settled_day?: string | null;
   not_placed: number;
   not_placed_at: string | null;
 }
