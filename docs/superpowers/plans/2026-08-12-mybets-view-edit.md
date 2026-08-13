@@ -1594,8 +1594,11 @@ export function BetEditSheet({ route }: Props) {
       // without them is not a record of anything, and the settle worker
       // multiplies by both. So an emptied field is OMITTED, not sent as null.
       // book may be cleared — it is descriptive metadata.
-      const patch: BetPatch = { book: book || null };
-      if (stake) patch.stake = Number(stake);
+      // Parse before including: Number("abc") is NaN, and JSON.stringify
+      // serializes NaN as null — which is the one payload this must not send.
+      const patch: BetPatch = { book: book.trim() || null };
+      const parsedStake = Number(stake);
+      if (stake && Number.isFinite(parsedStake)) patch.stake = parsedStake;
       const parsedOdds = parseOddsToDecimal(odds);
       if (parsedOdds != null) patch.fill_odds = parsedOdds;
       await api.patchBet(bet.id, patch);
