@@ -25,7 +25,7 @@ import softbook_app_feed as feed
 import softbook_deeplink as deeplink
 import softbook_scan as scan
 import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import softbook_ev_recorder as rec
 
 EV_DB = os.getenv("SOFTBOOK_EV_DB", "/home/ubuntu/kalshi-arb/data/softbook_ev.db")
@@ -429,6 +429,42 @@ def post_bet(bet: BetIn, _=Depends(require_auth)):
     except Exception:
         pass
     return {"id": bid}
+
+
+class BetPatch(BaseModel):
+    """The only three fields the user typed, so the only three they may retype.
+
+    extra="forbid" makes anything else a 422 rather than a silent no-op:
+    event/market/side/point/player describe a DIFFERENT bet (void this one and
+    record a new one instead), rec_odds is the system's observation at
+    recommendation time and feeds CLV, and settled/won/pnl belong to the
+    settle worker."""
+    model_config = ConfigDict(extra="forbid")
+    book: str | None = None
+    stake: float | None = None
+    fill_odds: float | None = None
+
+
+@app.patch("/bets/{bet_id}")
+def patch_bet(bet_id: int, body: BetPatch, _=Depends(require_auth)):
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(422, "no editable fields supplied")
+    pdb = adb.connect()
+    try:
+        row = adb.get_app_bet(pdb, bet_id)
+        if row is None:
+            raise HTTPException(404, "no such bet")
+        if row["settled"]:
+            # Editing the stake now would contradict a pnl already computed from
+            # it. The honest move in that situation is /unmark.
+            raise HTTPException(409, "settled bet — 수정 불가, 표시 해제를 쓰세요")
+        if row["not_placed"]:
+            raise HTTPException(409, "not-placed bet — 먼저 표시를 복원하세요")
+        adb.update_app_bet(pdb, bet_id, fields)
+    finally:
+        pdb.close()
+    return {"ok": True}
 
 
 @app.post("/bets/scan")

@@ -293,3 +293,47 @@ def test_push_register_upserts_token(client):
     n = pdb.execute("SELECT count(*) FROM push_token").fetchone()[0]
     pdb.close()
     assert n == 1
+
+
+def test_patch_bet_updates_the_three_editable_fields(client):
+    bid = _place_bet(client)
+    r = client.patch(f"/bets/{bid}", json={"book": "DraftKings", "stake": 25.0,
+                                           "fill_odds": 2.05},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200
+    body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
+    row = body["open"][0]
+    assert (row["book"], row["stake"], row["fill_odds"]) == ("DraftKings", 25.0, 2.05)
+
+
+def test_patch_bet_rejects_fields_that_would_make_it_a_different_bet(client):
+    bid = _place_bet(client)
+    for payload in ({"market": "h2h"}, {"rec_odds": 9.9}, {"pnl": 100.0}):
+        r = client.patch(f"/bets/{bid}", json=payload,
+                         headers={"Authorization": "Bearer secret"})
+        assert r.status_code == 422, payload
+
+
+def test_patch_bet_on_a_settled_row_is_conflict(client):
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, pnl=2.4 WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    r = client.patch(f"/bets/{bid}", json={"stake": 25.0},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 409
+
+
+def test_patch_bet_on_a_not_placed_row_is_conflict(client):
+    bid = _place_bet(client)
+    client.post(f"/bets/{bid}/unmark", headers={"Authorization": "Bearer secret"})
+    r = client.patch(f"/bets/{bid}", json={"stake": 25.0},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 409
+
+
+def test_patch_unknown_bet_is_404(client):
+    r = client.patch("/bets/9999", json={"stake": 1.0},
+                     headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 404
