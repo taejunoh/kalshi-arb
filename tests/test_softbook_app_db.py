@@ -92,3 +92,87 @@ def test_migrate_real_fill_is_idempotent():
     adb.migrate_real_fill(db)
     adb.migrate_real_fill(db)  # second run must not duplicate
     assert db.execute("SELECT count(*) FROM app_bet").fetchone() == (1,)
+
+
+def test_app_bet_has_not_placed_columns_defaulting_off():
+    db = mem()
+    cols = {r[1] for r in db.execute("PRAGMA table_info(app_bet)")}
+    assert {"not_placed", "not_placed_at"} <= cols
+    adb.insert_app_bet(db, {"event_id": "E1", "market": "h2h", "side": "NYM"})
+    assert db.execute("SELECT not_placed, not_placed_at FROM app_bet"
+                      ).fetchone() == (0, None)
+
+
+def test_ensure_columns_upgrades_a_pre_existing_table():
+    """The column lands on an EC2 db that already has rows — the ALTER path,
+    not the CREATE path."""
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE app_bet(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id TEXT, sport TEXT, home TEXT, away TEXT, commence_time TEXT,
+        market TEXT, side TEXT, point REAL, player TEXT, label TEXT,
+        book TEXT, rec_odds REAL, fill_odds REAL, stake REAL,
+        placed_at TEXT, source TEXT,
+        live_status TEXT DEFAULT 'pending', live_progress TEXT,
+        settled INTEGER DEFAULT 0, won INTEGER, pnl REAL, settled_at TEXT)""")
+    db.execute("INSERT INTO app_bet(event_id, market, side) VALUES ('E1','h2h','NYM')")
+    db.commit()
+    adb.init_schema(db)
+    assert db.execute("SELECT not_placed FROM app_bet").fetchone() == (0,)
+
+
+def test_get_app_bet_returns_a_dict_or_none():
+    db = mem()
+    bid = adb.insert_app_bet(db, {"event_id": "E1", "market": "h2h", "side": "NYM",
+                                  "stake": 20.0, "book": "FanDuel"})
+    row = adb.get_app_bet(db, bid)
+    assert row["id"] == bid and row["book"] == "FanDuel" and row["stake"] == 20.0
+    assert row["not_placed"] == 0
+    assert adb.get_app_bet(db, bid + 999) is None
+
+
+def test_update_app_bet_writes_only_the_three_editable_columns():
+    db = mem()
+    bid = adb.insert_app_bet(db, {"event_id": "E1", "market": "h2h", "side": "NYM",
+                                  "book": "FanDuel", "stake": 20.0, "fill_odds": 2.1,
+                                  "rec_odds": 2.2})
+    n = adb.update_app_bet(db, bid, {"book": "DraftKings", "stake": 25.0,
+                                     "fill_odds": 2.05, "rec_odds": 9.9,
+                                     "market": "spread"})
+    assert n == 1
+    row = adb.get_app_bet(db, bid)
+    assert (row["book"], row["stake"], row["fill_odds"]) == ("DraftKings", 25.0, 2.05)
+    assert row["rec_odds"] == 2.2 and row["market"] == "h2h"   # untouched
+
+
+def test_update_app_bet_with_no_editable_field_is_a_noop():
+    db = mem()
+    bid = adb.insert_app_bet(db, {"event_id": "E1", "market": "h2h", "side": "NYM"})
+    assert adb.update_app_bet(db, bid, {"market": "spread"}) == 0
+
+
+def test_set_not_placed_flips_the_flag_and_stamps_the_time():
+    db = mem()
+    bid = adb.insert_app_bet(db, {"event_id": "E1", "market": "h2h", "side": "NYM"})
+    assert adb.set_not_placed(db, bid, True, "2026-08-12T10:00:00+00:00") is True
+    row = adb.get_app_bet(db, bid)
+    assert row["not_placed"] == 1 and row["not_placed_at"] == "2026-08-12T10:00:00+00:00"
+    adb.set_not_placed(db, bid, False, None)
+    row = adb.get_app_bet(db, bid)
+    assert row["not_placed"] == 0 and row["not_placed_at"] is None
+    assert adb.set_not_placed(db, bid + 999, True, "x") is False
+
+
+def test_clear_bet_state_removes_bet_only_and_leaves_dismissed():
+    """A dismissed row is a preference; a bet row is what we are undoing here.
+    Clearing one must never sweep up the other."""
+    db = mem()
+    bet = ("E1", "h2h", "NYM", 0, "")
+    other = ("E2", "h2h", "MIA", 0, "")
+    adb.set_pick_state(db, bet, "bet", "t1")
+    adb.set_pick_state(db, other, "dismissed", "t1")
+    assert adb.clear_bet_state(db, bet) == 1
+    states = adb.pick_states(db)
+    assert ("E1", "h2h", "NYM", 0.0, "") not in states
+    assert states[("E2", "h2h", "MIA", 0.0, "")] == "dismissed"
+    assert adb.clear_bet_state(db, bet) == 0          # idempotent
