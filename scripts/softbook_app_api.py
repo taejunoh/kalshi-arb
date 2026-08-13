@@ -507,7 +507,14 @@ def unmark_bet(bet_id: int, _=Depends(require_auth)):
             raise HTTPException(404, "no such bet")
         if not row["not_placed"]:
             adb.set_not_placed(pdb, bet_id, True, _now())
-            adb.clear_bet_state(pdb, _pick_of(row))
+            # The pick_state 'bet' override speaks for the PICK, not for this
+            # row, so it may only be dropped once no owned bet on that pick
+            # survives. Two rows on one pick is reachable (one-tap the pick from
+            # the feed, then also scan the paper slip); returning the pick to the
+            # feed on the first unmark would offer a one-tap re-bet while the
+            # other bet is still open — the 2026-08-06 double-bet.
+            if adb.live_bets_for_pick(pdb, _pick_of(row), exclude_id=bet_id) == 0:
+                adb.clear_bet_state(pdb, _pick_of(row))
     finally:
         pdb.close()
     # `row` is the state BEFORE this call, so a repeat unmark correctly reports
