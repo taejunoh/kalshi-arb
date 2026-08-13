@@ -273,6 +273,143 @@ def test_mybets_excludes_unsettled_not_placed_from_open(client):
     assert [b["id"] for b in body["not_placed"]] == [bid]
 
 
+def _settle(bid, settled_at, pnl=2.4):
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=?, settled_at=? WHERE id=?",
+                (pnl, settled_at, bid))
+    pdb.commit(); pdb.close()
+
+
+def _calendar(client):
+    return client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()["calendar"]
+
+
+def test_calendar_files_an_evening_settlement_on_the_day_the_user_lived_it(client):
+    """The user is in New York. A 10pm ET Tuesday game settles at 02:00Z
+    Wednesday, and keying the calendar on the UTC date filed it under Wednesday
+    — a day the user did not experience. Measured on production, 80 of 206
+    settled bets (39%) landed on the wrong day this way."""
+    _settle(_place_bet(client), "2026-08-13T02:00:00+00:00")
+    assert _calendar(client) == {"2026-08-12": 2.4}
+
+
+def test_calendar_leaves_a_settlement_already_inside_its_eastern_day_alone(client):
+    """Mid-afternoon UTC is the same calendar day in both frames. The
+    re-attribution must move only the rows that actually straddle midnight."""
+    _settle(_place_bet(client), "2026-08-12T18:00:00+00:00")
+    assert _calendar(client) == {"2026-08-12": 2.4}
+
+
+def test_calendar_follows_the_dst_transition_not_a_fixed_offset(client):
+    """The reason this conversion is Python + zoneinfo and not
+    date(settled_at,'-4 hours') in SQL: SQLite has no timezone database, so a
+    fixed offset is an hour wrong for half the year.
+
+    Both instants below sit in the 04:00-04:59Z window — the only hour where a
+    -4 and a -5 offset disagree about the DATE, so this is the pair that
+    actually discriminates. (Note: an evening instant such as 2026-01-15T02:00Z
+    does NOT — it yields 2026-01-14 under EST, EDT and a fixed -4 alike, so it
+    proves ET-vs-UTC but says nothing about DST.)"""
+    _settle(_place_bet(client), "2026-08-13T04:30:00+00:00")     # EDT, UTC-4
+    assert _calendar(client) == {"2026-08-13": 2.4}, "summer must use UTC-4"
+
+    import softbook_app_db as adb2
+    pdb = adb2.connect(); pdb.execute("DELETE FROM app_bet"); pdb.commit(); pdb.close()
+
+    _settle(_place_bet(client), "2026-01-15T04:30:00+00:00")     # EST, UTC-5
+    assert _calendar(client) == {"2026-01-14": 2.4}, "winter must use UTC-5"
+
+
+def test_calendar_keys_an_evening_winter_settlement_in_eastern(client):
+    """The user-story instant from the winter half: 9pm ET Jan 14 settles at
+    02:00Z Jan 15. Keeps the EST leg of the user-visible behavior pinned even
+    though it cannot tell EST from a fixed -4 (the test above does that)."""
+    _settle(_place_bet(client), "2026-01-15T02:00:00+00:00")
+    assert _calendar(client) == {"2026-01-14": 2.4}
+
+
+def test_calendar_sums_two_utc_days_into_one_eastern_day(client):
+    """Grouping moved from SQL's GROUP BY to Python, so the fold itself needs a
+    test: 23:00Z and 02:00Z the next day are one Eastern evening and must land
+    on one key with one total, not two keys."""
+    _settle(_place_bet(client), "2026-08-12T23:00:00+00:00", pnl=1.5)
+    _settle(_place_bet(client), "2026-08-13T02:00:00+00:00", pnl=2.4)
+    assert _calendar(client) == {"2026-08-12": 3.9}
+
+
+def test_calendar_accepts_a_trailing_z_and_a_naive_timestamp(client):
+    """settled_at is written as datetime.now(timezone.utc).isoformat() ('+00:00'),
+    but rows migrated from other sources spell UTC differently. A 'Z' suffix and
+    a bare naive timestamp both mean UTC here — every writer in this repo is UTC
+    — so both must convert, not fall through to the raw date."""
+    _settle(_place_bet(client), "2026-08-13T02:00:00Z", pnl=1.0)
+    assert _calendar(client) == {"2026-08-12": 1.0}
+
+    import softbook_app_db as adb2
+    pdb = adb2.connect(); pdb.execute("DELETE FROM app_bet"); pdb.commit(); pdb.close()
+
+    _settle(_place_bet(client), "2026-08-13 02:00:00", pnl=1.0)
+    assert _calendar(client) == {"2026-08-12": 1.0}
+
+
+def test_one_unparseable_settled_at_does_not_take_down_the_endpoint(client):
+    """A single corrupt row must not 500 the whole ledger screen. It keeps its
+    PnL in the calendar under its leading date when it has one: the calendar is
+    a sum of money the user can reconcile against the settled list below it, and
+    silently dropping a row makes that total disagree for no visible reason.
+    Filed a day off is the error we already had; vanished money is a new one."""
+    _settle(_place_bet(client), "2026-08-13T02:00:00+00:00", pnl=2.4)
+    _settle(_place_bet(client), "2026-08-20T99:99:99", pnl=5.0)
+    r = client.get("/mybets", headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200
+    assert r.json()["calendar"] == {"2026-08-12": 2.4, "2026-08-20": 5.0}
+
+
+def test_a_settled_at_with_no_date_in_it_is_dropped_from_the_calendar(client):
+    """…but when there is no day to file it under at all, there is no honest
+    key to invent. Drop that row and keep serving the rest."""
+    _settle(_place_bet(client), "2026-08-13T02:00:00+00:00", pnl=2.4)
+    _settle(_place_bet(client), "not a timestamp", pnl=5.0)
+    r = client.get("/mybets", headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200
+    assert r.json()["calendar"] == {"2026-08-12": 2.4}
+
+
+def test_et_month_is_eastern_at_the_month_boundary(client):
+    """The month the app labels '이번 달'. Computed server-side so the timezone
+    decision lives in one place with a real tz database behind it, rather than
+    in Hermes where full-ICU (and therefore Intl's timeZone option) is not
+    guaranteed. Fixed instants, never wall-clock: host- and date-independent."""
+    import datetime as dt
+    import softbook_app_api as api
+    utc = dt.timezone.utc
+    # 2026-08-31 21:00 ET — UTC has already rolled into September.
+    assert api._et_month(dt.datetime(2026, 9, 1, 1, 0, tzinfo=utc)) == "2026-08"
+    # 2026-07-31 23:00 ET — same shape one month earlier.
+    assert api._et_month(dt.datetime(2026, 8, 1, 3, 0, tzinfo=utc)) == "2026-07"
+    # 2025-12-31 23:30 EST — inside the 04:00-04:59Z window, so a fixed -4
+    # offset would answer "2026-01" and roll the year over a day early.
+    assert api._et_month(dt.datetime(2026, 1, 1, 4, 30, tzinfo=utc)) == "2025-12"
+
+
+def test_mybets_reports_the_current_eastern_month(client, monkeypatch):
+    """The endpoint must actually serve that month, and serve the ET one."""
+    import datetime as dt
+    import re
+    from zoneinfo import ZoneInfo
+    import softbook_app_api as api
+    body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
+    assert re.fullmatch(r"\d{4}-\d{2}", body["month"]), body["month"]
+    assert body["month"] == dt.datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m")
+    # …and that it is the ET helper's answer, not a UTC month that happens to
+    # agree right now (they differ only 04:00-04:59Z, so the assertion above is
+    # vacuous most of the day on a UTC CI host). Bites on every host, any hour.
+    monkeypatch.setattr(api, "_et_month", lambda now=None: "1999-01")
+    assert client.get("/mybets",
+                      headers={"Authorization": "Bearer secret"}).json()["month"] == "1999-01"
+
+
 def test_settings_roundtrip(client):
     put = client.put("/settings", json={"min_ev": 0.03, "sports": ["baseball_mlb"],
                                         "muted_books": ["BallyBet"], "sort": "time"},
