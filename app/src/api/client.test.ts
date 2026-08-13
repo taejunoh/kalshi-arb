@@ -10,6 +10,7 @@ jest.mock("../storage", () => ({
 
 import { api, ApiError } from "./client";
 import { getCredentials } from "../storage";
+import type { BetPatch } from "./types";
 
 function mockFetch(body: unknown, ok = true, status = 200) {
   return jest.fn(async () => ({ ok, status, json: async () => body })) as unknown as typeof fetch;
@@ -122,6 +123,24 @@ test("patchBet sends PATCH with only the supplied fields", async () => {
   expect(url).toBe("https://api.example.com/bets/7");
   expect(init.method).toBe("PATCH");
   expect(JSON.parse(init.body)).toEqual({ stake: 25 });
+});
+
+// Type-level guard: BetPatch must reject an explicitly-null stake/fill_odds at
+// compile time, since the server 422s them (a placed bet without a stake/fill_odds
+// isn't a record of anything, and the settle worker multiplies by both) — this is
+// exactly the mistake a "clear this field" edit-screen interaction could make. A
+// null `book` must still type-check, since it's descriptive metadata the server
+// already accepts as null on creation. If either @ts-expect-error below stops
+// erroring (i.e. the type got widened back), this file fails `tsc --noEmit`.
+test("BetPatch rejects null stake/fill_odds at the type level but still allows null book", () => {
+  // @ts-expect-error stake must not be null — server 422s a placed bet without a stake
+  const badStake: BetPatch = { stake: null };
+  // @ts-expect-error fill_odds must not be null — server 422s a placed bet without fill_odds
+  const badFillOdds: BetPatch = { fill_odds: null };
+  const okBook: BetPatch = { book: null };
+  expect(badStake).toBeDefined();
+  expect(badFillOdds).toBeDefined();
+  expect(okBook).toBeDefined();
 });
 
 test("unmarkBet POSTs and remarkBet DELETEs the same path", async () => {

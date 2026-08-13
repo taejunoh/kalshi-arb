@@ -195,9 +195,17 @@ export interface UnmarkResponse {
   settled_day: string | null;
 }
 
-/** The only three fields the server accepts — anything else is a 422. */
+/** The only three fields the server accepts — anything else is a 422.
+ *
+ *  `stake`/`fill_odds` are NOT nullable here even though the server field is
+ *  optional: PATCH /bets/{id} 422s an explicitly-null stake or fill_odds,
+ *  because a placed bet without them isn't a record of anything and the
+ *  settlement worker multiplies by both. `book` stays nullable — it's
+ *  descriptive metadata, and the server already accepts a null book on
+ *  bet creation. Don't widen stake/fill_odds back to `| null`; a "clear
+ *  this field" edit interaction would compile cleanly and then 422. */
 export interface BetPatch {
   book?: string | null;
-  stake?: number | null;
-  fill_odds?: number | null;
+  stake?: number;
+  fill_odds?: number;
 }
