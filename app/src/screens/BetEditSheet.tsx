@@ -11,8 +11,15 @@ import { color, radius, space } from "../theme";
 
 type Props = { route: NativeStackScreenProps<MyBetsStackParamList, "BetEdit">["route"] };
 
-const MONTH_DAY = (iso: string): string => {
-  const [, m, d] = iso.slice(0, 10).split("-");
+/** "8월 12일" from a YYYY-MM-DD day key.
+ *
+ *  Takes the DAY, never a raw settled_at. settled_at is a UTC instant, so
+ *  slicing it names the following day for anything settling after 8pm ET —
+ *  which is most evening games, and 39% of settled bets in production. The day
+ *  is computed once on the server (see AppBet.settled_day) and only formatted
+ *  here. */
+const MONTH_DAY = (day: string): string => {
+  const [, m, d] = day.split("-");
   return `${Number(m)}월 ${Number(d)}일`;
 };
 
@@ -21,10 +28,15 @@ const MONTH_DAY = (iso: string): string => {
  *  decision to show a dialog at all read this single predicate, so a confirm
  *  prompt can never appear with no amount in it to disclose.
  *
- *  A type predicate so toggleMessage still gets pnl/settled_at narrowed to
+ *  Gated on settled_day, not settled_at: the dialog's whole job is to NAME the
+ *  day that moves, so a row we cannot name a day for has nothing to disclose
+ *  either. That also makes the deploy-skew case (a row predating settled_day)
+ *  degrade to the no-amount dialog instead of naming a UTC day.
+ *
+ *  A type predicate so toggleMessage still gets pnl/settled_day narrowed to
  *  non-null after its early return. */
-function movesSettledPnl(bet: AppBet): bet is AppBet & { pnl: number; settled_at: string } {
-  return !!bet.settled && bet.pnl != null && !!bet.settled_at;
+function movesSettledPnl(bet: AppBet): bet is AppBet & { pnl: number; settled_day: string } {
+  return !!bet.settled && bet.pnl != null && !!bet.settled_day;
 }
 
 /** "{month}월 {day}일 PnL이 {+/-N.NN}" — the day+amount fragment named in every
@@ -43,7 +55,7 @@ function pnlChangeFragment(day: string, delta: number): string {
  *  drift apart; only the sign of the delta and the trailing sentence differ. */
 function toggleMessage(bet: AppBet, sign: 1 | -1, tail: string): string {
   if (!movesSettledPnl(bet)) return tail;
-  return `${pnlChangeFragment(bet.settled_at, sign * bet.pnl)} 변경됩니다. ${tail}`;
+  return `${pnlChangeFragment(bet.settled_day, sign * bet.pnl)} 변경됩니다. ${tail}`;
 }
 
 /** 베팅 안 했음: the bet leaves the totals, the pick returns to the feed. */

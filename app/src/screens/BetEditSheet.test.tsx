@@ -170,7 +170,7 @@ test("표시 해제 goes through a confirm dialog before calling the API", async
 
 test("a settled bet's dialog names the PnL change", async () => {
   const settled: AppBet = { ...bet, settled: 1, won: 1, pnl: -45,
-    settled_at: "2026-08-09T22:00:00+00:00" };
+    settled_at: "2026-08-09T22:00:00+00:00", settled_day: "2026-08-09" };
   await render(<BetEditSheet route={routeFor(settled)} />);
   await fireEvent.press(screen.getByText("베팅 안 했음"));
   const [, message] = alertSpy.mock.calls[0] as unknown as [string, string];
@@ -178,9 +178,55 @@ test("a settled bet's dialog names the PnL change", async () => {
     "8월 9일 PnL이 +45.00 변경됩니다. 기록은 남고 집계에서만 빠집니다. 이 픽은 다시 피드에 나타납니다.");
 });
 
+// The settled_day cases that existed before all used 22:00Z, which is the same
+// calendar day in UTC and Eastern — precisely why none of them caught the
+// confirm dialog naming a UTC day. Everything below settles at 02:00Z, where
+// the frames disagree: the old `bet.settled_at.slice(0,10)` answers "8월 13일"
+// for a bet the calendar files under 8월 12일.
+//
+// These are pure string assertions (settled_day arrives as YYYY-MM-DD and
+// MONTH_DAY only slices it) — no Date, no zone, so they read identically on a
+// UTC host and an ET one.
+
+test("the unmark dialog names the EASTERN day, not the UTC one", async () => {
+  const lateNight: AppBet = { ...bet, settled: 1, won: 1, pnl: -45,
+    settled_at: "2026-08-13T02:00:00+00:00", settled_day: "2026-08-12" };
+  await render(<BetEditSheet route={routeFor(lateNight)} />);
+  await fireEvent.press(screen.getByText("베팅 안 했음"));
+  const [, message] = alertSpy.mock.calls[0] as unknown as [string, string];
+  expect(message).toBe(
+    "8월 12일 PnL이 +45.00 변경됩니다. 기록은 남고 집계에서만 빠집니다. 이 픽은 다시 피드에 나타납니다.");
+  expect(message).not.toContain("8월 13일");
+});
+
+test("the 되돌리기 dialog names the EASTERN day too", async () => {
+  const lateNightOff: AppBet = { ...bet, not_placed: 1,
+    not_placed_at: "2026-08-14T10:00:00+00:00", settled: 1, won: 1, pnl: -45,
+    settled_at: "2026-08-13T02:00:00+00:00", settled_day: "2026-08-12" };
+  await render(<BetEditSheet route={routeFor(lateNightOff)} />);
+  await fireEvent.press(screen.getByText("되돌리기"));
+  const [, message] = alertSpy.mock.calls[0] as unknown as [string, string];
+  expect(message).toBe(
+    "8월 12일 PnL이 -45.00 변경됩니다. 이 베팅이 다시 집계에 포함됩니다. 이 픽은 피드에서 다시 숨겨집니다.");
+  expect(message).not.toContain("8월 13일");
+});
+
+test("a row predating settled_day names no day rather than a wrong one", async () => {
+  // Deploy skew. The dialog degrades to the tail sentence — the same shape as a
+  // bet with no recorded PnL. Naming the UTC day instead would be the very bug
+  // this change removes, and the device cannot convert the instant itself.
+  const noDay: AppBet = { ...bet, settled: 1, won: 1, pnl: -45,
+    settled_at: "2026-08-13T02:00:00+00:00" };
+  await render(<BetEditSheet route={routeFor(noDay)} />);
+  await fireEvent.press(screen.getByText("베팅 안 했음"));
+  const [, message] = alertSpy.mock.calls[0] as unknown as [string, string];
+  expect(message).toBe("기록은 남고 집계에서만 빠집니다. 이 픽은 다시 피드에 나타납니다.");
+  expect(message).not.toContain("월");
+});
+
 test("a settled bet cannot be edited, only unmarked", async () => {
   const settled: AppBet = { ...bet, settled: 1, won: 1, pnl: 26,
-    settled_at: "2026-08-09T22:00:00+00:00" };
+    settled_at: "2026-08-09T22:00:00+00:00", settled_day: "2026-08-09" };
   await render(<BetEditSheet route={routeFor(settled)} />);
   expect(screen.getByText("정산된 베팅은 수정할 수 없습니다")).toBeOnTheScreen();
   expect(screen.queryByText("저장")).toBeNull();
@@ -202,7 +248,7 @@ test("an unsettled 되돌리기 is a single tap — no confirm dialog", async ()
 });
 
 const settledOffBet: AppBet = { ...offBet, settled: 1, won: 1, pnl: -45,
-  settled_at: "2026-08-09T22:00:00+00:00" };
+  settled_at: "2026-08-09T22:00:00+00:00", settled_day: "2026-08-09" };
 
 test("a settled 되돌리기 confirms first and names the restored PnL", async () => {
   // Same day and amount as the unmark dialog above, opposite sign: unmarking
@@ -223,7 +269,8 @@ test("a settled bet with no pnl recorded does not raise a numberless dialog", as
   // The gate is the same predicate the message text reads, so the two can never
   // disagree: if the dialog would have no amount to name, there is nothing to
   // disclose and no reason to prompt.
-  const noPnl: AppBet = { ...settledOffBet, pnl: null, settled_at: null };
+  const noPnl: AppBet = { ...settledOffBet, pnl: null, settled_at: null,
+    settled_day: null };
   await render(<BetEditSheet route={routeFor(noPnl)} />);
   await fireEvent.press(screen.getByText("되돌리기"));
   expect(alertSpy).not.toHaveBeenCalled();
@@ -259,6 +306,22 @@ test("서버가 정산 후 실제 PnL 변경을 보고하면 사후 안내를 �
   const [message] = alertSpy.mock.calls[1] as unknown as [string];
   expect(message).toBe("8월 9일 PnL이 -45.00 변경되었습니다.");
   expect(mockPopToTop).toHaveBeenCalled();
+});
+
+test("사후 안내도 서버가 준 동부시간 날짜를 그대로 쓴다", async () => {
+  // The post-hoc path takes its day straight from the response, so it is
+  // correct as soon as the server stops slicing UTC — but nothing pinned that,
+  // because the only case here used 2026-08-09, same day in both frames. This
+  // is the response for a 10pm ET Aug 12 settlement.
+  (api.unmarkBet as jest.Mock).mockResolvedValueOnce({
+    ok: true, pnl_delta: -45, settled_day: "2026-08-12",
+  });
+  await render(<BetEditSheet route={routeFor(bet)} />);
+  await fireEvent.press(screen.getByText("베팅 안 했음"));
+  confirmLastAlert();
+  await waitFor(() => expect(alertSpy).toHaveBeenCalledTimes(2));
+  const [message] = alertSpy.mock.calls[1] as unknown as [string];
+  expect(message).toBe("8월 12일 PnL이 -45.00 변경되었습니다.");
 });
 
 test("pnl_delta 가 null 이면 사후 안내를 띄우지 않는다", async () => {
