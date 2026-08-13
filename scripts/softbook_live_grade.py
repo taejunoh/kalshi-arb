@@ -78,7 +78,7 @@ def grade_open_bets(db, fetch_stat=_mlb_live_stat):
     Returns the number of bets updated."""
     rows = db.execute(
         "SELECT id, sport, event_id, market, side, point, player FROM app_bet"
-        " WHERE settled=0").fetchall()
+        " WHERE settled=0 AND not_placed=0").fetchall()
     n = 0
     for bid, sport, eid, market, side, point, player in rows:
         if market not in MLB_STAT:           # NBA props: follow-up seam

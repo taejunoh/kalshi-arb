@@ -59,3 +59,14 @@ def test_grade_skips_settled_bets():
                " VALUES ('E1','baseball_mlb','batter_total_bases','Over',1.5,'X',1)")
     db.commit()
     assert lg.grade_open_bets(db, fetch_stat=lambda *a: (5, "Final")) == 0
+
+
+def test_grade_skips_not_placed_bets():
+    db = sqlite3.connect(":memory:")
+    import softbook_app_db as adb
+    adb.init_schema(db)
+    db.execute("INSERT INTO app_bet(event_id,sport,market,side,point,player,settled,"
+               "not_placed) VALUES ('E1','baseball_mlb','batter_total_bases',"
+               "'Over',1.5,'Brandon Nimmo',0,1)")
+    db.commit()
+    assert lg.grade_open_bets(db, fetch_stat=lambda *a: (5, "Final")) == 0

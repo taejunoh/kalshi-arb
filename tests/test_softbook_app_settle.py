@@ -5,6 +5,8 @@ import os
 import sqlite3
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import softbook_app_settle as settle  # noqa: E402
 import softbook_app_db as adb  # noqa: E402
@@ -82,3 +84,16 @@ def test_already_settled_not_reprocessed():
     db.commit()
     assert settle.settle_app_bets(db, key="k", fetch_scores=lambda s, k: {},
                                   player_stat=lambda *a: 3) == 0
+
+
+def test_not_placed_bets_are_never_settled():
+    """A bet the user says never happened must not enter PnL."""
+    db = _db_with_bet()
+    db.execute("UPDATE app_bet SET not_placed=1")
+    db.commit()
+    n = settle.settle_app_bets(
+        db, key="k",
+        fetch_scores=lambda *a, **k: pytest.fail("must not fetch for a not-placed bet"),
+        player_stat=lambda *a, **k: pytest.fail("must not grade a not-placed bet"))
+    assert n == 0
+    assert db.execute("SELECT settled FROM app_bet").fetchone() == (0,)
