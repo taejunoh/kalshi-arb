@@ -217,6 +217,45 @@ def test_mybets_groups_open_and_calendar(client):
     assert isinstance(body["open"], list)
 
 
+def _place_bet(client, **over):
+    body = {"event_id": "E1", "sport": "baseball_mlb", "market": "batter_total_bases",
+            "side": "Over", "point": 1.5, "player": "Brandon Nimmo",
+            "label": "Brandon Nimmo TB Over 1.5", "book": "theScore",
+            "fill_odds": 2.2, "stake": 2.0}
+    body.update(over)
+    r = client.post("/bets", json=body, headers={"Authorization": "Bearer secret"})
+    assert r.status_code == 200
+    return r.json()["id"]
+
+
+def test_mybets_splits_open_settled_and_not_placed(client):
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=2.4,"
+                " settled_at=strftime('%Y-%m-%dT%H:%M:%S+00:00','now') WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
+    assert body["open"] == []
+    assert [b["id"] for b in body["settled"]] == [bid]
+    assert body["settled"][0]["pnl"] == 2.4 and body["settled"][0]["won"] == 1
+    assert body["not_placed"] == []
+
+
+def test_mybets_excludes_not_placed_from_calendar_and_lists(client):
+    bid = _place_bet(client)
+    import softbook_app_db as adb2
+    pdb = adb2.connect()
+    pdb.execute("UPDATE app_bet SET settled=1, won=1, pnl=2.4,"
+                " settled_at='2026-06-12T22:00:00+00:00', not_placed=1,"
+                " not_placed_at='2026-08-12T10:00:00+00:00' WHERE id=?", (bid,))
+    pdb.commit(); pdb.close()
+    body = client.get("/mybets", headers={"Authorization": "Bearer secret"}).json()
+    assert body["calendar"] == {}                       # PnL no longer counted
+    assert body["settled"] == [] and body["open"] == []
+    assert [b["id"] for b in body["not_placed"]] == [bid]
+
+
 def test_settings_roundtrip(client):
     put = client.put("/settings", json={"min_ev": 0.03, "sports": ["baseball_mlb"],
                                         "muted_books": ["BallyBet"], "sort": "time"},

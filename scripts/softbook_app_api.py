@@ -570,31 +570,53 @@ def delete_rule(rule_id: int, _=Depends(require_auth)):
     return {"ok": True}
 
 
+_MYBET_COLS = ("id, event_id, sport, home, away, commence_time, market, side,"
+               " point, player, label, book, fill_odds, stake, live_status,"
+               " live_progress, settled, won, pnl, settled_at, not_placed,"
+               " not_placed_at")
+
+# 90 days: the app screen is a working record, not an archive — the dashboard
+# History owns the long tail. Keeps the payload bounded as app_bet grows.
+_SETTLED_WINDOW_D = 90
+
+
+def _mybet_rows(pdb, tail, params=()):
+    keys = [c.strip() for c in _MYBET_COLS.split(",")]
+    rows = [dict(zip(keys, r)) for r in
+            pdb.execute(f"SELECT {_MYBET_COLS} FROM app_bet WHERE {tail}", params)]
+    for o in rows:
+        if o.get("live_progress"):
+            try:
+                o["live_progress"] = json.loads(o["live_progress"])
+            except Exception:
+                pass
+    return rows
+
+
 @app.get("/mybets")
 def get_mybets(_=Depends(require_auth)):
+    """The bet ledger, split by what the user can do with each row: open (waiting),
+    settled (done), not_placed (disowned — kept visible because the row is never
+    deleted). not_placed is excluded from the calendar: its PnL is not real."""
     pdb = adb.connect()
     try:
         cal = {}
         for day, pnl in pdb.execute(
                 "SELECT substr(settled_at,1,10) d, COALESCE(sum(pnl),0)"
                 " FROM app_bet WHERE settled=1 AND settled_at IS NOT NULL"
-                " GROUP BY d"):
+                " AND not_placed=0 GROUP BY d"):
             cal[day] = round(pnl, 2)
-        cols = ("id, event_id, sport, home, away, commence_time, market, side,"
-                " point, player, label, book, fill_odds, stake, live_status,"
-                " live_progress")
-        open_rows = [dict(zip(cols.replace(" ", "").split(","), r)) for r in
-                     pdb.execute(f"SELECT {cols} FROM app_bet WHERE settled=0"
-                                 " ORDER BY commence_time")]
-        for o in open_rows:
-            if o.get("live_progress"):
-                try:
-                    o["live_progress"] = json.loads(o["live_progress"])
-                except Exception:
-                    pass
+        open_rows = _mybet_rows(
+            pdb, "settled=0 AND not_placed=0 ORDER BY commence_time")
+        settled = _mybet_rows(
+            pdb, "settled=1 AND not_placed=0 AND settled_at IS NOT NULL"
+                 " AND datetime(settled_at) >= datetime('now', ?)"
+                 " ORDER BY settled_at DESC", (f"-{_SETTLED_WINDOW_D} days",))
+        not_placed = _mybet_rows(pdb, "not_placed=1 ORDER BY not_placed_at DESC")
     finally:
         pdb.close()
-    return {"calendar": cal, "open": open_rows}
+    return {"calendar": cal, "open": open_rows,
+            "settled": settled, "not_placed": not_placed}
 
 
 @app.get("/settings")
