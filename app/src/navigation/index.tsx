@@ -4,11 +4,13 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { color } from "../theme";
-import type { PicksStackParamList, RootParamList, TabParamList } from "./types";
+import type { MyBetsStackParamList, PicksStackParamList, RootParamList, TabParamList } from "./types";
 import { PicksScreen } from "../screens/PicksScreen";
 import { PickDetailScreen } from "../screens/PickDetailScreen";
 import { CaptureSheet } from "../screens/CaptureSheet";
 import { SettingsScreen } from "../screens/SettingsScreen";
+import { MyBetsScreen } from "../screens/MyBetsScreen";
+import { BetEditSheet } from "../screens/BetEditSheet";
 
 export const navigationRef = createNavigationContainerRef<RootParamList>();
 
@@ -43,6 +45,25 @@ function PicksNavigator() {
   );
 }
 
+const MyBetsStack = createNativeStackNavigator<MyBetsStackParamList>();
+function MyBetsNavigator() {
+  return (
+    <MyBetsStack.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: color.bg },
+        headerTintColor: color.accent,
+        headerTitleStyle: { color: color.text },
+        headerShadowVisible: false,
+        contentStyle: { backgroundColor: color.bg },
+      }}
+    >
+      <MyBetsStack.Screen name="MyBetsList" component={MyBetsScreen} options={{ title: "내 베팅" }} />
+      <MyBetsStack.Screen name="BetEdit" component={BetEditSheet}
+        options={{ presentation: "modal", title: "베팅 수정" }} />
+    </MyBetsStack.Navigator>
+  );
+}
+
 const Tabs = createBottomTabNavigator<TabParamList>();
 export function RootNavigator() {
   return (
@@ -55,6 +76,7 @@ export function RootNavigator() {
       }}
     >
       <Tabs.Screen name="Picks" component={PicksNavigator} options={{ title: "픽", tabBarIcon: ({ color: c, size }) => <Feather name="zap" size={size} color={c} /> }} />
+      <Tabs.Screen name="MyBets" component={MyBetsNavigator} options={{ title: "내 베팅", tabBarIcon: ({ color: c, size }) => <Feather name="file-text" size={size} color={c} /> }} />
       <Tabs.Screen name="Settings" component={SettingsScreen} options={{ title: "설정", tabBarIcon: ({ color: c, size }) => <Feather name="settings" size={size} color={c} /> }} />
     </Tabs.Navigator>
   );
