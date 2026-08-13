@@ -985,11 +985,15 @@ export interface UnmarkResponse {
   settled_day: string | null;
 }
 
-/** The only three fields the server accepts — anything else is a 422. */
+/** The only three fields the server accepts — anything else is a 422.
+ *  Note the asymmetry: the server also 422s an explicitly-null `stake` or
+ *  `fill_odds` (a placed bet without them is not a record of anything, and the
+ *  settle worker multiplies by both), so those are not nullable here. `book` is
+ *  descriptive metadata the server already accepts as null at creation. */
 export interface BetPatch {
   book?: string | null;
-  stake?: number | null;
-  fill_odds?: number | null;
+  stake?: number;
+  fill_odds?: number;
 }
 ```
 
