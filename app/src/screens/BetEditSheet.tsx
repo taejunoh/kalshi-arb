@@ -16,13 +16,24 @@ const MONTH_DAY = (iso: string): string => {
   return `${Number(m)}월 ${Number(d)}일`;
 };
 
+/** Does toggling this bet move a number that is already on the books? Only a
+ *  settled row with a recorded PnL has one. Both the dialog TEXT and the
+ *  decision to show a dialog at all read this single predicate, so a confirm
+ *  prompt can never appear with no amount in it to disclose.
+ *
+ *  A type predicate so toggleMessage still gets pnl/settled_at narrowed to
+ *  non-null after its early return. */
+function movesSettledPnl(bet: AppBet): bet is AppBet & { pnl: number; settled_at: string } {
+  return !!bet.settled && bet.pnl != null && !!bet.settled_at;
+}
+
 /** The confirm text for BOTH directions of the 베팅 안 했음 toggle. A settled
  *  bet's PnL moves either way — out of that day on unmark, back into it on
  *  restore — so the dialog names the day and the amount: a past number must
  *  never shift in silence. One builder on purpose, so the two dialogs cannot
  *  drift apart; only the sign of the delta and the trailing sentence differ. */
 function toggleMessage(bet: AppBet, sign: 1 | -1, tail: string): string {
-  if (!bet.settled || bet.pnl == null || !bet.settled_at) return tail;
+  if (!movesSettledPnl(bet)) return tail;
   const delta = sign * bet.pnl;
   const signed = `${delta >= 0 ? "+" : "-"}${Math.abs(delta).toFixed(2)}`;
   return `${MONTH_DAY(bet.settled_at)} PnL이 ${signed} 변경됩니다. ${tail}`;
@@ -103,26 +114,32 @@ export function BetEditSheet({ route }: Props) {
     ]);
   };
 
-  // Confirmed too, for the same reason unmark is: restoring a settled bet moves
-  // a past day's PnL. An unconfirmed single tap that silently rewrites a number
-  // the user has already read is exactly what the unmark dialog exists to stop,
-  // and the inverse action is no less of a change.
+  const doRemark = async () => {
+    setBusy(true);
+    try {
+      await api.remarkBet(bet.id);
+      nav.popToTop();
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+
+  // Confirmed ONLY when a past number actually moves. Restoring a settled bet
+  // puts that day's PnL back, which must not be rewritten under the user in
+  // silence — but an unsettled restore shifts nothing already on the books, and
+  // it is the UNDO of the destructive direction, so a prompt there is friction
+  // with nothing behind it. Same call the pick feed's 관심없음 makes with its
+  // 5-second undo instead of a confirm. Unmark stays unconditional: it is the
+  // destructive direction (drops the bet from PnL, re-exposes the pick).
   const remark = () => {
+    if (!movesSettledPnl(bet)) {
+      void doRemark();
+      return;
+    }
     Alert.alert("베팅 기록 되돌리기", remarkMessage(bet), [
       { text: "취소", style: "cancel" },
-      {
-        text: "되돌리기",
-        onPress: () => void (async () => {
-          setBusy(true);
-          try {
-            await api.remarkBet(bet.id);
-            nav.popToTop();
-          } catch (e) {
-            setError((e as Error).message);
-            setBusy(false);
-          }
-        })(),
-      },
+      { text: "되돌리기", onPress: () => void doRemark() },
     ]);
   };
 
