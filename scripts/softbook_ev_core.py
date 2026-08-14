@@ -305,12 +305,17 @@ def soon(ct):
 # alerted but un-bettable in NY), and (b) the is_bet first-entry edge was validated
 # on REGULAR-SEASON data only, so the EV number does not transfer to these thin,
 # high-variance, roster-unknown slates. (2026-07-07)
+# Exhibition-class competitions never qualify: lines priced on roster guesswork
+# and effort nobody can model. As of 2026-08-14 this is the COMPLETE set of such
+# keys the Odds API offers (checked against /sports?all=true) — NFL preseason
+# got in before its key was here and debuted in the public record 0-5; NHL
+# preseason (late Sep) and MLB spring training (Feb) are blocked ahead of their
+# first slates so they cannot repeat that.
 SPORT_BLOCKLIST = {"basketball_nba_summer_league", "basketball_nba_preseason",
                    "basketball_nba_all_stars",
-                   # 2026-08-14: preseason football — lines priced on roster
-                   # guesswork, same reason NBA preseason is here. Debuted in
-                   # the public record 0-5 on its first slate.
-                   "americanfootball_nfl_preseason"}
+                   "americanfootball_nfl_preseason",
+                   "icehockey_nhl_preseason",
+                   "baseball_mlb_preseason"}
 
 
 def active_sports(key):
