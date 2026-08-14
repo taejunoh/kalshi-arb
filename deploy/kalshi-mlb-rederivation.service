@@ -1,0 +1,8 @@
+[Unit]
+Description=MLB Med ML re-derivation — fires once when the forward sample reaches n>=50 (report only, no changes)
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalshi-arb
+ExecStart=/home/ubuntu/kalshi-arb/venv/bin/python scripts/mlb_med_ml_rederivation.py

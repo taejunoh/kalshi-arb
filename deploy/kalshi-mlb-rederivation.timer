@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily gate check for the MLB Med ML re-derivation (13:00 UTC = 09:00 ET, after overnight settles)
+
+[Timer]
+OnCalendar=*-*-* 13:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
