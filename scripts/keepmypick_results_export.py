@@ -31,6 +31,15 @@ RULE_CHANGES = [
     {"date": "2026-08-11",
      "en": "Markets quoted by a single sportsbook no longer count as picks.",
      "ko": "단독 호가(북 1곳뿐) 마켓은 픽에서 제외."},
+    # Intake-only change: no published number moved and the 0-5 preseason
+    # ledger rows stay. Disclosed anyway — the record shows preseason picks,
+    # then none by our choice, then regular-season NFL in September; without
+    # a dated note that reads as "quietly dropped it after it lost".
+    {"date": "2026-08-14",
+     "en": "NFL preseason excluded going forward (lines priced on roster "
+           "guesswork). The 0-5 preseason record stays.",
+     "ko": "NFL 프리시즌은 향후 제외 (로스터 불확실성으로 라인 품질 낮음). "
+           "기존 0-5 기록은 그대로 유지."},
 ]
 
 # The min-books exposure gate (core.is_confirmable) went live 2026-08-11: a pick
