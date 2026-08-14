@@ -130,4 +130,8 @@ def test_every_era_is_disclosed_on_the_public_page():
     without the second is a silent rule change on a public record."""
     import keepmypick_results_export as kmp
     dated = {start for start, _ in core.BET_TIER_ERAS if start != "0000-00-00"}
-    assert dated == {c["date"] for c in kmp.RULE_CHANGES}
+    disclosed = {c["date"] for c in kmp.RULE_CHANGES}
+    # Subset, not equality: RULE_CHANGES also discloses non-tier rules (the
+    # 08-11 single-book exclusion). Every tier era must still be disclosed.
+    assert dated <= disclosed
+    assert kmp.MIN_BOOKS_SINCE in disclosed

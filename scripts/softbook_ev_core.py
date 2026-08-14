@@ -306,7 +306,11 @@ def soon(ct):
 # on REGULAR-SEASON data only, so the EV number does not transfer to these thin,
 # high-variance, roster-unknown slates. (2026-07-07)
 SPORT_BLOCKLIST = {"basketball_nba_summer_league", "basketball_nba_preseason",
-                   "basketball_nba_all_stars"}
+                   "basketball_nba_all_stars",
+                   # 2026-08-14: preseason football — lines priced on roster
+                   # guesswork, same reason NBA preseason is here. Debuted in
+                   # the public record 0-5 on its first slate.
+                   "americanfootball_nfl_preseason"}
 
 
 def active_sports(key):
