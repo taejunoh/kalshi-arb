@@ -28,7 +28,20 @@ RULE_CHANGES = [
     {"date": "2026-08-05",
      "en": "Moneyline picks moved from the High to the Med confidence tier.",
      "ko": "머니라인 기준을 High → Med 신뢰등급으로 변경."},
+    {"date": "2026-08-11",
+     "en": "Markets quoted by a single sportsbook no longer count as picks.",
+     "ko": "단독 호가(북 1곳뿐) 마켓은 픽에서 제외."},
 ]
+
+# The min-books exposure gate (core.is_confirmable) went live 2026-08-11: a pick
+# only one book quotes is not surfaced anywhere, because such markets routinely
+# exist in the Odds API without being purchasable at the book. This export was
+# missed in that change, so the PUBLIC record kept counting picks nobody could
+# take — 15 of them by 08-14, at -14.8% ROI, on a page that says "place each at
+# the named sportsbook". Era-consistent like everything else here: bets placed
+# BEFORE the gate existed were genuinely alerted and stay; from this date on,
+# a 1-book market was never a pick, so it never enters the record.
+MIN_BOOKS_SINCE = "2026-08-11"
 
 EV_DB = "/home/ubuntu/kalshi-arb/data/softbook_ev.db"
 PAPER_DB = "/home/ubuntu/kalshi-arb/data/softbook_paper.db"
@@ -51,6 +64,24 @@ def main():
         seen, sides = cache[k]
         return seen and (side in sides)
 
+    nb_cache = {}
+
+    def confirmable(eid, market, side, day):
+        """core.is_confirmable, from the day the gate went live, on the book
+        count at the side's earliest snapshot (same vintage first-entry uses)."""
+        if day < MIN_BOOKS_SINCE:
+            return True
+        k = (eid, market, side)
+        if k not in nb_cache:
+            try:
+                r = ev.execute(
+                    "SELECT n_books FROM softbook_ev WHERE event_id=? AND market=?"
+                    " AND side=? ORDER BY recorded_at LIMIT 1", k).fetchone()
+                nb_cache[k] = r[0] if r else None
+            except Exception:
+                nb_cache[k] = None
+        return core.is_confirmable(nb_cache[k])
+
     rows = pp.execute(
         "SELECT event_id, date(placed_at) d, sport, label, market, side, player, "
         "book, ROUND(odds,2) odds, stake, result, ROUND(pnl,2) pnl "
@@ -63,6 +94,8 @@ def main():
     ledger = []
     for eid, d, sport, label, market, side, player, book, odds, stake, result, pnl in rows:
         if not is_fe(eid, market, side, player, d):
+            continue
+        if not confirmable(eid, market, side, d):
             continue
         ledger.append({"d": d, "sport": sport, "label": label, "market": market,
                        "book": book, "odds": odds, "result": result, "pnl": pnl})
