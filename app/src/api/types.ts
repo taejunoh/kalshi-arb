@@ -32,6 +32,12 @@ export interface Pick {
   // BET verdict = FIRST-ENTRY GAME ONLY (core.is_bet: h2h/spread/total & first-entry;
   // props and late-crossers are false). Drives the card badge and the bet filter.
   should_bet?: boolean;
+  // Already staked on this game, same side, line moved — the app shows it
+  // rather than blocking: measured, a re-bet performs identically to the first
+  // (-$195 vs -$195 over 8 real pairs), so the cost is unintended sizing, not
+  // edge. Opposite-direction conflicts never reach the client at all; the API
+  // drops them (23% of such pairs lose both legs).
+  conflict_note?: string | null;
   // What this pick looked like when it ALERTED vs what it is worth NOW.
   //
   // `ev`/`odds` above are the pick's last HIGH snapshot, which is not the same
