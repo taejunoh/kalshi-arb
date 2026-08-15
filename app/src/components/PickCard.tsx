@@ -57,6 +57,9 @@ export function PickCard({
         <Text style={s.metaDim}>{pick.n_books ?? 0}북</Text>
         <Text style={[s.metaDim, countdownUrgent(pick.commence_time) && s.metaUrgent]}>{countdown(pick.commence_time)}</Text>
       </View>
+      {pick.conflict_note && (
+        <Text style={s.conflict} numberOfLines={1}>⚠️ {pick.conflict_note}</Text>
+      )}
       {mb && <Text style={s.floor}>✂️ 최소 {mb.min} · 본전 {mb.be}</Text>}
       {trail && <Text style={s.trail}>{trail}</Text>}
       <View style={s.actions}>
@@ -85,6 +88,7 @@ const s = StyleSheet.create({
   metaBook: { color: color.text, fontSize: 13, fontWeight: "500" },
   metaDim: { color: color.muted, fontSize: 13 },
   metaUrgent: { color: color.urgent },
+  conflict: { color: color.urgent, fontSize: 12, marginTop: space.xs },
   floor: { color: color.muted, fontSize: 12, marginTop: 7 },
   actions: { flexDirection: "row", marginTop: space.lg, gap: space.sm },
   btn: { paddingVertical: 11, borderRadius: radius.button, alignItems: "center" },

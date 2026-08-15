@@ -166,6 +166,20 @@ def pick_states(db):
         "SELECT event_id, market, side, point, player, state FROM pick_state")}
 
 
+def placed_bets_by_event(db):
+    """{event_id: [bet dicts]} for every bet the user actually placed, open or
+    settled. Feeds the feed's conflict checks — what is already staked on a
+    game decides what the app should still offer on it."""
+    out = {}
+    for eid, m, sd, pt, pl, home, away, label in db.execute(
+            "SELECT event_id, market, side, point, player, home, away, label"
+            " FROM app_bet WHERE event_id IS NOT NULL AND event_id != ''"):
+        out.setdefault(eid, []).append(
+            {"market": m, "side": sd, "point": pt or 0, "player": pl or "",
+             "home": home, "away": away, "label": label})
+    return out
+
+
 def insert_app_bet(db, bet):
     cur = db.execute(
         f"INSERT INTO app_bet({APP_BET_COLS}) VALUES "
