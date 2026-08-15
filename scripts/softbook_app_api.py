@@ -204,6 +204,50 @@ def _prefs(pdb):
     return dict(zip(("min_ev", "sports_json", "muted_books_json", "sort"), row))
 
 
+def _annotate_conflicts(picks, placed):
+    """Mark each pick against what the user has ALREADY staked on that game.
+
+    Two different problems, two different answers (measured 2026-08-14 over the
+    paper ledger, 314 opposite-direction pairs):
+
+      opposite direction (can never both win) — second pick ROI -8.5% against
+        the first's +1.3%, and 23% of pairs lose BOTH legs. That is not a
+        judgement call to surface, it is a bet to not offer: `conflict_hide`.
+        Seen live the day before this: BAL ML + TB -1.5 on the same game, and
+        an NPB pair that took -$25 together.
+
+      same direction, line moved — 8 real pairs, first bets -$195 and re-bets
+        -$195. Identical, so there is no case for blocking it; the cost is
+        unintended sizing (one game quietly holding $50-75 at a $25 unit).
+        That is a fact the user should see, not a rule: `conflict_note`.
+
+    Reuses rec._no_both_win so the app and the Telegram opposite-note cannot
+    disagree about what conflicts.
+    """
+    for p in picks:
+        bets = placed.get(p["event_id"]) or []
+        if not bets:
+            continue
+        this = {"market": p["market"], "side": p["side"], "point": p.get("point") or 0,
+                "player": p.get("player") or "", "home": p.get("home"), "away": p.get("away")}
+        for b in bets:
+            other = {**b, "home": p.get("home"), "away": p.get("away")}
+            if b["market"] == p["market"] and b["side"] == p["side"]:
+                # same side, line moved: a second stake on the same outcome
+                if float(b["point"] or 0) != float(this["point"] or 0):
+                    p["conflict_note"] = ("이미 베팅함: %s %+g"
+                                          % (p["side"], float(b["point"] or 0)))
+                else:
+                    p["conflict_note"] = "이미 베팅한 픽"
+                continue
+            try:
+                if rec._no_both_win(this, other):
+                    p["conflict_hide"] = b.get("label") or b["side"]
+            except Exception:
+                pass                    # never let a conflict check drop a pick
+    return picks
+
+
 def _enrich_first_entry(picks):
     """Set p['first_entry'] (THIS SIDE was High at the market's earliest snapshot —
     side-aware, so the opposite side after a steam is a late-crosser, not a first-entry) and
@@ -280,11 +324,25 @@ def get_picks(_=Depends(require_auth)):
     # keeps its place in counts and in MyBets.
     picks = [p for p in picks if p.get("should_bet") is not False
              or p.get("status") in ("bet", "dismissed")]
+    # Conflicts against what is already staked on the game. Opposite-direction
+    # picks leave the feed entirely (see _annotate_conflicts); same-direction
+    # re-bets stay and carry a note.
+    pdb2 = adb.connect()
+    try:
+        _annotate_conflicts(picks, adb.placed_bets_by_event(pdb2))
+    finally:
+        pdb2.close()
+    hidden = [p for p in picks if p.get("conflict_hide")
+              and p.get("status") not in ("bet", "dismissed")]
+    picks = [p for p in picks if not p.get("conflict_hide")
+             or p.get("status") in ("bet", "dismissed")]
     _alert_and_now(picks)
     active = [p for p in picks if p["status"] == "active"]
     counts = {}
     for p in picks:
         counts[p["status"]] = counts.get(p["status"], 0) + 1
+    if hidden:
+        counts["conflict_hidden"] = len(hidden)
     # Expired = game already started. Kept (windowed to recent commence, newest
     # first) so an alert you reacted to late stays findable — the feed list used to
     # drop these entirely, leaving only a count. counts['expired'] is the full
