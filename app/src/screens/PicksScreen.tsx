@@ -147,7 +147,10 @@ export function PicksScreen() {
   // bet/dismissed only: cooled and expired have their own sections right below,
   // and naming them twice reads as two different things.
   const c = data?.counts ?? {};
-  const whereTheyWent = ([["bet", "표시함"], ["dismissed", "무시함"]] as const)
+  // conflict_hidden is server-side: picks dropped because the opposite side of
+  // that game is already staked. Without a line here they just look missing.
+  const whereTheyWent = ([["bet", "표시함"], ["dismissed", "무시함"],
+                          ["conflict_hidden", "반대방향 제외"]] as const)
     .filter(([k]) => (c[k] ?? 0) > 0)
     .map(([k, label]) => `${label} ${c[k]}`)
     .join(" · ");
