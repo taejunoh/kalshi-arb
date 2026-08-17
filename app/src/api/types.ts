@@ -121,6 +121,11 @@ export interface Settings {
   sports: string[] | null;
   muted_books: string[] | null;
   sort: SortKey;
+  // Server-side since 2026-08-14 so the Telegram alert quotes the same number
+  // this app shows. It lived only in SecureStore before, and the two drifted:
+  // the card said $25 from July while Telegram kept saying $20 for a month.
+  // Device storage stays as the offline fallback.
+  unit_stake?: number;
 }
 
 // ===== Screenshot-AI scan =====
