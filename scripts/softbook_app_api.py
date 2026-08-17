@@ -197,11 +197,12 @@ def _latest_high_rows():
 
 def _prefs(pdb):
     row = pdb.execute(
-        "SELECT min_ev, sports_json, muted_books_json, sort FROM filter_prefs"
+        "SELECT min_ev, sports_json, muted_books_json, sort, unit_stake FROM filter_prefs"
         " WHERE id=1").fetchone()
     if not row:
         return None
-    return dict(zip(("min_ev", "sports_json", "muted_books_json", "sort"), row))
+    return dict(zip(("min_ev", "sports_json", "muted_books_json", "sort",
+                     "unit_stake"), row))
 
 
 def _annotate_conflicts(picks, placed):
@@ -722,6 +723,10 @@ class SettingsIn(BaseModel):
     sports: list[str] | None = None
     muted_books: list[str] | None = None
     sort: str = "ev"
+    # Server-side so the Telegram alert can quote the same number the card
+    # does. None = leave whatever is stored (older app builds omit the field
+    # and must not reset it to the default).
+    unit_stake: float | None = None
 
 
 class TokenIn(BaseModel):
@@ -895,11 +900,13 @@ def get_settings(_=Depends(require_auth)):
     finally:
         pdb.close()
     if not p:
-        return {"min_ev": 0.0, "sports": None, "muted_books": None, "sort": "ev"}
+        return {"min_ev": 0.0, "sports": None, "muted_books": None, "sort": "ev",
+                "unit_stake": adb.DEFAULT_UNIT_STAKE}
     return {"min_ev": p["min_ev"],
             "sports": json.loads(p["sports_json"]) if p["sports_json"] else None,
             "muted_books": json.loads(p["muted_books_json"]) if p["muted_books_json"] else None,
-            "sort": p["sort"]}
+            "sort": p["sort"],
+            "unit_stake": p["unit_stake"] or adb.DEFAULT_UNIT_STAKE}
 
 
 @app.put("/settings")
@@ -907,12 +914,15 @@ def put_settings(s: SettingsIn, _=Depends(require_auth)):
     pdb = adb.connect()
     try:
         pdb.execute(
-            "INSERT INTO filter_prefs(id,min_ev,sports_json,muted_books_json,sort)"
-            " VALUES (1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET"
+            "INSERT INTO filter_prefs(id,min_ev,sports_json,muted_books_json,sort,unit_stake)"
+            " VALUES (1,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET"
             " min_ev=excluded.min_ev, sports_json=excluded.sports_json,"
-            " muted_books_json=excluded.muted_books_json, sort=excluded.sort",
+            " muted_books_json=excluded.muted_books_json, sort=excluded.sort,"
+            # COALESCE: an older build omitting unit_stake must not wipe it
+            " unit_stake=COALESCE(excluded.unit_stake, filter_prefs.unit_stake)",
             (s.min_ev, json.dumps(s.sports) if s.sports else None,
-             json.dumps(s.muted_books) if s.muted_books else None, s.sort))
+             json.dumps(s.muted_books) if s.muted_books else None, s.sort,
+             s.unit_stake))
         pdb.commit()
     finally:
         pdb.close()

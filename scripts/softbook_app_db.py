@@ -8,7 +8,8 @@ are NOT touched):
                dismissed/placed pick never re-appears on the next 20-min scan.
   app_bet      bets actually placed = source of truth for calendar PnL + live
                tracking. Supersedes the Telegram-keyed real_fill table.
-  filter_prefs single-row feed filter (min EV, sports, muted books, sort).
+  filter_prefs single-row app settings (min EV, sports, muted books, sort,
+               unit stake — the ONE place the stake lives; see unit_stake()).
   push_token   Expo push tokens (re-registered each app launch, pruned on
                DeviceNotRegistered).
 
@@ -60,7 +61,42 @@ def init_schema(db):
         "CREATE TABLE IF NOT EXISTS mute_rule("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, field TEXT, value TEXT, created_at TEXT)")
     _ensure_app_bet_columns(db)
+    if "unit_stake" not in {r[1] for r in db.execute("PRAGMA table_info(filter_prefs)")}:
+        db.execute("ALTER TABLE filter_prefs ADD COLUMN unit_stake REAL")
     db.commit()
+
+
+DEFAULT_UNIT_STAKE = 20.0
+
+
+def unit_stake(db=None):
+    """The user's per-pick stake — single source for the app card AND the
+    Telegram alert.
+
+    It used to live only in the phone's SecureStore, so the server never saw
+    it: the app said $25 (changed in July) while Telegram kept saying $20, its
+    code default, for a month. Same class of split as the bet rule before
+    core.is_bet — two surfaces describing one decision.
+
+    Opens its own read-only connection when given none, so the recorder can
+    call it without holding a writable handle on the app db.
+    """
+    own = db is None
+    if own:
+        try:
+            db = sqlite3.connect(
+                "file:%s?mode=ro" % os.getenv("SOFTBOOK_PAPER_DB", PAPER_DB),
+                uri=True, timeout=5)
+        except sqlite3.Error:
+            return DEFAULT_UNIT_STAKE
+    try:
+        row = db.execute("SELECT unit_stake FROM filter_prefs WHERE id=1").fetchone()
+        return float(row[0]) if row and row[0] else DEFAULT_UNIT_STAKE
+    except sqlite3.Error:
+        return DEFAULT_UNIT_STAKE          # pre-migration db, or none at all
+    finally:
+        if own:
+            db.close()
 
 
 def _ensure_app_bet_columns(db):
