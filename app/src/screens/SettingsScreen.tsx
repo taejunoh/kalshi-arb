@@ -25,10 +25,17 @@ export function SettingsScreen() {
   useEffect(() => {
     void (async () => {
       try {
-        setSettings(await api.getSettings());
+        const srv = await api.getSettings();
+        setSettings(srv);
+        if (srv.unit_stake) {
+          setUnit(String(srv.unit_stake));
+          await setUnitStake(srv.unit_stake);   // refresh the offline copy
+        }
       } catch {
         /* no creds yet — keep defaults */
       }
+      // Server wins when reachable — it is what Telegram reads. The device
+      // copy is the offline fallback and is kept in step on every save.
       setUnit(String(await getUnitStake()));
       setConnOpen(!(await getCredentials())); // first run (no creds) → expanded so it's findable
     })();
@@ -38,7 +45,12 @@ export function SettingsScreen() {
     const n = Number(unit);
     const v = Number.isFinite(n) && n > 0 ? n : DEFAULT_UNIT_STAKE;
     setUnit(String(v));
-    await setUnitStake(v);
+    await setUnitStake(v);                       // offline copy
+    try {
+      await api.putSettings({ ...settings, unit_stake: v });  // what Telegram reads
+    } catch {
+      /* offline: the device copy still applies, server syncs on next save */
+    }
   };
 
   const persist = async (next: Settings) => {

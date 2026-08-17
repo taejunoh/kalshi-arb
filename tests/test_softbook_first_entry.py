@@ -218,15 +218,17 @@ def test_alert_prop_late_crosser_not_sent(monkeypatch):
 # ---------- flat unit stake on BET picks only (app parity, build#11) ----------
 
 def test_alert_bet_shows_flat_unit_stake(monkeypatch):
-    # BET (game first-entry) carries the flat unit ($20 default), mirroring the
-    # app's DEFAULT_UNIT_STAKE — same unit on every pick, NOT EV-scaled.
+    # BET (game first-entry) carries the flat unit, mirroring the app — same
+    # unit on every pick, NOT EV-scaled. The number itself now comes from the
+    # shared setting (rec.unit_stake), so with none stored it is the default.
+    monkeypatch.delenv("SOFTBOOK_UNIT_STAKE", raising=False)
     db = db_()
     b = game_bet()                                       # odds 2.05 / ev 0.03 → old Kelly was $2
     snap(db, b, "2026-06-13T20:00:00+00:00", "High")
     cap = _capture(monkeypatch)
     rec.alert_new_high(db, [b], "2026-06-13T21:00:00+00:00")
     assert "🟣 BET" in cap["t"]
-    assert f"💵 ${rec.UNIT_STAKE:.0f}" in cap["t"] and "💵 $20" in cap["t"]
+    assert f"💵 ${rec.unit_stake():.0f}" in cap["t"] and "💵 $20" in cap["t"]
 
 
 def test_alert_unit_stake_is_flat_not_kelly(monkeypatch):
@@ -235,7 +237,7 @@ def test_alert_unit_stake_is_flat_not_kelly(monkeypatch):
     db = db_()
     b = game_bet(ev=0.07, odds=3.90)
     snap(db, b, "2026-06-13T20:00:00+00:00", "High")
-    monkeypatch.setattr(rec, "UNIT_STAKE", 25.0)
+    monkeypatch.setenv("SOFTBOOK_UNIT_STAKE", "25")
     cap = _capture(monkeypatch)
     rec.alert_new_high(db, [b], "2026-06-13T21:00:00+00:00")
     assert "💵 $25" in cap["t"]
