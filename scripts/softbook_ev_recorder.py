@@ -24,7 +24,21 @@ WAKE_UTC = os.getenv("SOFTBOOK_WAKE_UTC", "08:30")
 # Since 2026-07-22 SKIP picks are ALSO silent on Telegram (alert_new_high skips the
 # send) — only game first-entry BETs (incl. WATCH advisories) message; SKIPs stay
 # recorded for dedup/context/ledger. A transient note miss ("") still sends.
-UNIT_STAKE = float(os.getenv("SOFTBOOK_UNIT_STAKE", "20"))
+def unit_stake():
+    """The stake the app is set to — read per alert so a change in the app is
+    reflected on the very next send. SOFTBOOK_UNIT_STAKE still overrides, for
+    tests and for a host with no app db."""
+    env = os.getenv("SOFTBOOK_UNIT_STAKE")
+    if env:
+        try:
+            return float(env)
+        except ValueError:
+            pass
+    try:
+        import softbook_app_db as adb
+        return adb.unit_stake()
+    except Exception:
+        return 20.0
 BET_TAG = "🟣 BET · first-entry game — 베팅 (bet small)"
 PROP_SKIP_TAG = "⚪ SKIP · prop (게임 first-entry만 베팅)"
 LATE_CROSSER_SKIP_TAG = "⚪ SKIP · late-crosser game (라인 이동 후)"
@@ -247,7 +261,7 @@ def _send_bet_alert(db, b, prefix, extra="", batch=(), fe=None):
     pk = (b["event_id"], b["market"], b["side"], b["point"] or 0, b.get("player") or "")
     if fe is None:
         fe = _first_entry_note(db, b)
-    stake_seg = f" · 💵 ${UNIT_STAKE:.0f}" if fe == BET_TAG else ""   # bet picks only (app parity)
+    stake_seg = f" · 💵 ${unit_stake():.0f}" if fe == BET_TAG else ""  # bet picks only (app parity)
     text = (f"{prefix}\n{fe}\n\n" if fe else f"{prefix}\n\n") + (
             f"• {b['away'][:16]} @ {b['home'][:16]}\n"
             f"   {b['label']}\n"
@@ -576,7 +590,7 @@ def wakeup_requote(db, key, now, *, app_push=None):
         if bet:
             msg += f"\n\n💵 지금 베팅 ({len(bet)}건):\n\n" + "\n\n".join(
                 f"• {b['away'][:16]} @ {b['home'][:16]}\n   {b['label']}\n"
-                f"   {b['book']} {_american(b['odds'])} (EV {b['ev']*100:+.1f}%) · 💵 ${UNIT_STAKE:.0f}"
+                f"   {b['book']} {_american(b['odds'])} (EV {b['ev']*100:+.1f}%) · 💵 ${unit_stake():.0f}"
                 for b in bet[:12])
             if len(bet) > 12:
                 msg += f"\n\n…+{len(bet)-12}건 더 (대쉬보드 +EV 탭)"
