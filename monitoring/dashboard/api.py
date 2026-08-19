@@ -1853,14 +1853,28 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
 
     @app.get("/api/clv-trend")
     async def get_clv_trend():
-        """CLV trend per strategy — last N entry-vs-closing snapshot deltas.
+        """CLV trend per (strategy, book) — entry-vs-pre-close deltas.
 
-        For each strategy with CLV data in last 30 days, returns an ordered
-        series of CLV values (newest last) for sparkline rendering. Plus
-        aggregate stats: 30d avg, 7d avg, n.
+        Reads the 'pre_close' snapshot ONLY. It used to read 'closing', which
+        is not a closing line: `closing.yes_ask` has been a constant 1.0 on
+        every row since 2026-06 (empty book at settlement → ask defaults to
+        1.00; before that it was the binary settlement value). That made
+        every number this endpoint returned a restatement of
+        `1 - entry_price` — tennis_underdog_v1 showed "+0.732" on a 0.27
+        average entry, and the panel ranked strategies by how cheap their
+        entries were while labelled a leading indicator.
 
-        Powers the at-a-glance "is this strategy's alpha still working"
-        sparkline column in the dashboard.
+        Consequence of the fix: a strategy with no pre_close coverage now
+        returns no row instead of a fabricated one. That is the intended
+        behaviour — see `core.clv_tracker` for which sports can be captured.
+
+        Real CLV is small: significant values sit near +/-0.01 (one cent),
+        not the tenths the artifact produced. Thresholds keyed off these
+        numbers must be scaled accordingly.
+
+        Paper rows are included alongside live ones because a demoted
+        strategy still accrues CLV, and that is the signal used to decide
+        whether it earns its way back.
         """
         db_path = config.DATABASE_PATH if hasattr(config, "DATABASE_PATH") else "data/bot.db"
         live_strats = set(getattr(config, "LIVE_STRATEGIES", set()) or set())
@@ -1868,39 +1882,58 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         cur = conn.cursor()
         # Pull last 30 days of CLV-eligible trades per strategy
         cur.execute("""
-            SELECT t.strategy, t.timestamp, t.direction,
+            SELECT t.strategy, t.status, t.timestamp, t.direction,
                    e.yes_ask, e.no_ask, c.yes_ask, c.no_ask
             FROM trades t
             JOIN clv_snapshots e ON e.trade_id = t.id AND e.snapshot_at = 'entry'
-            JOIN clv_snapshots c ON c.trade_id = t.id AND c.snapshot_at = 'closing'
-            WHERE t.status IN ('settled','filled')
+            JOIN clv_snapshots c ON c.trade_id = t.id AND c.snapshot_at = 'pre_close'
+            WHERE t.status IN ('settled','filled','paper_filled','paper_settled')
               AND t.timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now','-30 days')
               AND e.yes_ask IS NOT NULL AND c.yes_ask IS NOT NULL
               AND t.strategy LIKE 'sports_%'
             ORDER BY t.timestamp ASC
         """)
-        by_strat: dict[str, list] = {}
-        for strategy, ts, direction, e_yes, e_no, c_yes, c_no in cur.fetchall():
-            clv = (c_yes - e_yes) if direction == "yes" else (c_no - e_no)
-            by_strat.setdefault(strategy, []).append({"ts": ts, "clv": round(clv, 4)})
+        by_strat: dict[tuple, list] = {}
+        for strategy, status, ts, direction, e_yes, e_no, c_yes, c_no in cur.fetchall():
+            # NO-side CLV needs the no_ask on both ends; skip rather than
+            # silently score it off the yes leg.
+            if direction == "yes":
+                entry_px, close_px = e_yes, c_yes
+            else:
+                entry_px, close_px = e_no, c_no
+            if entry_px is None or close_px is None:
+                continue
+            book = "paper" if (status or "").startswith("paper") else "live"
+            by_strat.setdefault((strategy, book), []).append(
+                {"ts": ts, "clv": round(close_px - entry_px, 4)})
         conn.close()
 
         rows = []
-        for strat, series in by_strat.items():
+        cutoff7 = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        for (strat, book), series in by_strat.items():
             n = len(series)
             avg30 = sum(s["clv"] for s in series) / n if n else 0
-            recent = [s for s in series if s["ts"] >= datetime.now(timezone.utc).strftime("%Y-%m-%d") and False]
-            # Last 7-day window
-            cutoff7 = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             d7 = [s for s in series if s["ts"] >= cutoff7]
             avg7 = sum(s["clv"] for s in d7) / len(d7) if d7 else None
+            # Standard error of the mean — the whole point of preferring CLV
+            # over realised PnL is that it resolves at n in the tens rather
+            # than the thousands, so surface whether THIS row has got there.
+            if n > 1:
+                m = avg30
+                var = sum((s["clv"] - m) ** 2 for s in series) / (n - 1)
+                se = (var ** 0.5) / (n ** 0.5)
+            else:
+                se = None
             rows.append({
                 "strategy": strat,
-                "is_live": strat in live_strats,
+                "book": book,
+                "is_live": book == "live" and strat in live_strats,
                 "n_30d": n,
                 "avg_clv_30d": round(avg30, 4),
                 "n_7d": len(d7),
                 "avg_clv_7d": round(avg7, 4) if avg7 is not None else None,
+                "se_30d": round(se, 4) if se else None,
+                "z_30d": round(avg30 / se, 2) if se else None,
                 # Sparkline: last 20 points
                 "series": [s["clv"] for s in series[-20:]],
             })
