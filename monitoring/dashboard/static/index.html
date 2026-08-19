@@ -1089,7 +1089,7 @@
     <!-- ── CLV trend per strategy (leading indicator) ── -->
     <section id="clv-trend-section">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
-        <div class="section-title" style="margin-bottom:0">CLV Trend — leading indicator (last 20 settled per strategy)</div>
+        <div class="section-title" style="margin-bottom:0">CLV Trend — entry vs pre-close (last 20 per strategy &times; book)</div>
         <span id="clv-trend-meta" style="color:var(--text-dim);font-size:11px;">—</span>
       </div>
       <div class="table-wrap">
@@ -1101,12 +1101,13 @@
                 <th style="width:60px;text-align:center;">LIVE?</th>
                 <th style="width:80px;text-align:right;">n (30d)</th>
                 <th style="width:90px;text-align:right;">avg CLV 30d</th>
+                <th style="width:70px;text-align:right;" title="mean / standard error. |z|&gt;2 = resolved; below that the number is noise.">z</th>
                 <th style="width:90px;text-align:right;">avg CLV 7d</th>
                 <th>Sparkline (last 20)</th>
               </tr>
             </thead>
             <tbody id="clv-trend-body">
-              <tr class="empty-row"><td colspan="6">Loading…</td></tr>
+              <tr class="empty-row"><td colspan="7">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -2587,37 +2588,47 @@ async function renderClvTrend() {
     const d = await r.json();
     const rows = d.rows || [];
     const liveCount = rows.filter(r => r.is_live).length;
-    const promoteCount = rows.filter(r => !r.is_live && r.n_30d >= 30 && r.avg_clv_30d >= 0.10).length;
-    const collapseCount = rows.filter(r => r.is_live && r.n_7d >= 8 && (r.avg_clv_7d != null) && r.avg_clv_7d <= -0.05).length;
-    meta.innerHTML = `${rows.length} strats · ${liveCount} LIVE` +
+    // Thresholds are in CENTS of closing-line movement. They used to be 0.10 /
+    // -0.05, which only made sense while this panel was accidentally reporting
+    // `1 - entry_price`; real CLV that clears significance sits near +/-0.01.
+    // Promote/collapse also require |z|>2 so a 3-trade streak cannot flag.
+    const CLV_PROMOTE = 0.005, CLV_COLLAPSE = -0.005;
+    const promoteCount = rows.filter(r => !r.is_live && r.n_30d >= 30
+      && r.avg_clv_30d >= CLV_PROMOTE && (r.z_30d != null) && r.z_30d >= 2).length;
+    const collapseCount = rows.filter(r => r.is_live && r.n_7d >= 8
+      && (r.avg_clv_7d != null) && r.avg_clv_7d <= CLV_COLLAPSE).length;
+    meta.innerHTML = `${rows.length} rows · ${liveCount} LIVE · pre-close only` +
       (promoteCount > 0 ? ` · <b style="color:#4ade80;">${promoteCount} promote-candidate 🟢</b>` : '') +
       (collapseCount > 0 ? ` · <b style="color:#f87171;">${collapseCount} collapse-risk 🔴</b>` : '');
     if (rows.length === 0) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="6">No CLV data yet.</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="7">No pre-close CLV data yet.</td></tr>';
       return;
     }
     const fmt = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(3);
-    const cls = v => v == null ? '' : v > 0.05 ? 'pos' : v < -0.05 ? 'neg' : '';
+    // Colour only what has resolved: an unresolved mean is not a direction.
+    const cls = (v, z) => (v == null || z == null || Math.abs(z) < 2) ? ''
+      : v > 0 ? 'pos' : v < 0 ? 'neg' : '';
     body.innerHTML = rows.map(r => {
       const liveBadge = r.is_live
         ? '<span class="badge badge-green" style="background:#4ade80;color:#0a0a0a;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;">LIVE</span>'
-        : '<span class="badge" style="background:rgba(255,255,255,0.06);color:var(--text-dim);padding:1px 6px;border-radius:3px;font-size:9px;">paper</span>';
-      const clv30Cls = cls(r.avg_clv_30d);
-      const clv7Cls = cls(r.avg_clv_7d);
+        : `<span class="badge" style="background:rgba(255,255,255,0.06);color:var(--text-dim);padding:1px 6px;border-radius:3px;font-size:9px;">${r.book || 'paper'}</span>`;
+      const clv30Cls = cls(r.avg_clv_30d, r.z_30d);
       const clv30Color = clv30Cls === 'pos' ? '#4ade80' : clv30Cls === 'neg' ? '#f87171' : 'var(--text)';
-      const clv7Color = clv7Cls === 'pos' ? '#4ade80' : clv7Cls === 'neg' ? '#f87171' : 'var(--text)';
+      const resolved = r.z_30d != null && Math.abs(r.z_30d) >= 2;
+      const zColor = resolved ? clv30Color : 'var(--text-dim)';
       return `
         <tr>
           <td style="font-size:12px;">${r.strategy}</td>
           <td style="text-align:center;">${liveBadge}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;">${r.n_30d}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;color:${clv30Color};font-weight:600;">${fmt(r.avg_clv_30d)}</td>
-          <td style="text-align:right;font-variant-numeric:tabular-nums;color:${clv7Color};font-weight:600;">${fmt(r.avg_clv_7d)} ${r.n_7d ? `<span style="color:var(--text-dim);font-size:9px;">(n=${r.n_7d})</span>` : ''}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;color:${zColor};font-weight:${resolved ? 600 : 400};" title="${resolved ? 'resolved' : 'not resolved — treat the mean as noise'}">${r.z_30d == null ? '—' : (r.z_30d >= 0 ? '+' : '') + r.z_30d.toFixed(2)}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text);">${fmt(r.avg_clv_7d)} ${r.n_7d ? `<span style="color:var(--text-dim);font-size:9px;">(n=${r.n_7d})</span>` : ''}</td>
           <td>${sparklineSvg(r.series)}</td>
         </tr>`;
     }).join('');
   } catch (e) {
-    body.innerHTML = `<tr class="empty-row" style="color:var(--red);"><td colspan="6">${e.message}</td></tr>`;
+    body.innerHTML = `<tr class="empty-row" style="color:var(--red);"><td colspan="7">${e.message}</td></tr>`;
   }
 }
 
