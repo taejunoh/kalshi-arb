@@ -103,3 +103,51 @@ def test_era_gate_still_rejects_below_threshold():
     tk = _seed_cache(s, era_diff=2.0, away_ip=45.0, home_ip=40.0)
     sig = s.evaluate(kalshi_yes=0.55, kalshi_no=0.45, fair_prob=0.5, ticker=tk)
     assert sig is None
+
+
+# --- 2026-08-19 ask floor 0.40 -> 0.45 (by-band audit) ---------------------
+#
+# The gate lives on the ASK (`kalshi_yes`), not on the inherited fair-value
+# `limit_price` — MIN_ENTRY_PRICE would have filtered the wrong quantity.
+# v2 is deliberately left at 0.40 so it keeps firing the cut band on paper and
+# stays the control group for this decision.
+
+def test_ask_floor_is_045_on_live_variants():
+    assert SportsMlbPitcherEdgeV1Strategy.MIN_YES_PRICE == 0.45
+    assert SportsMlbPitcherEdgeV21Strategy.MIN_KALSHI_PRICE == 0.45
+
+
+def test_paper_only_v2_keeps_040_floor_as_control():
+    assert SportsMlbPitcherEdgeV2Strategy.MIN_KALSHI_PRICE == 0.40
+
+
+def test_v21_rejects_ask_inside_the_cut_band():
+    s = _make_v2(SportsMlbPitcherEdgeV21Strategy)
+    s._check_books_deep = lambda ticker: True
+    tk = _seed_cache(s, era_diff=3.0, away_ip=45.0, home_ip=40.0)
+    # 0.42 sits in the retired 35-45c band -> no signal.
+    assert s.evaluate(kalshi_yes=0.42, kalshi_no=0.58, fair_prob=0.5, ticker=tk) is None
+
+
+def test_v21_still_fires_at_the_new_floor():
+    s = _make_v2(SportsMlbPitcherEdgeV21Strategy)
+    s._check_books_deep = lambda ticker: True
+    tk = _seed_cache(s, era_diff=3.0, away_ip=45.0, home_ip=40.0)
+    assert s.evaluate(kalshi_yes=0.45, kalshi_no=0.55, fair_prob=0.5, ticker=tk) is not None
+
+
+def test_v1_rejects_ask_inside_the_cut_band():
+    s = SportsMlbPitcherEdgeV1Strategy.__new__(SportsMlbPitcherEdgeV1Strategy)
+    s.config = MagicMock(KALSHI_FEE_PER_CONTRACT=0.07, INITIAL_BANKROLL=10000)
+    s._order_manager = MagicMock(bankroll=10000)
+    s._order_manager.sizing_bankroll = lambda x: 10000
+    s._traded_tickers = {}
+    tk = "KXMLBGAME-TEST-HOM"
+    s._pitcher_cache = {tk: {"era_diff": 3.0, "better_team": "HOM",
+                             "away_era": 5.0, "home_era": 2.0,
+                             "away_pitcher": "A. Pitcher",
+                             "home_pitcher": "H. Pitcher"}}
+    s._pitcher_cache_ts = time.time() + 10_000
+    # 0.42 sits in the retired 35-45c band -> no signal; 0.45 still fires.
+    assert s.evaluate(kalshi_yes=0.42, kalshi_no=0.58, fair_prob=0.5, ticker=tk) is None
+    assert s.evaluate(kalshi_yes=0.45, kalshi_no=0.55, fair_prob=0.5, ticker=tk) is not None
