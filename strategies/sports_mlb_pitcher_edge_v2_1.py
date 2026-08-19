@@ -43,6 +43,20 @@ class SportsMlbPitcherEdgeV21Strategy(SportsMlbPitcherEdgeV2Strategy):
     # snapshot. 10 = the threshold tested in combo backtest.
     MIN_BOOKS_TOTAL = 10
 
+    # 2026-08-19 ASK FLOOR 0.40 → 0.45. Same by-band audit as
+    # sports_mlb_pitcher_edge_v1 (see the MIN_YES_PRICE comment there for the
+    # full cell table and the caveats). v2's `evaluate` gates on
+    # `MIN_KALSHI_PRICE <= kalshi_yes <= MAX_KALSHI_PRICE`, i.e. the ask —
+    # the same quantity the audit measured.
+    #
+    # DELIBERATELY ON v2_1, NOT ON THE PARENT. Same reasoning as the
+    # `_get_booking_price` override below: the parent runs as its own
+    # PAPER-ONLY strategy (`sports_mlb_pitcher_edge_v2`) and is not in
+    # LIVE_STRATEGIES. Leaving it at 0.40 keeps the 35-45c band firing on
+    # paper, which is what turns v2 into the control group for this cut —
+    # without it there is no forward data to falsify the decision with.
+    MIN_KALSHI_PRICE = 0.45
+
     # 2026-05-26 stake-sizing-by-edge upgrade. Backtest split by era_diff:
     #   era 2.0-2.5: EV -$0.058 (n=16) ← keep but de-emphasized
     #   era 2.5-3.0: EV +$0.102 (n=14)
