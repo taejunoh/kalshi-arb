@@ -72,7 +72,23 @@ class SportsMlbPitcherEdgeV1Strategy(SportsTraderStrategy):
     # Kalshi YES price band — only fire when the better-pitcher team is
     # priced as moderate-favorite-or-less. If Kalshi already prices them
     # ≥0.80, the edge is gone (market already reflects pitcher quality).
-    MIN_YES_PRICE = 0.40
+    #
+    # 2026-08-19 FLOOR 0.40 → 0.45. By-band audit on the ask (this constant
+    # gates `kalshi_yes`, so `trades.price` is the same quantity — do NOT use
+    # MIN_ENTRY_PRICE, which gates the inherited fair-value `limit_price`).
+    # The 35-45c band is negative in two disjoint eras and in both variants:
+    #   era ≥6/05 live: v1 n=11 −22.5% (equal-wt −27.0%), v2_1 n=8 −24.0%
+    #   era ≥7/22 live: v1 n=6  −68.3%,                   v2_1 n=4 −53.1%
+    # 4/4 cells same sign, stake-wt and equal-wt agree (no concentration
+    # artifact). Everything ≥0.45 over the honest-booking era is n=112
+    # +1.2%. Cut costs 8% of fire rate, so it barely moves the detection
+    # threshold (±10.5% → ±10.7% at MLB season end) — this is why it was
+    # taken while the tennis_underdog band cut (−43% fire rate) was not.
+    # CAUTION: this is a z=+0.15 cohort. The cut is justified by sign
+    # consistency across independent eras, NOT by significance. The 45-55c
+    # band flipped from +4.2%/+17.6% (era ≥6/05) to −14.6% (era ≥7/22), so
+    # do not narrow further on band data alone.
+    MIN_YES_PRICE = 0.45
     MAX_YES_PRICE = 0.75
 
     # 2026-06-05 PAIR-FIRE DEDUP (correctness fix). Probable starters can change
