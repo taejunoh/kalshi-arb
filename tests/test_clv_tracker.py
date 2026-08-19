@@ -1,10 +1,11 @@
 """Pre-close CLV snapshot infrastructure."""
 import pytest
 import pytest_asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-from core.clv_tracker import CLVTracker, parse_game_start_utc
+from core.clv_tracker import (CLVTracker, parse_game_start_utc,
+                              resolve_event_start_utc)
 from core.database import Database
 
 
@@ -220,3 +221,113 @@ async def test_clv_rate_prefers_pre_close_over_closing(db):
     # pre_close yes_ask 0.50 < entry 0.60 → CLV- → rate 0.0
     # If we used 'closing' instead: 1.00 > 0.60 → CLV+ → rate 1.0
     assert rate == 0.0
+
+
+# ── Date-only tickers: tennis / WNBA / UFC ────────────────────────────────
+#
+# These carry no start TIME, so the ticker path cannot work by construction.
+# Before the minutes_to_start fallback they were skipped entirely and their
+# CLV silently fell back to the degenerate `closing` snapshot.
+
+def test_date_only_tickers_have_no_parseable_time():
+    for tk in ("KXATPMATCH-26AUG19BORNAK-NAK",
+               "KXWTAMATCH-26AUG19SHNRYB-RYB",
+               "KXWNBAGAME-26AUG20ATLLA-LA",
+               "KXUFCFIGHT-26AUG22DYEREE-DYE"):
+        assert parse_game_start_utc(tk) is None, tk
+
+
+def test_time_bearing_tickers_are_not_limited_to_nba_mlb_nhl():
+    """NPB encodes HHMM and was excluded by the old allow-list regex."""
+    dt = parse_game_start_utc("KXNPBGAME-26AUG190500YAKHAN-YAK")
+    assert dt is not None
+    assert (dt.month, dt.day, dt.hour) == (8, 19, 9)  # 05:00 EDT -> 09:00 UTC
+
+
+def test_resolver_prefers_ticker_over_estimate():
+    start, exact = resolve_event_start_utc(
+        "KXMLBGAME-26APR142210NYMLAD-NYM",
+        "2026-04-14T00:00:00", 9999.0)
+    assert exact is True
+    assert start == datetime(2026, 4, 15, 2, 10, tzinfo=timezone.utc)
+
+
+def test_resolver_falls_back_to_minutes_to_start():
+    start, exact = resolve_event_start_utc(
+        "KXATPMATCH-26AUG19BORNAK-NAK", "2026-08-19T12:00:00", 90.0)
+    assert exact is False
+    assert start == datetime(2026, 8, 19, 13, 30, tzinfo=timezone.utc)
+
+
+def test_resolver_handles_space_separated_timestamp():
+    """trades.timestamp appears with both 'T' and ' ' separators."""
+    start, exact = resolve_event_start_utc(
+        "KXWTAMATCH-26AUG19SHNRYB-RYB", "2026-08-19 12:00:00", 30.0)
+    assert exact is False
+    assert start == datetime(2026, 8, 19, 12, 30, tzinfo=timezone.utc)
+
+
+def test_resolver_returns_none_without_either_source():
+    assert resolve_event_start_utc("KXATPMATCH-26AUG19BORNAK-NAK",
+                                   "2026-08-19T12:00:00", None) == (None, False)
+    assert resolve_event_start_utc("KXBTC-25MAR20-T70000",
+                                   "not-a-timestamp", 30.0) == (None, False)
+
+
+@pytest.mark.asyncio
+async def test_captures_pre_close_for_tennis_via_estimate(db, monkeypatch):
+    """The regression this fix exists for: a tennis trade must get a
+    pre_close snapshot even though its ticker has no start time."""
+    await db.record_trade(strategy="sports_tennis_underdog_v1",
+                          market_id="KXATPMATCH-26AUG19BORNAK-NAK",
+                          direction="yes", price=0.27, size=1.5, fee=0.02,
+                          status="filled", minutes_to_start=120.0)
+    await db.record_clv_snapshot(trade_id=1, snapshot_at="entry",
+                                 yes_ask=0.27, no_ask=0.75)
+
+    client = MagicMock()
+    client.get_market.return_value = {
+        "yes_ask_dollars": "0.31", "no_ask_dollars": "0.71",
+    }
+    tracker = CLVTracker(client, db)
+
+    # Entry recorded "now"; start = now + 120min. Freeze at T-4min.
+    import aiosqlite
+    async with aiosqlite.connect(db.db_path) as conn:
+        cur = await conn.execute("SELECT timestamp FROM trades WHERE id=1")
+        entered = (await cur.fetchone())[0]
+    from core.clv_tracker import _parse_trade_ts
+    fake_now = _parse_trade_ts(entered) + timedelta(minutes=116)
+    monkeypatch.setattr("core.clv_tracker._now_utc", lambda: fake_now)
+
+    assert await tracker.capture_pre_close_snapshots() == 1
+    async with aiosqlite.connect(db.db_path) as conn:
+        cur = await conn.execute(
+            "SELECT yes_ask FROM clv_snapshots WHERE snapshot_at='pre_close'")
+        rows = await cur.fetchall()
+    assert [r[0] for r in rows] == [0.31]
+
+
+@pytest.mark.asyncio
+async def test_estimated_window_is_wider_than_exact(db, monkeypatch):
+    """T-7min is outside the exact window (5) but inside the estimated one (8),
+    so a drifting tennis start still gets captured."""
+    await db.record_trade(strategy="sports_tennis_live_fade_v1",
+                          market_id="KXWTAMATCH-26AUG19SHNRYB-RYB",
+                          direction="no", price=0.18, size=2.9, fee=0.02,
+                          status="filled", minutes_to_start=60.0)
+    await db.record_clv_snapshot(trade_id=1, snapshot_at="entry",
+                                 yes_ask=0.82, no_ask=0.18)
+    client = MagicMock()
+    client.get_market.return_value = {"yes_ask_dollars": "0.86",
+                                      "no_ask_dollars": "0.15"}
+    tracker = CLVTracker(client, db)
+    import aiosqlite
+    async with aiosqlite.connect(db.db_path) as conn:
+        cur = await conn.execute("SELECT timestamp FROM trades WHERE id=1")
+        entered = (await cur.fetchone())[0]
+    from core.clv_tracker import _parse_trade_ts
+    assert tracker.PRE_CLOSE_WINDOW_MIN_AHEAD < 7 < tracker.EST_WINDOW_MIN_AHEAD
+    monkeypatch.setattr("core.clv_tracker._now_utc",
+                        lambda: _parse_trade_ts(entered) + timedelta(minutes=53))
+    assert await tracker.capture_pre_close_snapshots() == 1
