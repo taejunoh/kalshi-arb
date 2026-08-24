@@ -27,7 +27,14 @@ def test_canon_new_props_and_alternates():
     assert core._canon("pitcher_outs_alternate") == "pitcher_outs"
 
 
-def test_markets_for_requests_only_real_alternate_keys():
+def test_markets_for_requests_only_real_alternate_keys(monkeypatch):
+    # Prop scanning is off by default since 2026-08-24 (credit cost, nothing
+    # reads them). The alternate-key rules still have to be right for whenever
+    # SOFTBOOK_SCAN_PROPS turns it back on — an unrecognized market key 422s
+    # the entire event call, which is why this test exists.
+    import importlib
+    monkeypatch.setenv("SOFTBOOK_SCAN_PROPS", "1")
+    importlib.reload(core)
     mlb = core.markets_for("baseball_mlb").split(",")
     assert "pitcher_outs" in mlb and "pitcher_outs_alternate" not in mlb
     assert "pitcher_earned_runs_alternate" not in mlb
@@ -35,6 +42,8 @@ def test_markets_for_requests_only_real_alternate_keys():
     assert "team_totals" in mlb and "alternate_team_totals" in mlb
     nba = core.markets_for("basketball_nba").split(",")
     assert "player_points" in nba and "player_points_alternate" in nba
+    monkeypatch.delenv("SOFTBOOK_SCAN_PROPS", raising=False)
+    importlib.reload(core)
 
 
 def test_team_total_is_ou_and_label():
