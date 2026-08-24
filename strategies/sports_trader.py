@@ -573,11 +573,13 @@ INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
 # the retirement the 08-12 fan-out was staged for. Both tuples collapse to
 # Cincinnati alone. Canadian TENNIS_SLUG_META entries stay for
 # odds_observations analysis. Next: the US Open (~late Aug).
-TENNIS_ATP_SLUGS: tuple[str, ...] = (
-    "tennis_atp_cincinnati_open",     # M1000 hard, Cincinnati (~8/7-8/18)
-)
+# Empty on purpose (2026-08-17): Cincinnati closed and the Odds API lists NO
+# active ATP tournament — the US Open key exists but stays inactive until it
+# opens (~8/24). Pointing at a dead key would just fetch nothing while looking
+# wired, so ATP waits for the US Open rotation.
+TENNIS_ATP_SLUGS: tuple[str, ...] = ()
 TENNIS_WTA_SLUGS: tuple[str, ...] = (
-    "tennis_wta_cincinnati_open",     # WTA 1000 hard, Cincinnati (~8/7-8/18)
+    "tennis_wta_monterrey_open",      # WTA 500 hard, Monterrey (US Open tune-up)
 )
 
 # Single source of truth for Kalshi series → Odds API sport key(s). Tennis
