@@ -1,9 +1,27 @@
 [Unit]
-Description=Kalshi-arb: tennis endpoint rotation daily check
+Description=Kalshi-arb: tennis endpoint rotation check
 
 [Timer]
+# Daily baseline.
 OnCalendar=*-*-* 11:00:00 UTC
+# US Open window (2026-08-24..09-14): every 3h instead of once a day.
+#
+# A tournament goes live when the Odds API first has lines for it, which can be
+# any hour. At one check a day, a key that opens just after 11:00 UTC stays
+# unwired until the next morning — a whole day of observations lost on the
+# biggest tennis event of the calendar, and the US Open is the deciding test
+# for whether Med ML's edge is grand-slam-only (see the 08-24 re-derivation).
+#
+# Free to do: the check calls /sports and /events, which the Odds API bills at
+# 0 credits (verified against x-requests-last on 2026-08-24, while the month
+# sat at 90% of its 5M). Only /odds costs, and this script never calls it.
+#
+# Remove these two lines after the tournament — they are dated on purpose so a
+# forgotten window expires by itself rather than polling forever.
+OnCalendar=2026-08-24..31 00/3:00:00 UTC
+OnCalendar=2026-09-01..14 00/3:00:00 UTC
 Persistent=true
+RandomizedDelaySec=300
 
 [Install]
 WantedBy=timers.target
