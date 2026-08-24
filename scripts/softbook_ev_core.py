@@ -267,10 +267,28 @@ def market_first_entry_sides(db, event_id, market, player, as_of=None):
         (event_id, market, player or "", opn[0], *tiers))))
 
 
+# Props are no longer requested (2026-08-24). SCAN_PROPS flips them back on.
+#
+# They cost 9 extra credits per MLB event — 16 vs 7 — which at 10 MLB games in
+# the 72h window and 144 scans a day is ~13k credits/day, ~389k a month, 15% of
+# the whole scan. Measured against x-requests-last, not estimated.
+#
+# And nothing consumes them. is_bet() has always returned False for props, so
+# they are never bet; Telegram stopped sending them 07-22, the app feed 08-05,
+# the dashboard +EV tab 08-05. What remained was paper-ledger rows for research
+# whose question is already answered: first-entry props ran negative and the
+# late-crosser "edge" was a single 06-14 slate.
+#
+# Existing prop rows stay — they are records. This only stops buying more.
+SCAN_PROPS = os.getenv("SOFTBOOK_SCAN_PROPS", "").lower() in ("1", "true", "yes")
+
+
 def markets_for(sport):
     # FanDuel/DraftKings/BetMGM list props ONLY under the _alternate key (verified
     # live 2026-06-12: batter_home_runs had no FD/DK/MGM rows, _alternate did) —
     # fetch both and _canon folds them back onto the base market.
+    if not SCAN_PROPS:
+        return GAME_MARKETS
     props = [k for m in PROP_MARKETS.get(sport, [])
              for k in ((m, m + "_alternate") if m in PROP_ALTS else (m,))]
     return GAME_MARKETS + (("," + ",".join(props)) if props else "")
