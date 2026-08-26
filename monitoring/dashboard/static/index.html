@@ -1086,6 +1086,17 @@
       </div>
     </section>
 
+    <!-- ── Sports feed health (added 2026-08-26 after a silent 4-day outage) ── -->
+    <section id="feed-health-section">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div class="section-title" style="margin-bottom:0">Sports feed health — odds observations per series</div>
+        <span id="feed-health-meta" style="color:var(--text-dim);font-size:11px;">—</span>
+      </div>
+      <div id="feed-health-body" style="display:flex;flex-wrap:wrap;gap:8px;">
+        <span style="color:var(--text-dim);font-size:11px;">Loading…</span>
+      </div>
+    </section>
+
     <!-- ── CLV trend per strategy (leading indicator) ── -->
     <section id="clv-trend-section">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
@@ -2532,7 +2543,8 @@ function applyViewMode(mode) {
   // Hide other large sections in schedule/+EV mode (defensive — most are toggled above).
   ['trades-section', 'orders-section', 'crypto-observer-section',
    'strategy-monitor-section', 'gates-section', 'equity-section',
-   'pm-gap-section', 'strategy-gates-section', 'clv-trend-section'].forEach(id => {
+   'pm-gap-section', 'strategy-gates-section', 'clv-trend-section',
+   'feed-health-section'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isSpecial ? 'none' : '';
   });
@@ -2578,6 +2590,34 @@ function sparklineSvg(values, width=120, height=24) {
     <line x1="0" y1="${zeroY.toFixed(1)}" x2="${width}" y2="${zeroY.toFixed(1)}" stroke="rgba(255,255,255,0.08)" stroke-width="1" stroke-dasharray="2,2"/>
     <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
+}
+
+async function renderFeedHealth() {
+  const body = document.getElementById('feed-health-body');
+  const meta = document.getElementById('feed-health-meta');
+  try {
+    const d = await (await fetch('/api/feed-health')).json();
+    const rows = d.rows || [];
+    // "stale" only counts sports Kalshi is actually quoting — an off-season
+    // series is silent by design and must not cry wolf.
+    meta.innerHTML = d.stale_count > 0
+      ? `<b style="color:#f87171;">${d.stale_count} stale 🔴</b> — open markets but no recent observations`
+      : `all quoted series fresh`;
+    body.innerHTML = rows.map(r => {
+      const age = r.age_hours == null ? 'never'
+        : r.age_hours < 1 ? `${Math.round(r.age_hours * 60)}m`
+        : `${r.age_hours.toFixed(1)}h`;
+      const bg = r.stale ? 'rgba(248,113,113,0.16)'
+        : r.has_open_markets ? 'rgba(74,222,128,0.12)' : 'rgba(255,255,255,0.04)';
+      const fg = r.stale ? '#f87171' : r.has_open_markets ? '#4ade80' : 'var(--text-dim)';
+      const note = r.has_open_markets ? '' : ' · no open mkts';
+      return `<span title="last observation: ${r.last_obs || 'never'}"
+        style="background:${bg};color:${fg};padding:3px 9px;border-radius:4px;font-size:11px;
+               font-variant-numeric:tabular-nums;">${r.sport} ${age}${note}</span>`;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = `<span style="color:var(--red);font-size:11px;">${e.message}</span>`;
+  }
 }
 
 async function renderClvTrend() {
@@ -3227,6 +3267,7 @@ async function slowRefresh() {
   await Promise.allSettled([
     renderPmGap(),      // 10 Kalshi /markets calls per fire
     renderClvTrend(),   // DB-heavy CLV join
+    renderFeedHealth(), // per-series observation freshness
     (viewMode === 'ev') ? renderEvBets() : Promise.resolve(),  // keep +EV tab fresh
     (viewMode === 'evhist') ? renderEvHistory(true) : Promise.resolve(),  // keep History tab fresh
   ]);
