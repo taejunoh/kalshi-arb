@@ -681,45 +681,59 @@ class Bot:
             # _strategy_loop to dodge the upstream serial queue. Each runs
             # at 1 s poll cadence — internal `_get_scan_interval()` still
             # throttles the actual scan work. Same pattern as Phase 1 traders.
-            asyncio.create_task(
-                self.sports_tennis_pinnacle_arb_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_atp_gs_bo5_chalk_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_ufc_chalk_fade_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_tennis_surface_skew_v1.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-08-26 MOTHBALL — by-band + CLV audit. Paper -EV / unmeasurable;
+            # kept firing only to pollute the research ledger. Un-mothball by
+            # uncommenting. Per-strategy: 120d paper per-trade ROI, sd, z.
+            # 2026-08-26 MOTHBALL: n=49  -10.7% z=-0.70
+            # asyncio.create_task(
+            #     self.sports_tennis_pinnacle_arb_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: dormant
+            # asyncio.create_task(
+            #     self.sports_atp_gs_bo5_chalk_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: n=29   +9.5% z=+0.15 sd=339% — 42d +72.4% was pure variance
+            # asyncio.create_task(
+            #     self.sports_ufc_chalk_fade_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: dormant
+            # asyncio.create_task(
+            #     self.sports_tennis_surface_skew_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
             asyncio.create_task(
                 self.sports_tennis_underdog_v1.scan_loop(scan_interval_secs=1.0)
             ),
             asyncio.create_task(
                 self.sports_tennis_live_fade_v1.scan_loop(scan_interval_secs=1.0)
             ),
-            asyncio.create_task(
-                self.sports_mlb_live_pin_follow_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_kbo_live_fade_tight_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_ufc_live_fade_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_tennis_chalk_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_tennis_pinnacle_fade_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_npb_sharp_follow_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_lal_sharp_follow_v1.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-08-26 MOTHBALL: n=42   -3.8% z=-0.28
+            # asyncio.create_task(
+            #     self.sports_mlb_live_pin_follow_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: n=17   -2.5% z=-0.40
+            # asyncio.create_task(
+            #     self.sports_kbo_live_fade_tight_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: n=1 — never produced a sample
+            # asyncio.create_task(
+            #     self.sports_ufc_live_fade_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: n=793  -3.7% z=-1.59 — most data in the book, and it says no
+            # asyncio.create_task(
+            #     self.sports_tennis_chalk_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: n=240 -11.8% z=-1.72
+            # asyncio.create_task(
+            #     self.sports_tennis_pinnacle_fade_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: n=222 -11.0% z=-1.70 — 42d showed +19.2%, a noise streak
+            # asyncio.create_task(
+            #     self.sports_npb_sharp_follow_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: n=19   -4.7% z=-0.19
+            # asyncio.create_task(
+            #     self.sports_lal_sharp_follow_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
             asyncio.create_task(
                 self.sports_mlb_pitcher_edge_v1.scan_loop(scan_interval_secs=1.0)
             ),
@@ -740,9 +754,10 @@ class Bot:
             asyncio.create_task(
                 self.sports_longshot_v31.scan_loop(scan_interval_secs=1.0)
             ),
-            asyncio.create_task(
-                self.sports_midshot_v31.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-08-26 MOTHBALL: n=183 -21.6% z=-1.97 — LIVE-demoted 2026-06-04, still firing
+            # asyncio.create_task(
+            #     self.sports_midshot_v31.scan_loop(scan_interval_secs=1.0)
+            # ),
             asyncio.create_task(
                 self.sports_underdog_v31.scan_loop(scan_interval_secs=1.0)
             ),
@@ -750,63 +765,77 @@ class Bot:
             # asyncio.create_task(
             #     self.sports_underdog_v32.scan_loop(scan_interval_secs=1.0)
             # ),
-            asyncio.create_task(
-                self.sports_playoff_underdog_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_playoff_underdog_v1_us.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_soccer_underdog_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_soccer_draw_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_underdog_v36.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_underdog_v37.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_v4_edge.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-08-26 MOTHBALL: dormant; -$316.96 lifetime, would re-arm in playoffs
+            # asyncio.create_task(
+            #     self.sports_playoff_underdog_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: dormant; -$274.34 lifetime, would re-arm in playoffs
+            # asyncio.create_task(
+            #     self.sports_playoff_underdog_v1_us.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: n=58  +19.9% z=+0.76 sd=198%
+            # asyncio.create_task(
+            #     self.sports_soccer_underdog_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: n=19  -43.6% z=-1.30
+            # asyncio.create_task(
+            #     self.sports_soccer_draw_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: n=84   -9.3% z=-0.97
+            # asyncio.create_task(
+            #     self.sports_underdog_v36.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: n=123 -28.0% z=-1.97
+            # asyncio.create_task(
+            #     self.sports_underdog_v37.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: n=75   +8.4% z=+0.27 — retired 2026-07-28, sign is noise
+            # asyncio.create_task(
+            #     self.sports_v4_edge.scan_loop(scan_interval_secs=1.0)
+            # ),
             # PAPER strategies (no LIVE_STRATEGIES entry)
-            asyncio.create_task(
-                self.sports_midshot_v34.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-08-26 MOTHBALL: n=135  -3.0% z=-0.25
+            # asyncio.create_task(
+            #     self.sports_midshot_v34.scan_loop(scan_interval_secs=1.0)
+            # ),
             # 2026-05-31 MOTHBALL (see __init__): paper -EV pollution.
             # asyncio.create_task(
             #     self.sports_underdog_v34.scan_loop(scan_interval_secs=1.0)
             # ),
-            asyncio.create_task(
-                self.sports_longshot_v35.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_midshot_v35.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_underdog_v35.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-08-26 MOTHBALL: dormant; -$28.92 lifetime
+            # asyncio.create_task(
+            #     self.sports_longshot_v35.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: dormant
+            # asyncio.create_task(
+            #     self.sports_midshot_v35.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: dormant
+            # asyncio.create_task(
+            #     self.sports_underdog_v35.scan_loop(scan_interval_secs=1.0)
+            # ),
             # 2026-07-09 MOTHBALL (see __init__): promotion gate failed on
             # observer counterfactual (OOS era -45.5%, drop-top-3 < 0).
             # asyncio.create_task(
             #     self.sports_mls_fade_favorite_v1.scan_loop(scan_interval_secs=1.0)
             # ),
-            asyncio.create_task(
-                self.sports_npb_underdog_v1.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-08-26 MOTHBALL: n=97  -25.3% z=-2.10 — confirmed negative
+            # asyncio.create_task(
+            #     self.sports_npb_underdog_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
             # 2026-05-31 MOTHBALL (see __init__): paper -EV pollution.
             # asyncio.create_task(
             #     self.sports_favorite_v40.scan_loop(scan_interval_secs=1.0)
             # ),
             # 2026-05-21 grid-search discovery paper strategies
-            asyncio.create_task(
-                self.sports_soccer_weekend_v1.scan_loop(scan_interval_secs=1.0)
-            ),
-            asyncio.create_task(
-                self.sports_consensus_aligned_live_v1.scan_loop(scan_interval_secs=1.0)
-            ),
+            # 2026-08-26 MOTHBALL: n=51  -20.9% z=-1.45
+            # asyncio.create_task(
+            #     self.sports_soccer_weekend_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
+            # 2026-08-26 MOTHBALL: n=211 -27.1% z=-2.57 — confirmed negative
+            # asyncio.create_task(
+            #     self.sports_consensus_aligned_live_v1.scan_loop(scan_interval_secs=1.0)
+            # ),
         ]
 
         try:
@@ -1011,17 +1040,20 @@ class Bot:
             # per-sub-strategy fire rate before live promotion.
             ("ladder_shutdown", self.ladder_shutdown),
             ("ladder_approval", self.ladder_approval),
-            ("ladder_fed", self.ladder_fed),
+            # 2026-08-26 MOTHBALL: n=63  -5.1% z=-1.76
+            # ("ladder_fed", self.ladder_fed),
             # ladder_crypto Phase 0 resurrection (2026-05-19) — paper-only
             # walked-edge logging. No market_order calls. Phantom-quote defense
             # via orderbook walk. Gated by LADDER_PHASE0_ENABLED env var.
             # 2026-05-27 MOTHBALL: crypto full freeze — instance commented in __init__.
             # ("ladder_crypto", self.ladder_crypto),
             # Macro Event Trader (C1) — paper-only. Requires consensus cron.
-            ("macro_event", self.macro_event),
+            # 2026-08-26 MOTHBALL: n=11 -67.2% z=-3.33 — confirmed negative
+            # ("macro_event", self.macro_event),
             # Cross-Venue Polymarket Trader (B1) — paper-only. Requires
             # scripts/polymarket_quote_cron.py running separately.
-            ("xvenue_polymarket", self.xvenue_polymarket),
+            # 2026-08-26 MOTHBALL: n=8  +49.1% z=+0.93 — $24/trade outrights distorted portfolio reads
+            # ("xvenue_polymarket", self.xvenue_polymarket),
         ]
         # 2026-05-19: log per-strategy timing when a single strategy stalls
         # the loop. Threshold > 5s catches the sports-portfolio bottleneck
