@@ -7,7 +7,9 @@ from zoneinfo import ZoneInfo
 import asyncio
 import logging
 import os
+import re as _re
 import sqlite3
+from pathlib import Path as _Path
 
 logger = logging.getLogger("dashboard")
 
@@ -43,6 +45,38 @@ _DASHBOARD_TRACKED_SPORTS: tuple = (
 on data (typical for KBO/NPB/UCL where Odds API publishes games only
 within ~24-48h of kickoff). Without this, regional sports between game
 days silently disappear from the dashboard and look like a bug."""
+
+
+# --- roster derivation ------------------------------------------------------
+# main.py is the single source of truth for what actually runs. Mothballing is
+# done by commenting out a registration, so an instance that exists in
+# __init__ but has no *uncommented* registration is disabled. Parsing beats a
+# duplicated literal here: the dashboard's job is to report what is running,
+# and a hand-kept copy of that answer is exactly what goes stale.
+_MAIN_PY = _Path(__file__).resolve().parent.parent.parent / "main.py"
+
+_RE_INSTANCE = _re.compile(r"^\s+self\.(\w+)\s*=\s+\w+Strategy\(", _re.M)
+_RE_SCAN = _re.compile(r"^\s+self\.(\w+)\.scan_loop\(", _re.M)
+_RE_TUPLE = _re.compile(r'^\s+\("(\w+)",\s*self\.\w+\),', _re.M)
+
+
+def _derive_loop_disabled() -> set:
+    """Instances defined in main.py that have no live registration.
+
+    Returns an empty set if main.py cannot be read — the caller unions this
+    with the legacy literal, so a parse failure degrades to the old behaviour
+    rather than reporting every strategy as running.
+    """
+    try:
+        src = _MAIN_PY.read_text()
+    except OSError:
+        return set()
+    live_src = "\n".join(
+        l for l in src.splitlines() if not l.lstrip().startswith("#")
+    )
+    defined = set(_RE_INSTANCE.findall(src))
+    registered = set(_RE_SCAN.findall(live_src)) | set(_RE_TUPLE.findall(live_src))
+    return defined - registered
 
 
 def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None, sports_trader=None) -> FastAPI:
@@ -665,10 +699,16 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             # individual crypto strategies. See [[crypto_full_freeze_2026-05-27]].
             "crypto_archived",
         }
-        # Strategies removed from main.py _strategy_loop (no env flag to toggle).
-        # Keep in sync with main.py; see commits 59f7e44 (sports_trader) and
-        # e901f2b (maker_preorder).
-        loop_disabled = {"sports_trader", "maker_preorder", "shutdown_fade",
+        # Strategies removed from main.py's loops (no env flag to toggle).
+        #
+        # 2026-08-26: the live half of this set is now DERIVED from main.py
+        # rather than hand-maintained. It used to be a literal that had to be
+        # kept in sync by hand, and the 29-strategy mothball would have needed
+        # 29 more entries here — a list that drifts silently is how a strategy
+        # ends up shown as running when it is not (and vice versa). The names
+        # below are the legacy tail: strategies whose instances no longer exist
+        # in main.py at all, so nothing can be derived for them.
+        loop_disabled = _derive_loop_disabled() | {"sports_trader", "maker_preorder", "shutdown_fade",
                          "sports_liquidity_filtered", "sports_consolidated",
                          "sports_longshot", "sports_midshot", "sports_underdog",
                          "sports_pinnacle_edge", "mentions_trader",
@@ -732,6 +772,43 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         # Per-strategy retirement explanation for dashboard tooltip. Machine-
         # parseable reason (e.g. 'removed_from_loop') still exposed below for
         # backward-compat assertions; detail goes into reason_detail.
+        _MOTHBALL_26 = (
+            "Mothballed 2026-08-26 (by-band + CLV audit, PR #96): 순 기대엣지"
+            "(CLV − 수수료)가 양수인 전략이 하나도 없었고, 페이퍼 발사는 리서치 "
+            "원장을 오염시키기만 했다. 되살리려면 main.py 등록 한 줄 주석 해제 + "
+            "tests/test_active_strategy_roster.py 의 EXPECTED_* 갱신. "
+        )
+        _MOTHBALL_NUMS = {
+            "sports_consensus_aligned_live_v1": "120d n=211 −27.1% z=−2.57 (확정 음수)",
+            "sports_npb_underdog_v1":           "120d n=97 −25.3% z=−2.10 (확정 음수)",
+            "sports_underdog_v37":              "120d n=123 −28.0% z=−1.97",
+            "sports_midshot_v31":               "120d n=183 −21.6% z=−1.97 (6/04 LIVE 강등 후에도 계속 발사)",
+            "sports_tennis_pinnacle_fade_v1":   "120d n=240 −11.8% z=−1.72",
+            "sports_npb_sharp_follow_v1":       "120d n=222 −11.0% z=−1.70 (42일만 보면 +19.2% — 노이즈 구간)",
+            "sports_tennis_chalk_v1":           "120d n=793 −3.7% z=−1.59 (책에서 표본 최다, 그래도 없음)",
+            "sports_soccer_weekend_v1":         "120d n=51 −20.9% z=−1.45",
+            "sports_soccer_draw_v1":            "120d n=19 −43.6% z=−1.30",
+            "sports_underdog_v36":              "120d n=84 −9.3% z=−0.97",
+            "sports_tennis_pinnacle_arb_v1":    "120d n=49 −10.7% z=−0.70",
+            "sports_kbo_live_fade_tight_v1":    "120d n=17 −2.5% z=−0.40",
+            "sports_mlb_live_pin_follow_v1":    "120d n=42 −3.8% z=−0.28",
+            "sports_midshot_v34":               "120d n=135 −3.0% z=−0.25",
+            "sports_lal_sharp_follow_v1":       "120d n=19 −4.7% z=−0.19",
+            "sports_v4_edge":                   "120d n=75 +8.4% z=+0.27 — 부호는 노이즈 (7/28 은퇴)",
+            "sports_ufc_chalk_fade_v1":         "120d n=29 +9.5% z=+0.15 sd=339% (42일 +72.4% 는 순수 변동성)",
+            "sports_soccer_underdog_v1":        "120d n=58 +19.9% z=+0.76 sd=198%",
+            "sports_ufc_live_fade_v1":          "n=1 — 표본을 만든 적이 없음",
+            "macro_event":                      "120d n=11 −67.2% z=−3.33 (확정 음수)",
+            "ladder_fed":                       "120d n=63 −5.1% z=−1.76",
+            "xvenue_polymarket":                "120d n=8 +49.1% z=+0.93 — 건당 $24 아웃라이트가 포트폴리오 수치를 왜곡",
+            "sports_playoff_underdog_v1":       "휴면이지만 플레이오프에 자동 재무장. lifetime −$316.96",
+            "sports_playoff_underdog_v1_us":    "휴면이지만 플레이오프에 자동 재무장. lifetime −$274.34",
+            "sports_longshot_v35":              "휴면. lifetime −$28.92",
+            "sports_midshot_v35":               "휴면",
+            "sports_underdog_v35":              "휴면",
+            "sports_atp_gs_bo5_chalk_v1":       "휴면",
+            "sports_tennis_surface_skew_v1":    "휴면",
+        }
         retirement_detail = {
             "shutdown_fade":
                 "DEPRECATED (2026-04-15): V1 의 thesis 결함(이질 마켓 단일 heuristic) + "
@@ -808,7 +885,19 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
         # removed from LIVE_STRATEGIES env (still in main.py loop, paper-only).
         # Used for the DEMOTED badge tooltip on the dashboard so users know
         # why the strategy stopped trading live.
+        for _s, _n in _MOTHBALL_NUMS.items():
+            retirement_detail.setdefault(_s, _MOTHBALL_26 + _n)
+
         demotion_detail = {
+            "sports_underdog_v31":
+                "Demoted to paper 2026-08-19: 6/18 이후 62일 무발사인데 "
+                "LIVE_STRATEGIES 에 남아 10월 NBA 개막에 auto-resume 예정이었다. "
+                "현행 게이트 통과 코호트는 n=25(4월 NBA 단일 regime)에 스테이크가 "
+                "$0.4~$41.8 로 100배 편차 — 이기는 쪽만 크게 들어가 있었다. "
+                "페이퍼로 in-gate n=45 를 채우면 재검토.",
+            "sports_longshot_v31":
+                "Demoted to paper 2026-08-19: underdog_v31 과 같은 사유. "
+                "현행 게이트 코호트 n=33 이고 25-30c 한 밴드가 전부를 만든다.",
             "sports_longshot_v35":
                 "Demoted to paper 2026-04-28: NBA pre us underdog 패턴 -25% ROI. "
                 "현재 NBA PLAYOFF_BLOCKLIST 에도 걸려서 paper 도 0건 (4/30 이후). "
@@ -1109,6 +1198,19 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             # LIVE_STRATEGIES env or scan loop). Excludes paper-only experiments
             # that never went live (e.g. market_maker, v34 paper trio).
             DEMOTED_FROM_LIVE = {
+                # 2026-08-19: pulled from LIVE_STRATEGIES before the October
+                # NBA opener would have re-armed them on an April sample.
+                "sports_underdog_v31",
+                "sports_longshot_v31",
+                # Ran LIVE earlier in 2026, now paper and mothballed.
+                "sports_midshot_v31",
+                "sports_underdog_v32",
+                "sports_underdog_v36",
+                "sports_underdog_v37",
+                "sports_playoff_underdog_v1",
+                "sports_playoff_underdog_v1_us",
+                "sports_soccer_draw_v1",
+                "sports_soccer_underdog_v1",
                 "sports_longshot_v35",
                 "sports_midshot_v35",
                 "sports_underdog_v35",
@@ -1850,6 +1952,69 @@ def create_app(database, bankroll: float = 0.0, kalshi_client=None, config=None,
             "top_losses": top_losses,
             "rollback_triggers": triggers,
         }
+
+    @app.get("/api/feed-health")
+    async def get_feed_health():
+        """Per-sport freshness of odds_observations.
+
+        Added 2026-08-26 after MLB, NBA, WNBA, NHL, NPB and KBO all stopped
+        producing observations on 08-22 and nothing on this dashboard said so
+        for four days. The strategies looked fine — they were "active" and
+        simply never fired, which is indistinguishable from a quiet slate
+        unless you are watching the feed itself.
+
+        A sport is stale when its own markets are open on Kalshi but no
+        observation has landed recently. `series_open` comes from the same
+        markets endpoint the observer reads, so "open markets, no rows" is
+        exactly the matcher-failure signature and not an off-season sport.
+        """
+        db_path = config.DATABASE_PATH if hasattr(config, "DATABASE_PATH") else "data/bot.db"
+        from strategies.sports_trader import SPORTS_SERIES
+        from strategies.sports_scan_observer import SPORT_SHORT
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn.execute("PRAGMA query_only=1")
+        rows = []
+        now = datetime.now(timezone.utc)
+        for series in SPORTS_SERIES:
+            # Indexed by (kalshi_ticker, timestamp); a prefix range keeps this
+            # off a full scan of a multi-GB table.
+            cur = conn.execute(
+                "SELECT MAX(timestamp) FROM odds_observations "
+                "WHERE kalshi_ticker >= ? AND kalshi_ticker < ?",
+                (series + "-", series + "-\uffff"),
+            )
+            last = (cur.fetchone() or [None])[0]
+            age_h = None
+            if last:
+                try:
+                    dt = datetime.fromisoformat(last.replace(" ", "T"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    age_h = round((now - dt).total_seconds() / 3600.0, 1)
+                except ValueError:
+                    pass
+            open_n = None
+            try:
+                if kalshi_client is not None:
+                    d = kalshi_client._get(
+                        f"/trade-api/v2/markets?status=open&series_ticker={series}&limit=1"
+                    )
+                    open_n = len((d or {}).get("markets", []))
+            except Exception:
+                open_n = None
+            rows.append({
+                "series": series,
+                "sport": SPORT_SHORT.get(series, series),
+                "last_obs": last,
+                "age_hours": age_h,
+                "has_open_markets": bool(open_n),
+                # Only call it stale when Kalshi is quoting the sport. An
+                # off-season sport with no open markets is silent by design.
+                "stale": bool(open_n) and (age_h is None or age_h > 6),
+            })
+        conn.close()
+        rows.sort(key=lambda r: (not r["stale"], r["sport"]))
+        return {"rows": rows, "stale_count": sum(1 for r in rows if r["stale"])}
 
     @app.get("/api/clv-trend")
     async def get_clv_trend():
