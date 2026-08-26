@@ -55,7 +55,11 @@ days silently disappear from the dashboard and look like a bug."""
 # and a hand-kept copy of that answer is exactly what goes stale.
 _MAIN_PY = _Path(__file__).resolve().parent.parent.parent / "main.py"
 
-_RE_INSTANCE = _re.compile(r"^\s+self\.(\w+)\s*=\s+\w+Strategy\(", _re.M)
+# The optional `#` matters: a strategy can be mothballed at the registration
+# only (instance still constructed) or all the way back to __init__. Both are
+# disabled, but the second form is invisible to a comment-stripped scan, and
+# a strategy that appears in NEITHER set silently defaults to "running".
+_RE_INSTANCE = _re.compile(r"^\s+(?:#\s*)?self\.(\w+)\s*=\s+\w+Strategy\(", _re.M)
 _RE_SCAN = _re.compile(r"^\s+self\.(\w+)\.scan_loop\(", _re.M)
 _RE_TUPLE = _re.compile(r'^\s+\("(\w+)",\s*self\.\w+\),', _re.M)
 
@@ -74,6 +78,7 @@ def _derive_loop_disabled() -> set:
     live_src = "\n".join(
         l for l in src.splitlines() if not l.lstrip().startswith("#")
     )
+    # Match instances in the raw source so commented-out ones count too.
     defined = set(_RE_INSTANCE.findall(src))
     registered = set(_RE_SCAN.findall(live_src)) | set(_RE_TUPLE.findall(live_src))
     return defined - registered

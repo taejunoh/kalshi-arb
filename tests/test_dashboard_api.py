@@ -215,6 +215,12 @@ async def test_strategy_status_marks_loop_disabled(db):
         assert data[keep]["active"] is True, keep
     # v4_edge was retired 2026-07-28 and mothballed with the rest on 08-26.
     assert data["sports_v4_edge"]["active"] is False
+    # Mothballed all the way back to __init__ (instance commented out too).
+    # These appear in neither the "defined" nor the "registered" scan, so
+    # before 2026-08-26 they defaulted to being displayed as running.
+    for gone in ("sports_underdog_v32", "sports_underdog_v34",
+                 "sports_favorite_v40"):
+        assert data[gone]["active"] is False, gone
 
 
 @pytest.mark.asyncio
