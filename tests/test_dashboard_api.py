@@ -199,10 +199,22 @@ async def test_strategy_status_marks_loop_disabled(db):
         assert data[retired]["active"] is False, retired
         assert data[retired]["reason"] == "removed_from_loop", retired
     # v31 siblings + v4_edge still active.
+    # 2026-08-26: loop_disabled is derived from main.py rather than a
+    # hand-kept literal, so these track the real roster. longshot/underdog
+    # v31 still run (paper, collecting in-gate n for the October decision);
+    # midshot_v31 was mothballed with the other 28.
     assert data["sports_longshot_v31"]["active"] is True
-    assert data["sports_midshot_v31"]["active"] is True
     assert data["sports_underdog_v31"]["active"] is True
-    assert data["sports_v4_edge"]["active"] is True
+    assert data["sports_midshot_v31"]["active"] is False
+    assert data["sports_midshot_v31"]["reason"] == "removed_from_loop"
+    assert "Mothballed 2026-08-26" in data["sports_midshot_v31"]["reason_detail"]
+    # The derivation must not disable what is actually running.
+    for keep in ("sports_tennis_live_fade_v1", "sports_tennis_underdog_v1",
+                 "sports_mlb_pitcher_edge_v1", "sports_mlb_pitcher_edge_v2",
+                 "sports_mlb_pitcher_edge_v2_1"):
+        assert data[keep]["active"] is True, keep
+    # v4_edge was retired 2026-07-28 and mothballed with the rest on 08-26.
+    assert data["sports_v4_edge"]["active"] is False
 
 
 @pytest.mark.asyncio
