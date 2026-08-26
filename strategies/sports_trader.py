@@ -356,6 +356,92 @@ def measure_match_delta(ticker: str, matched_game: Optional[dict],
     return delta
 
 
+
+# ---------------------------------------------------------------------------
+# 2026-08-22 OUTAGE: Kalshi changed market titles from "A vs B Winner?" to
+# "<Team> wins". `_match_kalshi_to_odds` requires BOTH teams' names in the
+# title, so every team sport stopped matching at once — MLB, NBA, WNBA, NHL,
+# NPB and KBO produced zero odds_observations for four days while their
+# markets stayed fully liquid. Tennis/UFC match on `yes_sub_title` and were
+# untouched, which is why only they kept flowing.
+#
+# The second team is still available: every team-sport event carries one
+# market per side, so the SIBLING market's `yes_sub_title` is the opponent.
+# That restores the two-team requirement — the property that guards against
+# the wrong-game contamination of 2026-07-22 — without a hand-written
+# team-name table, and without depending on the title format at all.
+#
+# Comparison is token-subset rather than substring. Kalshi and the Odds API
+# disagree on verbosity in both directions:
+#   "Minnesota"           vs "Minnesota Twins"        (Kalshi shorter)
+#   "chiba lotte marines" vs "Chiba Lotte"            (Kalshi longer)
+#   "ssg landers"         vs "SSG"                    (Kalshi longer)
+# and ODDS_TO_KALSHI_SHORT already carries the irregulars ("Chicago White
+# Sox" -> "chicago ws"). Substring matching would let "Chicago C" match
+# "chicago ws"; requiring one token set to CONTAIN the other does not.
+
+
+def _team_tokens(name: Optional[str]) -> frozenset:
+    """Normalised word set. Drops punctuation so "St. Louis" == "St Louis"
+    and "A's" == "As"."""
+    s = (name or "").lower().replace(".", "").replace("'", "")
+    return frozenset(s.split())
+
+
+def _odds_team_token_variants(odds_name: str) -> list:
+    """Token sets that could represent this Odds API team on Kalshi: the raw
+    name plus its ODDS_TO_KALSHI_SHORT alias when one exists."""
+    normalised = " ".join(
+        (odds_name or "").lower().replace(".", "").replace("'", "").split()
+    )
+    out = [_team_tokens(normalised)]
+    alias = ODDS_TO_KALSHI_SHORT.get(normalised)
+    if alias:
+        out.append(_team_tokens(alias))
+    return out
+
+
+def _same_team(odds_name: str, kalshi_sub_title: Optional[str]) -> bool:
+    """True when the two names denote one team. Either side may be the more
+    verbose one, so equality OR containment in either direction counts."""
+    kalshi = _team_tokens(kalshi_sub_title)
+    if not kalshi:
+        return False
+    for odds in _odds_team_token_variants(odds_name):
+        if not odds:
+            continue
+        if kalshi == odds or kalshi < odds or odds < kalshi:
+            return True
+    return False
+
+
+def build_opponent_sub_titles(markets: list) -> dict:
+    """{market ticker -> the opposing side's yes_sub_title}.
+
+    Built per scan from the markets list both callers already hold. Only
+    two-sided events qualify: soccer carries a third "Tie is the result"
+    market, and with a draw on the board there is no single opponent to name,
+    so those events are left out and fall back to title matching.
+    """
+    by_event: dict = {}
+    for m in markets or []:
+        event = m.get("event_ticker")
+        if event:
+            by_event.setdefault(event, []).append(m)
+    out: dict = {}
+    for sides in by_event.values():
+        real = [m for m in sides
+                if _team_tokens(m.get("yes_sub_title")) not in (
+                    _team_tokens("tie"), _team_tokens("draw"))]
+        if len(real) != 2:
+            continue
+        for i, m in enumerate(real):
+            ticker = m.get("ticker")
+            if ticker:
+                out[ticker] = real[1 - i].get("yes_sub_title")
+    return out
+
+
 def enforce_match_cap(ticker: Optional[str], matched_game: Optional[dict],
                       *, context: str = "", warn: bool = True) -> Optional[dict]:
     """PHASE 2 gate: drop a match whose distance from the ticker's own
@@ -752,6 +838,13 @@ ODDS_TO_KALSHI_SHORT = {
     "new york mets": "new york m",
     "chicago white sox": "chicago ws",
     "chicago cubs": "chicago c",
+    # 2026-08-26: the only two of 107 team names across six leagues that the
+    # token-subset rule cannot bridge on its own — the Kalshi label shares no
+    # token with the Odds API one ("A's" vs "Athletics", "Saint" vs "St.").
+    # Everything else matches by containment in one direction or the other.
+    "athletics": "a's",
+    # MLS
+    "st louis city sc": "saint louis",
     # NBA
     "los angeles lakers": "los angeles l",
     "los angeles clippers": "los angeles c",
@@ -1667,7 +1760,10 @@ class SportsTraderStrategy:
 
     def _match_kalshi_to_odds(self, kalshi_title: str, odds_games: list[dict],
                               kalshi_ticker: Optional[str] = None,
-                              warn: bool = False) -> Optional[dict]:
+                              warn: bool = False,
+                              yes_sub_title: Optional[str] = None,
+                              opponent_sub_title: Optional[str] = None,
+                              ) -> Optional[dict]:
         """Match a Kalshi market title to odds API game data.
 
         Kalshi uses city names ("Phoenix at Charlotte"), while Odds API uses
@@ -1681,6 +1777,12 @@ class SportsTraderStrategy:
         date-aware disambiguation: of the matching games, the one whose
         commence_time is closest to the ticker's scheduled datetime wins.
         Without `kalshi_ticker` the legacy first-match behaviour is used.
+
+        `yes_sub_title` / `opponent_sub_title` are the 2026-08-22 fallback.
+        Title matching runs FIRST and unchanged, so nothing that matches
+        today can start matching differently; the sub-title pair is only
+        consulted when the title yields nothing, which is exactly the new
+        "<Team> wins" format. See the module-level comment on _same_team.
         """
         title_lower = kalshi_title.lower()
 
@@ -1706,6 +1808,17 @@ class SportsTraderStrategy:
             away_raw = (game.get("away_team") or "").lower()
             if _city_in_title(home_raw) and _city_in_title(away_raw):
                 candidates.append(game)
+        if not candidates and yes_sub_title and opponent_sub_title:
+            # Title carried only one team (or none). Rebuild the pair from the
+            # two sides of the event. Same two-team requirement, same cap.
+            for game in odds_games:
+                home = game.get("home_team") or ""
+                away = game.get("away_team") or ""
+                if ((_same_team(home, yes_sub_title)
+                     and _same_team(away, opponent_sub_title))
+                        or (_same_team(away, yes_sub_title)
+                            and _same_team(home, opponent_sub_title))):
+                    candidates.append(game)
         if not candidates:
             return None
         if len(candidates) == 1 or not kalshi_ticker:
@@ -1978,6 +2091,9 @@ class SportsTraderStrategy:
                 continue
 
             odds_games = all_odds.get(series, [])
+            # Opponent lookup for the title-format fallback; built once per
+            # series per cycle from the markets we already fetched.
+            opponent_subs = build_opponent_sub_titles(markets)
             for market in markets:
                 if trades_attempted >= max_trades_per_cycle:
                     hit_limit = True
@@ -2075,6 +2191,8 @@ class SportsTraderStrategy:
                 else:
                     matched_game = self._match_kalshi_to_odds(
                         title, odds_games, kalshi_ticker=ticker, warn=True,
+                        yes_sub_title=market.get("yes_sub_title"),
+                        opponent_sub_title=opponent_subs.get(ticker),
                     )
                 if not matched_game:
                     continue

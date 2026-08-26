@@ -26,6 +26,7 @@ from core.starter_fetcher import get_starters
 from strategies.sports_trader import (
     INDIVIDUAL_SPORT_SERIES,
     SPORTS_SERIES,
+    build_opponent_sub_titles,
     SPORT_ODDS_KEYS,
     ODDS_TO_KALSHI_SHORT,
     SportsTraderStrategy,
@@ -117,6 +118,9 @@ class SportsScanObserver(SportsTraderStrategy):
                 continue
 
             odds_games = all_odds.get(series, [])
+            # Opponent lookup for the title-format fallback; built once per
+            # series per cycle from the markets we already fetched.
+            opponent_subs = build_opponent_sub_titles(markets)
             sport_value = SPORT_MAP[series]
             # For single-slug team sports `sport_value` is a str; for tennis
             # it is a tuple of concurrent tournament slugs. The per-game
@@ -164,6 +168,8 @@ class SportsScanObserver(SportsTraderStrategy):
                 else:
                     matched_game = self._match_kalshi_to_odds(
                         title, odds_games, kalshi_ticker=ticker,
+                        yes_sub_title=market.get("yes_sub_title"),
+                        opponent_sub_title=opponent_subs.get(ticker),
                     )
                 if not matched_game:
                     continue
