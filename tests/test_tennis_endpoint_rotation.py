@@ -18,7 +18,12 @@ from scripts.tennis_endpoint_rotation import (
 # https://...?apiKey=XXX ...") and embeds it in exception strings, so without
 # scrubbing, the Odds API key lands in journald/stdout.
 
-_SECRET = "ODDS_API_KEY_REDACTED"
+# A DUMMY key, shaped like a real one (32 hex). This must never be the
+# live credential: the test asserts the key is absent from the scrubbed
+# output, so it reads correctly either way — and the first version of
+# this file pasted the real key in here, which then rode every commit
+# since. The redaction fix leaked the thing it was redacting.
+_SECRET = "0123456789abcdef0123456789abcdef"
 
 
 def test_redact_masks_apikey_in_url():
