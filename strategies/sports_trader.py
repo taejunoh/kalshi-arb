@@ -664,9 +664,18 @@ INDIVIDUAL_SPORT_SERIES = frozenset({"KXATPMATCH", "KXWTAMATCH", "KXUFCFIGHT"})
 # both were still inactive at the time of this edit — the API flips them when
 # it has lines, usually within a day. Pointing at a dead key fetches nothing
 # while looking wired, so ATP waits for the US Open rotation alert.
-TENNIS_ATP_SLUGS: tuple[str, ...] = ()
+# 2026-08-26 rotation: that alert fired. Both US Open keys went active
+# (ATP 41 events, WTA 39) and tennis_wta_monterrey_open is at 0 — a swap,
+# not the fan-out the Canadian→Cincinnati handoff needed, because there is
+# no overlapping tail to keep. ATP comes back from empty after the two-day
+# gap. Monterrey's TENNIS_SLUG_META entry stays for odds_observations.
+# Next: the tour goes quiet after the US Open final (~mid-Sep); expect a
+# stale alert then, not an unmapped-active one.
+TENNIS_ATP_SLUGS: tuple[str, ...] = (
+    "tennis_atp_us_open",             # GS hard, BO5 (see TENNIS_SLUG_META)
+)
 TENNIS_WTA_SLUGS: tuple[str, ...] = (
-    "tennis_wta_monterrey_open",      # WTA 500 hard, Monterrey (US Open tune-up)
+    "tennis_wta_us_open",             # GS hard, BO3
 )
 
 # Single source of truth for Kalshi series → Odds API sport key(s). Tennis
