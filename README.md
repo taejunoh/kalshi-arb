@@ -3,8 +3,12 @@
 **An automated trading system for prediction markets and sports betting. Archived September 2026.**
 
 Five and a half months, 1,278 commits, 24 strategies, 1,983 real-money trades.
-Final result: **−$2,004.37**. Strip the exchange fees out and the same trades
-lose **$969.36** — fees more than doubled the loss.
+Final result: **−$2,004.37**.
+
+Two numbers explain almost all of it. Strip the exchange fees out and the same
+trades lose **$969.36**. Hold the bet size flat at the $2.75 I started with,
+changing no decision, and they lose **$254.23** — **size scaling accounts for
+$1,750 of the loss, 87% of it.**
 
 I am archiving it because the system worked and the answer it gave was no. This
 README is about how it was built and, more usefully, about the part that took
@@ -190,8 +194,22 @@ Worst: `sports_underdog_v32` −$554 (n=143) · `sports_playoff_underdog_v1`
 −$317 · `sports_underdog_v31` −$255 · `sports_midshot_v31` −$159.
 Best: `sports_underdog_v35` +$95 · `sports_midshot_v35` +$22.
 
-**Without fees, the same trades would have lost $969.36. Fees made it
-$2,004.37.** Kalshi charges a flat $0.07 per contract, which
+**No strategy decayed.** The first two weeks made $171; everything after lost
+$2,175, and the obvious reading — that an edge was found and arbitraged away —
+is not what the data says. The same eight strategies ran in both periods and
+none degraded significantly (`sports_underdog_v31` +12.5% → −7.7%, z = 1.69;
+`sports_midshot_v31` +21.9% → −9.8%, z = 0.42). Early vs late overall: z = 0.90.
+
+The early period was not an edge either. That $171 is a **stake-weighted**
+figure: the larger bets happened to win. Equal-weighted, mean return per trade
+over those 628 trades was **−0.16% (t = −0.02)** — exactly zero, with a
+confidence interval from −12.8% to +12.5%.
+
+What changed was size. Average bet went $2.75 → $7.46 → $16.45 → $26.12 →
+$27.12 over six weeks, and each increase followed a winning week. A slightly
+negative expectation at ten times the size is the entire loss.
+
+**Fees turned a −$969.36 outcome into −$2,004.37.** Kalshi charges a flat $0.07 per contract, which
 on a $0.30 contract is a 23% toll. The gross edge and the fee were the same
 order of magnitude at every price band tested — at 25–35¢, gross +5.2% against a
 5.26% fee. Most strategies here were not wrong about direction. They were
@@ -252,6 +270,11 @@ There was no remaining hypothesis worth the fee drag.
 
 ## What I'd do differently
 
+- **Tie stake size to a pre-registered test, not to P&L.** Scaling on a good
+  fortnight is the same error as fitting a threshold to a backtest — mistaking a
+  sample for a property of the world — but it presents as money management
+  rather than statistics, so none of the statistical guardrails here caught it.
+  It was the single most expensive mistake in the project by a factor of seven.
 - **Measure the fee first.** A flat per-contract fee against a probabilistic
   payout is a price-dependent tax; at longshot prices it exceeds any plausible
   edge. This is computable on day one, before any strategy exists. I computed it
