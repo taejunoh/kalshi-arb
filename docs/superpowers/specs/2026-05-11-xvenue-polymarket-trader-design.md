@@ -406,7 +406,7 @@ Telegram alerts:
 - **2026-05-11**: Cadence = 60-sec poll (기존 _strategy_loop 활용,
   Polymarket slow-moving political).
 - **2026-05-11**: MIN_DEVIATION = 0.10 (A1/C1/B2 와 동일).
-- **2026-05-11**: 13-task implementation 완료 (commits 77d9842..b628c72 + final-
+- **2026-05-11**: 13-task implementation 완료 (commits 3ab2b5d..b628c72 + final-
   review fixes on branch feat/xvenue-polymarket). 40 xvenue unit/integration
   tests green.
 

@@ -20,7 +20,7 @@ Live surface as of 2026-08-31:
 |---|---|
 | stop trading → stop timers | settlement runs on timers; killing them first strands open positions unsettled |
 | settlement finishes → cancel Odds API | settlement reads `/scores`; no API, no grading, and the ledger closes wrong |
-| cancel Odds API → repo public | the live key is in git history before `2ce1b41`; publishing first exposes a working credential |
+| rotate every leaked credential → repo public | two live secrets sat in git history (the Odds API key and the Telegram bot token); publishing before rotation exposes working credentials |
 | announce → take down keepmypick | anyone following the public record deserves notice, not a 404 |
 
 ---
@@ -30,10 +30,16 @@ Live surface as of 2026-08-31:
 Confirm nothing real-money is open and unsettled:
 
 ```bash
-ssh kalshi-ec2 'sqlite3 /home/ubuntu/kalshi-arb/data/bot.db "SELECT strategy, COUNT(*), MIN(date(timestamp)) FROM trades WHERE status NOT IN (\"settled\",\"closed\") GROUP BY strategy;"'
+ssh kalshi-ec2 'sqlite3 /home/ubuntu/kalshi-arb/data/bot.db "SELECT strategy, status, COUNT(*), MIN(date(timestamp)) FROM trades WHERE status IN (\"filled\",\"placing\") GROUP BY 1,2;"'
 ```
 
-Empty output is the go signal. Anything listed is an open position — let it
+Real-money rows are `filled` (open) and `settled` (closed); paper rows use
+`paper_filled`/`paper_settled`. Do not filter on `NOT IN ('settled','closed')`
+— that returns every paper row in the ledger. As of 2026-09-01 the only hits
+are 17 orphan rows from April–May with no live position behind them; anything
+newer is a real open position.
+
+Empty output (or only those orphans) is the go signal. Anything listed is an open position — let it
 settle before proceeding, or close it deliberately.
 
 Also confirm nothing is mid-flight on the exchange:
@@ -122,14 +128,35 @@ ssh kalshi-ec2 'systemctl list-units --all --no-pager | grep kalshi | grep -c ru
 Cancel the subscription, **then regenerate the key at the provider** if they
 offer it. Cancelling alone leaves a key that works again the moment anyone
 re-subscribes on that account, and step 8 puts that key in front of the public.
+Two things learned on 2026-09-01: the provider's docs describe no self-service
+regeneration (ask support), and a cancelled subscription stays active until the
+end of the billing cycle, so cancellation is not revocation.
 
 ## 8. Repo → public
 
-Only after step 7.
+Only after step 7, and only after every credential below is dead.
 
-The live key sat in `tests/test_tennis_endpoint_rotation.py` from `b04a9b3`
-(2026-07-14) until it was replaced in `2ce1b41`. HEAD is clean; **history is
-not.** Options:
+There were **two** leaked credentials, not one. This runbook originally knew
+about the first only:
+
+- The Odds API key sat in `tests/test_tennis_endpoint_rotation.py` from
+  2026-07-14 until it was replaced (two commits).
+- The Telegram bot token was hardcoded in
+  `.github/workflows/atm_hold_monitor.yml` from 2026-06-07 onward — in HEAD
+  and in ~410 commits — and was the same token the live bot used.
+
+**Status 2026-09-01:** the Telegram token was revoked at BotFather and the
+replacement deployed to EC2; the workflow now reads `secrets.TELEGRAM_BOT_TOKEN`
+and `secrets.TELEGRAM_CHAT_ID`. Both strings were scrubbed from every branch
+with `git filter-repo --replace-text` and force-pushed (every SHA changed; the
+commit links under `docs/` were remapped from the commit map). The Odds API key
+is still the live key on EC2 until step 7 runs.
+
+**Scrubbing is not enough on GitHub.** A force-push does not remove commits
+reachable from pull-request refs (`refs/pull/*/head`); the pre-rewrite HEAD is
+still served by the API afterwards. Either ask GitHub Support to purge the
+cached commits, or rely on rotation — which is why rotation is mandatory and
+the scrub is only hygiene. The original options, for the record:
 
 - **Publish as-is.** Safe once the key is cancelled and rotated, but GitHub
   secret scanning will flag it and it is visible to anyone reading history — a
@@ -146,12 +173,21 @@ git push --force --mirror
 ```
 
 Rewriting history changes every SHA, which invalidates the commit links in the
-README and in `docs/`. Fix those after, or accept them as broken.
+README and in `docs/`. `filter-repo` leaves a commit map
+(`filter-repo/commit-map` inside the mirror) — remap from it rather than
+hand-editing.
 
-Verify before flipping visibility:
+Verify before flipping visibility, once per secret:
 
 ```bash
-git grep -I -F "<THE-KEY>" $(git rev-list --all) | head    # expect empty
+git grep -I -F "<THE-SECRET>" $(git rev-list --all) | head    # expect empty
+```
+
+A cheap sweep for anything the runbook missed (this is how the Telegram token
+was found):
+
+```bash
+git grep -I -E -l 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AKIA[0-9A-Z]{16}|[0-9]{8,10}:AA[0-9A-Za-z_-]{33}|ghp_[A-Za-z0-9]{36}' $(git rev-list --all)
 ```
 
 ## 9. Host

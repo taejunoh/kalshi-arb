@@ -167,7 +167,7 @@ These finish Phase 1. Tasks 1 and the verification half of Task 2 are **manual**
 
 **Files:** none (verification only).
 
-This confirms the 6/13 first-entry work (`8269042`, `6715a88`) renders correctly on the shipped build.
+This confirms the 6/13 first-entry work (`8269042`, `82ea735`) renders correctly on the shipped build.
 
 - [ ] **Step 1: Update the device build.** On the NY iPhone, open TestFlight → update `@allinsimple/softbook-ev` to v1.0.1 (build #2). Launch; confirm the picks feed loads (credentials already in Keychain from Phase 1).
 

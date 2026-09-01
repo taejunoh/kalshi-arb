@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3 + httpx + aiosqlite + pytest. Codebase patterns: `strategies/macro_event.py` (C1, merged PR #2 — 9-gate orchestration), `strategies/crypto_fair_value.py` (B2, PR #3 — fast-scan reference but B1 doesn't need it), `core/order_manager.py:438+` (dedup gate prefix).
 
-**Spec:** `docs/superpowers/specs/2026-05-11-xvenue-polymarket-trader-design.md` (commit d99bca6).
+**Spec:** `docs/superpowers/specs/2026-05-11-xvenue-polymarket-trader-design.md` (commit 132f6b6).
 
 ---
 

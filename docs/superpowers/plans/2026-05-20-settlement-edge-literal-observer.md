@@ -544,7 +544,7 @@ No `git push` here.
 * test(crypto_observer): pin settlement_edge skew-magnitude threshold
 * test(crypto_observer): pin settlement_edge mts_s window gate
 * feat(crypto_observer): add settlement_edge Phase 0 observer
-* docs(spec): settlement_edge literal observer design (91e38fc, already merged)
+* docs(spec): settlement_edge literal observer design (287ecb3, already merged)
 ```
 
 5 new commits — one per task with TDD discipline.

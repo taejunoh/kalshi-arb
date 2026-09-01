@@ -449,7 +449,7 @@ Live 배포 후:
 - **2026-05-10**: Architecture = Approach 2 (event-driven, 별도 asyncio
   task) (user 선택).
 - **2026-05-10**: MIN_DEVIATION = 0.10 (C1 와 동일, fee 0.07 + 3c cushion).
-- **2026-05-10**: 13-task implementation 완료 (commits 7828eec..608b4ee on
+- **2026-05-10**: 13-task implementation 완료 (commits c4095be..608b4ee on
   branch feat/crypto-fair-value). 44 crypto unit/integration tests green.
   Phase 0 scanner 첫 dry run 에서 25 fired signals 즉시 감지 (Deribit IV BTC=12
   + ETH=12 expiries 정상 populated).

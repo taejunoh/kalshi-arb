@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3 + httpx (already installed) + math.erf for normal CDF (no scipy) + regex for HTML parsing (no bs4) + aiosqlite + pytest. Codebase patterns: `strategies/ladder_fed.py` (single-strategy class shape, just merged in PR #1), `strategies/sports_underdog_v32.py` (edge-scaled sizing), `core/order_manager.py:438+` (dedup gate prefix).
 
-**Spec:** `docs/superpowers/specs/2026-05-09-macro-event-trader-design.md` (commit cf2d315).
+**Spec:** `docs/superpowers/specs/2026-05-09-macro-event-trader-design.md` (commit effa729).
 
 ---
 
