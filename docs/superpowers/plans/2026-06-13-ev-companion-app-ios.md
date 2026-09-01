@@ -12,7 +12,7 @@
 
 ## Scope & Decomposition
 
-This is the **front-end half** of the two-plan split defined in the spec (`docs/superpowers/specs/2026-06-12-ev-betting-companion-app-design.md`). Plan 1 (backend — `docs/superpowers/plans/2026-06-12-ev-companion-app-backend.md`) is **done, merged, and deployed** (master `326b73c`, 51/51 tests). This plan consumes its 9-endpoint API contract and adds nothing to the Python side. The two subsystems share a clean HTTP boundary, so this plan is self-contained: it produces a working, installable iOS app whose every screen is exercised against a mocked client in tests and against the live API on device.
+This is the **front-end half** of the two-plan split defined in the spec (`docs/superpowers/specs/2026-06-12-ev-betting-companion-app-design.md`). Plan 1 (backend — `docs/superpowers/plans/2026-06-12-ev-companion-app-backend.md`) is **done, merged, and deployed** (master `fc8217c`, 51/51 tests). This plan consumes its 9-endpoint API contract and adds nothing to the Python side. The two subsystems share a clean HTTP boundary, so this plan is self-contained: it produces a working, installable iOS app whose every screen is exercised against a mocked client in tests and against the live API on device.
 
 The app surfaces Phase-1 features only (per spec): picks feed + filters + lifecycle, on-demand odds refresh + tiered deep-link, one-tap capture, live tracking, calendar PnL, push with actionable buttons. Screenshot-AI capture, price-move/cashout push, and saved mute-rules are **Phase 2** (out of scope here).
 
@@ -2562,7 +2562,7 @@ Per the spec ("Decommission Telegram alert + fill-listener once the app is verif
 
 **Known cross-task ordering note (not a blocker):** `format.ts` (Task 3) imports `LiveProgress` from `api/types.ts` (Task 4 Step 1). Create `types.ts` before running Task 3's tests green — called out inline in both tasks.
 
-**Backend assumptions this plan relies on (all true in master `326b73c`):** `/picks` returns `{picks,counts,cooled}` with `Pick.id = "event_id|market|side|point|player"`; `/picks/{id}/refresh` returns server-built `deeplink` per book; `POST /bets` accepts the `BetIn` shape with `source`; `/mybets` parses `live_progress` to an object; auth is bearer + CF headers.
+**Backend assumptions this plan relies on (all true in master `fc8217c`):** `/picks` returns `{picks,counts,cooled}` with `Pick.id = "event_id|market|side|point|player"`; `/picks/{id}/refresh` returns server-built `deeplink` per book; `POST /bets` accepts the `BetIn` shape with `source`; `/mybets` parses `live_progress` to an object; auth is bearer + CF headers.
 
 ## Execution Handoff
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11, sqlite, pytest, systemd-managed kalshi-bot on EC2 (18.117.216.224). Run via `venv/bin/python`. Test via `venv/bin/pytest`.
 
-**Spec:** [`docs/superpowers/specs/2026-05-13-wnba-strategy-expansion-design.md`](../specs/2026-05-13-wnba-strategy-expansion-design.md) (commit `e72f1de`).
+**Spec:** [`docs/superpowers/specs/2026-05-13-wnba-strategy-expansion-design.md`](../specs/2026-05-13-wnba-strategy-expansion-design.md) (commit `320b18e`).
 
 **Pre-flight context (must read before starting):**
 - WNBA observer wiring already complete (commit `6698c5e`, 2026-05-09). Parent `SportsTraderStrategy.OBSERVATION_ONLY_SPORTS` contains `{"WNBA", "NPB", "KBO", "MLS", "EPL", "LAL", "UCL", "BUN"}`.
@@ -180,7 +180,7 @@ Read current file with `Read` tool first if not already in context (file is shor
     )
 
     def evaluate(self, kalshi_yes, kalshi_no, fair_prob, ticker="", **kwargs):
-        """WNBA-only pair-fire dedup at entry (matches v40 d036f07 pattern).
+        """WNBA-only pair-fire dedup at entry (matches v40 45fc408 pattern).
         Non-WNBA tickers fall through to parent logic unchanged."""
         if "WNBAGAME" in ticker:
             game_key = ticker.rsplit("-", 1)[0]
@@ -207,9 +207,9 @@ git commit -m "feat(longshot_v31): enable WNBA + add WNBA-only pair-fire dedup
 
 Override parent OBSERVATION_ONLY_SPORTS to remove WNBA so v31 longshot
 fires on WNBA tickers. Add WNBA-only pair-fire dedup at evaluate()
-entry — matches v40 d036f07 pattern. NBA/MLB/NHL unchanged.
+entry — matches v40 45fc408 pattern. NBA/MLB/NHL unchanged.
 
-Part of WNBA 5-strategy expansion (spec e72f1de).
+Part of WNBA 5-strategy expansion (spec 320b18e).
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -410,7 +410,7 @@ git commit -m "fix(underdog_v32): re-block WNBA after v31 cascade
 
 v31 underdog removed WNBA from OBSERVATION_ONLY in WNBA expansion.
 v32 must restore parent default to stay out of WNBA scope per spec
-e72f1de — v32 is a 5/18 retire-eval candidate, no WNBA fires desired.
+320b18e — v32 is a 5/18 retire-eval candidate, no WNBA fires desired.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -478,7 +478,7 @@ git commit -m "fix(v32/v33 family): cascade re-block WNBA after v31 trio expansi
 
 v31 trio removed WNBA from OBSERVATION_ONLY_SPORTS; v32 underdog +
 v32/v33 longshot/midshot/underdog inherit through and would otherwise
-fire on WNBA. Per spec e72f1de these strategies are out of scope —
+fire on WNBA. Per spec 320b18e these strategies are out of scope —
 restore parent default.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
@@ -671,7 +671,7 @@ Sibling class to v36_playoff/v36_us — different evaluate() logic
 (chalk-favorite vs NBA underdog floor35). Live launch size 8.
 
 Replay baseline: n=3, ROI +73%, WR 100% (all chalk wins). First
-eval 2026-05-23 at n>=25. See spec e72f1de.
+eval 2026-05-23 at n>=25. See spec 320b18e.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -746,7 +746,7 @@ non-WNBA sports while allowing WNBA.
 
 Replay baseline (WNBA observer, n=2 settled games): ROI +118%, WR 50%.
 n far below promotion gate (>=25) — first eval 2026-05-23. See spec
-e72f1de.
+320b18e.
 """
 import logging
 from typing import Optional
@@ -798,7 +798,7 @@ WNBA TEAM 20-29c band, payoff>=2.0x. Thin sibling of v37_soccer with
 SPORT_BLOCKLIST flipped to allow WNBA + block soccer/other sports.
 Inherits v37_soccer evaluate(); adds WNBA-only pair-fire dedup wrapper.
 
-Replay n=2, ROI +118%. First eval 2026-05-23. See spec e72f1de.
+Replay n=2, ROI +118%. First eval 2026-05-23. See spec 320b18e.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -1175,7 +1175,7 @@ Note the deploy commit hash + time. Memory updates (per spec "Memory Updates Req
 | n=11 small sample → first-week ROI dominated by noise | Spec callout; accepted by user; 5/23 eval defers promotion/retire |
 | v32/v33 cascade fires on WNBA undesired | Task 5 + 6 explicit re-block + tests |
 | v36 evaluate() != v36_playoff logic (chalk-favorite vs underdog) | Task 7 docstring + spec NOTE |
-| Pair-fire dedup blocks valid 2nd signal on game later | Acceptable — game-level cap aligns with v40 d036f07 already in prod 24h+ |
+| Pair-fire dedup blocks valid 2nd signal on game later | Acceptable — game-level cap aligns with v40 45fc408 already in prod 24h+ |
 | `.env` edit fails or misses tokens | Task 15 step 2 grep verifies |
 | Restart fails after `.env` edit | Task 15 step 3 `is-active` check; revert by removing tokens + restart |
 | New file import fails | Task 10 step 5 dry-run boot check before deploy |

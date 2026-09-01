@@ -316,7 +316,7 @@ features JSON).
 
 ## Open question (RESOLVED 2026-05-20 evening)
 
-**Venue selection swap (commit f9c1c17):** Bybit replaced by Gate.io +
+**Venue selection swap (commit b8d3bca):** Bybit replaced by Gate.io +
 MEXC because **Bybit is permanently geo-blocked from AWS us-east-2**
 (CloudFront HTTP 403) and so is Binance Futures fapi (HTTP 451). Initial
 deploy with Bybit produced lifetime n=0 cross_venue_funding_consensus

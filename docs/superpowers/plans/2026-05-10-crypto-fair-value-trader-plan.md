@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3 + httpx + math.erf (no scipy) + websockets (already in PriceFeed) + aiosqlite + pytest. Codebase patterns: `strategies/macro_event.py` (just merged in PR #2 — single-class shape, 9-gate orchestration), `strategies/ladder_crypto.py` (KXBTC ATM filter, just patched for T-format), `core/price_feed.py` (Binance WS BTC/ETH/SOL — extend with XRP).
 
-**Spec:** `docs/superpowers/specs/2026-05-10-crypto-fair-value-trader-design.md` (commit d5429ed).
+**Spec:** `docs/superpowers/specs/2026-05-10-crypto-fair-value-trader-design.md` (commit 85d1e6a).
 
 ---
 
@@ -2404,7 +2404,7 @@ After completing all 13 tasks, perform the following checks:
 - [ ] main.py registration (Task 13) ✓
 - [ ] Spec mentions Telegram alerts + dashboard panels — NOT covered. Defer to operational follow-up after Phase 0 confirms viability (same pattern as A1/C1).
 - [ ] Spec mentions promotion_eval entry — NOT covered. Defer to Phase 1→2 transition (1-line addition).
-- [ ] A1.ladder_crypto parser fix — already committed separately (2fc4ba8) before this plan starts.
+- [ ] A1.ladder_crypto parser fix — already committed separately (ab92c88) before this plan starts.
 
 **2. Placeholder scan:** No "TBD" / "implement later" — every task has actual test + impl code.
 

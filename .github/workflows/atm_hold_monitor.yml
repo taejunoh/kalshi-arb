@@ -14,8 +14,8 @@ jobs:
           set -e
           if [[ $CURL_EXIT -ne 0 ]] || [[ ! -s /tmp/resp.json ]]; then
             MSG="atm_hold_v1 6h monitor (${NOW_UTC}): dashboard endpoint no response (curl_exit=${CURL_EXIT}). EC2 check needed."
-            curl -s -X POST "https://api.telegram.org/botTELEGRAM_BOT_TOKEN_REDACTED/sendMessage" \
-              -d "chat_id=8578917235" \
+            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+              -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
               --data-urlencode "text=${MSG}"
             echo "Telegram sent (endpoint down alert)"
             exit 0
@@ -39,8 +39,8 @@ jobs:
               MSG="atm_hold_v1 OK ${NOW_UTC} | LIVE n=${N} WR=${WR}% NET=${NET} | Wipe=${WIPE}% Fill=${FILL}% Ratio=${RATIO} | next check +6h"
             fi
           fi
-          RESP=$(curl -s -X POST "https://api.telegram.org/botTELEGRAM_BOT_TOKEN_REDACTED/sendMessage" \
-            -d "chat_id=8578917235" \
+          RESP=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
             --data-urlencode "text=${MSG}")
           echo "Telegram: $RESP"
           cat /tmp/resp.json

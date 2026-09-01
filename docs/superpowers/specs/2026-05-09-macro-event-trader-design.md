@@ -351,7 +351,7 @@ Live 배포 후:
 - **2026-05-09**: Execution window = "T-2주 장기 윈도우" (user 선택).
 - **2026-05-09**: Approach = "Approach 3 — Single fire + edge-scaled sizing" (user 선택).
 - **2026-05-09**: MIN_DEVIATION = 0.10 (fee 0.07 + 3c cushion, EV 양수 조건 확보).
-- **2026-05-09**: 14-task implementation 완료 (commits 6936c82..e496e1e on
+- **2026-05-09**: 14-task implementation 완료 (commits e1c7b4c..e496e1e on
   branch feat/macro-event-trader). 33 macro unit/integration tests green,
   V1 dedup integration test pass for macro_*, scanner --once dry run successful.
 

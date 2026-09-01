@@ -14,7 +14,7 @@
 ## Context
 
 ladder_crypto 는 2-step 으로 retired:
-1. **Pre-fix (-77.5% ROI, n=54)**: B-bucket 을 T-cumulative 로 잘못 다뤘음. d30efb5 에서 split 수정.
+1. **Pre-fix (-77.5% ROI, n=54)**: B-bucket 을 T-cumulative 로 잘못 다뤘음. a6c67e9 에서 split 수정.
 2. **Post-fix (structurally silent)**: math 는 맞지만 fire 0. **Phantom-quote pollution** 이 원인 — Kalshi 가 보여주는 top-of-book yes_ask 가 1-contract 짜리 stale resting order 인 경우가 잦아, framework 가 arb signal 을 감지해도 실제 그 가격에 채울 수 없음. `min_depth_usdc` 게이트는 *전체 orderbook 합계* 만 보고 top-of-book 의 진짜 fillable 사이즈는 확인 안 함.
 
 현 portfolio (sports 중심 + consensus mispricing 기반 13+ 전략) 가 전부 tail-driven 으로 누적 우상향 실패. 완전 새로운 paradigm (B: mechanical complementarity → A: market making → D: mean reversion) 순차 구축 합의. **B 부활의 핵심 = phantom-quote pollution 해결**.
