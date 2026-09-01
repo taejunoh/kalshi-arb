@@ -209,11 +209,25 @@ What changed was size. Average bet went $2.75 → $7.46 → $16.45 → $26.12 �
 $27.12 over six weeks, and each increase followed a winning week. A slightly
 negative expectation at ten times the size is the entire loss.
 
-**Fees turned a −$969.36 outcome into −$2,004.37.** Kalshi charges a flat $0.07 per contract, which
-on a $0.30 contract is a 23% toll. The gross edge and the fee were the same
-order of magnitude at every price band tested — at 25–35¢, gross +5.2% against a
-5.26% fee. Most strategies here were not wrong about direction. They were
-correct by less than the cost of transacting.
+**Fees turned a −$969.36 outcome into −$2,004.37.** Kalshi's taker fee is
+`0.07 × p × (1−p)` per contract, which as a fraction of the stake is
+`7% × (1−p)` — measured across these fills, 6.0% at 4¢ down to 0.5% at 86¢. It
+is steepest exactly where underdog strategies live. At 25–35¢ the gross edge was
++5.2% against a 4.8–5.3% fee. Most strategies here were not wrong about
+direction; they were correct by less than the cost of transacting. 974 losing
+trades cost more than their stake (up to 107.4%) — the fee is charged either
+way.
+
+The maker fee is a quarter of that (`1.75% × (1−p)`, ~1.2% in the 25–35¢ band),
+which would have made the same edge profitable. That path was closed by book
+depth: a 1¢ spread with ~100k contracts queued ahead, so there was no room to
+quote and no route to the front.
+
+Accounting note: `fee` is the real-fee model, backfilled 2026-06-02 after
+confirming it against `/portfolio/fills` `fee_cost`. The backfill missed 318
+early rows that still carry the old flat-$0.07 model, overstating total fees by
+**$72.84** — so the true charge was ≈$962 and the true result ≈−$1,931.53. All
+figures here are the booked ones, for internal consistency with the ledger.
 
 ### Soft-book +EV
 
