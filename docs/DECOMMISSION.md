@@ -123,18 +123,22 @@ ssh kalshi-ec2 'for s in $(systemctl list-units --type=service --state=running -
 ssh kalshi-ec2 'systemctl list-units --all --no-pager | grep kalshi | grep -c running'   # expect 0
 ```
 
-## 7. Cancel the Odds API — and rotate the key
+## 7. Let the Odds API lapse
 
-Cancel the subscription, **then regenerate the key at the provider** if they
-offer it. Cancelling alone leaves a key that works again the moment anyone
-re-subscribes on that account, and step 8 puts that key in front of the public.
-Two things learned on 2026-09-01: the provider's docs describe no self-service
-regeneration (ask support), and a cancelled subscription stays active until the
-end of the billing cycle, so cancellation is not revocation.
+The subscription is already set to cancel and lapses on **2026-09-12**. Nothing
+to do here except not renew. No key regeneration: once the paid plan ends the
+key is at most a free-tier key on an account only the owner can pay for, and it
+is scrubbed from every branch (step 8) — the residual exposure is not worth a
+support ticket.
+
+What the date does gate is step 8: until 9/12 the key is a working paid key,
+and it is still visible in the diff of the merged PR that removed it from HEAD
+(pull-request refs survive a history rewrite). So repo → public is **on or
+after 9/12**, not before.
 
 ## 8. Repo → public
 
-Only after step 7, and only after every credential below is dead.
+On or after 2026-09-12 (step 7), and only after every credential below is dead.
 
 There were **two** leaked credentials, not one. This runbook originally knew
 about the first only:
@@ -150,13 +154,15 @@ replacement deployed to EC2; the workflow now reads `secrets.TELEGRAM_BOT_TOKEN`
 and `secrets.TELEGRAM_CHAT_ID`. Both strings were scrubbed from every branch
 with `git filter-repo --replace-text` and force-pushed (every SHA changed; the
 commit links under `docs/` were remapped from the commit map). The Odds API key
-is still the live key on EC2 until step 7 runs.
+is still the live key on EC2 until the subscription lapses on 9/12.
 
 **Scrubbing is not enough on GitHub.** A force-push does not remove commits
 reachable from pull-request refs (`refs/pull/*/head`); the pre-rewrite HEAD is
-still served by the API afterwards. Either ask GitHub Support to purge the
-cached commits, or rely on rotation — which is why rotation is mandatory and
-the scrub is only hygiene. The original options, for the record:
+still served by the API afterwards, and the diff of the PR that removed the
+Odds key from HEAD still shows it. Either ask GitHub Support to purge the cached
+commits, or make sure every scrubbed secret is dead (rotated, or lapsed) before
+flipping visibility — the scrub is hygiene, not revocation. The original
+options, for the record:
 
 - **Publish as-is.** Safe once the key is cancelled and rotated, but GitHub
   secret scanning will flag it and it is visible to anyone reading history — a
