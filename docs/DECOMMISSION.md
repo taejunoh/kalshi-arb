@@ -1,4 +1,4 @@
-# Decommission runbook — 2026-09-12
+# Decommission runbook — 2026-09-12 (executed 2026-09-01 → 09-06)
 
 Ordered shutdown. The order is the point: several of these steps are unsafe or
 irreversible if taken early, and two of them are unsafe if taken *late*.
@@ -214,3 +214,23 @@ they cost five months to produce. Archive them; do not delete them.
 US Open sample is short, the answer is INSUFFICIENT. Adjusting a threshold after
 seeing the data is the specific failure the registration exists to prevent, and
 it would be a strange note to end on.
+
+---
+
+## Execution log
+
+| Date (UTC) | Step | Result |
+|---|---|---|
+| 2026-09-01 | Telegram bot token rotated at BotFather, deployed to EC2, 7 services restarted | old token returns 401 |
+| 2026-09-01 | History scrub (`git filter-repo --replace-text`, Odds API key + Telegram token), force-push, EC2 checkout reset | 0 hits across all refs; every SHA changed |
+| 2026-09-01 | Step 2 — `LIVE_STRATEGIES=` emptied, bot restarted | "PAPER mode / Live: none"; no open real-money positions |
+| 2026-09-01 | Interim backup to `~/archive/` | softbook_paper / softbook_ev / trades dump / results.json |
+| 2026-09-01 | Softbook pick generators disabled (`softbook-ev`, `ev-refresh`, `ev-alert`, `softbook-push`, `keepmypick-xcard`); settlers left running | needed because paper "unsettled → 0" never happens while new picks are still being generated — the runbook's step 6 did not account for the paper drain |
+| 2026-09-05 02:25 | Last softbook paper bet settled | 22,337 bets, handle $48,436.02, −$474.97, 0 unsettled |
+| 2026-09-06 10:00 | Last scheduled keepmypick export + deploy (after final settlement) | public record is final; not re-run |
+| 2026-09-06 | Step 4 — `usopen_med_ml_prereg.py` | **INSUFFICIENT** (2 settled < 40). Note: the sample was cut short by the 9/01 generator shutdown, not by the tournament calendar |
+| 2026-09-06 | Closing snapshot | real money 1,983 trades, −$2,004.37, fees $1,035.01 (unchanged since 08-26); Kalshi paper 11,103 settled, +$1,285.04; 134 `paper_filled` rows left unsettled by design |
+| 2026-09-06 ~22:05 | Step 6 — livefade timers stopped first, then every kalshi-* timer and service `disable --now` | 0 running, 0 enabled (71 disabled), no python processes, ports 8000/8080 closed |
+| 2026-09-06 | Final backup to `~/archive/` (post-stop, `sqlite3 .backup`) | integrity ok; paper_bet 22,337 / softbook_ev 446,134 / trades 13,618 rows — all equal to EC2 |
+
+Not done: step 5 (announcement / keepmypick takedown — keepmypick stays up as a static record), step 9 (EBS snapshot / instance stop), repo → public (on or after 2026-09-12).
