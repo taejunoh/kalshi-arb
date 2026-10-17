@@ -134,7 +134,8 @@ Forward, after the change: **+0.19%**.
 
 Realized P&L is a hopeless measurement instrument here. Per-bet standard
 deviation is ~120%, so confirming a +5% edge needs about **4,500 settled bets**.
-No cohort in this project ever reached 1,200.
+No real-money cohort in this project ever reached 1,200; the only ledger that
+did was the soft-book paper book (below).
 
 Closing-line value resolves far faster — the same 457 bets give ±0.3pp on CLV
 versus ±10.7pp on ROI. So CLV became the primary metric.
@@ -205,15 +206,17 @@ figure: the larger bets happened to win. Equal-weighted, mean return per trade
 over those 628 trades was **−0.16% (t = −0.02)** — exactly zero, with a
 confidence interval from −12.8% to +12.5%.
 
-What changed was size. Average bet went $2.75 → $7.46 → $16.45 → $26.12 →
-$27.12 over six weeks, and each increase followed a winning week. A slightly
-negative expectation at ten times the size is the entire loss.
+What changed was size. Average bet went from $2.75 to $27.12 over six weeks
+(weekly: $2.75, $7.46, $16.45, $26.12, $26.90, $22.84, $27.12). Increases did not
+track results week by week, but the sharpest one came straight after the one big
+winning week: +10.9% at $7.46, then $16.45 the next week, which lost $710. A
+slightly negative expectation at ten times the size is the entire loss.
 
 **Fees turned a −$969.36 outcome into −$2,004.37.** Kalshi's taker fee is
 `0.07 × p × (1−p)` per contract, which as a fraction of the stake is
-`7% × (1−p)` — measured across these fills, 6.0% at 4¢ down to 0.5% at 86¢. It
+`7% × (1−p)` — 6.7% at 4¢ down to 1.0% at 86¢ across the prices traded here. It
 is steepest exactly where underdog strategies live. At 25–35¢ the gross edge was
-+5.2% against a 4.8–5.3% fee. Most strategies here were not wrong about
++5.2% against a 4.6–5.3% fee. Most strategies here were not wrong about
 direction; they were correct by less than the cost of transacting. 974 losing
 trades cost more than their stake (up to 107.4%) — the fee is charged either
 way.
@@ -228,6 +231,8 @@ confirming it against `/portfolio/fills` `fee_cost`. The backfill missed 318
 early rows that still carry the old flat-$0.07 model, overstating total fees by
 **$72.84** — so the true charge was ≈$962 and the true result ≈−$1,931.53. All
 figures here are the booked ones, for internal consistency with the ledger.
+Those 318 rows are also why per-price fee rates measured from `fee` drift from
+the formula, so the rates above are computed from the formula.
 
 ### Soft-book +EV
 
@@ -238,6 +243,10 @@ confirmed pick edge; ≈BE bonus-clearing vehicle, bet small").
 Measured properly, entry prices sat **at** the closing line: closing EV
 **+0.30%, 95% CI [−0.45, +1.04]** (n=534 against true closes). Not beaten by
 the market. Not beating it either.
+
+The full paper ledger (one bet per game and market, live rules) settled 22,337
+bets on $48,436 of handle for −$474.97: **−0.98%, 95% CI [−2.40, +0.44]**. The
+one sample here large enough to read outcomes directly lands in the same place.
 
 Nine tier × market cells were tested; none survived multiple-comparison
 correction. Consistently: the larger the sample, the closer to zero.
